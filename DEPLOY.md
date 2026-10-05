@@ -1,13 +1,14 @@
 # 日程清单 —— 部署与运维
 
-nginx 怎么操作、conf 怎么写、改完代码怎么上线、已知会踩的坑。
+nginx 怎么操作、conf 怎么写、改完代码怎么上线、出问题怎么退。
 命令都是在这台机器（Ubuntu，`192.168.1.6`）上实测过的，路径照抄即可。
 
 面向人：部署、排查线上问题、迁移到新机器。
-面向 AI：改路由、改缓存策略前先读「五、与现行结构的适配」——那几段每条都是踩坑换来的。
+面向 AI：改路由、改缓存策略前先读「五、与现行结构的适配」——那几条每条都是踩坑换来的。
 
-> **本项目没有后端、没有数据库、没有登录。**
-> 与「个人账本」的部署差异见第五节，那几条是最容易照抄错的地方。
+> **2026-10-06 起本项目前后端分离了。** 前端 React 构建产物 + 一个自写的
+> Node 后端（SQLite），数据在服务器上。**旧版那份「纯静态、数据只在浏览器里」
+> 的说明已经作废**，但旧版整个留档在 `legacy/`，随时可以退回去。
 
 ---
 
@@ -20,67 +21,126 @@ nginx 怎么操作、conf 怎么写、改完代码怎么上线、已知会踩的
 Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
   │
   ▼  home.xiaokubao.space 直达本机
-┌──────────────────────────────────────────────────────────┐
-│ nginx 容器  fholzer/nginx-brotli:v1.29   network_mode:host │
-│   /etc/nginx/conf.d/servers/*.conf   ← 只有这些被自动 include │
-│   /etc/nginx/conf.d/home/*.conf      ← 由 server 块显式 include │
-│                                                          │
-│   /schedule/  →  /data/schedule/dist/   纯静态，无反代       │
-└──────────────────────────────────────────────────────────┘
-                              ▲
-              /data/schedule  ← docker 挂载
-                              │
-   /home/xiaokubao/family/星星包/coding/日程管理
-   （= /mnt/fnos/family/… ，SMB 挂在飞牛 NAS 上）
+┌──────────────────────────────────────────────────────────────┐
+│ nginx 容器  fholzer/nginx-brotli:v1.29   network_mode:host     │
+│   /etc/nginx/conf.d/servers/*.conf   ← 只有这些被自动 include   │
+│   /etc/nginx/conf.d/home/*.conf      ← 由 server 块显式 include│
+│                                                              │
+│   /schedule/      → /data/schedule/dist/   静态，alias 直读    │
+│   /schedule/api/  → 127.0.0.1:25692        反代到后端          │
+└──────────────────────────────────────────────────────────────┘
+        ▲                                     ▲
+        │ /data/schedule（docker 挂载项目根）   │ 127.0.0.1:25692
+        │                                     │
+ /home/xiaokubao/family/星星包/coding/日程管理   schedule-backend.service
+ （= /mnt/fnos/family/…，SMB 挂在飞牛 NAS 上）  （systemctl --user）
+                                               │
+                                               ▼
+                        /home/xiaokubao/.local/share/schedule/schedule.db
+                        ⚠️ 本机磁盘，不在 NAS 上（原因见 1.2）
 ```
 
-**本项目只有 nginx 一个容器，没有后端容器。** 应用是纯静态的，
-数据在浏览器 localStorage 里，服务器上**没有任何用户数据**。
+### 1.1 两个进程，各自独立
+
+| | 前端 | 后端 |
+|---|---|---|
+| 是什么 | Vite 构建产物 | Node 22 + node:sqlite，零 npm 依赖 |
+| 谁在伺服 | nginx（容器） | systemd user 服务 |
+| 端口 | 无（nginx 直读文件） | 127.0.0.1:25692 |
+| 改完怎么生效 | `npm run build`，刷新即生效 | `systemctl --user restart schedule-backend` |
+| 挂了会怎样 | 白屏 | 页面能开，接口全 404，登录不上 |
+
+**后端只监听 127.0.0.1**，不直接对外，所以不用自己做 TLS；
+外网访问一律经 nginx 的 `/schedule/api/` 反代进来。
+
+### 1.2 数据为什么放本机磁盘，不放工程目录
+
+工程目录挂在 **CIFS/SMB** 上（`//fn.xiaokubao.space/团队文件-family`）。
+**SQLite 的文件锁在 CIFS 上不可靠**，写了坏页是不可恢复的。所以：
+
+```bash
+SCHEDULE_DATA_DIR=/home/xiaokubao/.local/share/schedule
+```
+
+这个目录里就三样：`schedule.db`（+ `-wal` / `-shm`）、`secret.key`（令牌签名密钥，0600）。
+
+**备份 = 拷这一个目录**：
+
+```bash
+systemctl --user stop schedule-backend     # 先停，WAL 才会干净落盘
+cp -a ~/.local/share/schedule ~/schedule-backup-$(date +%Y%m%d)
+systemctl --user start schedule-backend
+```
+
+> `secret.key` 丢了 = 所有人被登出（令牌验不过），数据不影响。
+> `schedule.db` 丢了 = 数据没了（用户还能从侧栏「导出备份」的 JSON 里救回来）。
 
 | 路径（宿主机） | 内容 |
 |---|---|
 | `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码 + `dist/`（本项目仓库） |
+| `/home/xiaokubao/.local/share/schedule` | **运行时数据：SQLite 库 + 密钥** |
 | `/home/xiaokubao/docker/nginx` | nginx 的 compose + `conf.d/` + `certs/` |
 
 > `/home/xiaokubao/family` 是指向 `/mnt/fnos/family` 的软链，同一份文件，
-> 两个路径都能开。compose 里用的是软链那条。
+> 两个路径都能开。compose 与 systemd 单元里用的都是软链那条。
 
 ---
 
 ## 二、改完代码怎么上线
 
+### 2.1 只改前端
+
+```bash
+cd /mnt/fnos/family/星星包/coding/日程管理/app
+npm run build          # 产物直接写进 ../dist/
+```
+
+就这一步。`dist/` 是 NAS 共享目录，nginx 直接读它，**不需要重启任何服务**。
+刷新页面即生效（`index.html` 是 `no-cache`，`assets/` 带内容哈希可以长缓存）。
+
+### 2.2 改了后端
+
 ```bash
 cd /mnt/fnos/family/星星包/coding/日程管理
-node tools/sync-dist.mjs
+node server/tests/api.test.js          # 先跑测试
+systemctl --user restart schedule-backend
+journalctl --user -u schedule-backend -f   # 看有没有起来
 ```
 
-就这一步。`dist/` 是 NAS 共享目录，nginx 直接读它，**不需要重启任何服务**，
-**不需要重启 nginx**。刷新页面即生效。
+> **非交互式 shell 里 `systemctl --user` 会报「Failed to connect to user scope bus」。**
+> 因为它找不到会话总线。加上这两行就行：
+> ```bash
+> export XDG_RUNTIME_DIR=/run/user/$(id -u)
+> export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+> ```
+> 在正常终端里不用管 —— 只有脚本 / CI / AI 跑的命令会撞上。
 
-脚本做四件事：
-
-1. 全量重建 `dist/`（删掉上版的残骸，避免删掉的文件还在）
-2. 按白名单复制 10 个文件
-3. 写 `dist/BUILD.txt`（构建时间 + 每个文件的 sha256 短哈希）
-4. **自检 `index.html` 引用到的资源是否都在白名单内**，缺文件直接报错退出
-
-> 第 4 步是硬门禁：引用了不在白名单里的资源就是线上白屏
-> （而且只在浏览器控制台报错，很难第一时间发现）。加新文件时
-> **同时改白名单和 `index.html`**，只改一处会被它挡住。
-
-`dist/BUILD.txt` 留在产物里，线上排查时能直接确认「服务器上的到底是哪一版」：
+### 2.3 改了 nginx 配置
 
 ```bash
-curl -s https://home.xiaokubao.space/schedule/BUILD.txt
+# 1. 改 deploy/schedule.conf（本地副本，保持两边一致）
+cp -p ~/docker/nginx/conf.d/home/schedule.conf \
+      ~/docker/nginx/conf.d/home/schedule.conf.bak-$(date +%Y%m%d-%H%M%S)
+# 2. 这台机器就是服务器，直接 cp（别 ssh 自己）
+cp deploy/schedule.conf ~/docker/nginx/conf.d/home/schedule.conf
+# 3. 校验 + 重载
+docker exec nginx nginx -t && docker exec nginx nginx -s reload
 ```
 
-### 白名单构成
+### 2.4 后端服务的安装 / 换机器
 
-`index.html` `styles.css` `store.js` `parse.js` `views.js` `clock.js` `app.js`
-`sw.js` `manifest.json` `icon.svg` —— 10 个，一个不多一个不少。
+```bash
+cp deploy/schedule-backend.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now schedule-backend
+```
 
-> **少一个文件应用就缺功能，多一个文件就是信息泄露**（源码、项目记忆、计划文档会跟着上线）。
-> 所以是白名单而不是「排除法」。
+这台机器已经开了 linger（`loginctl show-user xiaokubao` → `Linger=yes`），
+用户级服务注销后照样活着。**换机器要先确认这一条**，否则一关 SSH 服务就没了。
+
+> 单元里 `ExecStart` 钉死了 `/home/xiaokubao/.nvm/versions/node/v22.22.3/bin/node`。
+> **别改成 `/usr/local/bin/node`** —— 那是个指向 nvm `v22.16.0` 的软链，
+> 而 `node:sqlite` 在 22.16 上还要 `--experimental-sqlite`。升级 node 时改这一行。
 
 ---
 
@@ -119,16 +179,13 @@ conf.d/
 │   └── home.conf          ← home.xiaokubao.space，本项目在这里挂载
 ├── common/     被 include —— ssl.conf、proxy.conf
 └── home/       被 servers/home.conf include —— 各子路径的 location
-    ├── balancebook.conf   ← 个人账本（可以照抄它的结构）
-    └── schedule.conf      ← 本项目，本地副本在 deploy/schedule.conf
+    ├── balancebook.conf   ← 个人账本
+    ├── balanceapi.conf    ← 账本的 API 反代（**后端反代单独一个文件是那边的习惯**）
+    └── schedule.conf      ← 本项目，静态 + API 都在这一份里，本地副本在 deploy/
 ```
 
-| 目录 | 放什么 | 要 include 吗 |
-|---|---|---|
-| `global/` | 全局都生效的设置 | 自动 |
-| `servers/` | server 块（域名级） | 自动 |
-| `common/` | 可复用的片段 | 用到才 include |
-| `home/` | 本域名的 location | **必须**在 `servers/home.conf` 加一行 |
+> 本项目**没有**按账本那样拆成两个文件 —— 就一块 `/schedule/`，放一起更好读。
+> 想拆也行，但那要在 `servers/home.conf` 再加一行 include，多一个会忘的地方。
 
 ### 3.3 停用一个站点
 
@@ -159,215 +216,238 @@ error_page 497 https://$host:$server_port$request_uri;   # 明文请求直接跳
 
 ## 四、conf 怎么写
 
-本项目只有一个文件，42 行。**照着改，别新造轮子。**
-
-完整内容见 `deploy/schedule.conf`（本地副本）。服务器上真正生效的那份在
+本项目只有一个文件，七十来行。**照着改，别新造轮子。**
+完整内容见 `deploy/schedule.conf`（本地副本），服务器上生效的那份在
 `~/docker/nginx/conf.d/home/schedule.conf`。
 
+骨架：
+
 ```nginx
-# 补斜杠
-location = /schedule { return 301 /schedule/; }
+location = /schedule { return 301 /schedule/; }          # 补斜杠
 
-# 本地目录不对外提供
-location ^~ /schedule/_refactor/    { return 404 "not found"; }
-location ^~ /schedule/src/         { return 404 "not found"; }
-location ^~ /schedule/tools/       { return 404 "not found"; }
-location ^~ /schedule/node_modules/ { return 404 "not found"; }
-location ^~ /schedule/.workbuddy/   { return 404 "not found"; }
-
-# Service Worker
-location = /schedule/sw.js {
-    alias /data/schedule/dist/sw.js;
-    add_header Cache-Control "no-store, must-revalidate" always;
-    expires off;
+location ^~ /schedule/api/ {                              # 后端反代
+    proxy_pass http://127.0.0.1:25692/api/;
+    ...
+    add_header Cache-Control "no-store" always;
 }
 
-# 应用本体
-location ^~ /schedule/ {
+location ^~ /schedule/app/          { return 404 "not found"; }   # 源码
+location ^~ /schedule/server/       { return 404 "not found"; }   # 后端源码 + 库
+location ^~ /schedule/legacy/       { return 404 "not found"; }
+location ^~ /schedule/.             { return 404 "not found"; }   # 点开头的内务
+
+location ^~ /schedule/assets/ {                           # 带哈希，可以长缓存
+    alias /data/schedule/dist/assets/;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+
+location ^~ /schedule/ {                                  # 应用本体
     alias /data/schedule/dist/;
     index index.html;
     add_header Cache-Control "no-cache";
-    access_log off;
 }
 ```
 
-### 五条要记住的
+### 六条要记住的
 
 1. **`^~` 不能省。** 少了它，`location ~` 的正则会抢在前面匹配，
    `dist/` 里的文件名会被别的正则 location 截走。
 
-2. **location 顺序不能颠倒。** `location = /schedule/sw.js`（精确）必须写在
-   `location ^~ /schedule/`（前缀）**前面**。`^~` 一旦先匹配，
-   后面的精确块就失效 —— 那时 SW 会落到通用前缀块里，缓存策略全丢。
+2. **`/schedule/api/` 必须比 `/schedule/` 长，两块都得是 `^~`。**
+   nginx 在多个 `^~` 前缀块里**选最长的那个**，所以文件里的先后顺序无所谓 ——
+   但两块都带 `^~` 才成立，否则 API 请求会落进静态块里 404。
 
-3. **用 `alias` 不用 `root`。** 项目目录是**整个**挂到 `/data/schedule` 的
-   （不只 `dist/`），`root` 会把 `/schedule/` 拼成 `/data/schedule/schedule/`。
+3. **`location /schedule/.` 也要写成前缀块，不能写成 `location ~ ^/schedule/\.`。**
+   上面那些 `^~` 一旦命中就直接停止正则匹配，**正则块永远不会被求值** ——
+   那是死代码，而且看起来还挺像在防护。前缀匹配是字面量，`/schedule/.`
+   能覆盖 `.git/` `.omc/` `.claude/` `.workbuddy/` `.mindfs/` 全部。
 
-4. **缓存策略与账本相反。** 见下面 4.1，这是最容易照抄错的一条。
+4. **用 `alias` 不用 `root`。** 项目根是**整个**挂到 `/data/schedule` 的，
+   `root` 会把 `/schedule/` 拼成 `/data/schedule/schedule/`。
 
-5. **只对外提供 `dist/`。** 源码、`_refactor/`、`tools/`、`node_modules/`、
-   `.workbuddy/` 一律 404。
+5. **只对外提供 `dist/`。** 顺带一提：`alias …/dist/` 本身就已经隔离了源码
+   （`/schedule/app/x` 会去找 `dist/app/x`，不存在就是 404）。那一串 404 是
+   第二道锁 —— 万一以后有人把它改成 root 指向项目根，源码不会跟着裸奔。
+   `server/` 尤其要紧：那里有 SQLite 库和 `secret.key`。
 
-### 4.1 缓存策略：本项目 vs 账本，**别照抄**
+6. **`proxy_pass` 结尾的 `/api/` 不能丢。** 带了 URI 部分，nginx 才会把
+   匹配到的前缀替换掉（`/schedule/api/tasks` → `/api/tasks`）；
+   少了它，后端会收到带 `/schedule` 前缀的路径，全是 404。
 
-| 路径 | 本项目 | 账本 | 原因 |
-|---|---|---|---|
-| `index.html` / `app.js` / `styles.css` | **`no-cache`** | `no-cache` | 两边一致 |
-| 哈希资源 `assets/` | 不存在 | `expires 1y` | 账本构建产物带内容哈希 |
-| `sw.js` | **`no-store, must-revalidate`** | 同 | 一致 |
+### 4.1 缓存策略：三档，别混
 
-**本应用的文件名是固定的**（`app.js` / `styles.css`，没有内容哈希），
-所以**绝对不能长缓存** —— 否则改了代码用户永远拿不到新版。
-账本的 `assets/index-XXXX.css` 带哈希才能 `expires 1y`，那是 Vite 构建才有的性质。
+| 路径 | 策略 | 原因 |
+|---|---|---|
+| `/schedule/assets/*` | **`expires 1y` + `immutable`** | Vite 产物带内容哈希（`index-B9em1qd9.js`），内容一变文件名就变 |
+| `/schedule/index.html` | **`no-cache`** | 文件名固定，必须每次回源校验，否则用户被钉在旧版本上 |
+| `/schedule/api/*` | **`no-store`** | 带 `Authorization` 的响应被中间层存下来就是事故 |
 
-`sw.js` 必须 `no-store`：被缓存的 SW 会一直发旧版本的 `app.js` / `styles.css`。
+> 旧版（纯静态那一代）**整套**都得 `no-cache`，因为那时候 `app.js` /
+> `styles.css` 的文件名固定、没有哈希。现在只有 `index.html` 需要了 ——
+> 别再照抄旧结论。
 
-> **`no-cache` 不是「不缓存」。** 它仍然缓存，只是每次用前必须回源校验。
-> `no-store` 才是完全不存。前者对 200 KB 的静态文件完全够用。
+> `no-cache` 不是「不缓存」。它仍然缓存，只是每次用前必须回源校验。
+> `no-store` 才是完全不存。
 
 ### 4.2 `/schedule` 无尾斜杠必须显式 301
 
-少了尾斜杠时，页面里的相对路径（`store.js`、`styles.css`）会解析到
-`/store.js` 而不是 `/schedule/store.js` → **直接白屏**。
+少了尾斜杠时，页面里的相对路径（`./api/…`、`./assets/…`）会解析到
+`/api/…`、`/assets/…` 而不是 `/schedule/…` → **接口全 404 + 白屏**。
 nginx 不会自动补斜杠，必须显式 `return 301`。
+
+前端发请求用的是 `fetch('./api/' + path)`（`app/src/data/api.ts`），
+就是靠这个相对路径做到「前后端同源、后端一行 CORS 都不用写」的。
+**改前端请求路径前先想清楚这条。**
+
+### 4.3 Service Worker：新版没有，旧版要拆
+
+新版**不注册** Service Worker 了，`/schedule/sw.js` 是 404。
+
+旧版（`schedule-v12`）注册过，而且**缓存里躺着旧版 index.html** ——
+网络优先，所以通常刷新就拿到新版页面，新页面第一件事是
+`app/src/main.tsx` 里的 `escapeLegacyServiceWorker()`：注销所有 SW、
+清掉 `schedule-*` 缓存，然后自动重载一次。
+
+> 那个「重载一次」带 `sessionStorage` 标记，**否则会无限刷新把浏览器挂死** ——
+> 这是无头测试里最容易踩的坑。
 
 ---
 
 ## 五、与现行结构的适配（最容易照抄错的地方）
 
-### 5.1 本项目没有接口，也没有版本号
+### 5.1 接口没有版本号
 
-**没有 `/api/*`，没有 `v1` / `v2` / `v3`。** 账本那套「静态旧路径 301、
-接口旧路径 410」的规则在这里**一条都不适用** —— 本项目从来没有接口路径，
-历史请求只有静态文件，而静态文件改过名就是新路径，没有「跳回当前版」的必要。
+**`/api/*`，不带 `v1` / `v2` / `v3`。** 只有一套接口，也就没有「旧路径 301 跳回
+当前版」这回事。账本那套版本号规则**一条都不适用**。
 
-数据在浏览器 localStorage（key `schedule-app-v1`），**不上传服务器**。
-`v1` 那个后缀是本地存储 key 的一部分，与版本化无关。
+```text
+GET  /api/health          存活探针，不需要登录
+GET  /api/auth/state      库里有没有用户 —— 未登录可访问，决定显示注册还是登录
+POST /api/auth/register   注册。**只有空库能用**，之后一律 403
+POST /api/auth/login
+POST /api/auth/logout     把当前令牌加进吊销表
+POST /api/sync            推 + 拉，一次往返（body 里有 ops 和 cursor）
+GET  /api/users           管理员：列出账户
+POST /api/users           管理员：新建账户
+```
 
-### 5.2 源码隔离靠白名单脚本，不靠 nginx 逐条列举
+接口细节（请求 / 响应 / 错误码）见 [docs/接口.md](docs/接口.md)。
 
-账本用 Vite，`public/` 里的任何东西都会被原样拷进 `dist/`，
-所以 nginx 需要一条兜底 `location ^~ /balancebook/. { return 404; }`。
+> **注册是关着的。** 只有「库里一个用户都没有」时才允许自助注册，
+> 所以第一个注册的人必然是管理员，第二个人进不来 —— 这是刻意的。
+> 加人要由管理员调 `POST /api/users`，**界面上还没有这个入口**。
 
-本项目没有 Vite，`dist/` 由 `sync-dist.mjs` 按白名单生成 —— 
-**`dist/` 里本来就只有那 10 个文件**，nginx 只需挡住
-源码目录（`_refactor/` / `tools/` / `node_modules/`）即可。
+> **没有 `/api/me`。** 「我是谁」由前端在登录时把用户对象缓存进 localStorage
+> （`app/src/data/api.ts` 的 `getCachedUser()`）。`/api/users` 是**管理员专用**的
+> 用户列表，**不要**拿它当「我是谁」用。
 
-> **加文件时只改一处会被门禁挡住**：改了 `index.html` 忘了加白名单，
-> `sync-dist.mjs` 报错退出；改了白名单忘了改 `index.html`，多出的文件不构成泄露
-> 但会白白占位。**以 `sync-dist.mjs` 的报错为准。**
+### 5.2 数据存在哪儿，决定了备份怎么做
+
+| | 旧版 | 现在 |
+|---|---|---|
+| 真相在哪 | 浏览器 localStorage | 服务器 SQLite |
+| 换设备 | 导出 / 导入 JSON | 登录同一个账户 |
+| 备份 | 手动导 JSON | 拷 `/home/xiaokubao/.local/share/schedule` |
+| 服务器上有没有用户数据 | **没有** | **有**（这是最大的变化） |
+
+浏览器那份（`schedule-app-v4`）是**离线副本**，不是真相 —— 排查「数据不对」时
+先看服务器，别只看浏览器。
+
+旧版的 `schedule-app-v1` **不删**（第一次登录时读一次导入，之后不再碰），
+留作回滚时还能找回旧数据。
 
 ### 5.3 「刷新即生效」的前提
 
-nginx 直挂项目目录，**没有上传步骤**。但：
+nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了：
 
-- **只对 `dist/` 生效。** 改完源码必须 `node tools/sync-dist.mjs`，
-  否则页面纹丝不动 —— 这是最常见的「改了没反应」。
-- **Service Worker 可能挡着。** 排查时先注销
-  （见 [CLAUDE.md](CLAUDE.md) 「四、1」）。
-- **SMB 有写入延迟。** 刚写完立刻读可能读到旧内容。
-  `sync-dist.mjs` 每次全量重建 `dist/`，一般不会碰到；
-  真碰到了等几秒重跑。
-- **缓存策略已经分层**，绝大多数情况不需要手动清缓存。
-
-### 5.4 改 `index.html` 或 `sw.js` 才要动 `CACHE`
-
-本应用无内容哈希，改 CSS/JS **也会**撞到 SW 缓存里 —— 但因为是
-网络优先，刷新就会拿到新版。所以平时**不需要**改版本号。
-
-只有改了 `index.html` 或 `sw.js` 本身时，才把 `sw.js` 里的 `CACHE`
-（现在 `schedule-v12`）加一，让 `activate` 里删旧缓存那步触发。
-
-> **别把版本号当成「每次发布都要加」的仪式。** 账本因为构建产物带哈希才需要
-> 每次核对 `VERSION`，本项目没这层机制。
+- **只对 `dist/` 生效。** 改完源码必须 `npm run build`，否则页面纹丝不动。
+- **Service Worker 可能挡着**（旧版那一个），见 4.3。
+- **SMB 有写入延迟。** `npm run build` 会先清空 `dist/` 再写，
+  一般不会碰到；真碰到了等几秒重跑。
 
 ---
 
 ## 六、发布流程
 
-```bash
-cd /mnt/fnos/family/星星包/coding/日程管理
-node tools/sync-dist.mjs        # 唯一的发布动作
-```
-
-**没有部署脚本。** 账本那个七步的 `deploy.sh` 是给有后端的项目用的
-（备份数据、构建、重建镜像、等 healthcheck、验证路由），
-本项目没有后端、没有数据、没有构建，两步就完了：
-
 ```text
-1. 改代码
-2. node tools/sync-dist.mjs   →  dist/ 变了，刷新页面即生效
+1. 改代码（前端在 app/，后端在 server/）
+2. cd app && npm test && npm run typecheck        # 有改后端就先跑 node server/tests/api.test.js
+3. cd app && npm run build                        # 前端产物 → ../dist/
+4. 改了后端才需要：systemctl --user restart schedule-backend
+5. 刷新页面
 ```
 
-**只有改 nginx 配置时才是三步**：
+**没有部署脚本。** 账本那个七步的 `deploy.sh` 是给「有镜像、有健康检查」的项目用的，
+本项目没有镜像、没有容器（后端是宿主机上的 systemd 服务），不需要那一套。
 
-```bash
-# 1. 改 deploy/schedule.conf（本地副本，保持两边一致）
-# 2. 同步到服务器生效的那份（这台机器就是服务器，直接 cp）
-cp deploy/schedule.conf ~/docker/nginx/conf.d/home/schedule.conf
-# 3. 校验 + 重载
-docker exec nginx nginx -t && docker exec nginx nginx -s reload
-```
-
-> **改之前先备份**：`cp -p <目标> <目标>.bak-$(date +%Y%m%d-%H%M%S)`。
-> 服务器上已有 `schedule.conf.bak-20261005-153546` 等历史备份。
-
-> **从别的机器改时**用管道而不是 `scp`（中文路径下 `scp` 不可靠，见第七节）：
-> ```bash
-> cat deploy/schedule.conf | ssh ubuntu "cat > ~/docker/nginx/conf.d/home/schedule.conf"
-> md5sum deploy/schedule.conf
-> ssh ubuntu "md5sum ~/docker/nginx/conf.d/home/schedule.conf"
-> ```
-> `~/.ssh/config` 里的别名是 **`ubuntu`**（也是 `fn`），**没有 `nas`** ——
-> 那是从 Windows 连过来时的名字。在本机上写 `ssh nas` 会报
-> `Could not resolve hostname nas`。
-
-### 6.1 验证线上
+### 6.1 发布后验证
 
 ```bash
 B=https://home.xiaokubao.space/schedule
-for p in "/" "/sw.js" "/BUILD.txt" "/styles.css" \
-         "/_refactor/" "/src/" "/tools/" "/tests/" "/deploy/" \
-         "/node_modules/" "/.workbuddy/" "/DEPLOY-PLAN.md"; do
-  printf '%-18s %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' $B$p)"
+
+# 1. 路由与隔离
+for p in "/" "/manifest.json" "/icon.svg" "/api/auth/state" \
+         "/app/src/main.tsx" "/server/server.js" "/legacy/dist/app.js" \
+         "/deploy/schedule.conf" "/.git/config" "/docs/" "/api/me"; do
+  printf '%-26s %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' $B$p)"
 done
 ```
 
-期望输出（2026-10-05 实测）：
+期望（2026-10-06 实测）：
 
 ```text
-/                      200
-/sw.js                 200
-/BUILD.txt             200
-/styles.css            200
-/_refactor/            404     ← React 骨架不对外
-/src/                  404
-/tools/                404     ← 本地脚本不对外
-/tests/                404     ← 测试脚本含本机绝对路径
-/deploy/               404     ← conf 副本不对外
-/node_modules/         404
-/.workbuddy/           404
-/DEPLOY-PLAN.md        404
+/                          200
+/manifest.json             200
+/icon.svg                  200
+/api/auth/state            200    ← 反代通了；内容里的 hasUsers 决定注册还是登录
+/app/src/main.tsx          404    ← 源码不对外
+/server/server.js          404    ← 后端源码不对外
+/legacy/dist/app.js        404    ← 旧版留档不对外
+/deploy/schedule.conf      404
+/.git/config               404    ← 点开头的内务不对外
+/docs/                     404
+/api/me                    404    ← 确实没有这个接口（见 5.1）
 ```
 
-> `curl` 加 `-k`：证书链在部分环境下校验不过，加了不影响看状态码。
-
-再确认缓存头：
-
 ```bash
-curl -skI $B/sw.js       | grep -i cache-control   # no-store, must-revalidate
-curl -skI $B/index.html  | grep -i cache-control   # no-cache
-curl -skI $B/app.js      | grep -i cache-control   # no-cache
-```
+# 2. 缓存头三档
+curl -skI $B/index.html                       | grep -i cache-control   # no-cache
+curl -skI $B/assets/$(ls dist/assets | grep '\.js$') | grep -i cache-control   # public, immutable
+curl -skI $B/api/auth/state                   | grep -i cache-control   # no-store
 
-再确认补斜杠：
-
-```bash
+# 3. 补斜杠
 curl -sk -o /dev/null -w '%{http_code} -> %{redirect_url}\n' $B
 # 301 -> https://home.xiaokubao.space/schedule/
 ```
 
-### 6.2 抽查既有站点
+### 6.2 端到端冒烟
+
+比上面那一堆 curl 有用得多 —— 它真的开浏览器注册、建任务、勾选、刷新、确认同步。
+
+```bash
+cd /mnt/fnos/family/星星包/coding/日程管理
+BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs
+```
+
+⚠️ **它会注册一个新账户。** 打完线上必须清库，否则：
+**第一个注册的人才是管理员** —— 你的账户会变成普通用户，永远拿不到管理员。
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+systemctl --user stop schedule-backend
+rm -rf ~/.local/share/schedule && mkdir -p ~/.local/share/schedule
+systemctl --user start schedule-backend
+curl -s $B/api/auth/state          # 要看到 {"hasUsers":false}
+```
+
+> 删 `~/.local/share/schedule` 会把**真实用户**一起删掉。
+> 线上已经有你在用的账户之后，**别再拿冒烟脚本打线上** ——
+> 起个本机后端（`SCHEDULE_DATA_DIR=/tmp/x node server/server.js`）+ `npm run preview`
+> 跑，一样能验前端。
+
+### 6.3 抽查既有站点
 
 改了 compose 或 reload 之后，确认没打断别人：
 
@@ -381,13 +461,22 @@ done
 
 ## 七、回滚
 
+新版整个走的是 `/schedule/`，**没有第二套路径并存**，所以回滚是「换掉 dist/ 的内容」。
+
 | 故障 | 回滚动作 |
 |---|---|
-| 应用新版有问题 | 把 `dist/` 恢复成上一版文件，刷新即生效（无构建产物可回滚，就是覆盖文件）。`dist/BUILD.txt` 里有每个文件的哈希，可确认版本 |
-| 想临时下线 | `conf.d/home/schedule.conf` 改名 `.conf.disabled` → `nginx -t && reload` |
+| 新版前端有问题 | `rm -rf dist/* && cp -a legacy/dist/. dist/` —— 立刻退回旧版纯静态应用，刷新即生效 |
+| 新版后端有问题 | `systemctl --user stop schedule-backend`。页面还开得了，但登录不上、同步停摆（离线副本仍可看） |
+| 想临时下线整站 | `conf.d/home/schedule.conf` 改名 `.conf.disabled` → `nginx -t && reload` |
 | nginx 整体起不来 | 恢复备份：`docker-compose.yml.bak-<时间戳>` 与 `conf.d/servers/home.conf.bak-<时间戳>`，再 `docker compose up -d` |
 
-> **2026-10-05 上线时的备份留在服务器上**：
+> **退回旧版的注意事项**：旧版读的是 localStorage 的 `schedule-app-v1`，
+> 而新版从来不动那个 key（只读一次）。所以退回去之后**旧数据还在**，
+> 只是新版期间新加的任务看不到 —— 它们在服务器库和 `schedule-app-v4` 里。
+> 新版没有引入 React 之外的数据破坏，随时可以再换回来。
+
+> **备份留在服务器上**：`schedule.conf.bak-20261005-153546`、
+> `schedule.conf.bak-20261006-020542`，
 > `docker-compose.yml.bak-20261005-140134`、
 > `conf.d/servers/home.conf.bak-20261005-140134`。
 
@@ -395,7 +484,38 @@ done
 
 ## 八、环境踩坑
 
-**8.1 `scp` 传中文路径报 `pipe: Unknown error`**
+**8.1 非交互式 shell 里 `systemctl --user` 连不上总线**
+
+```
+Failed to connect to user scope bus via local transport:
+$DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined
+```
+
+脚本、CI、AI 执行命令时都会撞上（它们没有登录会话）。补上：
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+```
+
+**8.2 工程目录在 SMB 上，偶发丢文件**
+
+工程目录挂在 CIFS 上（`actimeo=1` `nobrl` `mapposix`，`/mnt/fnos` 还是个
+`timeout=3` 的 autofs）。**2026-10-06 实测丢过一次 `app/src/App.tsx`**：
+编辑工具写完当场还在，几十秒后整个文件没了，没有 recycle 目录、没进 git。
+
+- 传大文件先写到本机磁盘再 `cp` 过去，然后 `md5sum` 两端核对
+- 写完 / 移动完**立刻 `ls -l` 确认还在**
+- `app/` 曾经没进版本库 —— **改完记得提交**，这是唯一可靠的后悔药
+- 源码没必要放在共享盘上；真要图方便，至少保证 git 是最新的
+
+**8.3 `pkill -f "…"` 会打到自己**
+
+`pkill -f "node server/server.js"` 连同一条命令里的 shell 一起杀掉（exit 144），
+因为 zsh 的命令行本身就含这个字符串。要么拆成两条命令，
+要么把模式写成 `node [s]erver/server.js` 并且**别在同一条命令里出现字面量**。
+
+**8.4 `scp` 传中文路径报 `pipe: Unknown error`**
 
 从 Windows 连过来时 `scp` 传含中文的路径会失败。改用：
 
@@ -404,34 +524,32 @@ cat 本地文件 | ssh ubuntu "cat > 目标路径"
 # 然后 md5sum 校验两端一致
 ```
 
-**8.1b 这台机器上没有 `nas` 这个 SSH 别名**
+**8.5 这台机器上没有 `nas` 这个 SSH 别名**
 
 `~/.ssh/config` 里本机叫 **`ubuntu`**（`HostName home.xiaokubao.space`），
 也有 `fn` 指同一台。`nas` 是 Windows 侧用的名字。
 **在本机上执行 `ssh nas` 会报 `Could not resolve hostname nas`。**
 
-而且 —— **这台机器（`192.168.1.6`，`ubuntu`）就是 nginx 所在的那台**，
-`ssh` 到自己没必要，改配置直接：
+而且 —— **这台机器（`192.168.1.6`，`ubuntu`）就是 nginx 与后端所在的那台**，
+`ssh` 到自己没必要，改配置直接 cp（见 2.3）。
 
-```bash
-cp deploy/schedule.conf ~/docker/nginx/conf.d/home/schedule.conf
-docker exec nginx nginx -t && docker exec nginx nginx -s reload
-```
-
-**8.2 Git Bash 自带的 ssh 不读该配置**
-
-要用 Windows 版 OpenSSH（`C:\Windows\System32\OpenSSH\ssh.exe`），
-或在 Git Bash 里自己写 `Host nas` 配置。
-
-**8.3 `docker run ... nginx -t` 报 invalid option**
+**8.6 `docker run ... nginx -t` 报 invalid option**
 
 该镜像 entrypoint 已是 nginx，改用 `docker exec nginx nginx -t`。
 
-**8.4 无头 Chrome 有最小窗口宽度约 526px**
+**8.7 无头 Chrome 有最小窗口宽度约 526px**
 
 `--window-size=390` 实测 `innerWidth` 是 526，量不到真手机宽度。
-**用固定宽度的 iframe 包住应用**才是真视口。其余测试坑见
-[CLAUDE.md](CLAUDE.md) 「四、21」—— 那些是照抄级清单。
+
+> **别用 iframe 绕。** 旧版试过用固定宽度的 iframe 包住应用，
+> 结果是 headless 下 `iframe.onload` 时序不可靠、经常不触发，
+> 拿不到数据等于没测 —— 那段已经放弃了（`legacy/tests/drop-scan.mjs` 头部有结论）。
+> `Emulation.setDeviceMetricsOverride` 也不行，它会触发完整重排、
+> 之后合成事件不再进处理器。
+
+**新版没有窄屏 / 触屏的自动化覆盖** —— `app/tests/smoke.mjs` 只跑一个
+1440×900 的桌面视口，≤900px 的标签栏、长按操作层只能手工在真机上看。
+其余测试坑见 [CLAUDE.md](CLAUDE.md) 「四、33」。
 
 ---
 
@@ -439,16 +557,20 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 
 | 现象 | 查什么 |
 |---|---|
-| 改了代码但页面没变 | **先确认跑过 `node tools/sync-dist.mjs`**（nginx 只挂 `dist/`）；再清 Service Worker，见 [CLAUDE.md](CLAUDE.md) 「四、1」 |
-| 改了源码 `dist/` 里的文件还是老的 | 跑同步脚本。直接改 `dist/` 会被下次同步覆盖 |
+| 改了代码但页面没变 | 前端要 `npm run build`（nginx 只挂 `dist/`）；再清 Service Worker，见 4.3 |
+| 页面能开，但登录不上 / 操作没反应 | `systemctl --user status schedule-backend`；`journalctl --user -u schedule-backend -n 50` |
+| 接口全 404 | nginx 里 `/schedule/api/` 那块丢了或没带 `^~`；后端没起 |
 | 页面 404 | `servers/home.conf` 里忘了 `include` `schedule.conf` |
-| 页面能开但资源全 404 | `alias` 写错了，或容器没重建（加挂载必须 `docker compose up -d`，不能 reload 绕过） |
-| 白屏 + 资源 404 | 访问的是 `/schedule`（无尾斜杠），相对路径解析到了 `/store.js`。用 `/schedule/` |
-| SW 挡着拿不到新版 | 强刷（Ctrl+Shift+R），或在 DevTools → Application → Service Workers 里 Unregister |
-| `sync-dist.mjs` 报错退出 | `index.html` 引用了不在白名单里的资源 —— 白名单和 `index.html` 要同时改 |
-| nginx 改完不生效 | 忘了 `nginx -t`，或者忘了 reload，或者忘了 include |
+| 页面能开但资源全 404 | `base: './'`（`app/vite.config.ts`）被改成 `/` 了；或访问的是 `/schedule`（无尾斜杠） |
+| 白屏 + 资源 404 | 访问的是 `/schedule` 而不是 `/schedule/`，相对路径解析到了站点根 |
+| 还是一年前的旧界面 | 旧版 Service Worker 没清掉。强刷，或 DevTools → Application → Service Workers 里 Unregister |
+| 两台设备数据不一致 | 顶栏右侧的同步图标还在转？转 → 还在推；不转 → 看后端日志。逐字段 LWW，同一字段才是「后改的赢」 |
+| 数据不对 / 像丢了几条 | **先看服务器库**（浏览器那份只是副本）。`sqlite3 ~/.local/share/schedule/schedule.db '.tables'` |
+| 所有人都掉登录了 | `secret.key` 被换掉 / 删了。数据不受影响，重新登录即可 |
+| 后端起不来，日志里 EADDRINUSE | 有个手动起的 `node server.js` 还占着 25692。`ss -lptn 'sport = :25692'` |
+| `sync-dist.mjs` | **这个脚本已经没有了**（旧版纯静态时代的东西）。前端现在是 `npm run build` |
 | 证书快过期 | 三·3.4，**没有自动续期**，全站共用 |
-| 手机装成 App 后霸占整站 | PWA `scope`，见 [CLAUDE.md](CLAUDE.md)（本项目 `manifest.json` 的 `scope` 是 `./`，已锁在 `/schedule/`） |
+| 手机装成 App 后霸占整站 | PWA `scope`（`app/public/manifest.json` 里是 `./`，已锁在 `/schedule/`） |
 
 ---
 
@@ -458,7 +580,9 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | 数据模型、代码约定、踩坑记录（**改代码前先读**） |
 | [README.md](README.md) | 怎么用、数据在哪、日常命令 |
+| [docs/接口.md](docs/接口.md) | HTTP 接口一览 |
+| [docs/重构路线.md](docs/重构路线.md) | 这次前后端分离重写的决策记录 |
 | `deploy/schedule.conf` | nginx 配置的本地副本（服务器上还有一份） |
-| `tools/sync-dist.mjs` | 白名单 + `BUILD.txt` 生成脚本，文件头有完整说明 |
+| `deploy/schedule-backend.service` | 后端 systemd user 单元的本地副本 |
 | `/home/xiaokubao/docker/nginx/conf.d/README-hosts.md` | 全站域名 ↔ 设备 ↔ 路径的映射表 |
-| `/home/xiaokubao/docker/nginx/conf.d/home/balancebook.conf` | 账本的 conf，写 location 时可对照（有后端项目，比本项目多一段 `proxy_pass`） |
+| `/home/xiaokubao/docker/nginx/conf.d/home/balanceapi.conf` | 账本的 conf，写 location 时可对照 |

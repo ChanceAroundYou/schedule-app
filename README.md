@@ -4,7 +4,8 @@
 
 **网址：https://home.xiaokubao.space/schedule/**
 
-纯前端网页应用，**数据存在你当前用的这台设备的浏览器里，不上传服务器**。
+**数据存在服务器上**（这台机器自己的 SQLite 库），登录后多设备自动同步。
+浏览器里也留一份，断网能继续用。
 
 **部署与运维 → [DEPLOY.md](DEPLOY.md)**
 **给 AI 编码助手 → [CLAUDE.md](CLAUDE.md)**
@@ -29,9 +30,13 @@
 
 ## 怎么用
 
-1. 打开网址就能用，**不需要注册、不需要登录**
-2. 底部或侧栏「＋新建任务」，或者用顶部的快速输入框
-3. **快速输入框支持直接写中文**，回车就存：
+1. 打开网址 → **注册一个账户**（用户名 + 密码，用户名随便起）
+2. **第一个注册的人自动成为管理员。** 之后**注册入口就关了**
+   （开放注册等于把日程本挂在公网）—— 后续账户由管理员创建，
+   接口已经有了（`POST /api/users`），**但界面上还没有入口**，
+   目前只能用 curl 加人，见 [docs/接口.md](docs/接口.md)。
+3. 底部或侧栏「＋新建任务」，或者用顶部的快速输入框
+4. **快速输入框支持直接写中文**，回车就存：
 
    ```text
    明天下午3点 交周报 2小时 每周一
@@ -49,12 +54,12 @@
    | 时长 | 2小时 · 1个半小时 · 45分钟 · 半小时 |
    | 重复 | 每天 · 每周 · 每周一 · 工作日 · 每月 · 每月15号 · 每年 |
 
-4. **日程页**拖动任务方块改时间：**拖中间移动位置，上下沿都能拉伸**
+5. **日程页**拖动任务方块改时间：**拖中间移动位置，上下沿都能拉伸**
    （上沿改开始时间、下沿改时长，15 分钟一档）
-5. 手机上**长按任务 0.5 秒**会弹出操作层，可以改时间 / 改时长 / 改期 / 上移下移 / 删除
+6. 手机上**长按任务 0.5 秒**会弹出操作层，可以改时间 / 改时长 / 改期 / 上移下移 / 删除
    （触屏没有拖拽，所以用长按代替）
-6. 顶栏 `‹ ›` 前后挪日期，**📅 找日期**可以直接挑日子（快捷键 `D`）
-7. 顶栏「今天」按钮：在今天/本周/本月时是安静的灰字，离开后才变成高亮的「回到今天」
+7. 顶栏 `‹ ›` 前后挪日期，**找日期**可以直接挑日子（快捷键 `D`）
+8. 顶栏「今天」按钮：在今天/本周/本月时是安静的灰字，离开后才变成高亮的「回到今天」
 
 ### 快捷键
 
@@ -62,7 +67,7 @@
 |---|---|
 | `N` | 聚焦快速输入框 |
 | `T` | 回到今天 |
-| `D` | 打开找日期面板（仅日程页） |
+| `D` | 打开找日期面板（跳转到日程页） |
 | `1` `2` `3` | 日 / 周 / 月视图 |
 | `←` `→` | 前一天 / 后一天 |
 | `Esc` | 逐层关闭浮层（操作层 → 更多 → 抽屉） |
@@ -72,36 +77,72 @@
 
 ## 数据在哪（重要）
 
-**数据只存在你当前用的这台设备的浏览器里**，key 是 `schedule-app-v1`，
-**不上传服务器**。服务器上没有任何你的任务数据。
+**数据在服务器上**：`/home/xiaokubao/.local/share/schedule/schedule.db`（SQLite）。
+登录同一个账户，手机和电脑看到的是同一份数据，改了自动同步。
 
-- 手机上新建的任务，**电脑上看不到**，反之亦然
-- 换设备 / 换浏览器 / 清缓存 → 数据不会丢，但**这个新环境是空的**
-  （首次打开会看到一份演示数据，可以直接删掉）
-- 清浏览器数据 = 任务全没
+浏览器 localStorage 里**也留一份**（key `schedule-app-v4`），作用是：
 
-**换设备请用侧栏底部的「导出备份 / 导入备份」**，导出的是 JSON 文件，导入即恢复。
-建议每隔一段时间导一次存到网盘。
+- 断网 / 服务器没起来时照样能看能改，改动排队等联网后推上去
+- 换设备要看到数据 → **登录**，不是拷 localStorage
 
-> 导入会**覆盖**当前设备上的全部数据，导入前会先问一次。
+> **旧版（纯本地那一代）的数据会上来。** 第一次登录时，应用会读一下
+> 本机 localStorage 里的 `schedule-app-v1`，把里面的任务和打卡导入到你的账户，
+> 之后就不再看了。**那个旧 key 不会被删** —— 万一想退回旧版本，数据还在。
+> 新版不再生成演示数据（团队早会那几条是旧版才有的）。
 
-首次打开时看到的那几条任务（团队早会 / 整理季度汇报大纲 / 取快递…）
-是 `store.js` 里的 `seed()` 演示数据，**只在 localStorage 为空时生成**，删掉后不会再出现。
+**换设备 / 换浏览器**：注册或登录同一个账户即可，不需要导出导入。
+
+**备份**：侧栏底部「导出备份 / 导入备份」，导出一份 JSON。
+服务器上的库自己也会留底，但导出一份存网盘更放心
+（导入会**覆盖**当前账户的数据，导入前会先问一次）。
+
+同一个账户在多台设备上同时改同一个任务时，**按字段**决定留谁的：
+A 改标题、B 改日期，两个改动都保得住；改的是同一个字段才分先后，后改的赢。
 
 ---
 
-## 本地打开
+## 本地开发
 
-这个应用**没有构建步骤**，双击 `index.html` 就能直接用（这是刻意支持的方式）。
-
-想更接近线上的效果：
+前端有构建步骤了（Vite）。**改完要重新构建，dist/ 才是线上伺服的东西。**
 
 ```bash
-cd dist && python -m http.server 8899
-# 然后开 http://127.0.0.1:8899/
+cd app
+npm run dev          # Vite 开发服务器 :5199，/api 自动代理到本机后端
 ```
 
-> `dist/` 才是线上真正伺服的内容。想验证「线上是什么样」就看 `dist/`。
+另开一个终端起后端：
+
+```bash
+# 工程根目录
+node server/server.js          # 127.0.0.1:25692，数据默认落在 server/data/
+```
+
+想预览构建产物（更接近线上）：
+
+```bash
+cd app && npm run build && npm run preview   # :5199，同样代理 /api
+```
+
+> **`npm run dev` / `preview` 都跑在 5199 端口**，两者别同时开。
+
+### 测试
+
+```bash
+cd app && npm test        # 单元测试：node --test，47 条
+cd app && npm run typecheck
+```
+
+端到端冒烟（无头 Chromium + CDP，零 npm 依赖）：
+
+```bash
+node server/server.js                                   # 终端 1
+cd app && npm run preview                               # 终端 2
+node app/tests/smoke.mjs                                # 终端 3
+BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可以直接打线上
+```
+
+冒烟脚本会**注册一个新账户**。打线上跑之后记得清库，否则你的账户就不是管理员了
+（见 [DEPLOY.md](DEPLOY.md) 「发布流程」）。
 
 ---
 
@@ -109,30 +150,36 @@ cd dist && python -m http.server 8899
 
 ```text
 日程管理/
-├── index.html          页面结构
-├── styles.css          全部样式
-├── store.js            数据层（模型 + 本地存储 + 增删改查）
-├── parse.js            自然语言解析
-├── views.js            日 / 周 / 月视图与列表页渲染
-├── clock.js            12 小时制时钟选择器
-├── app.js              交互：拖拽、拉伸、快捷键、浮层
-├── sw.js               Service Worker（断网可用）
-├── manifest.json       PWA 清单
-├── icon.svg            图标
+├── app/                   前端源码（React + TS + Vite）
+│   ├── src/
+│   │   ├── main.tsx       入口（先注销旧版 Service Worker）
+│   │   ├── App.tsx        串起来的那层：渲染调度、事件委托、拖拽、快捷键
+│   │   ├── domain/        纯逻辑：日期 / 解析 / 重复规则 / 布局 / 合并
+│   │   ├── data/          本地存储 + 接口封装 + 旧数据导入
+│   │   ├── sync/          同步引擎：outbox 推送 + 游标拉取
+│   │   ├── ui/            侧栏 / 顶栏 / 抽屉 / 操作层 / 拖拽
+│   │   ├── views/         日 · 周 · 月 + 六个列表页
+│   │   └── styles/        legacy.css（设计系统）+ tailwind.css（新表面）
+│   ├── tests/smoke.mjs    端到端冒烟
+│   └── public/            icon.svg / manifest.json
 │
-├── tools/sync-dist.mjs 部署脚本：把上面 10 个文件挑进 dist/
-├── dist/               部署产物（生成物，勿手改）
-│   └── BUILD.txt       构建清单 + 每个文件的哈希
-├── deploy/schedule.conf  nginx 配置（本地副本）
-├── tests/              无头浏览器探针脚本
+├── server/                后端（Node 22，零 npm 依赖）
+│   ├── server.js          HTTP 路由
+│   ├── lib/db.js          SQLite（node:sqlite）
+│   ├── lib/auth.js        注册 / 登录 / 令牌
+│   ├── lib/sync.js        逐字段 LWW + 游标
+│   └── tests/api.test.js  接口测试
 │
-├── _refactor/          未启用的 React + TS 重构骨架，见其 README
-├── CLAUDE.md           给 AI 编码助手
-├── DEPLOY.md           部署与运维
-└── README.md           本文件
+├── dist/                  构建产物（生成物，勿手改；nginx 只伺服这里）
+├── deploy/                nginx conf + systemd 单元的本地副本
+├── legacy/                旧版纯静态应用，冻结存档（可回滚，见 DEPLOY.md）
+├── docs/重构路线.md        这次重写的决策记录
+├── CLAUDE.md              给 AI 编码助手
+├── DEPLOY.md              部署与运维
+└── README.md              本文件
 ```
 
-**只有 `dist/` 会被 nginx 伺服。** 源码、`_refactor/`、`tools/`、本项目文档
+**只有 `dist/` 会被 nginx 伺服。** 源码、`server/`、`legacy/`、本项目文档
 全部 404 拿不到。
 
 ---
@@ -141,30 +188,34 @@ cd dist && python -m http.server 8899
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 改了代码但页面没变 | `dist/` 是生成物，要先 `node tools/sync-dist.mjs`。再强刷（Ctrl+Shift+R） |
+| 改了代码但页面没变 | `dist/` 是构建产物，要先 `cd app && npm run build`。再强刷（Ctrl+Shift+R） |
+| 页面还是旧版界面 | 旧版注册过 Service Worker。新版第一次打开会自动注销它并刷新一次；没生效就 DevTools → Application → Service Workers 里 Unregister |
+| 登录不上 / 接口全 404 | 后端没起。`systemctl --user status schedule-backend` |
 | 手机上装成 App 后白屏 | 网址要带结尾斜杠：`/schedule/`，不是 `/schedule` |
-| 浏览器还是旧版本 | Service Worker 缓存了。强刷，或 DevTools → Application → Service Workers 里 Unregister |
-| 装成 App 后点别的网站也跳回来 | 本项目 `manifest.json` 的 `scope` 锁在 `/schedule/`，若真发生请反馈（可能是同域别站的问题） |
-| 首次打开有一堆演示任务 | `seed()` 生成的，删掉即可 |
-| 换设备后是空的 | 数据不上传同步，用「导出备份 / 导入备份」 |
-| 删除按钮点了没反应 | 应用内有原生 `confirm()` 的确认框（永久删除等 4 处），装成 PWA 后可能被浏览器吞掉 |
+| 改了任务另一台设备没变 | 网络断时会排队，联网后自动推。看顶栏右侧的转圈图标 |
+| 首次打开有一堆别人的任务 | 那不是新版。新版不生成演示数据 —— 大概是 Service Worker 发了一份旧版页面，强刷 |
+| 数据在哪、怎么备份 | 见上面「数据在哪」。服务器库 + 侧栏「导出备份」 |
+| 删除按钮点了没反应 | 已修：新版全部换成应用内确认弹层，不再用会被 PWA 吞掉的原生 `confirm()` |
 
 ---
 
 ## 技术栈
 
 ```text
-前端    零依赖纯前端：原生 HTML/CSS/JS，5 个文件约 5200 行
-        无构建、无框架、无第三方库、无 node_modules
-存储    浏览器 localStorage（key = schedule-app-v1）
-部署    nginx 静态伺服 dist/，无后端
+前端    React 18 + TypeScript 5.7 + Vite 6 + Tailwind 4
+        图标 lucide-react（不用 emoji）；弹层用 Radix headless
+后端    Node 22，零 npm 依赖 —— 只用 node:http + node:sqlite
+存储    服务端 SQLite（权威）+ 浏览器 localStorage（离线副本）
+同步    服务端权威 + 客户端 outbox + 逐字段 LWW + 游标增量拉取
+部署    nginx 伺服 dist/，/schedule/api/ 反代到 127.0.0.1:25692
 ```
 
-**为什么不用 React / Vite**：这个应用要能双击 `index.html` 直接打开，
-ES module 在 `file://` 下会被 CORS 拦掉。刻意选了零构建的写法。
-（React 重构的骨架在 `_refactor/`，未启用。）
+**为什么不引数据库 / ORM / 同步框架**：这个应用的数据量是「一个人一辈子的
+待办」，SQLite 单文件足够；同步用「逐字段 LWW + 幂等 op」就够，不需要 CRDT。
+后端零依赖意味着**十年后 `node server.js` 还能跑** —— 这是刻意的取舍。
 
-**为什么没有登录**：任务数据只在本机，不需要服务器参与。
+**为什么保留 `legacy/`**：旧版是能用的，新版出问题时可以整体退回去
+（见 [DEPLOY.md](DEPLOY.md) 「回滚」）。旧数据 key 也一直没删。
 
 ---
 
