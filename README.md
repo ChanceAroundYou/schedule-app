@@ -30,11 +30,11 @@
 
 ## 怎么用
 
-1. 打开网址 → **注册一个账户**（用户名 + 密码，用户名随便起）
-2. **第一个注册的人自动成为管理员。** 之后**注册入口就关了**
-   （开放注册等于把日程本挂在公网）—— 后续账户由管理员创建，
-   接口已经有了（`POST /api/users`），**但界面上还没有入口**，
-   目前只能用 curl 加人，见 [docs/接口.md](docs/接口.md)。
+1. 打开网址 → **注册一个账户**（用户名 + 密码，用户名随便起）。
+   **注册是开放的，也没有管理员** —— 所有人平等，家里人各注册各的。
+2. 想一起用 → 在侧栏「日程集」里点 ⚙ 打开管理浮层，填对方的用户名发邀请，
+   **对方接受之后**才会生效。之后你们看到的是同一个日程集，任务和打卡都能一起改。
+   见下面「共享是怎么运作的」。
 3. 底部或侧栏「＋新建任务」，或者用顶部的快速输入框
 4. **快速输入框支持直接写中文**，回车就存：
 
@@ -72,6 +72,33 @@
 | `←` `→` | 前一天 / 后一天 |
 | `Esc` | 逐层关闭浮层（操作层 → 更多 → 抽屉） |
 | `Ctrl + Enter` | 快速输入后打开详细设置 |
+
+---
+
+## 共享是怎么运作的
+
+共享的**单位是日程集，不是一条任务**。你可以有多个日程集，每个集里的人各不同。
+
+- 侧栏「日程集」那一段切换当前在哪个集
+- 顶上那几项是**跨集汇总**的：**今天 · 逾期 · 待办箱**
+  （你在哪个集里出的活都算你的）
+- **日程 · 打卡 · 已完成**是**按集**的，只显示当前选中的那个集
+
+三档权限：
+
+| 权限 | 能干什么 |
+|---|---|
+| **创建者** | 改内容，也能改名、加人、删日程集 |
+| **可编辑** | 增删改任务和打卡，管不了成员 |
+| **只读** | 只能看 |
+
+发邀请的流程是**两段式**：你填对方用户名发出去 → **对方在自己的界面里点接受**，
+这时才真正加入。不是直接把人加进来 —— 用户名打错一个字符就是把日程交给了陌生人，
+而发出去的那一方看不到任何异常。
+
+> 有两条底线由服务器保证：**每个人始终至少属于一个日程集**
+> （退出 / 被踢 / 集被删之后自动补一个「我的日程」），
+> **每个集始终至少有一个创建者**（最后一个人不能降级、不能退出）。
 
 ---
 
@@ -128,11 +155,26 @@ cd app && npm run build && npm run preview   # :5199，同样代理 /api
 ### 测试
 
 ```bash
-cd app && npm test        # 单元测试：node --test，47 条
+cd app && npm test              # 前端单元测试：node --test，51 条
 cd app && npm run typecheck
+node server/tests/api.test.js   # 后端接口测试：31 条
 ```
 
-端到端冒烟（无头 Chromium + CDP，零 npm 依赖）：
+端到端（真实网络 / 真实 Chrome，零 npm 依赖）：
+
+```bash
+# 两个人共享一个日程集的完整流程：起临时后端，全是真请求
+node server/tests/smoke-share.mjs
+
+# 真实 Chrome 走一遍新界面：注册 → 切日程集 → 改名 → 收邀请 → 接受
+cd app && npm run build && node tests/browser-smoke.mjs
+```
+
+> `browser-smoke.mjs` **自己搭静态服务和临时后端**，不碰线上库。
+> 别改用 `npm run preview` —— 它的 `/api` 代理写死指向 25692，那是线上后端，
+> 探针会往生产库里写账号。
+
+旧的 `app/tests/smoke.mjs` 打的是**已经部署的那份**：
 
 ```bash
 node server/server.js                                   # 终端 1
@@ -141,8 +183,9 @@ node app/tests/smoke.mjs                                # 终端 3
 BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可以直接打线上
 ```
 
-冒烟脚本会**注册一个新账户**。打线上跑之后记得清库，否则你的账户就不是管理员了
-（见 [DEPLOY.md](DEPLOY.md) 「发布流程」）。
+> **它会在那个服务器上注册一个新账户。** 打线上跑完记得清库（见
+> [DEPLOY.md](DEPLOY.md) 「发布流程」）。注册是开放的，所以多出来的账户
+> 不会挡住谁，但留着也是垃圾。
 
 ---
 
@@ -157,18 +200,22 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 │   │   ├── domain/        纯逻辑：日期 / 解析 / 重复规则 / 布局 / 合并
 │   │   ├── data/          本地存储 + 接口封装 + 旧数据导入
 │   │   ├── sync/          同步引擎：outbox 推送 + 游标拉取
-│   │   ├── ui/            侧栏 / 顶栏 / 抽屉 / 操作层 / 拖拽
+│   │   ├── ui/            侧栏 / 顶栏 / 抽屉 / 操作层 / 拖拽 / 日程集与邀请
 │   │   ├── views/         日 · 周 · 月 + 六个列表页
 │   │   └── styles/        legacy.css（设计系统）+ tailwind.css（新表面）
-│   ├── tests/smoke.mjs    端到端冒烟
+│   ├── tests/browser-smoke.mjs   真实 Chrome 走一遍界面（自己起临时后端）
+│   ├── tests/smoke.mjs           旧的端到端冒烟，打的是已部署的那份
 │   └── public/            icon.svg / manifest.json
 │
 ├── server/                后端（Node 22，零 npm 依赖）
 │   ├── server.js          HTTP 路由
 │   ├── lib/db.js          SQLite（node:sqlite）
 │   ├── lib/auth.js        注册 / 登录 / 令牌
+│   ├── lib/calendars.js   日程集与成员 —— **权限的唯一实现处**
+│   ├── lib/invites.js     两段式邀请
+│   ├── lib/ratelimit.js   登录 / 注册 / 邀请的频次限制
 │   ├── lib/sync.js        逐字段 LWW + 游标
-│   └── tests/api.test.js  接口测试
+│   └── tests/             api.test.js（接口）+ smoke-share.mjs（真网络协作演练）
 │
 ├── dist/                  构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                nginx conf + systemd 单元的本地副本

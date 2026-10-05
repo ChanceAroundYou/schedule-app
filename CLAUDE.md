@@ -45,13 +45,14 @@
 │   │   ├── sync/engine.ts  outbox 推送 + 游标拉取 + 轮询调度 + 拖动守卫
 │   │   ├── ui/
 │   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期
+│   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑）
 │   │   │   ├── ActSheet.tsx  长按操作层（触屏专用）
-│   │   │   ├── Auth.tsx    登录 / 建首个账户
+│   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层（最易踩坑的一块，见四、8）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
-│   │   │   ├── hooks.ts    useStoreState / useIsNarrow / useOutsideClose / useDebounced
+│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOutsideClose
 │   │   │   └── cx.ts
 │   │   ├── views/          纯展示，零回调，只出 data-* 属性
 │   │   │   ├── Calendar.tsx  DayView · WeekView · MonthView · useViewLayout
@@ -62,14 +63,21 @@
 │   │   └── styles/
 │   │       ├── legacy.css  旧版那 68 KB 设计系统，**不带 @layer**（见四、27）
 │   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
-│   └── tests/smoke.mjs     端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
+│   └── tests/
+│       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
+│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请
 │
 ├── server/                 后端（Node 22，**零 npm 依赖**）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
-│   ├── lib/db.js           node:sqlite：建表 / field_state / change_log / users
+│   ├── lib/db.js           node:sqlite：建表 / field_state / changes / users / cals
 │   ├── lib/auth.js         scrypt 哈希 + 自签 JWT + 用户名口令校验
-│   ├── lib/sync.js         逐字段 LWW + 快照 + 游标增量
-│   └── tests/api.test.js   19 条接口用例
+│   ├── lib/sync.js         逐字段 LWW + 快照 + 全量游标增量 + 按集鉴权
+│   ├── lib/calendars.js    日程集：建 / 改名 / 删 / 退出 + 成员与角色
+│   ├── lib/invites.js      邀请：发出 → 待接受 → 接受 / 谢绝 / 撤回
+│   ├── lib/ratelimit.js    定点窗口限速（登录 / 注册 / 邀请）
+│   └── tests/
+│       ├── api.test.js        31 条接口用例
+│       └── smoke-share.mjs    真走网络：两个人共用一个集的全流程
 │
 ├── dist/                   构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                 nginx conf + systemd 单元的本地副本
@@ -131,17 +139,22 @@
 {
   tasks: { [id: string]: Task },     // 对象，不是数组
   habits: { [id: string]: Habit },
+  cals: Cal[],                       // 我加入的日程集，服务器每次同步刷新
+  invites: Invite[],                 // 待我处理的邀请
   ui: UiPrefs,                       // nav / view / cursor / theme / search /
-                                     // navOrder / navBottom / tdoneOpen
-  cursor: number,                    // 已拉到的服务端序号
+                                     // navOrder / navBottom / tdoneOpen / cal
+  cursor: number,                    // 已拉到的服务端序号（**全局**，见二、日程集）
   outbox: Op[],                      // 待推送的 op
-  lastError: string | null,          // 上次同步的报错，给顶栏那个小标用
+  lastError: string | null,          // 上次同步的报错，顶栏下面那一条
   clockBlocked: string[],            // 被服务器退回但值得重试的 opId（时钟不对那一类）
+  denied: number,                    // 被「没有写权限」挡下的改动次数，界面据此弹提示
   syncing: boolean,                  // 瞬时状态，**不落盘**（load 时一律重置为 false）
 }
 
 interface Task {
-  id, title, note,
+  id,
+  calId: string,               // **属于哪个日程集**。主键的一部分，不是可同步字段
+  title, note,
   date: 'YYYY-MM-DD' | null,   // null = 待办箱（未定日期）
   time: 'HH:MM' | null,        // null = 未定时
   duration: number,            // 分钟，默认 60
@@ -175,6 +188,67 @@ interface Task {
 **删除是墓碑**：`deleted = true` 让别的设备知道「要删」。
 `purged = true` 才在任何地方都看不见（垃圾箱里也没有）。
 `liveTasks()` 过滤掉两种，`trashedTasks()` 只要 `deleted && !purged`。
+
+### 日程集、成员与权限（2026-10-06 加的）
+
+**没有管理员，所有人平等，注册开放。** 用户之间共享内容的方式是**日程集**
+（`calendars` / `calendar_members`），像相册：一个人可以同时在好几个集里，
+在每个集里的角色可以不同。
+
+> 共享的**单位是集，不是任务**。没有「把这一条任务分享给某人」这回事 ——
+> 想单独分享就新建一个集。这条约束让整个权限模型只需要在一个地方判断。
+
+**三档角色**（`Role`）：
+
+| 角色 | 能改任务 / 打卡 | 能改集与成员 |
+|---|---|---|
+| `owner` 创建者 | ✅ | ✅ |
+| `editor` 可编辑 | ✅ | ❌ |
+| `viewer` 只读 | ❌ | ❌ |
+
+> **权限判断只有两个入口**：`canWrite(role)` / `canManage(role)`（`domain/types.ts`）。
+> 别在别处写 `role === 'owner'` —— 加一档角色时那些散落的比较一定会漏。
+> 服务端同理，只走 `db.roleOf()` / `calendars.canWrite()`。
+
+**三条不变量**，改这块代码时不能破：
+
+1. **每个人永远至少有一个集**（`calendars.ensureHasCalendar`）—— 注册时自动建
+   「我的日程」。一个集都没有的账号在界面上是死路。
+2. **每个集永远至少有一个 owner** —— 最后一个 owner 不能被降级、不能被移出、
+   退不出去。否则那个集就成了没人能管的孤儿。
+3. **写权限在写入通道那一层把关，不是靠界面把按钮藏起来。**
+   前端的 `store.commitMany()` 和后端的 `sync.applyOps()` 各挡一次；
+   界面上漏了一个入口，那两处还能兜住。
+
+**`calId` 是主键的一部分，不是可同步字段**（和 `_ts` / `_dev` 一样只存在本地）。
+所以**把任务从一个集挪到另一个集 = 在目标集新建一条 + 在源集留一个墓碑**
+（`store.moveToCal()`），而不是改一个字段。
+
+**邀请是两段式的**，对方**接受后才生效**：`pending → accepted | declined | revoked`。
+发邀请时按用户名找目标（找不到就 404，别提示「这个名字存在吗」），
+不能邀请自己，已经在集里的人不能再邀请。同一个「集 + 人」只会有一条 pending。
+
+### 同步：一个全局游标，不是每个集一个
+
+`changes.seq` 是**全局单调**的自增主键，客户端只存一个 `cursor`。
+拉的时候服务端按 `cal_id IN (我的集)` 过滤。
+
+这样省掉了「每个集各自一个游标」的那张表，代价是一个必须处理的坑：
+
+> **新加入一个集时，那个集的historical 变更全在游标后面。** 游标表达的是
+> 「我已经看到全世界第几号了」，加入之前那个集的历史你早就跳过去了，
+> 光靠增量**永远拉不到**它的内容。
+> 所以客户端一旦在响应里看到自己不认识的 `calId`，就**再要一次全量快照**
+> （`sync/engine.ts` 的 `syncNow()` 里那段 `known` 判断）。
+> 加集 / 接受邀请之后也会主动 `refreshMeta()` + `syncNow()`。
+
+`POST /api/sync` **一次调用同时推和拉**，而且服务端**先落盘再取数** ——
+返回的快照已经含本批 op 合并后的结果。分成两次请求会拿到一个慢半拍的快照，
+客户端再合并回来就把自己的写入盖掉了。
+
+**日程集 / 成员 / 邀请走普通 REST，不走 LWW 同步引擎。** 它们是「关系」不是
+「字段」，用时间戳定胜负没有意义 —— 一个集该不该存在、谁是什么角色，
+只能是服务端说了算。
 
 ### 重复规则
 
@@ -263,22 +337,33 @@ SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试�
 ### 测试
 
 ```bash
-cd app    && npm test        # 47 条（node --test，跑 *.test.ts）
-cd app    && npm run typecheck
-node server/tests/api.test.js   # 19 条
+cd app          && npm test                     # 51 条（node --test，跑 *.test.ts）
+cd app          && npm run typecheck
+node server/tests/api.test.js                   # 31 条接口
+node server/tests/smoke-share.mjs               # 两个人共用一个集，真走网络
 ```
 
-端到端冒烟（无头 Chromium + CDP，零 npm 依赖）：
+后面两个会**自己起一个临时后端**（临时数据库 + 随机端口），不碰线上那份。
+`smoke-share.mjs` 覆盖的是单元测试测不到的东西：限速之外的所有跨用户路径 ——
+邀请 → 接受 → 跨账号同步 → 降级为只读后被拒 → 移出后写不进去。
+
+界面照一遍（真实 Chrome + CDP，零 npm 依赖）：
 
 ```bash
-node server/server.js                                   # 终端 1（或线上后端）
-cd app && npm run preview                               # 终端 2
-node app/tests/smoke.mjs                                # 终端 3
+cd app && node tests/browser-smoke.mjs
 ```
 
-**脚本头部写死了本机 Chromium 路径**（`CHROME` 环境变量可覆盖，
-默认 `/home/xiaokubao/.local/bin/chromium`）。会真的注册一个账户 ——
-**打线上跑完必须清库**，否则你的账户就不是管理员了（见 DEPLOY.md 6.2）。
+它自己起一套**完全隔离**的环境（临时后端 + 带 /api 代理的静态服务 + 独立
+Chrome profile），然后像人一样走：注册 → 侧栏出现日程集 → 六个视图都不白屏 →
+管理浮层改名 → **确认服务器上真改了** → 刷新还在 → 收到邀请 → 接受 → 切到新集。
+全程收集 console 报错，有一条就算失败。
+
+> 之所以不用 `vite preview`：它的代理写死指向 25692，**那是线上后端**，
+> 探针会往生产库里写账号。隔离是这里的第一要求。
+> 浏览器路径用 `CHROME` 环境变量覆盖，默认 `/opt/google/chrome/chrome`。
+
+`app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
+（`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
 
 其余探针坑见「四、33」。
 
@@ -791,9 +876,31 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 
 **金额相关一律不适用**（本项目没有金额字段）。
 
-**没有登录？有登录。** 但**没有密码找回、没有邮箱、没有第三方登录** ——
-用户名 + 密码，第一个注册的是管理员，之后由管理员加人。
-别把账本那套鉴权搬过来（那边是单密码 `auth.json`，这里是用户表 + JWT）。
+**「哪些页面跨集、哪些按集」是定死的**（用户 2026-10-06 裁决）：
+
+| 跨集（看全部） | 按集（只看当前选中的） |
+|---|---|
+| 今天 · 逾期 · 待办箱 · 垃圾箱 | 日程 · 打卡 · 已完成 |
+
+> 理由：清单类的东西「在哪儿都要办」，所以合在一起看；日程表是「这个集的
+> 时间安排」，混着别人的会看不懂。
+> 表达方式是 `App.tsx` 里给这几个视图传**哪一份 state**：
+> `state`（全量）还是 `scoped`（`useScopedState()` 过滤过）。
+> **不要**给 views/ 里的每个选择器加 `calId` 参数 —— 在状态这一层分叉一次，
+> 下游十几个选择器一个都不用动，也不会有人忘了传。
+> 侧栏徽标与顶栏一律用**全量**口径。
+
+**只读成员看到的界面不是「藏起来」，是「点了会告诉你为什么」。**
+`store.commitMany()` 挡下写入时 `denied` 计数 +1，`App.tsx` 弹一次提示。
+**别让写操作静默失败** —— 用户会以为程序卡了。
+
+**没有登录？有登录。** 但**没有密码找回、没有邮箱、没有第三方登录**。
+**也没有管理员** —— 平等多用户、开放注册，注册完自动有一个「我的日程」，
+之后互相邀请进同一个日程集。别把账本那套鉴权搬过来（那边是单密码
+`auth.json`，这里是用户表 + JWT）。
+
+> **别在界面上提「管理员」**，也**别写「第一个人是管理员」** ——
+> 那是上一版的设计，`users.is_admin` 这一列已经没有了。
 
 ---
 
@@ -809,6 +916,8 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 5. **`domain/` 保持纯净**：不含 React / DOM / 网络。它要能在 Capacitor 与
    Node 里直接跑，也是全部单测覆盖的地方。
 6. **别在文档里写密码。** 任何示例都用占位符。
+7. **权限判断只在 `canWrite` / `canManage` / `db.roleOf()` 三个入口。**
+   散落的 `role === 'owner'` 是给自己埋雷。
 
 ---
 

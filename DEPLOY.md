@@ -323,24 +323,40 @@ nginx 不会自动补斜杠，必须显式 `return 301`。
 
 ```text
 GET  /api/health          存活探针，不需要登录
-GET  /api/auth/state      库里有没有用户 —— 未登录可访问，决定显示注册还是登录
-POST /api/auth/register   注册。**只有空库能用**，之后一律 403
+POST /api/auth/register   注册。**开放**，只要没到 MAX_USERS（默认 200）
 POST /api/auth/login
 POST /api/auth/logout     把当前令牌加进吊销表
+GET  /api/me              我是谁 + 我有哪些日程集 + 谁邀请了我（启动只发这一个）
 POST /api/sync            推 + 拉，一次往返（body 里有 ops 和 cursor）
-GET  /api/users           管理员：列出账户
-POST /api/users           管理员：新建账户
+
+日程集 / 成员 / 邀请
+GET    /api/cals
+POST   /api/cals
+PATCH  /api/cals/:calId                     改名（owner）
+DELETE /api/cals/:calId                     删集（owner）
+POST   /api/cals/:calId/leave               自己退出
+GET    /api/cals/:calId/members             成员 + 我发出去待处理的邀请
+PATCH  /api/cals/:calId/members/:userId     改角色（owner）
+DELETE /api/cals/:calId/members/:userId     移出（owner）
+POST   /api/cals/:calId/invites             发邀请（owner）
+GET    /api/cals/:calId/invites
+GET    /api/invites                         发给我的（收件箱）
+POST   /api/invites/:inviteId/accept|decline
+DELETE /api/invites/:inviteId               撤回
 ```
 
 接口细节（请求 / 响应 / 错误码）见 [docs/接口.md](docs/接口.md)。
 
-> **注册是关着的。** 只有「库里一个用户都没有」时才允许自助注册，
-> 所以第一个注册的人必然是管理员，第二个人进不来 —— 这是刻意的。
-> 加人要由管理员调 `POST /api/users`，**界面上还没有这个入口**。
+> **没有管理员，注册是开放着的。** 所有人权限相同，靠**日程集**共享内容
+> （类似相册：你可以有多个集，每个集里的人各不同）。共享的单位是集，不是单条任务。
+>
+> 两条底线由 `server/lib/calendars.js` 保证：**每个人始终至少属于一个日程集**
+> （退出 / 被踢 / 集被删之后自动补一个「我的日程」），**每个集始终至少有一个
+> owner**（最后一个人不能降级、不能退出）。改这块之前先读那个文件头的注释。
 
-> **没有 `/api/me`。** 「我是谁」由前端在登录时把用户对象缓存进 localStorage
-> （`app/src/data/api.ts` 的 `getCachedUser()`）。`/api/users` 是**管理员专用**的
-> 用户列表，**不要**拿它当「我是谁」用。
+> **`/api/me` 是「我是谁」，登录后第一件事就调它。** 旧的 `GET /api/auth/state`
+> 与 `GET|POST /api/users`（那套「空库注册成管理员、之后关掉注册」）**已经删掉**，
+> 别再照抄。
 
 ### 5.2 数据存在哪儿，决定了备份怎么做
 
@@ -372,7 +388,8 @@ nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了�
 
 ```text
 1. 改代码（前端在 app/，后端在 server/）
-2. cd app && npm test && npm run typecheck        # 有改后端就先跑 node server/tests/api.test.js
+2. cd app && npm test && npm run typecheck        # 有改后端就加 node server/tests/api.test.js
+                                                  # 改了共享/权限再加 node server/tests/smoke-share.mjs
 3. cd app && npm run build                        # 前端产物 → ../dist/
 4. 改了后端才需要：systemctl --user restart schedule-backend
 5. 刷新页面
@@ -381,15 +398,18 @@ nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了�
 **没有部署脚本。** 账本那个七步的 `deploy.sh` 是给「有镜像、有健康检查」的项目用的，
 本项目没有镜像、没有容器（后端是宿主机上的 systemd 服务），不需要那一套。
 
+> 改了共享相关的东西（`lib/calendars.js`、`lib/invites.js`、`lib/sync.js` 的权限判断），
+> **必须跑 `smoke-share.mjs`** —— 单元测试只测各段逻辑，这条测的是它们串起来通不通。
+
 ### 6.1 发布后验证
 
 ```bash
 B=https://home.xiaokubao.space/schedule
 
 # 1. 路由与隔离
-for p in "/" "/manifest.json" "/icon.svg" "/api/auth/state" \
+for p in "/" "/manifest.json" "/icon.svg" "/api/health" "/api/me" \
          "/app/src/main.tsx" "/server/server.js" "/legacy/dist/app.js" \
-         "/deploy/schedule.conf" "/.git/config" "/docs/" "/api/me"; do
+         "/deploy/schedule.conf" "/.git/config" "/docs/" "/api/auth/state" "/api/users"; do
   printf '%-26s %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' $B$p)"
 done
 ```
@@ -400,21 +420,23 @@ done
 /                          200
 /manifest.json             200
 /icon.svg                  200
-/api/auth/state            200    ← 反代通了；内容里的 hasUsers 决定注册还是登录
+/api/health                200    ← 反代通了，不需要登录
+/api/me                    401    ← 需要登录；**401 而不是 404** 才说明这条路由在
 /app/src/main.tsx          404    ← 源码不对外
 /server/server.js          404    ← 后端源码不对外
 /legacy/dist/app.js        404    ← 旧版留档不对外
 /deploy/schedule.conf      404
 /.git/config               404    ← 点开头的内务不对外
 /docs/                     404
-/api/me                    404    ← 确实没有这个接口（见 5.1）
+/api/auth/state            404    ← 已删：这套接口没有「注册开关」了
+/api/users                 404    ← 已删：没有管理员接口
 ```
 
 ```bash
 # 2. 缓存头三档
 curl -skI $B/index.html                       | grep -i cache-control   # no-cache
 curl -skI $B/assets/$(ls dist/assets | grep '\.js$') | grep -i cache-control   # public, immutable
-curl -skI $B/api/auth/state                   | grep -i cache-control   # no-store
+curl -skI $B/api/health                       | grep -i cache-control   # no-store
 
 # 3. 补斜杠
 curl -sk -o /dev/null -w '%{http_code} -> %{redirect_url}\n' $B
@@ -425,13 +447,26 @@ curl -sk -o /dev/null -w '%{http_code} -> %{redirect_url}\n' $B
 
 比上面那一堆 curl 有用得多 —— 它真的开浏览器注册、建任务、勾选、刷新、确认同步。
 
+**优先跑这两个，它们在临时目录里起自己的后端，不碰线上库：**
+
 ```bash
 cd /mnt/fnos/family/星星包/coding/日程管理
+node server/tests/smoke-share.mjs            # 两个用户共享一个日程集的完整流程
+cd app && npm run build && node tests/browser-smoke.mjs   # 真实 Chrome 走一遍界面
+```
+
+旧的 `app/tests/smoke.mjs` 打的是**已部署的那份**：
+
+```bash
 BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs
 ```
 
-⚠️ **它会注册一个新账户。** 打完线上必须清库，否则：
-**第一个注册的人才是管理员** —— 你的账户会变成普通用户，永远拿不到管理员。
+⚠️ **它会在那个服务器上注册一个新账户。** 注册现在是开放的，所以多出来的
+账户不会挡住谁 —— 但线上真有你在用的账户时，**别再拿它打线上**：
+起个本机后端（`SCHEDULE_DATA_DIR=/tmp/x node server/server.js`）+ 前端 preview
+跑，一样能验。
+
+确实要把库清空重来时（**会删掉所有真实用户和他们的日程**）：
 
 ```bash
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
@@ -439,13 +474,11 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 systemctl --user stop schedule-backend
 rm -rf ~/.local/share/schedule && mkdir -p ~/.local/share/schedule
 systemctl --user start schedule-backend
-curl -s $B/api/auth/state          # 要看到 {"hasUsers":false}
+curl -s $B/api/health              # 要看到 {"ok":true,...}
 ```
 
-> 删 `~/.local/share/schedule` 会把**真实用户**一起删掉。
-> 线上已经有你在用的账户之后，**别再拿冒烟脚本打线上** ——
-> 起个本机后端（`SCHEDULE_DATA_DIR=/tmp/x node server/server.js`）+ `npm run preview`
-> 跑，一样能验前端。
+> 清库之后**没有「第一个注册的人成为管理员」这回事**了 —— 谁先注册都是
+> 平等的普通账户，各自拿到一个「我的日程」。要一起用就发邀请。
 
 ### 6.3 抽查既有站点
 
