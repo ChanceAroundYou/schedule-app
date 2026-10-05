@@ -156,7 +156,9 @@ const handlers = {
 
     return {
       status: 200,
-      body: { token: issueToken(user), user: publicUser({ ...user, is_admin: 1 }) },
+      // 回读一次再序列化：publicUser 读的是库里的 snake_case 形状（created_at），
+      // 把入参对象（camelCase createdAt）直接喂进去会得到一个 null
+      body: { token: issueToken(user), user: publicUser(db.findUserById(user.id)) },
     };
   },
 
@@ -204,7 +206,7 @@ const handlers = {
     } catch (_) {
       return { status: 409, body: { error: '用户名已存在' } };
     }
-    return { status: 200, body: { user: publicUser({ ...user, is_admin: 0 }) } };
+    return { status: 200, body: { user: publicUser(db.findUserById(user.id)) } };
   },
 
   /* ------------------------------------------------------------ 同步 */
