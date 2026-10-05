@@ -63,7 +63,7 @@ function serveDist() {
     }
     const ext = path.extname(p);
     const head = { 'content-type': MIME[ext] || 'application/octet-stream' };
-    // HTML 一律 no-store：第九节要证明「断网后页面来自 Service Worker」，
+    // HTML 一律 no-store：离线那一节要证明「断网后页面来自 Service Worker」，
     // 而 Chrome 自己的 HTTP 缓存也能在服务器挂掉时把 index.html 交出来 ——
     // 那就成了假通过。真实 nginx 给 /schedule/ 配的也是 no-cache。
     if (ext === '.html' || ext === '.json' || p.endsWith('sw.js')) head['cache-control'] = 'no-store';
@@ -112,12 +112,21 @@ async function evalJs(page, expr) {
   return r.result.value;
 }
 
-/** 等到表达式返回真值，超时就抛（带上最后看到的值，方便定位） */
+/**
+ * 等到表达式返回真值，超时就抛（带上最后看到的值，方便定位）。
+ *
+ * **表达式不能以换行开头**：这里会把它包成 `return <expr>`，而 `return` 后面
+ * 跟换行会被 ASI 断成一句裸 `return`，整条表达式变成永远不可达的代码 ——
+ * 症状是「最后一次求值 = undefined」且一直等到超时，看着像应用没反应，
+ * 其实是探针自己写错了。多行模板（为了排版好看）几乎必然踩上，所以这里
+ * 直接 trim 掉，别指望每个调用点都记得不换行。
+ */
 async function waitFor(page, expr, what, ms = 8000) {
+  const src = expr.trim();
   const t0 = Date.now();
   let last;
   while (Date.now() - t0 < ms) {
-    last = await evalJs(page, `return ${expr};`);
+    last = await evalJs(page, `return ${src};`);
     if (last) return last;
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -499,7 +508,7 @@ try {
   ok(saved.length === 3, '拖动没有多出或少了任务，实际 ' + JSON.stringify(saved));
 
   // 关掉触摸模拟再往下走：第九节是鼠标那一路（开着触摸模拟，
-  // Chrome 会把合成的鼠标事件也改道），第十节离线也不需要它。
+  // Chrome 会把合成的鼠标事件也改道），后面两节也不需要它。
   // maxTouchPoints 只能是 1..16，给 0 会被 CDP 挡下来（报的是
   // 「Touch points must be between 1 and 16」，看着像触摸点的问题，其实是这个参数）
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
@@ -552,7 +561,82 @@ try {
   `);
   ok(mSaved.join('') === mAfter.join(''), '鼠标拖的结果也落库了，实际 ' + JSON.stringify(mSaved));
 
-  console.log('\n十、离线：外壳能打开，顶栏会说话');
+  console.log('\n十、被降成只读之后：改动挡下来，并且说是哪个集');
+  /* 这一节测的是「写操作不许静默失败」那条约定（见 CLAUDE.md 五、界面约定）。
+     store 那一层有单测，但**接线**没测过：计数器涨了、提示没弹出来，
+     用户看到的还是「点了没反应」。所以这里走完整条路：真降权限 → 真点 → 真看提示。
+
+     顺序上放在拖拽两节之后：这一节要往待办箱里加一条自己的任务，
+     放到第八节前面会把它那句「三条任务按添加顺序排」污染掉。 */
+  await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('.fast-add input')`, '待办箱能快速添加');
+  // 现在还写得进去（是 editor），先在**共享的那个集**里留下一条，
+  // 后面降成只读才有一条现成的可以点
+  await quickAdd(page, '共享的事');
+  await waitFor(page,
+    `JSON.parse(localStorage.getItem('schedule-app-v4')).outbox.length === 0`,
+    '这条改动推上去了', 12000);
+  ok(true, '降级前能正常写入（editor）');
+
+  const dadId = await evalJs(page, `
+    const r = await fetch('./api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } });
+    return (await r.json()).user.id;
+  `);
+  const down = await api('PATCH', `/cals/${momCal}/members/${dadId}`, { role: 'viewer' }, mom.body.token);
+  ok(down.status === 200, '妈妈把爸爸降成只读，实际 HTTP ' + down.status);
+  ok(down.body?.error === undefined, '降级没有报错：' + JSON.stringify(down.body));
+
+  // 催一次同步把新角色拉下来，然后确认界面真的知道了。
+  // **分两段等**：本地那一层（localStorage 里的 cals）先，DOM 后。
+  // 合成一个条件的话，超时时分不清是「同步压根没发生」还是「同步到了但界面没画」，
+  // 而这两件的排查方向完全相反。
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
+  await waitFor(page, `
+    (JSON.parse(localStorage.getItem('schedule-app-v4')).cals.find((c) => c.id === ${JSON.stringify(momCal)}) || {}).role === 'viewer' ? 1 : null`,
+    '本地拉到新角色（还停在 editor 说明这一轮同步没跑）', 15000);
+  await waitFor(page, `
+    [...document.querySelectorAll('[data-cal]')].some((b) => b.textContent.includes('只读')) ? 1 : null`,
+    '侧栏显示「只读」', 8000);
+  ok(true, '降级后侧栏把那个集标成「只读」');
+
+  // 点掉一条：这是用户在跨集页面上最常做的动作。
+  // **要连 pointerdown 一起补上，光 `el.click()` 不算一次真点击**：
+  // 这个应用的点击委托是 pointerdown 驱动的（长按状态机挂在那儿），
+  // 而上一节触屏拖拽留下的「吞掉抬手那记 click」标志只在那里复位 ——
+  // 第一次写成 `.click()` 时整整一下被吃掉，看着像权限提示没实现。
+  const hit = await evalJs(page, `
+    const row = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .find((e) => e.textContent.includes('共享的事'));
+    if (!row) return 'norow';
+    const el = row.querySelector('[data-act="toggle"]');
+    const r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    const seen = [];
+    const spy = (e) => seen.push(e.type + ':' + (e.target.className || e.target.tagName));
+    document.addEventListener('pointerdown', spy, true);
+    document.addEventListener('click', spy, true);
+    el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, at)));
+    el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true }, at)));
+    el.dispatchEvent(new MouseEvent('click', at));
+    document.removeEventListener('pointerdown', spy, true);
+    document.removeEventListener('click', spy, true);
+    return seen.join(' → ');
+  `);
+  ok(hit !== 'norow', '找到「共享的事」的勾选框（实际事件序列 ' + hit + '）');
+  const said = await waitFor(page, `
+    [...document.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | ') || null
+  `, '弹出提示', 5000);
+  // **要认集名**：只说「这个日程集你只有查看权限」的话，用户正在「今天」这类
+  // 跨集页面上，会以为是眼前这个集出了问题
+  ok(said.includes(momCalName), '提示里点名了是哪个集（' + momCalName + '），实际 ' + JSON.stringify(said));
+  ok(said.includes('查看权限'), '提示说清了原因，实际 ' + JSON.stringify(said));
+  ok(await evalJs(page, `
+    const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+      .find((x) => x.title === '共享的事');
+    return t && !t.done;
+  `), '被挡下的勾选没有写进本地（不是「界面没反应但数据已经改了」）');
+
+  console.log('\n十一、离线：外壳能打开，顶栏会说话');
   // Service Worker 在第一趟就接管了（见「零」）。这里只确认它没在这几轮
   // 刷新 / 邀请流程里掉线 —— 掉了的话下面那几条会以另一种方式失败
   ok(await evalJs(page, `return !!navigator.serviceWorker.controller;`),
