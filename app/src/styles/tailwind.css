@@ -1,0 +1,47 @@
+/**
+ * tailwind.css —— 样式入口
+ *
+ * 层叠顺序是本文件唯一需要动脑的地方：
+ *
+ *   Tailwind 4 把它的东西（含 preflight 重置）全部塞进 @layer。而**没有层的
+ *   作者样式永远赢过任何层内的样式** —— 所以下面这份 legacy.css 一旦不带 layer
+ *   引入，它就在所有 Tailwind 工具类之上。
+ *
+ * 这正是我们要的：legacy.css 是这个应用已经定稿的设计系统（67KB、踩过坑的），
+ * React 重写要沿用同一套视觉，不能在重写过程中被 preflight 或工具类悄悄改掉
+ * 按钮边框、输入框底色这类东西。
+ *
+ * 代价要说清楚：**在 legacy.css 已经覆盖的元素上，Tailwind 工具类不生效**。
+ * 新表面（登录页、浮层、按钮）用的是 legacy 里根本没有的类名，不受影响；
+ * 但想用工具类去改一个已有元素（比如给 .task-row 加个 mt-2）是会白写的。
+ */
+@import "tailwindcss";
+@import "./legacy.css";
+
+/* ---------------------------------------------------------------- 新表面 */
+
+/*
+ * 新表面的配色跟着 legacy.css 的 CSS 变量走，不另起一套。
+ * 写死颜色会让深色模式在登录页上失效 —— 那是最容易被漏掉的一屏。
+ */
+.auth-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg, #f6f7fb);
+}
+
+/* 「更多」抽屉底部的账户行。legacy.css 里没有这一段（旧版没有账户概念） */
+.ms-user {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+}
+.ms-logout {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px;
+  background: none; color: var(--text-2); font-size: 12px; cursor: pointer;
+}
+.ms-logout:hover { border-color: var(--border-2); color: var(--text); }
+
