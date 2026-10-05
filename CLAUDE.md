@@ -47,10 +47,10 @@
 │   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期
 │   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑）
-│   │   │   ├── ActSheet.tsx  长按操作层（触屏专用）
+│   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
-│   │   │   ├── dnd.ts      **让位洞**拖拽层（最易踩坑的一块，见四、8）
+│   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
 │   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline / useOutsideClose
 │   │   │   └── cx.ts
@@ -65,7 +65,7 @@
 │   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
-│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 断网
+│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
 │
 ├── server/                 后端（Node 22，**零 npm 依赖**）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
@@ -99,7 +99,7 @@
    > 都会把它们换掉，挂在行上的 handler 会跟着丢。容器级 handler 永远在。
    > 代价：`views/` 里全是纯展示组件，**零回调**。
 3. **拖拽 / 拉伸**：`useDragLayer(containerRef)` + `.ev-resize` 的 mousedown。
-4. **长按操作层**（触屏）、**快捷键**、**导出 / 导入**。
+4. **长按提起 + 触屏拖拽 / 长按操作层**（触屏）、**快捷键**、**导出 / 导入**。
 
 ### 三层状态，别混
 
@@ -357,11 +357,21 @@ cd app && node tests/browser-smoke.mjs
 Chrome profile），然后像人一样走：**第一趟就查缓存里有没有那 5 条** →
 注册 → 侧栏出现日程集 → 六个视图都不白屏 → 管理浮层改名 →
 **确认服务器上真改了** → 刷新还在 → 收到邀请 → 接受 → 切到新集 →
-离线小标 → **把静态服务关掉还能打开**。全程收集 console 报错，有一条就算失败。
+**长按提起 → 拖到别处排序 → 原地松手弹操作层** →
+**鼠标拖拽同一套落点** → 离线小标 → **把静态服务关掉还能打开**。
+全程收集 console 报错，有一条就算失败。
 
 > 之所以不用 `vite preview`：它的代理写死指向 25692，**那是线上后端**，
 > 探针会往生产库里写账号。隔离是这里的第一要求。
 > 浏览器路径用 `CHROME` 环境变量覆盖，默认 `/opt/google/chrome/chrome`。
+
+> **第八节（触屏）和第九节（鼠标）测的是同一件事的两个入口。**
+> 两条路共用 `applyDropAt` / `finishDrag` / `commitDrop`，所以第八节证的是
+> 「手势对不对」，第九节证的是「鼠标这条**接线**还通着」——
+> 重构共享代码时最先坏的就是 `dragstart` / `dragover` 那几个 handler 的接线，
+> 而触屏那条根本不发这些事件，光靠第八节看不出来。
+> 验过它有牙：**把 `onDragStart` 里的 `dragId = id` 删掉**，只有第九节失败
+> （3 条），第八节照常全绿。
 
 > 离线那一段有两处是**为了让断言有牙**才那么写的，别当成多余的：
 >
@@ -376,6 +386,11 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 >
 > 验过它有牙：**把 `dist/sw.js` 挪走再跑，探针会在「Service Worker 接管页面」
 > 那一步中断**。改这块之后建议照做一遍。
+
+> 探针里的 `waitFor` 条件要**只可能因为那件事成立**。踩过一次：等
+> 「成员列表加载完」写的是 `innerText.includes('创建者')`，而那是 ROLE_LABEL，
+> 发邀请那个 `<select>` 的 `<option>` 里就有一个 —— 浮层一开就成立，等于没等。
+> 失败信息是「成员列表里有自己」，指向完全错的地方。现在等的是成员**条数**非零。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -545,7 +560,8 @@ HTML5 拖拽里每帧改 DOM 顺序代价太高，而且 transition 会和 drago
 | 类 | 用途 | 状态 |
 |---|---|---|
 | `.drop-hole` | 占位洞（当前模型） | 在用 |
-| `.drag-muted` | 让位开始后被拖元素淡出 | 在用 |
+| `.drag-muted` | 让位开始后被拖元素淡出（**只在鼠标那条路上加**，触屏是靠浮起来的位移表达） | 在用 |
+| `.touch-drag` | 触屏长按「提起」后的抬起阴影（`tailwind.css` 里的新表面，别去 `legacy.css` 找） | 在用 |
 | `.tl-guide` | 时间轴落点线 + 时间徽章 | 在用 |
 | `.tl-busy.drag-src` | 拖走时隐藏原位置的占用底纹 | 在用 |
 | `.ins-line` / `.ins-bar` / `.ins-hl` | 旧插入线模型 | **已彻底删除** |
@@ -618,17 +634,40 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 会生成层叠上下文，把里面的找日期面板（z-index 60）困住，导致被下方内容盖住变半透明。
 实测踩过：窄屏下面板整个变半透明。窄屏下顶栏随内容一起滚反而省垂直空间。
 
-**14. 触屏没有 hover，也没有 HTML5 拖拽**
+**14. 触屏有 hover 落地、有拖拽，但两条路完全分开**
 
-- `@media (hover: none)` 处理 hover 才显形的元素（拖拽抓手、箭头、背景高亮）
-- 排序 / 改期靠**长按 480ms 弹操作层**（`#actSheet`），`LONG_PRESS_MS = 480`。
-  `pointerdown` 计时，`pointermove` / `pointerup` / `pointercancel` / `pointerleave` 取消，
-  **只在 `pointerType !== 'mouse'` 时启用**（鼠标继续走拖拽）
-- `longPressFired` 标志 + capture 阶段 click 拦截：长按生效后抬手那一下
-  不会再顺带打开抽屉
+这一条的旧版内容是「触屏没有 hover，也没有 HTML5 拖拽，排序靠长按弹操作层」——
+**后半句已经不成立**（2026-10-06 起触屏能拖了）。现在是：
+
+- `@media (hover: none)` 处理 hover 才显形的元素（拖拽抓手、箭头、背景高亮）。**这条没变。**
+- **鼠标走 HTML5 拖拽，触屏走自己那条 `pointer` 通路，两条路不共用输入，只共用落点。**
+  输入那一段在 `ui/dnd.ts` 的文件头（`beginTouch` / `moveTouch` / `endTouch`）；
+  落点那一段（`applyDropAt` / `finishDrag` / `commitDrop`）**是同一份代码** ——
+  让位洞、时间轴预览、边缘自动滚屏都只有一处实现。改落点逻辑时两条路一起变，这是故意的。
+- 触屏手势是**长按 → 提起 → 拖 / 松**：`pointerdown` 计时 `LONG_PRESS_MS = 480`，
+  到点把行**提起来**（`.touch-drag`，抬起阴影；还**不是**拖动，只是「抓住了」的反馈）。
+  提起来之后：
+  - 挪过 `TOUCH_SLOP`（8px）才算「在拖」，此时才画落点；
+  - **原地松手** → 弹长按操作层（`ActSheet`）。老路没丢，只是挪到了「提起之后」。
+  计时只在 `pointerType !== 'mouse'` 时启用（鼠标继续走 HTML5 拖拽）。
+- **抬手那一下必须把浏览器补的鼠标事件整串掐掉**（`swallowCompat` +
+  非 passive 的 `touchend` 里 `preventDefault()`）。Chrome 在 `touchend` 之后会
+  在同一个点补 `mousedown` / `mouseup` / `click`：提起后原地松手时操作层刚打开，
+  这一串正好打在它的遮罩上，遮罩的 `onClick={onClose}` 当场把操作层关掉 ——
+  **表现是「长按完什么也没发生」**，而事件日志里干净得看不出问题。
+  只在「提起过」的那一次吞，普通点击不受影响。
+- `lp.current.fired` 标志：长按生效后抬手那一下补的 `click` 要吞掉，
+  否则会顺带打开抽屉。取消是容器上的 `onPointerMove` / `onPointerUp` /
+  `onPointerCancel` / `onPointerLeave` 四个一起调的 `clearLp` ——
+  **不是 capture 阶段拦截**（旧版是，新版走 React 的委托 `onClick`，
+  在 `App.tsx` 的点击委托最前面一行 `return`）
 - **动作值用无歧义前缀**：`dur60` 不是 `d60` —— 后者与 `del` / `date` 撞，
   靠 `+slice(1) > 0` 猜必然误伤。改动作值时按 `/^dur(\d+)$/` 匹配
 - 窄屏下显式 `dragstart` → `preventDefault()`，避免某些移动浏览器模拟出半截行为
+  （**只对 HTML5 那条路有意义**，触屏那条根本不发 `dragstart`）
+
+> 触屏这条路**已经有自动化覆盖**了，见第三节「测试」与四、34 —— 不必只靠真机。
+> 但探针证的是「指针事件管道通」，不是「真手指在真手机上顺手」。
 
 **15. `moveInList` 的候选列表不能排除自己**
 
@@ -847,13 +886,12 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 - 无头算「本周内某一天」时用 `weekStart(today)` 再偏移，
   不要直接 `today+2`，否则跨周时列不存在会拿到 null
 
-**34. 无头 Chrome 有最小窗口宽度约 526px，窄屏目前没有被自动化覆盖**
+**34. 无头 Chrome 有最小窗口宽度约 526px（窄屏仍测不了，但触屏能测了）**
 
 `--window-size=390` 实测 `innerWidth` 是 526，量不到真手机宽度，截图也会被裁。
 
-**现在的 `app/tests/smoke.mjs` 只跑一个 1440×900 的桌面视口**，
-窄屏 / 触屏路径（≤900px 的标签栏、长按操作层、`@media (hover: none)`）
-**没有自动化覆盖，改那边只能靠手工在真机上看**。
+**窄屏那一套（≤900px 的标签栏、「更多」抽屉、`@media (hover: none)` 的排版）
+仍然没有自动化覆盖，改那边只能靠手工在真机上看。**
 
 > 旧版曾用一个固定宽度的 iframe 包住应用来绕开这个限制，**后来放弃了** ——
 > headless 下 `iframe.onload` 时序不可靠，经常不触发，拿不到数据等于没测
@@ -861,6 +899,26 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 > 相比之下 `Emulation.setDeviceMetricsOverride` 会触发完整重排、
 > 之后合成事件不再进处理器，也不能用。
 > **要补窄屏测试，先想清楚用哪条路**，别直接抄 iframe 那套。
+
+**但「触屏」和「窄屏」是两件事，别一起放弃。** 触屏只需要指针事件带上
+`pointerType: 'touch'`，**在桌面视口下就能合成**，不需要真的窄：
+
+```js
+await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, ... }] });
+```
+
+`browser-smoke.mjs` 第八节就是这么跑长按 / 提起 / 拖动排序的。三个坑：
+
+- **必须给 Chrome 加 `--touch-events=enabled` 启动参数**，否则事件被静默丢掉
+  （不报错，只是不生效 —— 最难查的那种）
+- `maxTouchPoints` **只能是 1..16**，给 `0` 会被 CDP 挡下来，报的是
+  「Touch points must be between 1 and 16」，看着像触摸点的问题其实是这个参数
+- `Input.dispatchTouchEvent` **抬手也要带坐标**：`touchPoints: []` 在有些版本上
+  被接受、有些版本报错，一律带上最后那个点
+
+> 这条路证的是「指针管道通、手势逻辑对」，**不是**「真手指在真手机上顺手」。
+> 真机手感仍然要人看。
 
 **35. 解析器的规则顺序不能重排：重复必须在日期之前**
 
