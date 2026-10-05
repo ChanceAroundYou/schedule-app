@@ -300,17 +300,48 @@ nginx 不会自动补斜杠，必须显式 `return 301`。
 就是靠这个相对路径做到「前后端同源、后端一行 CORS 都不用写」的。
 **改前端请求路径前先想清楚这条。**
 
-### 4.3 Service Worker：新版没有，旧版要拆
+### 4.3 Service Worker：新旧两代要分清楚
 
-新版**不注册** Service Worker 了，`/schedule/sw.js` 是 404。
+**新版自己注册一个**（`app/public/sw.js` → `dist/sw.js`），作用只有一个：
+**断网时还能把应用打开**。数据层本来就是离线的（localStorage + outbox），
+缺的一直是「页面本身加载不出来」。
 
-旧版（`schedule-v12`）注册过，而且**缓存里躺着旧版 index.html** ——
-网络优先，所以通常刷新就拿到新版页面，新页面第一件事是
-`app/src/main.tsx` 里的 `escapeLegacyServiceWorker()`：注销所有 SW、
-清掉 `schedule-*` 缓存，然后自动重载一次。
+**旧版那个必须拆掉**，它是「怎么刷新都是旧界面」的根因：旧版注册的 sw.js
+（缓存名 `schedule-v12`）缓存里有**旧版 index.html**，网络抖动时它回那份 HTML，
+那份 HTML 又去加载 app.js / views.js。
 
-> 那个「重载一次」带 `sessionStorage` 标记，**否则会无限刷新把浏览器挂死** ——
-> 这是无头测试里最容易踩的坑。
+拆解在 `app/src/main.tsx` 的 `migrateAwayFromLegacySW()`，**用 localStorage
+标记锁成一次性**（`schedule-sw-migrated`）—— 否则它每次启动都会把新版刚注册的
+那个也一起注销掉。删缓存时只认 `/^schedule-v\d+$/`，新版那个 `sched-shell-*`
+不删。重载仍带 `sessionStorage` 标记，防空转。
+
+`/schedule/sw.js` 现在**返回 200**（旧版时期它也在，所以别看到它不是 404 就慌）。
+nginx 那条 `^~ /schedule/` 给它的 `no-cache` 是对的：浏览器每次导航都会重新
+校验 SW 脚本，改了策略立刻生效。
+
+> 改了 `sw.js` 的**缓存策略**要顺手改 `CACHE` 名（`sched-shell-v1`），
+> 否则 `activate` 里删旧缓存那一步不会触发。
+> 只改 `sw.js` 的**代码**不用动版本号。
+
+**预缓存清单是装的时候现场抠的，不写死在源码里** —— 构建产物的文件名带哈希
+（`index-DMHSyzQa.js`），写死会在下一次 `npm run build` 后立刻过期。
+`precacheShell()` 的做法是：拿 `index.html`，正则抠出里面引用的 `/assets/…`，
+连同 `manifest.json` / `icon.svg` 一起存进缓存。
+
+> 这段是补上来的，之前没有：**不预缓存的话，第一次访问是存不下东西的** ——
+> 那一趟的资源早在 SW `activate` 之前就直连网络拿完了，于是「断网能用」
+> 要等到第二次打开才有。线上实测过一次（`caches` 是空的）才发现的。
+> 现在的验收标准是：**打开一趟，`caches.keys()` 里就该有那 5 条**
+> （index.html / manifest.json / icon.svg / assets 的 js 与 css）。
+
+所以**离线能力的前提仍然是「这台设备联网打开过一次」** —— 第一次访问就是
+那次联网访问，装完即有；从没访问过的设备断网打开只会看到兜底页
+（`COLD_OFFLINE`，一句「先联网打开一次」）。
+
+> 顺手记一笔：CSS 在 `index.html` 里是 `<link href>`、JS 是 `<script src>`，
+> 正则两种都收。以后构建形态变了最坏结果是少预缓存一个文件，
+> 那个文件仍会在第一次真正用到时被 `cacheFirst` 存下来。
+
 
 ---
 

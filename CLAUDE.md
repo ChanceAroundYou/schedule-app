@@ -23,7 +23,7 @@
 ├── app/                    前端源码（= 部署产物的来源，有构建）
 │   ├── index.html          Vite 入口，只有 <div id="root">
 │   ├── vite.config.ts      base:'./'、build→../dist、dev/preview 代理 /api
-│   ├── public/             icon.svg · manifest.json（原样拷进 dist/）
+│   ├── public/             icon.svg · manifest.json · sw.js（原样拷进 dist/）
 │   ├── src/
 │   │   ├── main.tsx        入口：**先拆旧版 Service Worker**，再挂载
 │   │   ├── App.tsx         串起来的那层（约 700 行，见下）
@@ -52,7 +52,7 @@
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层（最易踩坑的一块，见四、8）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
-│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOutsideClose
+│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline / useOutsideClose
 │   │   │   └── cx.ts
 │   │   ├── views/          纯展示，零回调，只出 data-* 属性
 │   │   │   ├── Calendar.tsx  DayView · WeekView · MonthView · useViewLayout
@@ -65,7 +65,7 @@
 │   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
-│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请
+│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 断网
 │
 ├── server/                 后端（Node 22，**零 npm 依赖**）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
@@ -354,13 +354,28 @@ cd app && node tests/browser-smoke.mjs
 ```
 
 它自己起一套**完全隔离**的环境（临时后端 + 带 /api 代理的静态服务 + 独立
-Chrome profile），然后像人一样走：注册 → 侧栏出现日程集 → 六个视图都不白屏 →
-管理浮层改名 → **确认服务器上真改了** → 刷新还在 → 收到邀请 → 接受 → 切到新集。
-全程收集 console 报错，有一条就算失败。
+Chrome profile），然后像人一样走：**第一趟就查缓存里有没有那 5 条** →
+注册 → 侧栏出现日程集 → 六个视图都不白屏 → 管理浮层改名 →
+**确认服务器上真改了** → 刷新还在 → 收到邀请 → 接受 → 切到新集 →
+离线小标 → **把静态服务关掉还能打开**。全程收集 console 报错，有一条就算失败。
 
 > 之所以不用 `vite preview`：它的代理写死指向 25692，**那是线上后端**，
 > 探针会往生产库里写账号。隔离是这里的第一要求。
 > 浏览器路径用 `CHROME` 环境变量覆盖，默认 `/opt/google/chrome/chrome`。
+
+> 离线那一段有两处是**为了让断言有牙**才那么写的，别当成多余的：
+>
+> - 探针自己的静态服务对 HTML 回 `cache-control: no-store`。不然服务器关掉之后
+>   Chrome 自己的 HTTP 缓存也能把 index.html 交出来，测试会假通过
+>   （真实 nginx 给 `/schedule/` 配的也是 no-cache）。
+> - 关服务前要 `closeAllConnections()`。光 `close()` 只停止接受新连接，
+>   Chrome 池子里那条 keep-alive 还能把请求送进来，同样是假通过。
+> - **「第一趟就查缓存」必须在第一趟查**（探针的第「零」节，在第一次导航之后、
+>   任何刷新之前）。放到后面查就区分不出「安装时预缓存了」和「后来被动存下来的」——
+>   而后者正是线上踩过的那个坑：真实站点上第一次访问 `caches` 是空的。
+>
+> 验过它有牙：**把 `dist/sw.js` 挪走再跑，探针会在「Service Worker 接管页面」
+> 那一步中断**。改这块之后建议照做一遍。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -376,18 +391,52 @@ Chrome profile），然后像人一样走：注册 → 侧栏出现日程集 →
 
 ### 同步 / 数据
 
-**1. 旧版 Service Worker 会把用户永远钉在旧界面上**
+**1. 两个 Service Worker 会打架：拆旧的那个必须只跑一次**
 
 旧版注册过 `sw.js`（`CACHE = 'schedule-v12'`），缓存里有**旧版 index.html**。
 网络优先，所以通常刷新就拿到新页面；但离线 / 抖动时它会回旧 HTML，
 那份 HTML 又去加载 `app.js` / `views.js`，用户看到的是上一版界面，
 而且「怎么刷新都不变」。
 
-修法在 `app/src/main.tsx` 的 `escapeLegacyServiceWorker()`：注销所有 SW
-（只动 scope 含 `/schedule/` 的）、删掉所有 `schedule-*` 缓存，然后重载一次。
+新版**自己也注册 Service Worker 了**（`app/public/sw.js`，断网时能把应用打开）。
+于是「注销作用域内所有 SW」那一招会把自己刚注册的也干掉，而且每次启动都要
+白白多转一圈。所以拆旧 SW 那段（`main.tsx` 的 `migrateAwayFromLegacySW()`）
+用 **localStorage 标记 `schedule-sw-migrated` 锁成一次性**：
 
-> **那个重载必须带 `sessionStorage` 标记。** 没有标记的话，只要每次都能
-> 「清理成功」就会无限刷新 —— 无头测试里最容易把浏览器挂死的一类 bug。
+- 跑过就跳过；不支持 SW 的环境也要记标记，否则每次进页面都走一遍
+- 删缓存时只认 `/^schedule-v\d+$/`，**新版那个 `sched-shell-*` 不能删**
+- 重载仍要带 `sessionStorage` 标记 —— 没有它，只要每轮都「清理成功」
+  就会无限刷新，这是无头测试里最容易把浏览器挂死的一类 bug
+
+**新版 SW 的策略**（`app/public/sw.js` 文件头有完整说明）：
+
+| 请求 | 策略 | 为什么 |
+|---|---|---|
+| `/api/*` | **不碰** | 引擎自己管重试与发件箱；缓一个接口响应会让用户拿过期数据当最新的 |
+| 导航 | 网络优先 + 回落缓存的 index.html | **不能反过来** —— 缓存优先正是旧版那个病根 |
+| `/assets/*` | 缓存优先 | 文件名带内容哈希，同一 URL 内容永不变 |
+| 其余同源 GET | 先给缓存、后台更新 | 图标 / manifest |
+
+**预缓存清单是装的时候现场抠的**（`precacheShell()`）：fetch `index.html`，
+正则抠出里面的 `/assets/…`，加上写死的 `manifest.json` / `icon.svg` 一起存。
+写死在源码里会在下次 `npm run build` 后立刻过期 —— 文件名带哈希。
+
+> **这一步不能省。** 少了它，第一次访问是**存不下东西**的：那一趟的资源早在
+> SW `activate` 之前就直连网络拿完了，于是「断网能用」要等到**第二次打开**才有。
+> 线上实测发现过（真实站点 `caches.keys()` 是空的），所以探针第「零」节专门
+> 在第一趟就断言缓存里已经有那 5 条。
+>
+> 前提仍然是「联网打开过一次」。从没访问过的设备断网打开只会看到 `COLD_OFFLINE`
+> 那张兜底页。
+
+> **改 `sw.js` 的缓存策略要顺手改 `CACHE` 名**（现在是 `sched-shell-v1`），
+> 否则 `activate` 里删旧缓存那一步不会触发。
+> 但 `sw.js` 文件本身**不用**加版本 —— 浏览器每次导航都会重新校验它
+> （nginx 给 `/schedule/` 配的是 `no-cache`）。
+>
+> **dev 下不注册**（`import.meta.env.PROD` 判断）。否则缓存会在改代码时把
+> dev 也一起骗了，正好是「改了代码但浏览器没生效」那个坑的翻版。
+> `npm run preview` / 探针是生产构建，会注册。
 
 **2. 拖动期间不要拉同步**
 
@@ -742,6 +791,10 @@ React 会先跑完整个 render 阶段再改 DOM，所以**在 render 体内读 
 - 写完 / 移动完**立刻 `ls -l` 确认还在**
 - **改完就提交** —— `app/` 曾经没进版本库，那时唯一的后悔药是从会话记录里
   把 `Write` 调用的内容捞回来
+- **别用 `perl -i` / `sed -i` 这类原地改写工具。** 它们靠「写临时文件再改名」，
+  在 CIFS 上改名会失败，而且**原始文件会当场消失**（2026-10-06 实测丢了一次
+  `app/tests/browser-smoke.mjs`，靠 `git checkout` 捞回来的）。
+  要用编辑工具改，或者写临时文件再 `mv`
 - 源码没必要放共享盘上
 
 **31. `pkill -f "…"` 会打到自己**
@@ -893,6 +946,13 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 **只读成员看到的界面不是「藏起来」，是「点了会告诉你为什么」。**
 `store.commitMany()` 挡下写入时 `denied` 计数 +1，`App.tsx` 弹一次提示。
 **别让写操作静默失败** —— 用户会以为程序卡了。
+
+**断网时界面也必须说话。** 顶栏 `.sync-dot` 的位置**离线优先**：
+断网时显示一个 ☁︎ 划掉（`CloudOff`）配 title「离线，改动先存在本机，联网后自动同步」，
+而不是那个会一直转下去的加载圈 —— 一直转看起来就是卡死了，而用户真正需要知道的
+是「东西没丢」。数据本身早就在 outbox 里排队，这条只是把它说出来。
+来源是 `ui/hooks.ts` 的 `useOnline()`（`navigator.onLine` + online/offline 事件），
+**不是**「上一次请求成不成功」—— 后者每加一个探针就多一次请求。
 
 **没有登录？有登录。** 但**没有密码找回、没有邮箱、没有第三方登录**。
 **也没有管理员** —— 平等多用户、开放注册，注册完自动有一个「我的日程」，

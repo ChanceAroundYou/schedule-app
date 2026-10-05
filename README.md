@@ -5,7 +5,7 @@
 **网址：https://home.xiaokubao.space/schedule/**
 
 **数据存在服务器上**（这台机器自己的 SQLite 库），登录后多设备自动同步。
-浏览器里也留一份，断网能继续用。
+浏览器里也留一份：**断网时整个页面照样打得开、照样能改，联网后自动补交**。
 
 **部署与运维 → [DEPLOY.md](DEPLOY.md)**
 **给 AI 编码助手 → [CLAUDE.md](CLAUDE.md)**
@@ -205,7 +205,7 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 │   │   └── styles/        legacy.css（设计系统）+ tailwind.css（新表面）
 │   ├── tests/browser-smoke.mjs   真实 Chrome 走一遍界面（自己起临时后端）
 │   ├── tests/smoke.mjs           旧的端到端冒烟，打的是已部署的那份
-│   └── public/            icon.svg / manifest.json
+│   └── public/            icon.svg / manifest.json / sw.js（离线外壳）
 │
 ├── server/                后端（Node 22，零 npm 依赖）
 │   ├── server.js          HTTP 路由
@@ -239,7 +239,8 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 | 页面还是旧版界面 | 旧版注册过 Service Worker。新版第一次打开会自动注销它并刷新一次；没生效就 DevTools → Application → Service Workers 里 Unregister |
 | 登录不上 / 接口全 404 | 后端没起。`systemctl --user status schedule-backend` |
 | 手机上装成 App 后白屏 | 网址要带结尾斜杠：`/schedule/`，不是 `/schedule` |
-| 改了任务另一台设备没变 | 网络断时会排队，联网后自动推。看顶栏右侧的转圈图标 |
+| 改了任务另一台设备没变 | 网络断时会排队，联网后自动推。看顶栏右侧图标：转圈=正在同步，☁︎划掉=离线 |
+| 断网后打开是白屏 / 一句「先联网打开一次」 | 这台设备**从没联网打开过**，还没有可用的缓存副本。找个有网的地方打开一次即可 |
 | 首次打开有一堆别人的任务 | 那不是新版。新版不生成演示数据 —— 大概是 Service Worker 发了一份旧版页面，强刷 |
 | 数据在哪、怎么备份 | 见上面「数据在哪」。服务器库 + 侧栏「导出备份」 |
 | 删除按钮点了没反应 | 已修：新版全部换成应用内确认弹层，不再用会被 PWA 吞掉的原生 `confirm()` |
@@ -253,6 +254,7 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
         图标 lucide-react（不用 emoji）；弹层用 Radix headless
 后端    Node 22，零 npm 依赖 —— 只用 node:http + node:sqlite
 存储    服务端 SQLite（权威）+ 浏览器 localStorage（离线副本）
+离线    手写 Service Worker（app/public/sw.js）缓存外壳 + 发件箱排队，可装到桌面
 同步    服务端权威 + 客户端 outbox + 逐字段 LWW + 游标增量拉取
 部署    nginx 伺服 dist/，/schedule/api/ 反代到 127.0.0.1:25692
 ```
