@@ -405,17 +405,29 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 被权限挡下的改动要说出来 -------- */
   // 只读日程集里点勾选，写入会在 store 那一层被丢在门口。不提示的话
-  // 用户看到的是「点了没反应」，会以为程序坏了
+  // 用户看到的是「点了没反应」，会以为程序坏了。
+  //
+  // **要说清是哪个集**：今天 / 逾期 / 待办箱是跨集的（见「五、界面约定」），
+  // 在「今天」里勾了一条别的集的任务时，一句「这个日程集你只有查看权限」
+  // 只会让人以为是眼前这个集出了问题。
   const deniedRef = useRef(state.denied);
   useEffect(() => {
-    if (state.denied !== deniedRef.current) {
-      deniedRef.current = state.denied;
-      toast('这个日程集你只有查看权限，改动没有保存');
-    }
-  }, [state.denied]);
+    if (state.denied === deniedRef.current) return;
+    deniedRef.current = state.denied;
 
-  /* -------- 长按后的 click 吞掉标志要复位 -------- */
-  useEffect(() => { lp.current.fired = false; }, [actId]);
+    const names = state.deniedCals
+      .map((id) => state.cals.find((c) => c.id === id)?.name)
+      .filter((n): n is string => !!n);
+
+    if (!names.length) {
+      // 集已经不在本地了（被移出 / 刚删掉）—— 说不出名字，就说行为
+      toast('改动没有保存：这个日程集你没有写入权限');
+      return;
+    }
+    toast(names.length === 1
+      ? `改动没有保存：「${names[0]}」里你只有查看权限`
+      : `改动没有保存：这几个日程集你只有查看权限 —— ${names.join('、')}`);
+  }, [state.denied, state.deniedCals, state.cals]);
 
   /* -------- 内容分发 -------- */
   let body: React.ReactNode;

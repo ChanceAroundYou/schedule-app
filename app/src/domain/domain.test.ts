@@ -43,6 +43,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
     lastError: null,
     clockBlocked: [],
     denied: 0,
+    deniedCals: [],
     syncing: false,
     ...over,
   };

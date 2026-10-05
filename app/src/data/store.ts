@@ -31,7 +31,8 @@ const KEY = 'schedule-app-v4';
 function blank(): LocalState {
   return {
     tasks: {}, habits: {}, cals: [], invites: [], cursor: 0, outbox: [],
-    ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false, denied: 0,
+    ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
+    denied: 0, deniedCals: [],
   };
 }
 
@@ -88,6 +89,7 @@ export function load(): LocalState {
         clockBlocked: Array.isArray(p.clockBlocked) ? p.clockBlocked : [],
         syncing: false,   // 瞬时状态，别把上次关页面时的 true 带进来
         denied: 0,
+        deniedCals: [],   // 同上：这是「这次点击」的上下文，跨页面加载没有意义
       };
       // 磁盘上那份可能是旧版本写的、或者上一轮同步只写了一半的稀疏实体
       for (const t of Object.values(state.tasks)) hydrateTask(t);
@@ -201,7 +203,9 @@ export function setActiveCal(id: string): void {
 export function moveToCal(entity: Entity, id: string, targetCal: string): void {
   const src = rawBucket(entity)[id];
   if (!src || src.calId === targetCal) return;
-  if (!canWrite(roleOf(state, targetCal))) return;
+  // 目标集写不进去也要说一声。原来这里是干 `return`，用户点了「移到…」
+  // 之后什么都没发生，连权限提示都没有
+  if (!canWrite(roleOf(state, targetCal))) { deny([targetCal]); return; }
 
   const fields = dataOf(src as unknown as Task | Habit);
   // 搬过去的是「活着的那份」：墓碑字段不跟着走
@@ -251,6 +255,23 @@ function rawBucket(e: Entity): Record<string, RawEntity> {
 }
 
 /**
+ * 「这次没写成，因为没有写权限」—— 唯一的记录入口。
+ *
+ * 每个写入通道各自记一遍必然会漏（`moveToCal` 就漏过：它在自己的函数里
+ * 直接 `return`，什么都不说，用户看到的是「点了一下没反应」）。
+ * 所以别在调用点自己动 `state.denied`，一律走这里。
+ *
+ * `calIds` 是这一批涉及到的集，去重后记进 `deniedCals` 给提示用。
+ */
+function deny(calIds: (string | null | undefined)[]): void {
+  const cals: string[] = [];
+  for (const c of calIds) if (c && !cals.includes(c)) cals.push(c);
+  state.denied++;
+  state.deniedCals = cals;
+  emit();
+}
+
+/**
  * 一批改动用同一个时间戳。同一次用户操作算一个时刻 —— 分开取 Date.now()
  * 会让同一次点击产生的两个字段带上不同 ts，回放和调试时都对不上账。
  *
@@ -258,17 +279,17 @@ function rawBucket(e: Entity): Record<string, RawEntity> {
  * 禁掉，但**真正把关的是这一处** —— 界面上漏了一个入口，这里还能兜住。
  */
 export function commitMany(items: Change[]): void {
+  const blocked: string[] = [];
   const writable = items.filter((it) => {
     const calId = it.calId || calOf(it.entity, it.id);
-    return !!calId && canWrite(roleOf(state, calId));
+    if (calId && canWrite(roleOf(state, calId))) return true;
+    if (calId) blocked.push(calId);
+    return false;
   });
 
   // 被挡下的改动必须**说出来**。静默丢弃是最糟的一种：用户点了勾选，界面
   // 毫无反应，他只会以为程序卡了，然后反复点。记一个计数器，由 App 弹一次提示。
-  if (writable.length < items.length) {
-    state.denied++;
-    emit();
-  }
+  if (blocked.length) deny(blocked);
   if (!writable.length) return;
 
   const ts = Date.now();

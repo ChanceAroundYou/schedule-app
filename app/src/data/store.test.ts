@@ -271,6 +271,74 @@ test('只读成员写了也不落地，并且记下被挡的次数', () => {
   assert.equal(store.get().denied, 1, '被挡下必须计数，界面才能提示用户');
 });
 
+test('被挡下时记下的是**那个集**，不是当前选中的集', () => {
+  fresh();
+  // 今天 / 逾期 / 待办箱是跨集的，「在别的页面勾别的集的任务」是常规用法 ——
+  // 提示要是只说「这个日程集你只有查看权限」，用户会以为是眼前这个集出了问题
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '全家', ownerId: 'u2', createdAt: 0, role: 'editor' },
+  ]);
+  store.setActiveCal('cal-2');
+  const theirs = add('全家的事');
+
+  // 对方把权限降成只读；本机仍然停在 CAL（模拟用户在「今天」页面）
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '全家', ownerId: 'u2', createdAt: 0, role: 'viewer' },
+  ]);
+  store.setActiveCal(CAL);
+
+  store.patchTask(theirs, { title: '改不动' });
+
+  assert.equal(store.get().denied, 1);
+  assert.deepEqual(store.get().deniedCals, ['cal-2'],
+    '要说清是「全家」被挡的，不是当前选中的「我的日程」');
+});
+
+test('移到没有写权限的集也要报出来（原来这里是静默 return）', () => {
+  fresh();
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '全家', ownerId: 'u2', createdAt: 0, role: 'viewer' },
+  ]);
+  const mine = add('买菜');
+
+  store.moveToCal('task', mine, 'cal-2');
+
+  assert.equal(store.get().tasks[mine].calId, CAL, '写不进去就该留在原处');
+  assert.equal(store.get().denied, 1, '静默失败是最糟的：用户只会以为程序卡了');
+  assert.deepEqual(store.get().deniedCals, ['cal-2']);
+});
+
+test('一批里挡下了两个集，两个都记下来', () => {
+  fresh();
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '全家', ownerId: 'u2', createdAt: 0, role: 'editor' },
+    { id: 'cal-3', name: '公司', ownerId: 'u2', createdAt: 0, role: 'editor' },
+  ]);
+  store.setActiveCal('cal-2');
+  const a = add('A');
+  store.setActiveCal('cal-3');
+  const b = add('B');
+
+  // 两个集都变成只读（「今天」页面把两边的任务一起勾了，就是这种一次提交）
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '全家', ownerId: 'u2', createdAt: 0, role: 'viewer' },
+    { id: 'cal-3', name: '公司', ownerId: 'u2', createdAt: 0, role: 'viewer' },
+  ]);
+
+  store.commitMany([
+    { entity: 'task', id: a, fields: { title: 'A2' } },
+    { entity: 'task', id: b, fields: { title: 'B2' } },
+  ]);
+
+  assert.equal(store.get().denied, 1, '一次操作只提示一次，别弹两条');
+  assert.deepEqual(store.get().deniedCals, ['cal-2', 'cal-3']);
+});
+
 test('切集只影响当前集，另一个集的任务原样留着', () => {
   fresh();
   const mine = add('我的事');
