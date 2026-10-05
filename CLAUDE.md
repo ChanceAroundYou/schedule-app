@@ -148,6 +148,7 @@
   lastError: string | null,          // 上次同步的报错，顶栏下面那一条
   clockBlocked: string[],            // 被服务器退回但值得重试的 opId（时钟不对那一类）
   denied: number,                    // 被「没有写权限」挡下的改动次数，界面据此弹提示
+  deniedCals: string[],              // 这一次被挡下的是哪几个集（提示要点名，见五）
   syncing: boolean,                  // 瞬时状态，**不落盘**（load 时一律重置为 false）
 }
 
@@ -391,6 +392,12 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 「成员列表加载完」写的是 `innerText.includes('创建者')`，而那是 ROLE_LABEL，
 > 发邀请那个 `<select>` 的 `<option>` 里就有一个 —— 浮层一开就成立，等于没等。
 > 失败信息是「成员列表里有自己」，指向完全错的地方。现在等的是成员**条数**非零。
+> 另外它**不能以换行开头**（ASI 会把 `return` 断成空语句），见「四、39」。
+
+> 第「十」节专测**只读成员被挡下时的提示**：真把爸爸降成 viewer → 真点勾选
+> → 真看提示里有没有集名。分两段等（本地 cals 的角色先、DOM 后）—— 合成
+> 一个条件的话，超时时分不清「同步没发生」和「同步到了但界面没画」。
+> 写这一节时踩到「合成点击少了 pointerdown」，见「四、40」。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -661,6 +668,9 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
   `onPointerCancel` / `onPointerLeave` 四个一起调的 `clearLp` ——
   **不是 capture 阶段拦截**（旧版是，新版走 React 的委托 `onClick`，
   在 `App.tsx` 的点击委托最前面一行 `return`）
+  > **它的复位必须排在 `pointerDown` 里那次鼠标 `return` 之前。** 把它写在
+  > 后面，鼠标这条路就永远不复位，长按过后用鼠标点的第一下被静默吃掉
+  > （探针第「十」节第一次就是这么失败的，见四、40）。
 - **动作值用无歧义前缀**：`dur60` 不是 `d60` —— 后者与 `del` / `date` 撞，
   靠 `+slice(1) > 0` 猜必然误伤。改动作值时按 `/^dur(\d+)$/` 匹配
 - 窄屏下显式 `dragstart` → `preventDefault()`，避免某些移动浏览器模拟出半截行为
@@ -965,6 +975,49 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 `journalctl` 里 `EADDRINUSE`。**排查后端时先看 25692 是谁占着。**
 `ss -lptn 'sport = :25692'`。
 
+**39. 探针里的 `waitFor` 表达式不能以换行开头（ASI 会把它变成裸 `return`）**
+
+`evalJs` 把表达式包成 `(async () => { <表达式> })()`，`waitFor` 再在前面加
+`return`。表达式要是从模板字符串的换行处开始：
+
+```js
+await waitFor(page, `
+  [...document.querySelectorAll('[data-cal]')].some(…) ? 1 : null`, '…');
+```
+
+生成的代码就是 `return\n [ …`，**ASI 在 `return` 后面补一个分号** ——
+整条表达式成了不可达代码，求值恒为 `undefined`，一直等到超时。
+报错长这样：`等不到「…」，最后一次求值 = undefined`。看着像应用没反应，
+其实探针自己写错了，而且**多行表达式（为了排版好看）几乎必然踩上**
+（第「十」节就是这么假失败了两轮）。
+
+> 已经在 `waitFor` 里 `expr.trim()` 掉了，别把这个 trim 当成多余的。
+> 写多行模板时也别把 `? 1 : null` 拆到下一行 —— 那是另一个坑。
+
+**40. 探针的合成点击必须连 `pointerdown` 一起补，`el.click()` 不算一次真点击**
+
+这个应用的点击委托是 **pointerdown 驱动**的（长按状态机就挂在
+`onPointerDown` 上），`el.click()` 只补一个 `click`，跟真手指/真鼠标走的
+不是同一条路：
+
+```js
+el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', … }));
+el.dispatchEvent(new PointerEvent('pointerup',   { bubbles: true, pointerType: 'mouse', … }));
+el.dispatchEvent(new MouseEvent('click', …));
+```
+
+> 第「十」节原来只写 `el.click()`，于是被第八节触屏拖拽留下的
+> `lp.current.fired` 整下吃掉，断言报的是「提示里没点名是哪个集」——
+> 指向的是提示的实现，而真正的问题在点击根本没进去。
+>
+> **这一条也顺带捉到一个真 bug**：那个标志的复位本来排在 `pointerDown` 的
+> 鼠标 `return` 之后，鼠标点的那一刻不复位（触屏点有自己的 pointerdown，
+> 所以只有鼠标这条中招）。验过它有牙：把复位挪到 `return` 之后重新构建，
+> 恰好失败那两条（见四、14 的引用）。
+>
+> 反过来说，**「第一下被吃掉」这种症状先怀疑探针**：真手指的点击永远带
+> pointerdown，而合成事件不带 —— 别急着去改产品代码。
+
 ---
 
 ## 五、界面约定
@@ -1004,6 +1057,19 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 **只读成员看到的界面不是「藏起来」，是「点了会告诉你为什么」。**
 `store.commitMany()` 挡下写入时 `denied` 计数 +1，`App.tsx` 弹一次提示。
 **别让写操作静默失败** —— 用户会以为程序卡了。
+
+> **记录只有 `store.ts` 的 `deny()` 一个入口**，别在调用点自己动 `state.denied`。
+> 每个写入通道各记一遍必然漏 —— 漏过一次的就是 `moveToCal()`：它在自己的
+> 函数里直接 `return`，用户点了「移到…」之后**连权限提示都没有**。
+>
+> **提示要点名是哪个集**（`deniedCals`）。今天 / 逾期 / 待办箱是跨集的，
+> 在「今天」里勾了别的集的任务时，一句「这个日程集你只有查看权限」只会让人
+> 以为是眼前这个集出了问题。一次操作只弹一条（一批里挡下几个集就列几个），
+> 不是逐条弹 —— 那是刷屏。
+>
+> 另有一条**服务器侧**的兜底：客户端角色还是旧的时，op 会被服务端拒掉
+> （`engine.ts` 的 `handleRejected`，`code: 'forbidden'`），那条走的是
+> 顶栏 `lastError`，不经过 `deny()`。
 
 **断网时界面也必须说话。** 顶栏 `.sync-dot` 的位置**离线优先**：
 断网时显示一个 ☁︎ 划掉（`CloudOff`）配 title「离线，改动先存在本机，联网后自动同步」，
