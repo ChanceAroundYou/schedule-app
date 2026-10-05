@@ -45,3 +45,19 @@
 }
 .ms-logout:hover { border-color: var(--border-2); color: var(--text); }
 
+/*
+ * 触屏长按把行「提起来」之后的状态（见 ui/dnd.ts 文件头）。
+ *
+ * 这一步**还不是拖动**，是「抓住了」的反馈：给个抬起阴影 + 抬高层级，
+ * 不然长按完屏幕毫无变化，用户不知道可以拖了。
+ *
+ * `position: relative` 是为了让 z-index 生效（行本来就占位，不影响布局）；
+ * 位移由 JS 写 inline transform —— 所以这里**不能**写 transform，会被覆盖。
+ * 也不用自己写背景色：行本来就有 `background: var(--panel)`。
+ */
+.touch-drag {
+  position: relative;
+  z-index: 55;                 /* 高于内容，低于浮层的 60 */
+  box-shadow: var(--shadow-lg);
+}
+

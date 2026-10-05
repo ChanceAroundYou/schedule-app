@@ -78,7 +78,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   useViewLayout(contentRef, key, state.ui.nav, state.ui.view);
 
   /* -------- 拖放 -------- */
-  const drag = useDragLayer(contentRef);
+  // 触屏「提起后原地松手」= 长按本来的意思，弹操作层。打卡行没有操作层，忽略
+  const drag = useDragLayer(contentRef, (id, kind) => { if (kind === 'task') setActId(id); });
 
   /* -------- 导航 -------- */
   const nav = useCallback((k: string) => {
@@ -145,20 +146,26 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     store.reorder('task', rest);
   }, []);
 
-  /* -------- 长按（触屏没有 hover，也没有 HTML5 拖拽）-------- */
-  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
+  /* -------- 长按（触屏没有 hover；拖拽走 dnd 那条 pointer 通路）-------- */
+  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; x: number; y: number }>(
+    { timer: null, fired: false, x: 0, y: 0 });
   const clearLp = () => { if (lp.current.timer) { clearTimeout(lp.current.timer); lp.current.timer = null; } };
   const pointerDown = (e: React.PointerEvent) => {
-    // 鼠标继续走拖拽，长按只服务触屏
+    // 鼠标继续走 HTML5 拖拽，长按只服务触屏
     if (e.pointerType === 'mouse') return;
-    const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el');
+    // 打卡行也能拖（列表排序那套对它是通用的），但操作层只服务任务
+    const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el, .habit-row');
     const id = el?.dataset.id;
-    if (!id) return;
+    if (!id || !el) return;
     lp.current.fired = false;
+    lp.current.x = e.clientX;
+    lp.current.y = e.clientY;
     clearLp();
     lp.current.timer = setTimeout(() => {
       lp.current.fired = true;
-      setActId(id);
+      // 「提起」= 进入拖拽待命态；接下来要么拖走，要么原地松手弹操作层
+      // （由 dnd 的 onTapHold 回调决定，见那边文件头）
+      if (!drag.beginTouch(el, id, lp.current.x, lp.current.y)) setActId(id);
     }, LONG_PRESS_MS);
   };
 
