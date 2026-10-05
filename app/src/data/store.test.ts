@@ -339,6 +339,66 @@ test('一批里挡下了两个集，两个都记下来', () => {
   assert.deepEqual(store.get().deniedCals, ['cal-2', 'cal-3']);
 });
 
+/* ==================== 冲突提示 ==================== */
+
+/** 造一条别人改的、和我这一轮撞在同一个字段上的改动 */
+function conflictFor(id: string, field: string, mine: unknown, theirs: unknown) {
+  return {
+    entity: 'task' as const, entityId: id, field,
+    winner: 'theirs' as const, mine, theirs, ts: 2000, deviceId: 'devB',
+  };
+}
+
+test('同一个字段再来一条就顶掉旧的，不会攒成一片', () => {
+  fresh();
+  const id = add('撞车的');
+
+  store.addConflicts([conflictFor(id, 'title', '我的', '第一次')]);
+  store.addConflicts([conflictFor(id, 'title', '我的', '第二次')]);
+
+  const list = store.get().conflicts;
+  assert.equal(list.length, 1, '同一 (实体, 字段) 只留一条');
+  assert.equal(list[0].theirs, '第二次', '留的是新的那条');
+
+  // 不同字段是两回事，都留着
+  store.addConflicts([conflictFor(id, 'note', '我的备注', '对方的')]);
+  assert.equal(store.get().conflicts.length, 2);
+});
+
+test('实体已经不在本地了（被移出集 / 彻底删掉），记录跟着丢', () => {
+  fresh();
+  const id = add('要没的');
+  store.addConflicts([conflictFor(id, 'title', 'a', 'b')]);
+  assert.equal(store.get().conflicts.length, 1);
+
+  store.deleteTask(id);
+  store.emptyTrash();          // purged —— 哪儿都看不见了
+  store.addConflicts([conflictFor('another-id', 'title', 'a', 'b')]);
+
+  assert.equal(store.get().conflicts.length, 1, 'purged 的那条被丢掉，只剩新加的');
+  assert.equal(store.get().conflicts[0].entityId, 'another-id');
+});
+
+test('「知道了」按 (实体, 字段) 清，别人的记录不动', () => {
+  fresh();
+  const a = add('甲');
+  const b = add('乙');
+  store.addConflicts([
+    conflictFor(a, 'title', 'a1', 'a2'),
+    conflictFor(a, 'note', 'n1', 'n2'),
+    conflictFor(b, 'title', 'b1', 'b2'),
+  ]);
+
+  // 点了「知道了」的那一条要落盘 —— 刷新之后不能再冒出来
+  const saved = store.get().conflicts.length;
+  store.dismissConflict(a, 'title');
+
+  assert.equal(store.get().conflicts.length, saved - 1);
+  assert.ok(!store.get().conflicts.some((c) => c.entityId === a && c.field === 'title'));
+  assert.ok(store.get().conflicts.some((c) => c.entityId === b && c.field === 'title'), '别的实体不受影响');
+  assert.ok(store.get().conflicts.some((c) => c.entityId === a && c.field === 'note'), '同一实体的别的字段不受影响');
+});
+
 test('切集只影响当前集，另一个集的任务原样留着', () => {
   fresh();
   const mine = add('我的事');

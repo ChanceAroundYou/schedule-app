@@ -524,6 +524,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onClose={() => setOpenId(null)}
         onPatch={patch}
         onDelete={removeTask}
+        onDismissConflict={store.dismissConflict}
       />
       <ActSheet
         state={state}

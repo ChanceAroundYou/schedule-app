@@ -13,7 +13,7 @@
  * tasks 是几百 KB 的浪费，而 useSyncExternalStore 只需要一个会变的快照值。
  */
 
-import type { Cal, Entity, Habit, Invite, LocalState, Op, Task, UiPrefs } from '../domain/types.ts';
+import type { Cal, Entity, FieldConflict, Habit, Invite, LocalState, Op, Task, UiPrefs } from '../domain/types.ts';
 import { canWrite } from '../domain/types.ts';
 import {
   hydrateHabit, hydrateTask, liveHabits, trashedTasks, trashedHabits, roleOf,
@@ -32,7 +32,7 @@ function blank(): LocalState {
   return {
     tasks: {}, habits: {}, cals: [], invites: [], cursor: 0, outbox: [],
     ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
-    denied: 0, deniedCals: [],
+    denied: 0, deniedCals: [], conflicts: [],
   };
 }
 
@@ -90,6 +90,9 @@ export function load(): LocalState {
         syncing: false,   // 瞬时状态，别把上次关页面时的 true 带进来
         denied: 0,
         deniedCals: [],   // 同上：这是「这次点击」的上下文，跨页面加载没有意义
+        // 冲突提示**要留**：它说的是「你那一下被盖掉了」，刷新一次就忘掉
+        // 等于没提示过 —— 用户正是在刷新之后才去看那条任务
+        conflicts: Array.isArray(p.conflicts) ? p.conflicts : [],
       };
       // 磁盘上那份可能是旧版本写的、或者上一轮同步只写了一半的稀疏实体
       for (const t of Object.values(state.tasks)) hydrateTask(t);
@@ -179,6 +182,43 @@ export function setCals(cals: Cal[] | undefined): void {
 export function setInvites(invites: Invite[] | undefined): void {
   if (!Array.isArray(invites) || !differs(state.invites, invites)) return;
   state.invites = invites;
+  persist();
+  emit();
+}
+
+/* ------------------------------------------------------------ 冲突提示 */
+
+/** 同一个字段只留最新的一条；列表有上限，免得攒到天长地久 */
+const CONFLICT_MAX = 50;
+
+/**
+ * 记下「两端都改过」的字段（判定在 `domain/merge.ts` 的 `findConflicts`）。
+ *
+ * 同一 (实体, 字段) 只留最新那条 —— 反复来同一条会把抽屉刷成一片。
+ * 顺带丢掉实体已经不在本地的那些（被踢出集 / 彻底删掉），省得留一堆
+ * 点不进去的记录。
+ */
+export function addConflicts(list: FieldConflict[]): void {
+  if (!list.length) return;
+
+  const kept = state.conflicts.filter((c) => {
+    const bucket = c.entity === 'task' ? state.tasks : state.habits;
+    const e = bucket[c.entityId] as { deleted?: boolean; purged?: boolean } | undefined;
+    if (!e || e.purged) return false;
+    return !list.some((n) => n.entity === c.entity && n.entityId === c.entityId && n.field === c.field);
+  });
+
+  const next = kept.concat(list);
+  state.conflicts = next.length > CONFLICT_MAX ? next.slice(next.length - CONFLICT_MAX) : next;
+  persist();
+  emit();
+}
+
+/** 用户点了「知道了」。按 (实体 id, 字段) 清 —— 同一个字段没必要留两条 */
+export function dismissConflict(entityId: string, field: string): void {
+  const next = state.conflicts.filter((c) => !(c.entityId === entityId && c.field === field));
+  if (next.length === state.conflicts.length) return;
+  state.conflicts = next;
   persist();
   emit();
 }

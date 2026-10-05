@@ -18,12 +18,12 @@ import {
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
 import { layoutOverlap, timeRange } from './layout.ts';
-import { lwwWins, mergeChange, writeFields } from './merge.ts';
+import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
 } from './model.ts';
-import type { LocalState, RepeatRule, Task } from './types.ts';
+import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
 
 const T = '2026-10-06';   // 固定「今天」，否则用例会随真实日期漂移
 
@@ -44,6 +44,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
     clockBlocked: [],
     denied: 0,
     deniedCals: [],
+    conflicts: [],
     syncing: false,
     ...over,
   };
@@ -457,4 +458,50 @@ test('v3 → v4 的实体带空的 _ts/_dev，等 store 建 op 时统一填', ()
   const r = migrateV3({ tasks: [{ id: 't1', title: 'x', date: null }] });
   assert.deepEqual(r.tasks[0]._ts, {});
   assert.deepEqual(r.tasks[0]._dev, {});
+});
+
+/* ============================== 冲突提示 ============================== */
+
+/** 造一条「我这一轮推上去的 op」 */
+const op = (fields: Record<string, unknown>, over: Partial<Op> = {}): Op => ({
+  opId: 'o1', deviceId: 'me', ts: 1000, calId: 'c1', entity: 'task', entityId: 't1',
+  fields, ...over,
+});
+/** 造一条「这一轮响应里带回来的别人的改动」 */
+const chg = (field: string, value: unknown, over: Partial<Change> = {}): Change => ({
+  entity: 'task', entityId: 't1', field, value, ts: 2000, deviceId: 'other', ...over,
+});
+
+test('同一字段两边都改过才算冲突，方向两个都报', () => {
+  // 对方更新 → 对方赢
+  const lose = findConflicts([op({ title: '我的' })], [chg('title', '对方的', { ts: 2000 })], 'me');
+  assert.equal(lose.length, 1);
+  assert.equal(lose[0].winner, 'theirs');
+  assert.equal(lose[0].mine, '我的');
+  assert.equal(lose[0].theirs, '对方的');
+
+  // 对方更旧（比如他那台时钟慢）→ 我赢，但一样要报：他那一下被盖掉了
+  const win = findConflicts([op({ title: '我的' })], [chg('title', '对方的', { ts: 500 })], 'me');
+  assert.equal(win.length, 1);
+  assert.equal(win[0].winner, 'mine');
+});
+
+test('改的不是同一个字段、不是同一条、以及自己刚推的回显，都不算冲突', () => {
+  assert.deepEqual(findConflicts([op({ title: 'x' })], [chg('note', 'y')], 'me'), [],
+    '我改标题、对方改备注，两个改动都留得住，没什么好提示的');
+  assert.deepEqual(
+    findConflicts([op({ title: 'x' })], [chg('title', 'y', { entityId: 't2' })], 'me'), [],
+    '不同的实体');
+  assert.deepEqual(
+    findConflicts([op({ title: 'x' })], [chg('title', 'x', { deviceId: 'me', ts: 3000 })], 'me'), [],
+    '自己刚推上去的那条会原样回显，不能当成别人改的');
+});
+
+test('一条 op 带了几个字段，就逐个字段各判一次', () => {
+  const r = findConflicts(
+    [op({ title: '我的标题', time: '09:00' })],
+    [chg('title', '对方的标题'), chg('time', '10:00')],
+    'me',
+  );
+  assert.deepEqual(r.map((c) => c.field).sort(), ['time', 'title']);
 });

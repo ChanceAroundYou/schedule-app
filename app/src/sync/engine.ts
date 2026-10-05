@@ -15,6 +15,7 @@ import * as store from '../data/store.ts';
 import { deviceId } from '../data/device.ts';
 import { readLegacy } from '../data/legacy.ts';
 import { isDragging } from '../ui/dragState.ts';
+import { findConflicts } from '../domain/merge.ts';
 import type { Rejected } from '../domain/types.ts';
 
 /** 服务端 MAX_OPS 是 2000，留出余量分批 */
@@ -110,6 +111,14 @@ async function round(forceSnapshot: boolean): Promise<boolean> {
   // 快照与增量走同一条合并路径，见 store.applyRemote 的注释
   if (res.snapshot) store.applyRemote(store.flattenSnapshot(res.snapshot));
   else if (res.changes && res.changes.length) store.applyRemote(res.changes);
+
+  /* 「同一次里我推的字段，也收到了别人的改动」= 两边都改过，LWW 已经判完了。
+     记下来，抽屉里那条提示才有东西可显示。**只认增量这一路**：快照是
+     「我刚加入这个集，把历史整份拉下来」，里面那些改动跟「同时」不是一回事，
+     拿它判必然误报成一片。 */
+  if (res.changes && res.changes.length) {
+    store.addConflicts(findConflicts(ops, res.changes, deviceId()));
+  }
 
   store.setCursor(Number(res.cursor) || 0);
   if (!store.get().clockBlocked.length) store.setError(null);

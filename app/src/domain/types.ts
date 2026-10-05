@@ -168,8 +168,32 @@ export interface Change {
   calId?: string;
 }
 
-export interface SyncResponse {
-  cursor: number;
+/**
+ * 一处「两端都改过、LWW 挑了一个赢家」的字段。
+ *
+ * **不是「同步冲突」那种要用户裁决的东西** —— LWW 已经判完了，数据是一致的。
+ * 这一条只是把「你那一下没生效 / 你把对方那一下盖掉了」说出来：静默合并
+ * 会让用户看到自己刚打的字凭空变回旧值（或者反过来），而他并不知道为什么。
+ *
+ * 只在**同一字段**上成立：我这一轮推了 title，同时收到别的设备改的 title。
+ * 我改日期、对方改标题，那两个字段都在，不算冲突。
+ */
+export interface FieldConflict {
+  entity: Entity;
+  entityId: string;
+  field: string;
+  /** 谁赢了（按 (ts, deviceId) 那套，与服务端逐字一致） */
+  winner: 'mine' | 'theirs';
+  /** 我这一轮推上去的值 */
+  mine: unknown;
+  /** 对方的值 */
+  theirs: unknown;
+  /** 对方的改动时间与设备，用来去重（同一处只留最新那条） */
+  ts: number;
+  deviceId: string;
+}
+
+export interface SyncResponse {  cursor: number;
   applied: string[];
   rejected: Rejected[];
   changes?: Change[];
@@ -221,6 +245,13 @@ export interface LocalState {
    * 跟 `denied` 一起自增，所以值是「这一次」的，不是历史累计。
    */
   deniedCals: string[];
+  /**
+   * 「同一字段两边都改过」的记录，给详情抽屉里那条提示用（见 `FieldConflict`）。
+   *
+   * **要落盘**：它说的是「你那一下被盖掉了」，刷新一次就忘掉等于没提示过。
+   * 用户点了「知道了」才清掉。
+   */
+  conflicts: FieldConflict[];
   /** 正在同步中。瞬时状态，不落盘（load 时一律重置为 false） */
   syncing: boolean;
 }
