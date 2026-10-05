@@ -63,7 +63,7 @@ function serveDist() {
     }
     const ext = path.extname(p);
     const head = { 'content-type': MIME[ext] || 'application/octet-stream' };
-    // HTML 一律 no-store：第八节要证明「断网后页面来自 Service Worker」，
+    // HTML 一律 no-store：第九节要证明「断网后页面来自 Service Worker」，
     // 而 Chrome 自己的 HTTP 缓存也能在服务器挂掉时把 index.html 交出来 ——
     // 那就成了假通过。真实 nginx 给 /schedule/ 配的也是 no-cache。
     if (ext === '.html' || ext === '.json' || p.endsWith('sw.js')) head['cache-control'] = 'no-store';
@@ -124,6 +124,46 @@ async function waitFor(page, expr, what, ms = 8000) {
   throw new Error(`等不到「${what}」，最后一次求值 = ${JSON.stringify(last)}`);
 }
 
+/* ---------------------------------------------------- 触屏合成 */
+
+/** 和 ui/hooks.ts 的 LONG_PRESS_MS 对齐。浏览器里是 480 */
+const LONG_PRESS_MS = 480;
+
+/**
+ * 合成一次触摸。走 CDP 的 Input.dispatchTouchEvent —— 它派生出来的
+ * pointer 事件带 pointerType:'touch'，和真手指走的是同一条路。
+ *
+ * 必须先 Emulation.setTouchEmulationEnabled，否则 Chrome 不装触摸后端，
+ * 这些事件会被直接丢掉（不是报错，是静默无效，最难查的那种）。
+ *
+ * 抬手也要给坐标：`touchPoints: []` 在有些版本上被接受、有些版本报
+ * 「Touch points must be between 1 and 16」，所以一律带上最后那个点。
+ */
+let lastTouch = { x: 0, y: 0 };
+async function touch(page, type, at) {
+  if (at) lastTouch = at;
+  await page.send('Input.dispatchTouchEvent', {
+    type,
+    touchPoints: [{ x: lastTouch.x, y: lastTouch.y, radiusX: 8, radiusY: 8, force: 1 }],
+  });
+}
+
+/** 用顶栏的快速输入框加一条任务（走真实 UI，不直接改 store） */
+async function quickAdd(page, text) {
+  const n = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
+  await evalJs(page, `
+    const inp = document.querySelector('.fast-add input');
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(inp, ${JSON.stringify(text)});
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  `);
+  // 等它真出现 —— 不等的话下一条会插到上一条前面，顺序断言就成了空话
+  return waitFor(page,
+    `document.querySelectorAll('[data-scope="inbox"] .task-el').length > ${n}`, '任务出现');
+}
+
 /* ------------------------------------------------------------ 主流程 */
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'sched-browser-'));
@@ -135,7 +175,11 @@ function track(p) { procs.push(p); return p; }
 
 function cleanup() {
   for (const p of procs) { try { p.kill('SIGKILL'); } catch (_) { /* 已经没了 */ } }
-  rmSync(dataDir, { recursive: true, force: true });
+  // Chrome 被 SIGKILL 之后还在往 profile 里写，直接 rm 会 ENOTEMPTY。
+  // 这本来只是收尾，不该因为收尾把整轮结果盖掉（之前就是这么盖掉过一次失败报告的）
+  try {
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (_) { /* /tmp 里留个目录无所谓 */ }
 }
 process.on('exit', cleanup);
 
@@ -161,6 +205,7 @@ try {
     '--headless=new', `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${path.join(dataDir, 'chrome')}`,
     '--no-first-run', '--no-default-browser-check', '--disable-gpu',
+    '--touch-events=enabled',   // 第八节要合成触摸，没有它事件会被静默丢掉
     '--window-size=1280,860', 'about:blank',
   ], { stdio: 'ignore' }));
 
@@ -253,9 +298,13 @@ try {
   console.log('\n五、管理浮层：改名能落库');
   await evalJs(page, `document.querySelector('[data-cal-manage]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('[data-cal-name]')`, '管理浮层打开');
-  // 成员是异步拉的，别在读之前就断言
+  // 成员是异步拉的，别在读之前就断言。
+  // **不能等「创建者」**：那是 ROLE_LABEL，发邀请那个 <select> 的 <option>
+  // 里就有一个，浮层一开就存在 —— 等它等于没等，成员还没到就开始读，
+  // 断言会随机失败（而且失败信息看着像「自己的名字没显示」，指向完全错的地方）。
+  // 等成员**条数**变成非零才是真的加载完了。
   await waitFor(page,
-    `[...document.querySelectorAll('[role="dialog"]')].some((d) => d.innerText.includes('创建者')) ? 1 : null`,
+    `[...document.querySelectorAll('[role="dialog"]')].some((d) => /成员（[1-9]\\d*）/.test(d.innerText)) ? 1 : null`,
     '成员列表加载完');
   const sheetText = await evalJs(page, `
     return [...document.querySelectorAll('[role="dialog"]')].map((d) => d.innerText).join('\\n');
@@ -350,7 +399,160 @@ try {
   ok(errors.length === 0, '邀请这一段也没有 console 报错'
     + (errors.length ? '：\n      ' + fmt(errors) : ''));
 
-  console.log('\n八、离线：外壳能打开，顶栏会说话');
+  console.log('\n八、触屏：长按提起 → 拖动排序 → 没动就弹操作层');
+  // 桌面视口 + 触屏事件。**不需要窄屏**：长按 / 拖拽只认 pointerType，
+  // 不认宽度（while 窄屏的标签栏那套是另一回事，那个本机测不了，见 CLAUDE.md 四、34）。
+  // 用 CDP 合成触摸，Chrome 会照常派生出 pointerType:'touch' 的 pointer 事件。
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
+  // 待办箱空的时候**没有** [data-drop] 那块（走 Empty 分支），所以这里只能等
+  // 「视图切过去了」这件事，不能等列表本身 —— 列表要等第一条任务加进去才出现
+  await waitFor(page,
+    `(document.body.innerText.includes('待办箱是空的') || !!document.querySelector('[data-scope="inbox"]'))`,
+    '切到待办箱');
+  for (const t of ['甲', '乙', '丙']) await quickAdd(page, t);
+  const inbox = () => evalJs(page, `
+    return [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .map((el) => el.textContent.trim());
+  `);
+  ok((await inbox()).join('') === '甲乙丙', '三条任务按添加顺序排，实际 ' + JSON.stringify(await inbox()));
+
+  const rectOf = (text) => evalJs(page, `
+    const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  `);
+
+  // —— 先验长按：不动手，松手应该弹操作层 ——
+  // 先证「合成的触摸确实进得来」。这一步单独断言，是为了失败时能分清
+  // 「触摸事件被 Chrome 吞了」和「拖拽逻辑本身不对」—— 后者会伪装成前者。
+  await evalJs(page, `
+    window.__pt = [];
+    document.addEventListener('pointerdown', (e) => window.__pt.push(e.pointerType), true);
+    return true;
+  `);
+  await evalJs(page, `
+    window.__pt = [];
+    for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerleave',
+      'mousedown', 'mouseup', 'click', 'contextmenu']) {
+      document.addEventListener(t, (e) => window.__pt.push(
+        t + ':' + e.pointerType + ':'
+        + (e.target?.closest?.('.task-el') ? '任务行' : String(e.target?.className || e.target?.tagName))), true);
+    }
+    return true;
+  `);
+  const p = await rectOf('甲');
+  await touch(page, 'touchStart', p);
+  await waitFor(page, `window.__pt.length ? window.__pt : null`, '合成触摸被派发');
+  await new Promise((r) => setTimeout(r, LONG_PRESS_MS + 250));
+  const pt = await evalJs(page, `return window.__pt;`);
+  // 只断言「收到过 pointerdown」是不够的 —— 之前就吃过一次教训：
+  // 事件是到了，但 target 是个盖住的浮层，落点根本不在那一行上，
+  // 后面的断言全跟着假失败。所以这里连 target 一起查。
+  ok(pt.some((x) => x.startsWith('pointerdown:touch:任务行')),
+    '合成的触摸打在任务行上，事件序列 = ' + JSON.stringify(pt));
+  const lifted = await evalJs(page,
+    `return !!document.querySelector('[data-scope="inbox"] .task-el.touch-drag');`);
+  ok(lifted, '长按 0.5 秒后那一行进入「提起」状态');
+  await touch(page, 'touchEnd');
+  await new Promise((r) => setTimeout(r, 200));
+  const up = await evalJs(page, `return {
+    seq: window.__pt,
+    sheet: !!document.querySelector('.act-sheet.open'),
+    lifted: !!document.querySelector('.task-el.touch-drag'),
+    editing: document.body.dataset.dragging || null,
+  };`);
+  ok(up.sheet, '提起后原地松手 → 弹出操作层（原来的老路没丢）；'
+    + '事件序列 ' + JSON.stringify(up.seq.slice(1)) + '，'
+    + '还提着？' + up.lifted + '，拖动中？' + up.editing);
+  ok(await evalJs(page, `return document.querySelectorAll('.act-sheet.open .as-btn').length > 0;`),
+    '操作层里有按钮');
+  await evalJs(page, `document.querySelector('.act-sheet .as-cancel').click(); return true;`);
+  ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`), '操作层能关掉');
+
+  // —— 再验拖动：提起后往下挪一条 ——
+  const p2 = await rectOf('甲');
+  const q = await rectOf('丙');
+  await touch(page, 'touchStart', p2);
+  await new Promise((r) => setTimeout(r, LONG_PRESS_MS + 250));
+  await touch(page, 'touchMove', { x: p2.x, y: p2.y + 12 });
+  await touch(page, 'touchMove', { x: q.x, y: q.y });
+  await new Promise((r) => setTimeout(r, 250));
+  ok(await evalJs(page, `return !!document.querySelector('.drop-hole');`),
+    '拖到别处时出现了让位洞');
+  await touch(page, 'touchEnd');
+  await new Promise((r) => setTimeout(r, 250));
+  const after = await inbox();
+  ok(after.join('') !== '甲乙丙', '拖完顺序真的变了，实际 ' + JSON.stringify(after));
+  ok(after[after.length - 1] === '甲', '被拖的「甲」到了最后一位，实际 ' + JSON.stringify(after));
+  ok(await evalJs(page, `return !document.querySelector('.drop-hole') && !document.querySelector('.task-el.touch-drag');`),
+    '松手后洞和「提起」状态都收干净了');
+  // 落库了才算数：不能只是视觉上挪了一下
+  const saved = await evalJs(page, `
+    const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
+    return Object.values(now).filter((t) => !t.deleted).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+      .map((t) => t.title);
+  `);
+  ok(saved.join('') === after.join(''), '顺序也落库了（localStorage 里一致），实际 ' + JSON.stringify(saved));
+  ok(saved.length === 3, '拖动没有多出或少了任务，实际 ' + JSON.stringify(saved));
+
+  // 关掉触摸模拟再往下走：第九节是鼠标那一路（开着触摸模拟，
+  // Chrome 会把合成的鼠标事件也改道），第十节离线也不需要它。
+  // maxTouchPoints 只能是 1..16，给 0 会被 CDP 挡下来（报的是
+  // 「Touch points must be between 1 and 16」，看着像触摸点的问题，其实是这个参数）
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+
+  console.log('\n九、鼠标拖拽：HTML5 那一路没被触屏改动带坏');
+  /* 两条路（HTML5 / 触屏）共用 applyDropAt + finishDrag + commitDrop，
+     所以这一节要证的**不是**排序逻辑本身（第八节已经证过了），
+     而是鼠标这条**入口**还通着：dragstart 有没有记住拖的是谁、
+     dragover 有没有靠 closest 找到落点容器、drop 有没有真的落库。
+     重构共享代码时最先坏的通常就是这一段接线。
+
+     合成 DragEvent 要显式给 dataTransfer —— Chrome 上不给是 null，
+     onDragStart 里一句 e.dataTransfer.effectAllowed = 'move' 就抛异常，
+     表现成「拖了半天没反应」。CLAUDE.md 四、33 还记着另一条：
+     target 默认是派发元素，所以事件要派在**行**上、不要派在容器上。 */
+  const dragFire = (type, text) => evalJs(page, `
+    const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
+    if (!el) return 'missing:' + ${JSON.stringify(text)};
+    const r = el.getBoundingClientRect();
+    if (!window.__dt) window.__dt = new DataTransfer();   // 同一个 drag 要共用一份
+    el.dispatchEvent(new DragEvent(${JSON.stringify(type)}, {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      dataTransfer: window.__dt,
+    }));
+    return 'ok';
+  `);
+
+  ok((await inbox()).join('') === '乙丙甲', '接着第八节的状态，「甲」还在最后，实际 ' + JSON.stringify(await inbox()));
+  ok(await dragFire('dragstart', '甲') === 'ok', '合成 dragstart 打在行上');
+  ok(await evalJs(page, `return document.body.classList.contains('dragging-active');`),
+    'dragstart 之后进入了拖动状态（说明事件真进了处理器，不是被丢了）');
+  ok(await dragFire('dragover', '乙') === 'ok', '合成 dragover 打在目标行上');
+  ok(await evalJs(page, `return !!document.querySelector('.drop-hole');`),
+    'dragover 时也让位出了洞（鼠标这条路同样走 applyDropAt）');
+  await dragFire('drop', '乙');
+  await new Promise((r) => setTimeout(r, 200));
+  const mAfter = await inbox();
+  ok(mAfter.join('') !== '乙丙甲', '鼠标拖完顺序真的变了，实际 ' + JSON.stringify(mAfter));
+  ok(mAfter[0] === '甲', '「甲」被拖回了第一位，实际 ' + JSON.stringify(mAfter));
+  await dragFire('dragend', '甲');
+  await new Promise((r) => setTimeout(r, 200));
+  ok(await evalJs(page, `return !document.querySelector('.drop-hole') && !document.body.classList.contains('dragging-active');`),
+    'dragend 之后洞和拖动状态都收干净了');
+  const mSaved = await evalJs(page, `
+    const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
+    return Object.values(now).filter((t) => !t.deleted).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+      .map((t) => t.title);
+  `);
+  ok(mSaved.join('') === mAfter.join(''), '鼠标拖的结果也落库了，实际 ' + JSON.stringify(mSaved));
+
+  console.log('\n十、离线：外壳能打开，顶栏会说话');
   // Service Worker 在第一趟就接管了（见「零」）。这里只确认它没在这几轮
   // 刷新 / 邀请流程里掉线 —— 掉了的话下面那几条会以另一种方式失败
   ok(await evalJs(page, `return !!navigator.serviceWorker.controller;`),
@@ -397,6 +599,7 @@ try {
 } catch (e) {
   failures++;
   console.error('\n探针中断：', e && e.message ? e.message : e);
+  if (e && e.stack) console.error(String(e.stack).split('\n').slice(1, 5).join('\n'));
 } finally {
   cleanup();
 }
