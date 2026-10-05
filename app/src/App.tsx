@@ -151,13 +151,19 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     { timer: null, fired: false, x: 0, y: 0 });
   const clearLp = () => { if (lp.current.timer) { clearTimeout(lp.current.timer); lp.current.timer = null; } };
   const pointerDown = (e: React.PointerEvent) => {
+    /* **这一行必须排在鼠标那次 return 之前。** 它清的是「吞掉抬手补的那记
+       click」的标志，而标志只有非鼠标长按会设上 —— 于是鼠标这条路原来直接
+       return，标志就一直挂在 true 上，把长按之后用鼠标点的第一下静默吃掉。
+       真手指点下一次时有自己的 pointerdown，能清掉它；探针的合成 `.click()`
+       没有 pointerdown，所以曾经要靠点两次才过（第一次什么动静都没有）。 */
+    lp.current.fired = false;
+
     // 鼠标继续走 HTML5 拖拽，长按只服务触屏
     if (e.pointerType === 'mouse') return;
     // 打卡行也能拖（列表排序那套对它是通用的），但操作层只服务任务
     const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el, .habit-row');
     const id = el?.dataset.id;
     if (!id || !el) return;
-    lp.current.fired = false;
     lp.current.x = e.clientX;
     lp.current.y = e.clientY;
     clearLp();
