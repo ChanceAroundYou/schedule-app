@@ -18,8 +18,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight,
-  Flame, Inbox, Loader2, LogOut, Moon, MoreHorizontal, Plus, Search, Sun,
-  Trash2, Upload, X, Download, Clock,
+  Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
+  Search, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
 import type { LocalState, PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -28,6 +28,7 @@ import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useIsNarrow, useOutsideClose, useDebounced } from './hooks.ts';
 import { IconBtn } from './kit.tsx';
+import { CalSwitcher } from './Calendars.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -96,9 +97,10 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout }: {
+function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites }: {
   state: LocalState; onNav: (k: string) => void; onNew: () => void;
   onExport: () => void; onImport: (f: File) => void; onLogout: () => void;
+  onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
@@ -138,6 +140,10 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout }: {
         <span className="plus"><Plus size={15} /></span>
         <span>新建任务</span>
       </button>
+
+      {/* 日程集在导航之上：下面的日程 / 打卡 / 已完成是**按集**的，
+          先选集再选页面，顺序跟用户脑子里的模型一致 */}
+      <CalSwitcher state={state} onManage={onManageCal} onInvites={onInvites} />
 
       <nav className="nav" id="nav">{main.map(item)}</nav>
       <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
@@ -388,16 +394,21 @@ export function Tabbar({ state, onNav, onMore }: {
 }
 
 /** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 / 退出 */
-export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onImport, onLogout, user }: {
+export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
+  onManageCal, onInvites, user }: {
   state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
   onTheme: () => void; onExport: () => void; onImport: (f: File) => void;
-  onLogout: () => void; user: PublicUser | null;
+  onLogout: () => void; onManageCal: () => void; onInvites: () => void;
+  user: PublicUser | null;
 }) {
   const c = counts(state);
   const fileRef = useRef<HTMLInputElement>(null);
   if (!open) return null;
 
   const goto = (k: string) => { onNav(k); onClose(); };
+  // 窄屏侧栏收起来了，日程集入口得在这里有一份
+  const cal = state.cals.find((x) => x.id === state.ui.cal) || null;
+  const pending = state.invites.length;
 
   return (
     <>
@@ -416,6 +427,16 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
             <span className="mi"><Trash2 size={20} /></span><span className="mt">垃圾箱</span>
             {badge(c.trash) && <span className="mc">{badge(c.trash)}</span>}
           </button>
+          <button className="ms-item" onClick={() => { onManageCal(); onClose(); }}>
+            <span className="mi"><Layers size={20} /></span>
+            <span className="mt">{cal ? cal.name : '日程集'}</span>
+          </button>
+          {!!pending && (
+            <button className="ms-item" onClick={() => { onInvites(); onClose(); }}>
+              <span className="mi"><MailPlus size={20} /></span><span className="mt">邀请</span>
+              <span className="mc">{badge(pending)}</span>
+            </button>
+          )}
           <button className="ms-item" onClick={onTheme}>
             <span className="mi">{state.ui.theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
             <span className="mt">{state.ui.theme === 'dark' ? '浅色' : '深色'}</span>
@@ -430,7 +451,7 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
         <div className="ms-pulse"><Pulse state={state} /></div>
         <div className="ms-user">
-          <span>{user ? user.name : ''}{user?.isAdmin ? ' · 管理员' : ''}</span>
+          <span>{user ? user.name : ''}</span>
           <button className="ms-logout" onClick={onLogout}><LogOut size={14} /> 退出登录</button>
         </div>
         <input
@@ -550,7 +571,7 @@ export function QuickAdd({ state, onSubmit }: {
 
 export function Shell({
   state, user, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
-  topbar, quickAdd, children,
+  onManageCal, onInvites, topbar, quickAdd, children,
 }: {
   state: LocalState; user: PublicUser | null;
   contentRef: React.RefObject<HTMLDivElement>;
@@ -560,6 +581,8 @@ export function Shell({
   onImport: (f: File) => void;
   onLogout: () => void;
   onTheme: () => void;
+  onManageCal: () => void;
+  onInvites: () => void;
   topbar: ReactNode;
   quickAdd: ReactNode;
   children: ReactNode;
@@ -573,6 +596,7 @@ export function Shell({
         <Sidebar
           state={state} onNav={onNav} onNew={onNew}
           onExport={onExport} onImport={onImport} onLogout={onLogout}
+          onManageCal={onManageCal} onInvites={onInvites}
         />
       )}
 
@@ -587,6 +611,7 @@ export function Shell({
         state={state} open={more && narrow} onClose={() => setMore(false)}
         user={user} onNav={onNav} onTheme={onTheme} onExport={onExport}
         onImport={onImport} onLogout={onLogout}
+        onManageCal={onManageCal} onInvites={onInvites}
       />
     </div>
   );

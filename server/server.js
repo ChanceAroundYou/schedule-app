@@ -9,6 +9,9 @@
  *   PORT=8080 node server.js
  *   SCHEDULE_DATA_DIR=/data node server.js
  *
+ * 这个文件只做三件事：解析请求、查权限、把活派给 lib/ 下的模块。
+ * 业务判断一律不在路由层写 —— 权限尤其（只有 calendars.canWrite/canManage 两处）。
+ *
  * 对外暴露的接口一览见 ../docs/接口.md。
  */
 'use strict';
@@ -21,11 +24,17 @@ const crypto = require('node:crypto');
 const db = require('./lib/db');
 const auth = require('./lib/auth');
 const sync = require('./lib/sync');
+const calendars = require('./lib/calendars');
+const invites = require('./lib/invites');
+const rl = require('./lib/ratelimit');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 25692);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 16 * 1024 * 1024;   // 首次导入历史数据可能一次推几千条 op
+
+/** 自助注册是开放的，给个上限，免得被刷成垃圾账户库。家庭场景用不到 200 */
+const MAX_USERS = Number(process.env.MAX_USERS || 200);
 
 /* ------------------------------------------------------------------ 启动 */
 
@@ -98,7 +107,6 @@ function issueToken(user) {
   return auth.signToken({
     sub: user.id,
     name: user.name,
-    adm: !!user.is_admin,
     iat: now,
     exp: now + auth.TOKEN_TTL_MS,
     jti: auth.newJti(),
@@ -106,7 +114,12 @@ function issueToken(user) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, isAdmin: !!u.is_admin, createdAt: Number(u.created_at) };
+  return { id: u.id, name: u.name, createdAt: Number(u.created_at) };
+}
+
+/** 限流被挡时统一的回包 */
+function tooMany(e) {
+  return { status: 429, body: { error: `操作太频繁，请 ${e.retryAfter} 秒后再试` } };
 }
 
 /* ---------------------------------------------------------------- 处理器 */
@@ -115,13 +128,17 @@ const handlers = {
 
   'GET /api/health': () => ({ status: 200, body: { ok: true, time: Date.now() } }),
 
-  /** 登录页据此决定显示「登录」还是「创建第一个账户」 */
-  'GET /api/auth/state': () => ({
-    status: 200,
-    body: { hasUsers: db.countUsers() > 0 },
-  }),
-
+  /**
+   * 自助注册。**开放**，没有管理员、没有邀请码。
+   *
+   * 建账户与建默认日程集在同一个事务里 —— 半途失败会留下一个没有集的账户，
+   * 而那种账户一进去就是白屏，也没有任何入口能自救。
+   */
   'POST /api/auth/register': (ctx) => {
+    const ip = rl.clientIp(ctx.req);
+    const limited = rl.hitBoth([`reg:${ip}`], 10, 3600 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
     const name = String(ctx.body.name || '').trim();
     const password = String(ctx.body.password || '');
 
@@ -129,29 +146,23 @@ const handlers = {
     if (np) return { status: 400, body: { error: np } };
     const pp = auth.passwordProblem(password);
     if (pp) return { status: 400, body: { error: pp } };
-
-    // 只有一台空服务器才允许自助注册 —— 开放注册等于把日程本挂在公网
-    if (db.countUsers() > 0) {
-      return { status: 403, body: { error: '已存在账户，请由管理员在设置里创建' } };
+    if (db.countUsers() >= MAX_USERS) {
+      return { status: 403, body: { error: `本服务器账户数已达上限（${MAX_USERS}）` } };
     }
 
     const { salt, hash } = auth.hashPassword(password);
     const user = {
       id: crypto.randomUUID(), name, salt, hash,
-      isAdmin: true, createdAt: Date.now(),
+      createdAt: Date.now(),
     };
-    // 事务内再查一次：两个请求同时到达时，第二个会在这里被挡住
     try {
       db.tx(() => {
-        if (db.countUsers() > 0) {
-          const e = new Error('已有账户');
-          e.status = 403;
-          throw e;
-        }
+        // 事务内再查一次：两个请求同时到达时，第二个会在这里被唯一索引挡住
         db.insertUser(user);
+        calendars.ensureHasCalendar(user.id);
       });
-    } catch (e) {
-      return { status: e.status || 500, body: { error: e.status ? e.message : '创建失败' } };
+    } catch (_) {
+      return { status: 409, body: { error: '用户名已被占用' } };
     }
 
     return {
@@ -163,8 +174,16 @@ const handlers = {
   },
 
   'POST /api/auth/login': (ctx) => {
+    const ip = rl.clientIp(ctx.req);
     const name = String(ctx.body.name || '').trim();
     const password = String(ctx.body.password || '');
+
+    // 两个键分开记：只按 IP 记，同一栋楼里一个人被锁全家进不来；
+    // 只按用户名记，换个名字就能继续试。任一超限就挡。
+    const key = `login:${ip}|${name}`;
+    const limited = rl.hitBoth([`login-ip:${ip}`, key], 20, 15 * 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
     const u = db.findUserByName(name);
 
     // 账户不存在时也跑一遍 scrypt —— 否则响应时间会泄露「这个用户名存不存在」
@@ -173,6 +192,10 @@ const handlers = {
       : (auth.hashPassword(password, '0'.repeat(32)), false);
 
     if (!ok) return { status: 401, body: { error: '用户名或密码不对' } };
+    rl.clear(key);
+
+    // 上次退出 / 集被删之后可能一个集都不剩了，登录时补上
+    calendars.ensureHasCalendar(u.id);
     return { status: 200, body: { token: issueToken(u), user: publicUser(u) } };
   },
 
@@ -181,35 +204,91 @@ const handlers = {
     return { status: 200, body: { ok: true } };
   },
 
-  'GET /api/users': (ctx, me) => {
-    if (!me.user.is_admin) return { status: 403, body: { error: '需要管理员权限' } };
-    return { status: 200, body: { users: db.listUsers().map(publicUser) } };
-  },
-
-  'POST /api/users': (ctx, me) => {
-    if (!me.user.is_admin) return { status: 403, body: { error: '需要管理员权限' } };
-    const name = String(ctx.body.name || '').trim();
-    const password = String(ctx.body.password || '');
-    const np = auth.nameProblem(name);
-    if (np) return { status: 400, body: { error: np } };
-    const pp = auth.passwordProblem(password);
-    if (pp) return { status: 400, body: { error: pp } };
-    if (db.findUserByName(name)) return { status: 409, body: { error: '用户名已存在' } };
-
-    const { salt, hash } = auth.hashPassword(password);
-    const user = {
-      id: crypto.randomUUID(), name, salt, hash,
-      isAdmin: false, createdAt: Date.now(),
+  /** 客户端启动只发这一个请求就能拿到全部所需：我是谁、我有哪些集、谁邀请了我 */
+  'GET /api/me': (ctx, me) => {
+    calendars.ensureHasCalendar(me.user.id);
+    return {
+      status: 200,
+      body: {
+        user: publicUser(me.user),
+        cals: calendars.listMine(me.user.id),
+        invites: invites.listFor(me.user.id),
+      },
     };
-    try {
-      db.insertUser(user);
-    } catch (_) {
-      return { status: 409, body: { error: '用户名已存在' } };
-    }
-    return { status: 200, body: { user: publicUser(db.findUserById(user.id)) } };
   },
 
-  /* ------------------------------------------------------------ 同步 */
+  /* ------------------------------------------------------------ 日程集 */
+
+  'GET /api/cals': (ctx, me) => ({
+    status: 200,
+    body: { cals: calendars.listMine(me.user.id) },
+  }),
+
+  'POST /api/cals': (ctx, me) => calendars.create(me.user.id, ctx.body.name),
+
+  'PATCH /api/cals/:calId': (ctx, me) =>
+    calendars.rename(ctx.params.calId, me.user.id, ctx.body.name),
+
+  'DELETE /api/cals/:calId': (ctx, me) =>
+    calendars.remove(ctx.params.calId, me.user.id),
+
+  'POST /api/cals/:calId/leave': (ctx, me) =>
+    calendars.leave(ctx.params.calId, me.user.id),
+
+  /** 成员名单 + 我发出去还没被接受的邀请（前端要在同一块里显示两种状态） */
+  'GET /api/cals/:calId/members': (ctx, me) => {
+    const calId = ctx.params.calId;
+    const role = db.roleOf(calId, me.user.id);
+    if (!role) return { status: 404, body: { error: '没有这个日程集' } };
+
+    const pending = invites.listSent(me.user.id).filter((i) => i.calId === calId);
+    return { status: 200, body: { members: calendars.members(calId), invites: pending, myRole: role } };
+  },
+
+  'PATCH /api/cals/:calId/members/:userId': (ctx, me) =>
+    calendars.setRole(ctx.params.calId, me.user.id, ctx.params.userId, ctx.body.role),
+
+  'DELETE /api/cals/:calId/members/:userId': (ctx, me) =>
+    calendars.kick(ctx.params.calId, me.user.id, ctx.params.userId),
+
+  /* -------------------------------------------------------------- 邀请 */
+
+  /** 发邀请。只有 owner 能发（canManage 的语义）。 */
+  'POST /api/cals/:calId/invites': (ctx, me) => {
+    const calId = ctx.params.calId;
+    const role = db.roleOf(calId, me.user.id);
+    if (!role) return { status: 404, body: { error: '没有这个日程集' } };
+    if (!calendars.canManage(role)) return { status: 403, body: { error: '只有创建者能邀请成员' } };
+
+    // 这个接口会回答「某个用户名存不存在」，所以要比别处更严
+    const limited = rl.hitBoth([`invite:${rl.clientIp(ctx.req)}`], 30, 3600 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
+    return invites.create(calId, me.user.id, ctx.body.name, ctx.body.role);
+  },
+
+  'GET /api/cals/:calId/invites': (ctx, me) => {
+    const calId = ctx.params.calId;
+    if (!db.roleOf(calId, me.user.id)) return { status: 404, body: { error: '没有这个日程集' } };
+    return { status: 200, body: { invites: invites.listSent(me.user.id).filter((i) => i.calId === calId) } };
+  },
+
+  'GET /api/invites': (ctx, me) => ({
+    status: 200,
+    body: { invites: invites.listFor(me.user.id) },
+  }),
+
+  'POST /api/invites/:inviteId/accept': (ctx, me) =>
+    invites.accept(ctx.params.inviteId, me.user.id),
+
+  'POST /api/invites/:inviteId/decline': (ctx, me) =>
+    invites.decline(ctx.params.inviteId, me.user.id),
+
+  /** 撤回：发出的人，或者这个集的 owner（判断在 invites.revoke 里） */
+  'DELETE /api/invites/:inviteId': (ctx, me) =>
+    invites.revoke(ctx.params.inviteId, me.user.id),
+
+  /* -------------------------------------------------------------- 同步 */
 
   'POST /api/sync': (ctx, me) => {
     const userId = me.user.id;
@@ -225,23 +304,68 @@ const handlers = {
       const p = sync.pull(userId, cursorIn);
       state = { cursor: p.cursor, changes: p.changes, truncated: p.truncated };
     } else {
-      state = { cursor: db.maxSeq(userId), snapshot: sync.snapshot(userId) };
+      // 这两句之间没有 await，Node 又是单线程，所以不存在「写完快照、
+      // 游标却跳到写入之后」的缝隙，不必额外加锁。
+      state = { cursor: db.maxSeq(), snapshot: sync.snapshot(userId) };
     }
 
-    return { status: 200, body: { ...state, applied, rejected } };
+    // cals / invites 每次同步都带回来：轮询顺带发现「有人邀请我」和
+    // 「我被拉进了一个新集」，不用刷新页面
+    return {
+      status: 200,
+      body: {
+        ...state, applied, rejected,
+        cals: calendars.listMine(userId),
+        invites: invites.listFor(userId),
+      },
+    };
   },
 };
 
 /* ---------------------------------------------------------------- 路由 */
 
+/** 把 '/api/cals/:calId/members' 编译成正则 + 参数名。静态段要转义。 */
+function compile(pattern) {
+  const names = [];
+  const body = pattern.split('/').map((seg) => {
+    if (seg.startsWith(':')) {
+      names.push(seg.slice(1));
+      return '([^/]+)';
+    }
+    return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }).join('/');
+  return { rx: new RegExp(`^${body}$`), names };
+}
+
+const PUBLIC = new Set(['GET /api/health', 'POST /api/auth/register', 'POST /api/auth/login']);
+
 const ROUTES = Object.keys(handlers).map((key) => {
-  const [method, routePath] = key.split(' ');
-  return { method, path: routePath, key, needsAuth: routePath !== '/api/health' && routePath !== '/api/auth/state' && routePath !== '/api/auth/login' && routePath !== '/api/auth/register' };
-});
+  const at = key.indexOf(' ');
+  return {
+    key,
+    method: key.slice(0, at),
+    ...compile(key.slice(at + 1)),
+    needsAuth: !PUBLIC.has(key),
+    // 静态段排在参数段前面：将来出现 GET /api/cals/:calId 与
+    // GET /api/cals/mine 这种组合时，静态的那个先被匹配到
+    isParam: key.includes('/:'),
+  };
+}).sort((a, b) => Number(a.isParam) - Number(b.isParam));
 
 function matchRoute(method, pathname) {
   for (const r of ROUTES) {
-    if (r.method === method && r.path === pathname) return r;
+    if (r.method !== method) continue;
+    const m = r.rx.exec(pathname);
+    if (!m) continue;
+    const params = {};
+    for (let i = 0; i < r.names.length; i += 1) {
+      try {
+        params[r.names[i]] = decodeURIComponent(m[i + 1]);
+      } catch (_) {
+        return null;   // 百分号编码坏了，当作没匹配上
+      }
+    }
+    return { ...r, params };
   }
   return null;
 }
@@ -288,7 +412,7 @@ function createServer() {
     }
 
     try {
-      const out = handlers[route.key]({ req, res, body }, me);
+      const out = handlers[route.key]({ req, res, body, params: route.params }, me);
       return send(res, out.status, out.body);
     } catch (e) {
       // 不外泄堆栈：它可能带着库文件路径
@@ -314,7 +438,7 @@ function main() {
     console.log(`日程清单后端已启动  http://${HOST}:${PORT}`);
     console.log(`数据目录  ${DATA_DIR}`);
     console.log(`数据库    ${db.file()}`);
-    console.log(`账户数    ${db.countUsers()}${db.countUsers() === 0 ? '（首个注册者将成为管理员）' : ''}`);
+    console.log(`账户数    ${db.countUsers()}（开放注册，上限 ${MAX_USERS}）`);
   });
 
   const shutdown = () => {

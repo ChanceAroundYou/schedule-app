@@ -1,55 +1,52 @@
 /**
- * Auth.tsx —— 登录 / 首次注册
+ * Auth.tsx —— 登录 / 注册
  *
- * 服务器是**多账户**的：第一个注册的人自动成为管理员（`users` 表里 id 最小
- * 的那个）。所以登录页没有「注册」开关，而是问一下 `auth/state`：
- *   还没人注册 → 这张表单就是「创建管理员账户」
- *   已经有账户 → 就是普通登录
+ * 服务器是**平等多用户**：没有管理员，任何人都能自助注册，注册完自动获得一个
+ * 自己的「我的日程」。所以这里是一个普通的登录/注册切换，不再去问
+ * `auth/state`、也不再有「第一个人是管理员」那套说明。
  *
- * 这样新部署的用户不需要先知道什么管理员密码，也不会给已有账户的人
- * 多出一个「注册」入口去试探重名。
+ * 校验以服务器为准，这里只做「格式明显不对就别多发一趟请求」的前置提示；
+ * 真正的错误（重名、弱密码、限流）由服务器返回，直接显示原文。
  */
 
-import { useEffect, useState } from 'react';
-import { CalendarCheck, Loader2, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
+import { useState } from 'react';
+import { CalendarCheck, Loader2, LogIn, UserPlus } from 'lucide-react';
 import { api, ApiError, setToken } from '../data/api.ts';
 import { Btn } from './kit.tsx';
 import type { PublicUser } from '../domain/types.ts';
 
+type Mode = 'login' | 'register';
+
 export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
-  const [hasUsers, setHasUsers] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    api.authState()
-      .then((s) => { if (alive) setHasUsers(!!s.hasUsers); })
-      // 连不上也让人能填表单 —— 否则网络抖一下就只剩一个空白页，连报错都没有
-      .catch(() => { if (alive) setHasUsers(true); });
-    return () => { alive = false; };
-  }, []);
+  const register = mode === 'register';
 
-  const first = hasUsers === false;
+  const swap = (m: Mode) => {
+    setMode(m);
+    setErr(null);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     const n = name.trim();
-    if (!n || !password) { setErr('请填写用户名和密码'); return; }
-    // 服务器那边也校验，这里只是提前给个反馈，省一趟往返
-    if (first && password.length < 6) { setErr('密码至少 6 位'); return; }
+    if (n.length < 2) { setErr('用户名至少 2 个字'); return; }
+    if (register && password.length < 6) { setErr('密码至少 6 位'); return; }
+    if (!password) { setErr('请输入密码'); return; }
 
     setBusy(true);
     setErr(null);
     try {
-      const r = first ? await api.register(n, password) : await api.login(n, password);
+      const r = register ? await api.register(n, password) : await api.login(n, password);
       setToken(r.token);
       onAuthed(r.user);
     } catch (e2) {
-      setErr(e2 instanceof ApiError ? e2.message : '登录失败，请重试');
+      setErr(e2 instanceof ApiError ? e2.message : '连不上服务器，请重试');
       setBusy(false);
     }
   };
@@ -68,15 +65,14 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           </div>
           <div className="text-lg font-semibold">日程清单</div>
           <div className="text-[13px] text-[var(--text-2,#5b6070)]">
-            {first ? '创建第一个账户，它会成为管理员' : '登录以同步你的日程'}
+            {register ? '注册后自动建一个「我的日程」' : '登录以同步你的日程'}
           </div>
         </div>
 
-        {first && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl bg-[var(--chip,rgba(0,0,0,.05))] p-3
+        {register && (
+          <div className="mb-4 rounded-xl bg-[var(--chip,rgba(0,0,0,.05))] p-3
                           text-[12.5px] leading-relaxed text-[var(--text-2,#5b6070)]">
-            <ShieldCheck size={15} className="mt-0.5 shrink-0" />
-            <span>管理员可以添加其他账户。登录后本机浏览器里原有的日程会自动导入。</span>
+            家里人各自注册一个账户，然后互相邀请进同一个日程集就能一起用了。
           </div>
         )}
 
@@ -98,21 +94,28 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
                      px-3 py-2 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete={first ? 'new-password' : 'current-password'}
+          autoComplete={register ? 'new-password' : 'current-password'}
         />
+        {register && <div className="mt-1 text-[11.5px] text-[var(--text-3,#8b90a0)]">至少 6 位</div>}
 
         {err && <div className="mt-3 text-[12.5px] text-[var(--danger,#e5484d)]">{err}</div>}
 
-        <Btn
-          variant="primary"
-          type="submit"
-          disabled={busy || hasUsers === null}
-          className="mt-5 w-full"
-        >
+        <Btn variant="primary" type="submit" disabled={busy} className="mt-5 w-full">
           {busy ? <Loader2 size={15} className="animate-spin" />
-            : first ? <UserPlus size={15} /> : <LogIn size={15} />}
-          {busy ? '请稍候…' : first ? '创建并进入' : '登录'}
+            : register ? <UserPlus size={15} /> : <LogIn size={15} />}
+          {busy ? '请稍候…' : register ? '注册并进入' : '登录'}
         </Btn>
+
+        <div className="mt-4 text-center text-[12.5px] text-[var(--text-2,#5b6070)]">
+          {register ? '已经有账户了？' : '还没有账户？'}
+          <button
+            type="button"
+            onClick={() => swap(register ? 'login' : 'register')}
+            className="ml-1 font-medium text-[var(--accent,#4f7cff)] hover:underline"
+          >
+            {register ? '去登录' : '注册一个'}
+          </button>
+        </div>
       </form>
     </div>
   );

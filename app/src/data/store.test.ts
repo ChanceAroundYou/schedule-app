@@ -34,9 +34,16 @@ const { counts, liveTasks } = await import('../domain/model.ts');
 
 const TODAY = D.today();
 
+/** 测试里用的那个日程集。**每个用例都必须先有一个可写的集** ——
+ *  写入通道会检查权限，一个集都没有时改动会被挡下（这正是它该做的），
+ *  于是所有断言都会莫名其妙地失败。 */
+const CAL = 'cal-1';
+
 function fresh(): void {
   mem.clear();
   store.resetLocal();
+  store.setCals([{ id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' }]);
+  store.setActiveCal(CAL);
 }
 
 /** 加一条任务，返回它的 id */
@@ -239,4 +246,63 @@ test('打卡是同一天一次的状态切换，不是自增', () => {
   store.toggleHabit(h);
   assert.equal(store.get().habits[h].log[TODAY], undefined, '再点一次是取消');
   assert.equal(counts(store.get()).habits, 1);
+});
+
+/* ==================== 日程集与权限 ==================== */
+
+test('新任务落在当前选中的集里', () => {
+  fresh();
+  const id = add('买菜');
+  assert.equal(store.get().tasks[id].calId, CAL);
+  assert.equal(store.get().outbox[0].calId, CAL, 'op 要带 calId，服务器靠它查权限');
+});
+
+test('只读成员写了也不落地，并且记下被挡的次数', () => {
+  fresh();
+  const id = add('买菜');
+  const before = store.get().outbox.length;
+
+  // 被降成只读（或本来就是只读）
+  store.setCals([{ id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'viewer' }]);
+
+  store.patchTask(id, { title: '改不动' });
+  assert.equal(store.get().tasks[id].title, '买菜', '没有写权限就不该改动');
+  assert.equal(store.get().outbox.length, before, '也不该产生 op');
+  assert.equal(store.get().denied, 1, '被挡下必须计数，界面才能提示用户');
+});
+
+test('切集只影响当前集，另一个集的任务原样留着', () => {
+  fresh();
+  const mine = add('我的事');
+
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '家里的', ownerId: 'u2', createdAt: 0, role: 'editor' },
+  ]);
+  store.setActiveCal('cal-2');
+  const theirs = add('家事');
+  assert.equal(store.get().tasks[theirs].calId, 'cal-2');
+
+  // 切回第一个集，两边都还在（过滤发生在上层，store 里是全量）
+  store.setActiveCal(CAL);
+  assert.ok(store.get().tasks[mine]);
+  assert.ok(store.get().tasks[theirs]);
+});
+
+test('被移出的集连同它的实体一起清掉，别的集不受影响', () => {
+  fresh();
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '家里的', ownerId: 'u2', createdAt: 0, role: 'editor' },
+  ]);
+  store.setActiveCal('cal-2');
+  const theirs = add('家事');
+  store.setActiveCal(CAL);
+  const mine = add('我的事');
+
+  store.setCals([{ id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' }]);
+
+  assert.equal(store.get().tasks[theirs], undefined, '退出的集不该再占着本地空间');
+  assert.ok(store.get().tasks[mine]);
+  assert.equal(store.get().ui.cal, CAL, '选中的集失效时要自动落到还存在的那个');
 });

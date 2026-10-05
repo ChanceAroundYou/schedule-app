@@ -10,7 +10,9 @@
  * 状态归 store.ts 管。
  */
 
-import type { Op, PublicUser, SyncResponse } from '../domain/types.ts';
+import type {
+  Cal, Invite, Member, Op, PublicUser, Role, SyncResponse,
+} from '../domain/types.ts';
 
 const TOKEN_KEY = 'schedule-app-token';
 
@@ -42,12 +44,10 @@ export class ApiError extends Error {
 export interface AuthResult { token: string; user: PublicUser }
 
 /**
- * 登录时把用户对象一并缓存下来。
+ * 登录时把用户对象一并缓存下来：**离线启动**时界面要有名字可显示。
  *
- * 为什么不每次启动问服务器：服务器**没有** `/api/me`，而 `/api/users` 是
- * 管理员专属的 —— 拿它来「确认我是谁」会让普通账户直接 403。
- * 缓存可能过期（在别处被取消管理员），代价只是界面上多显示一行
- * 「管理员」；真要加权限判断时再加 `/api/me`，别用 users 兜。
+ * 每次在线的同步拿到的是权威值（sync 响应里虽然不带 user，但 /api/me 会带），
+ * 缓存只负责「服务器够不着时别显示空白」。
  */
 const USER_KEY = 'schedule-app-user';
 
@@ -108,9 +108,7 @@ export interface SyncRequest {
 export const api = {
   health: () => req<{ ok: boolean; time: number }>('GET', 'health'),
 
-  /** 登录页据此决定显示「登录」还是「创建第一个账户」 */
-  authState: () => req<{ hasUsers: boolean }>('GET', 'auth/state'),
-
+  /** 自助注册，开放。注册成功服务器会顺手建一个「我的日程」 */
   register: (name: string, password: string) =>
     req<AuthResult>('POST', 'auth/register', { name, password }),
 
@@ -119,10 +117,57 @@ export const api = {
 
   logout: () => req<{ ok: boolean }>('POST', 'auth/logout', {}),
 
-  listUsers: () => req<{ users: PublicUser[] }>('GET', 'users').then((r) => r.users),
-
-  createUser: (name: string, password: string) =>
-    req<{ user: PublicUser }>('POST', 'users', { name, password }).then((r) => r.user),
+  /** 启动只发这一个请求：我是谁、我有哪些集、谁邀请了我 */
+  me: () => req<{ user: PublicUser; cals: Cal[]; invites: Invite[] }>('GET', 'me'),
 
   sync: (body: SyncRequest) => req<SyncResponse>('POST', 'sync', body),
+
+  /* ------------------------------------------------------------ 日程集 */
+
+  createCal: (name: string) =>
+    req<{ cal: Cal }>('POST', 'cals', { name }).then((r) => r.cal),
+
+  renameCal: (id: string, name: string) =>
+    req<{ id: string; name: string }>('PATCH', `cals/${encodeURIComponent(id)}`, { name }),
+
+  removeCal: (id: string) => req<{ ok: boolean }>('DELETE', `cals/${encodeURIComponent(id)}`),
+
+  leaveCal: (id: string) => req<{ ok: boolean }>('POST', `cals/${encodeURIComponent(id)}/leave`, {}),
+
+  members: (id: string) =>
+    req<{ members: Member[]; invites: Invite[]; myRole: Role }>(
+      'GET', `cals/${encodeURIComponent(id)}/members`, undefined,
+    ),
+
+  setRole: (id: string, userId: string, role: Role) =>
+    req<{ ok: boolean }>(
+      'PATCH', `cals/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { role },
+    ),
+
+  kick: (id: string, userId: string) =>
+    req<{ ok: boolean }>(
+      'DELETE', `cals/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    ),
+
+  /* -------------------------------------------------------------- 邀请 */
+
+  /** 邀请要对方**接受**才生效 —— 这一步只是把邀请放进他的收件箱 */
+  invite: (calId: string, name: string, role: Role) =>
+    req<{ ok: boolean }>('POST', `cals/${encodeURIComponent(calId)}/invites`, { name, role }),
+
+  sentInvites: (calId: string) =>
+    req<{ invites: Invite[] }>('GET', `cals/${encodeURIComponent(calId)}/invites`).then((r) => r.invites),
+
+  revokeInvite: (id: string) =>
+    req<{ ok: boolean }>('DELETE', `invites/${encodeURIComponent(id)}`),
+
+  myInvites: () => req<{ invites: Invite[] }>('GET', 'invites').then((r) => r.invites),
+
+  acceptInvite: (id: string) =>
+    req<{ ok: boolean; calId: string; role: Role }>(
+      'POST', `invites/${encodeURIComponent(id)}/accept`, {},
+    ),
+
+  declineInvite: (id: string) =>
+    req<{ ok: boolean }>('POST', `invites/${encodeURIComponent(id)}/decline`, {}),
 };

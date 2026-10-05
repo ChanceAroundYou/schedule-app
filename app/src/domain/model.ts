@@ -9,7 +9,7 @@
 
 import * as D from './date.ts';
 import { toRepeat } from './repeat.ts';
-import type { Habit, LocalState, SyncMeta, Task, UiPrefs } from './types.ts';
+import type { Habit, LocalState, Role, Task, UiPrefs } from './types.ts';
 
 /* ------------------------------------------------------------------ id */
 
@@ -36,6 +36,19 @@ export function newOpId(): string {
   return newId();
 }
 
+/**
+ * hydrate 能接受的形状：id 与同步元数据齐了，业务字段可以缺。
+ *
+ * `calId` 在这里是可选的（SyncMeta 里是必填）—— 迁移进来的旧数据和
+ * 还没归位的远端变更都还没有归属，hydrate 补成空串，由 store 落位。
+ */
+export type MetaLike = {
+  id: string;
+  calId?: string;
+  _ts: Record<string, number>;
+  _dev: Record<string, string>;
+};
+
 /* ------------------------------------------------------------- 可见性 */
 
 export const isGone = (e: { deleted?: boolean; purged?: boolean }): boolean =>
@@ -47,6 +60,32 @@ export const isTrashed = (e: { deleted?: boolean; purged?: boolean }): boolean =
 
 export function allTasks(s: LocalState): Task[] { return Object.values(s.tasks); }
 export function allHabits(s: LocalState): Habit[] { return Object.values(s.habits); }
+
+/* --------------------------------------------------------- 日程集与权限 */
+
+/**
+ * 我在某个集里的角色。**权限判断的唯一入口** —— 别在别处写
+ * `cal.role === 'owner'`，加一档角色时会漏掉那些散落的比较。
+ */
+export function roleOf(s: LocalState, calId: string | null | undefined): Role | null {
+  if (!calId) return null;
+  const c = s.cals.find((x) => x.id === calId);
+  return c ? c.role : null;
+}
+
+/** 有没有集可写。false = 还没连上服务器（一个集都没同步下来） */
+export function hasCals(s: LocalState): boolean { return s.cals.length > 0; }
+
+/**
+ * 按集过滤的一批实体。
+ *
+ * `calId === null` 表示**不过滤** —— 今天 / 逾期 / 待办箱 / 垃圾箱这几个页面
+ * 是跨集的（用户既定：清单跨集，日程按集）。要用 `undefined` 表达「选中的集
+ * 恰好是 null（还没同步下来）」时，先看 hasCals。
+ */
+export function inCal<T extends { calId: string }>(list: T[], calId: string | null): T[] {
+  return calId === null ? list : list.filter((e) => e.calId === calId);
+}
 
 export function liveTasks(s: LocalState): Task[] { return allTasks(s).filter((t) => !isGone(t)); }
 export function liveHabits(s: LocalState): Habit[] { return allHabits(s).filter((h) => !isGone(h)); }
@@ -242,8 +281,9 @@ export function nextOrder(s: LocalState, date: string | null): number {
  *
  * 只补**缺失**的字段，不覆盖已有值，也不碰 _ts / _dev。
  */
-export function hydrateTask<T extends Partial<Task> & SyncMeta>(e: T): T & Task {
+export function hydrateTask<T extends Partial<Task> & MetaLike>(e: T): T & Task {
   const t = e as T & Task;
+  if (t.calId === undefined) t.calId = '';
   if (t.title === undefined) t.title = '未命名任务';
   if (t.note === undefined) t.note = '';
   if (t.date === undefined) t.date = null;
@@ -262,8 +302,9 @@ export function hydrateTask<T extends Partial<Task> & SyncMeta>(e: T): T & Task 
   return t;
 }
 
-export function hydrateHabit<T extends Partial<Habit> & SyncMeta>(e: T): T & Habit {
+export function hydrateHabit<T extends Partial<Habit> & MetaLike>(e: T): T & Habit {
   const h = e as T & Habit;
+  if (h.calId === undefined) h.calId = '';
   if (h.title === undefined) h.title = '未命名习惯';
   if (h.order === undefined) h.order = 0;
   if (!h.log || typeof h.log !== 'object') h.log = {};
@@ -275,6 +316,7 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
   const date = partial.date ?? null;
   const t: Task = {
     id: partial.id || newId(),
+    calId: partial.calId || '',
     title: partial.title || '未命名任务',
     note: partial.note || '',
     date,
@@ -303,9 +345,10 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
   return t;
 }
 
-export function makeHabit(title: string, order: number, id?: string): Habit {
+export function makeHabit(title: string, order: number, calId: string, id?: string): Habit {
   return {
     id: id || newId(),
+    calId,
     title,
     order,
     log: {},
@@ -329,6 +372,7 @@ export function defaultUi(): UiPrefs {
     navOrder: NAV_ALL.slice(),
     navBottom: ['trash'],
     tdoneOpen: false,
+    cal: null,
   };
 }
 
@@ -337,6 +381,9 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   const ui: UiPrefs = { ...d, ...(raw || {}) };
 
   if (ui.theme !== 'dark') ui.theme = 'light';
+  // cal 只保证是字符串或 null。它到底还存不存在要等服务器把集列表发下来，
+  // 那一步在 store.setCals 里做 —— normalizeUi 是纯函数，不知道有哪些集。
+  if (ui.cal != null && typeof ui.cal !== 'string') ui.cal = null;
   if (!['day', 'week', 'month'].includes(ui.view)) ui.view = 'day';
   if (!ui.cursor) ui.cursor = D.today();
   if (ui.nav === 'notes') ui.nav = 'today';
@@ -411,6 +458,7 @@ export function migrateV3(raw: V3State): MigrationResult {
     const repeat = toRepeat(t.repeat, t.date ?? null);
     tasks.push({
       id,
+      calId: '',   // 归属由 store.loadMigrated 落位 —— 迁移这一步还不知道有哪些集
       title: t.title || '未命名任务',
       note: t.note || '',
       date: t.date ?? null,
@@ -438,6 +486,7 @@ export function migrateV3(raw: V3State): MigrationResult {
     const id = p.id || newId();
     tasks.push({
       id,
+      calId: '',
       title: p.title || '未命名任务',
       note: p.note || '',
       date: p.date ?? null,
@@ -464,6 +513,7 @@ export function migrateV3(raw: V3State): MigrationResult {
     if (!h || typeof h !== 'object') { ignored++; continue; }
     habits.push({
       id: h.id || newId(),
+      calId: '',
       title: h.title || '未命名习惯',
       order: h.order ?? 0,
       log: h.log || {},
@@ -495,7 +545,7 @@ export function fillTs<T extends { _ts: Record<string, number>; _dev: Record<str
   return entity;
 }
 
-/** 一个实体里「属于数据」的字段名（排除 _ts / _dev / id） */
+/** 一个实体里「属于数据」的字段名（排除 id / calId / _ts / _dev） */
 export function dataFields(entity: Record<string, unknown>): string[] {
-  return Object.keys(entity).filter((k) => k !== 'id' && k !== '_ts' && k !== '_dev');
+  return Object.keys(entity).filter((k) => k !== 'id' && k !== 'calId' && k !== '_ts' && k !== '_dev');
 }

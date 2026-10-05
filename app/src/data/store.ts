@@ -13,9 +13,10 @@
  * tasks 是几百 KB 的浪费，而 useSyncExternalStore 只需要一个会变的快照值。
  */
 
-import type { Entity, Habit, LocalState, Op, Task, UiPrefs } from '../domain/types.ts';
+import type { Cal, Entity, Habit, Invite, LocalState, Op, Task, UiPrefs } from '../domain/types.ts';
+import { canWrite } from '../domain/types.ts';
 import {
-  hydrateHabit, hydrateTask, liveHabits, trashedTasks, trashedHabits,
+  hydrateHabit, hydrateTask, liveHabits, trashedTasks, trashedHabits, roleOf,
   makeTask, makeHabit, newOpId, normalizeUi, defaultUi, nextOrder, orderCmp,
 } from '../domain/model.ts';
 import { writeFields } from '../domain/merge.ts';
@@ -29,8 +30,8 @@ const KEY = 'schedule-app-v4';
 
 function blank(): LocalState {
   return {
-    tasks: {}, habits: {}, cursor: 0, outbox: [],
-    ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
+    tasks: {}, habits: {}, cals: [], invites: [], cursor: 0, outbox: [],
+    ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false, denied: 0,
   };
 }
 
@@ -78,16 +79,20 @@ export function load(): LocalState {
       state = {
         tasks: p.tasks || {},
         habits: p.habits || {},
+        cals: Array.isArray(p.cals) ? p.cals : [],
+        invites: Array.isArray(p.invites) ? p.invites : [],
         cursor: Number(p.cursor) || 0,
         outbox: Array.isArray(p.outbox) ? p.outbox : [],
         ui: normalizeUi(p.ui),
         lastError: p.lastError ?? null,
         clockBlocked: Array.isArray(p.clockBlocked) ? p.clockBlocked : [],
         syncing: false,   // 瞬时状态，别把上次关页面时的 true 带进来
+        denied: 0,
       };
       // 磁盘上那份可能是旧版本写的、或者上一轮同步只写了一半的稀疏实体
       for (const t of Object.values(state.tasks)) hydrateTask(t);
       for (const h of Object.values(state.habits)) hydrateHabit(h);
+      resolveCal();
     } catch (_) {
       state = blank();   // 坏数据就当没存过，别让整个应用打不开
     }
@@ -102,12 +107,130 @@ export function resetLocal(): void {
   emit();
 }
 
+/* ------------------------------------------------------------ 日程集 */
+
+/**
+ * 保证 `ui.cal` 指向一个真实存在、且我仍然在里面的集。
+ *
+ * **只有这一个地方改 `ui.cal` 的归属** —— 集列表一变（被踢、自己退出、
+ * 别人删了、刚接受邀请）就调它。散在各处判断迟早会留下一个指向已消失集的
+ * 选择，表现是「界面一片空白，怎么点都没反应」。
+ *
+ * 优先保留用户当前的选择；它不在了才退到第一个。
+ */
+function resolveCal(): void {
+  const ids = state.cals.map((c) => c.id);
+  if (!state.ui.cal || !ids.includes(state.ui.cal)) {
+    state.ui.cal = ids.length ? ids[0] : null;
+  }
+}
+
+/** 当前选中的集 id。null 表示还没有集（多半是还没连上服务器） */
+export function activeCal(): string | null {
+  return state.ui.cal;
+}
+
+/** 某个实体属于哪个集。新实体还没落位时归到当前选中的集。 */
+export function calOf(entity: Entity, id: string): string {
+  const e = rawBucket(entity)[id];
+  const own = e && typeof e.calId === 'string' ? e.calId : '';
+  return own || state.ui.cal || '';
+}
+
+export function getCals(): Cal[] { return state.cals; }
+export function getInvites(): Invite[] { return state.invites; }
+
+/** 内容真的变了才写盘 / 通知 —— 每 15 秒一次轮询都会调它，不能每次都重渲染 */
+function differs<T>(cur: T[], next: T[]): boolean {
+  return JSON.stringify(cur) !== JSON.stringify(next);
+}
+
+/**
+ * 丢掉属于「我已经不在里面」的集的本地数据。
+ *
+ * 被踢出 / 主动退出一个集之后，服务器不会再把这些集的东西发过来，本地那
+ * 一份就永远留着了 —— 用户会看到自己明明已经退出的日程集还在列表里。
+ *
+ * 只在集列表非空时才清：服务器保证每人至少有一个集，收到空列表多半是
+ * 请求出了问题，那时候清空等于把整台设备的数据抹掉。
+ */
+function pruneCals(): void {
+  if (!state.cals.length) return;
+  const ids = new Set(state.cals.map((c) => c.id));
+  for (const [id, t] of Object.entries(state.tasks)) {
+    if (t.calId && !ids.has(t.calId)) delete state.tasks[id];
+  }
+  for (const [id, h] of Object.entries(state.habits)) {
+    if (h.calId && !ids.has(h.calId)) delete state.habits[id];
+  }
+}
+
+export function setCals(cals: Cal[] | undefined): void {
+  if (!Array.isArray(cals) || !differs(state.cals, cals)) return;
+  state.cals = cals;
+  resolveCal();
+  pruneCals();
+  persist();
+  emit();
+}
+
+export function setInvites(invites: Invite[] | undefined): void {
+  if (!Array.isArray(invites) || !differs(state.invites, invites)) return;
+  state.invites = invites;
+  persist();
+  emit();
+}
+
+/** 切换当前看的集。纯本地偏好，不影响数据归属。 */
+export function setActiveCal(id: string): void {
+  if (!state.cals.some((c) => c.id === id) || state.ui.cal === id) return;
+  state.ui.cal = id;
+  persist();
+  emit();
+}
+
+/**
+ * 把一个实体挪到另一个集。
+ *
+ * **不是改 calId 一个字段**：calId 是主键的一部分，改了等于换了一条实体。
+ * 服务器那边 `field_state` 的主键是 (cal_id, entity, entity_id)，就地改 id
+ * 会在旧集留下一份永远删不掉的孤儿（新集那条和它不同主键，谁也盖不住谁）。
+ * 所以正确做法是「目标集里新建一条 + 源集里留墓碑」，用户视角是挪过去了，
+ * 代价只是 id 变了 —— 他没机会看见。
+ */
+export function moveToCal(entity: Entity, id: string, targetCal: string): void {
+  const src = rawBucket(entity)[id];
+  if (!src || src.calId === targetCal) return;
+  if (!canWrite(roleOf(state, targetCal))) return;
+
+  const fields = dataOf(src as unknown as Task | Habit);
+  // 搬过去的是「活着的那份」：墓碑字段不跟着走
+  delete fields.deleted;
+  delete fields.deletedAt;
+  delete fields.purged;
+  delete fields.trashFrom;
+
+  const copyId = newOpId();
+  const copy = rawBucket(entity);
+  copy[copyId] = { id: copyId, calId: targetCal, _ts: {}, _dev: {} };
+  writeFields(copy[copyId] as never, fields, Date.now(), deviceId());
+  if (entity === 'task') hydrateTask(copy[copyId] as never);
+  else hydrateHabit(copy[copyId] as never);
+
+  commitMany([
+    { entity, id: copyId, calId: targetCal, fields },
+    { entity, id, calId: String(src.calId), fields: { deleted: true, deletedAt: Date.now(), trashFrom: '移动日程集' } },
+  ]);
+}
+
 /* ---------------------------------------------------------- 写入通道 */
 
 export interface Change {
   entity: Entity;
   id: string;
   fields: Record<string, unknown>;
+  /** 只有跨集写入才需要显式指定；一般情况下由实体自身或当前选中的集决定 */
+  calId?: string;
 }
 
 function bucketOf(e: Entity): Record<string, Task> | Record<string, Habit> {
@@ -130,28 +253,42 @@ function rawBucket(e: Entity): Record<string, RawEntity> {
 /**
  * 一批改动用同一个时间戳。同一次用户操作算一个时刻 —— 分开取 Date.now()
  * 会让同一次点击产生的两个字段带上不同 ts，回放和调试时都对不上账。
+ *
+ * 只读成员在这里被挡下：写入既不落本地也不进 outbox。界面那边也会把按钮
+ * 禁掉，但**真正把关的是这一处** —— 界面上漏了一个入口，这里还能兜住。
  */
-export function commitMany(items: Change[], opts: { queue?: boolean } = {}): void {
-  if (!items.length) return;
+export function commitMany(items: Change[]): void {
+  const writable = items.filter((it) => {
+    const calId = it.calId || calOf(it.entity, it.id);
+    return !!calId && canWrite(roleOf(state, calId));
+  });
+
+  // 被挡下的改动必须**说出来**。静默丢弃是最糟的一种：用户点了勾选，界面
+  // 毫无反应，他只会以为程序卡了，然后反复点。记一个计数器，由 App 弹一次提示。
+  if (writable.length < items.length) {
+    state.denied++;
+    emit();
+  }
+  if (!writable.length) return;
+
   const ts = Date.now();
   const dev = deviceId();
-  const queue = opts.queue !== false;
 
-  for (const it of items) {
+  for (const it of writable) {
+    const calId = it.calId || calOf(it.entity, it.id);
     const bucket = rawBucket(it.entity);
     let e = bucket[it.id];
-    if (!e) e = bucket[it.id] = { id: it.id, _ts: {}, _dev: {} };
+    if (!e) e = bucket[it.id] = { id: it.id, calId, _ts: {}, _dev: {} };
+    e.calId = calId;   // 主键的一部分，跟着实体走，不是可同步字段
     writeFields(e as never, it.fields, ts, dev);
     if (it.entity === 'task') hydrateTask(e as never);
     else hydrateHabit(e as never);
 
-    if (queue) {
-      const op: Op = {
-        opId: newOpId(), deviceId: dev, ts,
-        entity: it.entity, entityId: it.id, fields: it.fields,
-      };
-      state.outbox.push(op);
-    }
+    const op: Op = {
+      opId: newOpId(), deviceId: dev, ts, calId,
+      entity: it.entity, entityId: it.id, fields: it.fields,
+    };
+    state.outbox.push(op);
   }
 
   persist();
@@ -173,6 +310,8 @@ export interface RemoteChange {
   value: unknown;
   ts: number;
   deviceId: string;
+  /** 属于哪个集。服务器一定带；本地摊平快照时从实体上取 */
+  calId?: string;
 }
 
 /**
@@ -181,6 +320,9 @@ export interface RemoteChange {
  * 快照和增量走的是**同一条路** —— 快照无非是一批 ts/_dev 齐全的变更而已。
  * 统一的好处是只有一套比较逻辑，不会出现「首屏同步和后续同步结果不一样」。
  *
+ * `calId` 不参与 LWW：它是主键，不是字段。有就写上（本地还没有这条时尤其
+ * 重要 —— 没有归属就不知道该往哪个集写、也没有写权限）。
+ *
  * @returns 远端数据是否真的改变了本地内容
  */
 export function applyRemote(changes: RemoteChange[]): boolean {
@@ -188,7 +330,8 @@ export function applyRemote(changes: RemoteChange[]): boolean {
   for (const c of changes) {
     const bucket = rawBucket(c.entity);
     let e = bucket[c.entityId];
-    if (!e) e = bucket[c.entityId] = { id: c.entityId, _ts: {}, _dev: {} };
+    if (!e) e = bucket[c.entityId] = { id: c.entityId, calId: c.calId || '', _ts: {}, _dev: {} };
+    if (c.calId) e.calId = c.calId;
 
     const curTs = (e._ts as Record<string, number>)[c.field] ?? -Infinity;
     const curDev = (e._dev as Record<string, string>)[c.field] ?? '';
@@ -219,9 +362,9 @@ export function flattenSnapshot(
       const ts = (e._ts || {}) as Record<string, number>;
       const dev = (e._dev || {}) as Record<string, string>;
       for (const field of Object.keys(e)) {
-        if (field === 'id' || field === '_ts' || field === '_dev') continue;
+        if (field === 'id' || field === 'calId' || field === '_ts' || field === '_dev') continue;
         out.push({
-          entity, entityId: e.id, field,
+          entity, entityId: e.id, field, calId: e.calId,
           value: (e as unknown as Record<string, unknown>)[field],
           ts: ts[field] ?? 0, deviceId: dev[field] ?? '',
         });
@@ -288,6 +431,7 @@ export interface TaskDraft {
 export function addTask(d: TaskDraft): string {
   const date = d.date ?? null;
   const t = makeTask({
+    calId: state.ui.cal || '',
     title: d.title,
     note: d.note || '',
     date,
@@ -391,8 +535,9 @@ export function emptyTrash(): void {
 /* ---------------------------------------------------------------- 打卡 */
 
 export function addHabit(title: string): string {
-  const h = makeHabit(title, liveHabits(state).length);
-  commitMany([{ entity: 'habit', id: h.id, fields: dataOf(h) }]);
+  const calId = state.ui.cal || '';
+  const h = makeHabit(title, liveHabits(state).filter((x) => x.calId === calId).length, calId);
+  commitMany([{ entity: 'habit', id: h.id, calId, fields: dataOf(h) }]);
   return h.id;
 }
 
@@ -496,26 +641,39 @@ export function moveUntimed(id: string, date: string | null, refId: string | nul
 
 /* ------------------------------------------------------------ 批量装载 */
 
-/** 迁移进来的历史数据就地装载，同时把每条都排进 outbox 推给服务器 */
+/**
+ * 迁移 / 导入进来的历史数据就地装载，同时把每条都排进 outbox 推给服务器。
+ *
+ * 旧数据没有集的归属（`calId` 是空串），统一落到当前选中的集 —— 首次注册时
+ * 那就是刚建出来的「我的日程」。已经带归属的（导入一份别人给的备份）原样保留，
+ * 但那个集我得有写权限，否则 commitMany 会把它们整批挡下。
+ */
 export function loadMigrated(tasks: Task[], habits: Habit[]): number {
+  const target = state.ui.cal || '';
   const items: Change[] = [];
   for (const t of tasks) {
+    const calId = t.calId || target;
+    if (!calId) continue;
+    t.calId = calId;
     state.tasks[t.id] = t;
-    items.push({ entity: 'task', id: t.id, fields: dataOf(t) });
+    items.push({ entity: 'task', id: t.id, calId, fields: dataOf(t) });
   }
   for (const h of habits) {
+    const calId = h.calId || target;
+    if (!calId) continue;
+    h.calId = calId;
     state.habits[h.id] = h;
-    items.push({ entity: 'habit', id: h.id, fields: dataOf(h) });
+    items.push({ entity: 'habit', id: h.id, calId, fields: dataOf(h) });
   }
   commitMany(items);
   return items.length;
 }
 
-/** 一个实体里属于「数据」的那部分字段（排除 id 与同步元数据） */
+/** 一个实体里属于「数据」的那部分字段（排除 id / calId 与同步元数据） */
 function dataOf(e: Task | Habit): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(e)) {
-    if (k === 'id' || k === '_ts' || k === '_dev') continue;
+    if (k === 'id' || k === 'calId' || k === '_ts' || k === '_dev') continue;
     out[k] = (e as unknown as Record<string, unknown>)[k];
   }
   return out;

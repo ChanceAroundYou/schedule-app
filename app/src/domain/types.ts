@@ -6,6 +6,10 @@
  *   2. 重复实例带 seriesId，id 由 `seriesId#发生日期` 派生，不再用随机数
  *   3. 删除是墓碑字段（deleted / purged / deletedAt），不是数组里抹掉一条
  *
+ * 加上日程集之后多了一条：**每个实体带 calId**。它不是可同步的字段，而是
+ * 主键的一部分 —— 一条任务属于哪个集，改归属等于换一条实体（见 store.moveToCal）。
+ * 所以 calId 和 _ts / _dev 一样只存在本地、不进 op 的 fields。
+ *
  * 「垃圾箱」在旧版是独立的 trash 数组，里面存的是整条任务的深拷贝快照。
  * 那样没法同步：另一端删掉任务后，快照只存在于删除方的浏览器里。v4 改成
  * 墓碑 —— 垃圾箱就是 `deleted && !purged` 的那些实体本身。清空垃圾箱 =
@@ -25,9 +29,11 @@ export interface RepeatRule {
   end: null | { type: 'date'; date: string } | { type: 'count'; count: number };
 }
 
-/** 每个实体都带的同步元数据。_ts / _dev 只存在本地，不上传。 */
+/** 每个实体都带的同步元数据。calId / _ts / _dev 只存在本地，不上传。 */
 export interface SyncMeta {
   id: string;
+  /** 属于哪个日程集。**不是可同步字段** —— 它是主键的一部分 */
+  calId: string;
   /** 每个字段最后一次已知写入的时间戳 */
   _ts: Record<string, number>;
   /** 同上，写入者的 deviceId —— 时间戳相同时用它做确定性平局破解 */
@@ -78,12 +84,63 @@ export interface Habit extends SyncMeta {
 
 export type Entity = 'task' | 'habit';
 
+/* ============================== 日程集 ============================== */
+
+/**
+ * 三档角色。判断只走 `canWrite` / `canManage` 两个函数，
+ * 别在界面上散落 `role === 'owner'` 这种比较 —— 加一档时会漏。
+ */
+export type Role = 'owner' | 'editor' | 'viewer';
+
+export interface Cal {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: number;
+  /** **我**在这个集里的角色 */
+  role: Role;
+}
+
+export interface Member {
+  id: string;
+  name: string;
+  role: Role;
+  joinedAt: number;
+}
+
+export interface Invite {
+  id: string;
+  calId: string;
+  calName: string;
+  role: Role;
+  createdAt: number;
+  /** 待我处理的：谁邀请的 */
+  fromName: string | null;
+  /** 我发出去的：邀请的谁 */
+  toName: string | null;
+}
+
+/** 能改内容（任务 / 打卡） */
+export const canWrite = (r: Role | undefined | null): boolean => r === 'owner' || r === 'editor';
+/** 能改集本身与成员 */
+export const canManage = (r: Role | undefined | null): boolean => r === 'owner';
+
+export const ROLE_LABEL: Record<Role, string> = {
+  owner: '创建者',
+  editor: '可编辑',
+  viewer: '只读',
+};
+
+/* ============================== 同步 ============================== */
+
 /** 一条同步操作。字段是「本次改动的那几个」，不是整条实体。 */
 export interface Op {
   /** 客户端生成的 UUIDv4，幂等键 */
   opId: string;
   deviceId: string;
   ts: number;
+  /** 写到哪个日程集。服务器据此查权限 —— 没有它就没法判断能不能写 */
+  calId: string;
   entity: Entity;
   entityId: string;
   fields: Record<string, unknown>;
@@ -94,8 +151,9 @@ export interface Rejected {
   /**
    * bad_request —— 这条 op 本身有问题，重试多少次都一样
    * clock       —— 只是设备时钟不对，改成正确时间后能成功
+   * forbidden   —— 没有这个集的写权限。和 bad_request 一样是终态
    */
-  code: 'bad_request' | 'clock';
+  code: 'bad_request' | 'clock' | 'forbidden';
   reason: string;
 }
 
@@ -106,6 +164,8 @@ export interface Change {
   value: unknown;
   ts: number;
   deviceId: string;
+  /** 服务器一定会带；本地摊平快照时也从实体上取 */
+  calId?: string;
 }
 
 export interface SyncResponse {
@@ -115,6 +175,9 @@ export interface SyncResponse {
   changes?: Change[];
   truncated?: boolean;
   snapshot?: { tasks: Record<string, Task>; habits: Record<string, Habit> };
+  /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
+  cals?: Cal[];
+  invites?: Invite[];
 }
 
 /** 设备本地偏好。**不进同步** —— 同步过去只会让手机改主题把桌面也改了。 */
@@ -127,11 +190,17 @@ export interface UiPrefs {
   navOrder: string[];
   navBottom: string[];
   tdoneOpen: boolean;
+  /** 当前选中的日程集。本地偏好，各设备可以看不同的集 */
+  cal: string | null;
 }
 
 export interface LocalState {
   tasks: Record<string, Task>;
   habits: Record<string, Habit>;
+  /** 我加入的日程集。服务器每次同步都会刷新 */
+  cals: Cal[];
+  /** 待我处理的邀请 */
+  invites: Invite[];
   cursor: number;
   outbox: Op[];
   ui: UiPrefs;
@@ -139,6 +208,11 @@ export interface LocalState {
   lastError: string | null;
   /** 被服务器退回但值得留着重试的 opId（时钟不对那一类） */
   clockBlocked: string[];
+  /**
+   * 累计被「没有写权限」挡下的改动次数。只在本地自增，用来弹一次提示 ——
+   * 界面上漏了一个入口时，用户能立刻知道是权限问题而不是程序卡了。
+   */
+  denied: number;
   /** 正在同步中。瞬时状态，不落盘（load 时一律重置为 false） */
   syncing: boolean;
 }
@@ -146,6 +220,5 @@ export interface LocalState {
 export interface PublicUser {
   id: string;
   name: string;
-  isAdmin: boolean;
   createdAt: number;
 }

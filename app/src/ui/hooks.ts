@@ -9,13 +9,38 @@
  * 计数器正好是这个语义，比每次都造一个新对象便宜得多。
  */
 
-import { useSyncExternalStore, useCallback, useEffect, useRef, useState } from 'react';
+import { useSyncExternalStore, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as store from '../data/store.ts';
 import type { LocalState } from '../domain/types.ts';
 
 export function useStoreState(): LocalState {
   useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
   return store.get();
+}
+
+/**
+ * 只看**当前选中的日程集**里那一份。日程 / 打卡 / 已完成这三个页面用它。
+ *
+ * 为什么在状态这一层过滤，而不是给每个查询函数加一个 calId 参数：
+ * 下游十几个选择器全部只认 `s.tasks` / `s.habits`，过滤一次它们就不用动。
+ * 「哪些页面跨集、哪些按集」是我们既定的一条界面约定（清单跨集，日程按集），
+ * 表达成「这个页面拿到哪份 state」最直白，也不会有人忘了传参数。
+ *
+ * 今天 / 逾期 / 待办箱 / 垃圾箱**不**用这个 hook —— 它们是跨集的。
+ */
+export function useScopedState(): LocalState {
+  const all = useStoreState();
+  const version = store.getVersion();
+  const cal = all.ui.cal;
+  return useMemo(() => {
+    if (!cal) return all;
+    const tasks: LocalState['tasks'] = {};
+    for (const [id, t] of Object.entries(all.tasks)) if (t.calId === cal) tasks[id] = t;
+    const habits: LocalState['habits'] = {};
+    for (const [id, h] of Object.entries(all.habits)) if (h.calId === cal) habits[id] = h;
+    return { ...all, tasks, habits };
+    // all 是可变的同一个引用，靠 version 触发重算
+  }, [all, cal, version]);
 }
 
 /** 只关心状态里的一个派生值时用它，避免每次写入都重算整棵树 */

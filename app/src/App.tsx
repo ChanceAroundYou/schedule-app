@@ -18,12 +18,13 @@ import * as store from './data/store.ts';
 import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from './data/api.ts';
 import * as engine from './sync/engine.ts';
 import { readLegacy } from './data/legacy.ts';
-import { useStoreState, useIsNarrow, LONG_PRESS_MS } from './ui/hooks.ts';
+import { useStoreState, useScopedState, useIsNarrow, LONG_PRESS_MS } from './ui/hooks.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
 import { HOUR_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
+import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
 import { CalendarView, useViewLayout } from './views/Calendar.tsx';
@@ -41,13 +42,23 @@ function applyTheme(theme: 'light' | 'dark'): void {
 /* ============================== 主体 ============================== */
 
 function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
+  /**
+   * 两份 state，用途不同，别混：
+   *   state  —— 全量。今天 / 逾期 / 待办箱 / 垃圾箱 / 侧栏徽标 / 抽屉都看它，
+   *             因为这几处是**跨集**的（用户既定：清单跨集）
+   *   scoped —— 只含当前选中的日程集。日程 / 打卡 / 已完成看它
+   * 在状态这一层分叉，views/ 下的组件就不用各自过滤一遍。
+   */
   const state = useStoreState();
+  const scoped = useScopedState();
   const narrow = useIsNarrow();
   const confirm = useConfirm();
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [actId, setActId] = useState<string | null>(null);
+  const [calOpen, setCalOpen] = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => store.get().ui.theme);
 
   /* -------- 主题 -------- */
@@ -370,7 +381,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     const n = data.tasks.length;
     const ok = await confirm({
       title: `导入 ${n} 条任务？`,
-      body: '备份里的任务会和现有数据**合并**（同 id 覆盖，其余保留），不会先清空。',
+      body: '备份里的任务会和现有数据合并（同 id 覆盖，其余保留），不会先清空。',
       confirmText: '导入',
     });
     if (!ok) return;
@@ -379,19 +390,45 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     void engine.syncNow();
   }, [confirm]);
 
+  /* -------- 被权限挡下的改动要说出来 -------- */
+  // 只读日程集里点勾选，写入会在 store 那一层被丢在门口。不提示的话
+  // 用户看到的是「点了没反应」，会以为程序坏了
+  const deniedRef = useRef(state.denied);
+  useEffect(() => {
+    if (state.denied !== deniedRef.current) {
+      deniedRef.current = state.denied;
+      toast('这个日程集你只有查看权限，改动没有保存');
+    }
+  }, [state.denied]);
+
   /* -------- 长按后的 click 吞掉标志要复位 -------- */
   useEffect(() => { lp.current.fired = false; }, [actId]);
 
   /* -------- 内容分发 -------- */
   let body: React.ReactNode;
-  switch (state.ui.nav) {
-    case 'inbox': body = <InboxView state={state} />; break;
-    case 'today': body = <TodayView state={state} onNav={nav} />; break;
-    case 'overdue': body = <OverdueView state={state} />; break;
-    case 'done': body = <DoneView state={state} />; break;
-    case 'habits': body = <HabitsView state={state} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />; break;
-    case 'trash': body = <TrashView state={state} />; break;
-    default: body = <CalendarView state={state} />;
+  if (!state.cals.length) {
+    // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
+    // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集
+    body = (
+      <div className="empty">
+        <div>还没拿到你的日程集</div>
+        <div className="empty-sub">正在连接服务器，稍等一下；断网时本地内容照常显示</div>
+      </div>
+    );
+  } else {
+    switch (state.ui.nav) {
+      // 跨集：清单不按集分家
+      case 'inbox': body = <InboxView state={state} />; break;
+      case 'today': body = <TodayView state={state} onNav={nav} />; break;
+      case 'overdue': body = <OverdueView state={state} />; break;
+      case 'trash': body = <TrashView state={state} />; break;
+      // 按集：这几页只画当前选中的那个集
+      case 'done': body = <DoneView state={scoped} />; break;
+      case 'habits':
+        body = <HabitsView state={scoped} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />;
+        break;
+      default: body = <CalendarView state={scoped} />;
+    }
   }
 
   return (
@@ -408,17 +445,29 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       onImport={importBackup}
       onLogout={onLogout}
       onTheme={toggleTheme}
+      onManageCal={() => setCalOpen(true)}
+      onInvites={() => setInvOpen(true)}
       topbar={
-        <Topbar
-          state={state}
-          narrow={narrow}
-          onView={(v) => store.setUi({ view: v })}
-          onShift={shift}
-          onToday={() => store.setUi({ cursor: D.today(), nav: 'calendar' })}
-          onCursor={(iso) => store.setUi({ cursor: iso, nav: 'calendar' })}
-          onTheme={toggleTheme}
-          onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
-        />
+        <>
+          <Topbar
+            state={state}
+            narrow={narrow}
+            onView={(v) => store.setUi({ view: v })}
+            onShift={shift}
+            onToday={() => store.setUi({ cursor: D.today(), nav: 'calendar' })}
+            onCursor={(iso) => store.setUi({ cursor: iso, nav: 'calendar' })}
+            onTheme={toggleTheme}
+            onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
+          />
+          {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
+              时用户完全不知道为什么内容不变 */}
+          {!!state.lastError && (
+            <div className="mx-4 mb-2 rounded-lg bg-[var(--danger-soft,rgba(229,72,77,.1))]
+                            px-3 py-1.5 text-[12.5px] text-[var(--danger,#e5484d)]">
+              {state.lastError}
+            </div>
+          )}
+        </>
       }
       quickAdd={
         <QuickAdd
@@ -460,6 +509,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onOpenDrawer={(id) => { setActId(null); setOpenId(id); }}
         onMove={moveInList}
       />
+
+      {/* 两个浮层都传全量 state：它们要读 cals / invites，那是跨集的东西 */}
+      <ManageSheet state={state} open={calOpen} onClose={() => setCalOpen(false)} />
+      <InviteSheet state={state} open={invOpen} onClose={() => setInvOpen(false)} />
     </Shell>
   );
 }

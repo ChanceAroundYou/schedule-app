@@ -10,7 +10,7 @@
  * 重连地狱。真需要实时再加，schema 不用动。
  */
 
-import { api, ApiError, getToken } from '../data/api.ts';
+import { api, ApiError, getToken, setCachedUser } from '../data/api.ts';
 import * as store from '../data/store.ts';
 import { deviceId } from '../data/device.ts';
 import { readLegacy } from '../data/legacy.ts';
@@ -46,9 +46,12 @@ function describe(e: unknown): string {
 /**
  * 处理被服务器退回的 op。
  *
- * 两种退回要分开对待，混在一起就会出问题：
+ * 三种退回要分开对待，混在一起就会出问题：
  *   bad_request —— 这条 op 本身坏了，重试多少次都一样，**丢掉**，否则它会
  *                  永远堵在 outbox 最前面，后面的改动一条都推不上去
+ *   forbidden   —— 没有这个集的写权限（只读成员，或已被移出）。同样是终态，
+ *                  丢掉并提示。留着的话，万一哪天被重新授权，一条几个月前的
+ *                  改动会突然生效
  *   clock       —— 只是本机时间不对，**留着**。丢掉就等于用户那几次操作
  *                  凭空消失；留着他校准完时间自然能推上来。
  */
@@ -60,12 +63,18 @@ function handleRejected(rejected: Rejected[]): void {
 
   const bad: string[] = [];
   const clock: string[] = [];
-  for (const r of rejected) (r.code === 'clock' ? clock : bad).push(r.opId);
+  let denied = 0;
+  for (const r of rejected) {
+    if (r.code === 'clock') clock.push(r.opId);
+    else { bad.push(r.opId); if (r.code === 'forbidden') denied++; }
+  }
 
   store.ackOps(bad);
   store.setClockBlocked(clock);
   if (clock.length) {
     store.setError('本机时间不准，' + clock.length + ' 条改动等时间校准后会自动补传');
+  } else if (denied) {
+    store.setError('有 ' + denied + ' 条改动没有权限写入，已跳过');
   }
 }
 
@@ -74,16 +83,24 @@ function handleRejected(rejected: Rejected[]): void {
  *
  * @returns 这一轮有没有推进（outbox 变短了，或者游标前进了）
  */
-async function round(): Promise<boolean> {
+async function round(forceSnapshot: boolean): Promise<boolean> {
   const s = store.get();
   const ops = s.outbox.slice(0, OPS_PER_CALL);
   const before = s.outbox.length;
 
-  const res = await api.sync({ cursor: s.cursor, deviceId: deviceId(), ops });
+  const res = await api.sync({
+    cursor: forceSnapshot ? 0 : s.cursor,
+    deviceId: deviceId(),
+    ops,
+  });
 
   if (res.rejected && res.rejected.length) handleRejected(res.rejected);
 
   store.ackOps(res.applied || []);
+
+  // 集与邀请每次都带回来，轮询顺带发现「有人邀请我」「我被移出了某个集」
+  store.setCals(res.cals);
+  store.setInvites(res.invites);
 
   // 快照与增量走同一条合并路径，见 store.applyRemote 的注释
   if (res.snapshot) store.applyRemote(store.flattenSnapshot(res.snapshot));
@@ -109,10 +126,24 @@ export async function syncNow(): Promise<void> {
   setSyncing(true);
 
   try {
+    // 本地已知的集。哪一轮发现自己不认识某个集，就得改要一次全量快照 ——
+    // 游标是全局单调的，加入一个集时游标早就越过它历史的那些变更了，
+    // 光靠增量永远拉不到这个集已有的内容。
+    const known = new Set(store.getCals().map((c) => c.id));
+    let forceSnapshot = false;
+
     for (let i = 0; i < MAX_ROUNDS; i++) {
-      const progressed = await round();
-      if (!store.get().outbox.length) break;
-      if (!progressed) break;      // 推不动了（多半是被 clock 挡住），别空转
+      const progressed = await round(forceSnapshot);
+      forceSnapshot = false;
+
+      const now = store.getCals();
+      if (now.some((c) => !known.has(c.id))) {
+        forceSnapshot = true;
+        for (const c of now) known.add(c.id);
+      }
+
+      if (!store.get().outbox.length && !forceSnapshot) break;
+      if (!progressed && !forceSnapshot) break;   // 推不动了（多半是被 clock 挡住），别空转
     }
   } catch (e) {
     store.setError(describe(e));
@@ -123,13 +154,38 @@ export async function syncNow(): Promise<void> {
 }
 
 /**
+ * 重新问一次「我是谁、我有哪些集、谁邀请了我」。
+ *
+ * 成员关系变了之后（建集 / 接受邀请 / 被移出 / 退出）调它。**不能靠同步
+ * 响应里的 cals 兜底**：那条路径要等下一次同步才走，而用户刚点了「接受」
+ * 就指望界面里出现新集，中间会有一段空白。
+ */
+export async function refreshMeta(): Promise<void> {
+  const me = await api.me();
+  setCachedUser(me.user);
+  store.setCals(me.cals);
+  store.setInvites(me.invites);
+}
+
+/**
  * 登录之后调一次。
+ *
+ * 先问一次 `/api/me`：拿权威的用户名、集列表和待处理邀请。登录页缓存的
+ * 用户对象可能是上一个版本写的，而**一个集都没有时界面是空白的** ——
+ * 那一步不能等同步跑完。
  *
  * 首次导入的判断放在**同步完成之后**：先看服务器账号里有没有东西，
  * 空账号才把本机的旧数据搬上去。否则在第二台浏览器上登录时，
  * 会把本地残留的演示数据倒进一个已经有内容的账号里。
  */
 export async function bootstrap(): Promise<void> {
+  try {
+    await refreshMeta();
+  } catch (e) {
+    // 连不上就继续走同步那条路 —— 它会再报一次，且本地缓存还能用
+    if (e instanceof ApiError && e.status === 401) throw e;
+  }
+
   await syncNow();
 
   const s = store.get();
