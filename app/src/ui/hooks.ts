@@ -49,6 +49,32 @@ export function useStoreSelector<T>(pick: (s: LocalState) => T): T {
   return pick(store.get());
 }
 
+/**
+ * 浏览器报告的联网状态。
+ *
+ * 断网时**界面必须说话**：改动确实什么都没丢（在 outbox 里排队），但用户看不到
+ * 这句话，只会以为「点了没保存」，然后重复操作。
+ *
+ * 用 `navigator.onLine` 而不是「上一次请求成不成功」：前者能立刻反映网线拔掉，
+ * 后者的代价是每加一个探针就多一次请求。
+ */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(
+    () => typeof navigator === 'undefined' || navigator.onLine,
+  );
+  useEffect(() => {
+    const on = () => setOnline(navigator.onLine);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', on);
+    on();   // 事件监听之前状态可能就已经变了（比如从 bfcache 回来）
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', on);
+    };
+  }, []);
+  return online;
+}
+
 /** 窗口宽度是否落在窄屏（与 styles.css 的 @media 断点必须一致） */
 const NARROW = '(max-width: 900px)';
 

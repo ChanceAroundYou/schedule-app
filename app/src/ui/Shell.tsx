@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight,
+  AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
   Search, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
@@ -26,7 +26,7 @@ import * as D from '../domain/date.ts';
 import { counts, liveTasks } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
-import { useIsNarrow, useOutsideClose, useDebounced } from './hooks.ts';
+import { useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { IconBtn } from './kit.tsx';
 import { CalSwitcher } from './Calendars.tsx';
 
@@ -264,6 +264,7 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
   onSearch: (kw: string) => void;
 }) {
   const ui = state.ui;
+  const online = useOnline();
   const [jump, setJump] = useState(false);
   const [kw, setKw] = useState(ui.search);
   const debounced = useDebounced(kw, 180);
@@ -349,11 +350,17 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
           {ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </IconBtn>
 
-        {!narrow && state.syncing && (
+        {/* 离线优先于「正在同步」——断网时那个转圈会一直转下去，
+            看起来像卡死了，而这句「改动不会丢」才是用户真正要的信息 */}
+        {!online ? (
+          <span className="sync-dot" title="离线，改动先存在本机，联网后自动同步">
+            <CloudOff size={14} />
+          </span>
+        ) : !narrow && state.syncing ? (
           <span className="sync-dot" title="正在同步">
             <Loader2 size={14} className="animate-spin" />
           </span>
-        )}
+        ) : null}
       </div>
     </header>
   );

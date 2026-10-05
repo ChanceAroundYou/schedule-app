@@ -61,7 +61,13 @@ function serveDist() {
     if (!p.startsWith(DIST) || !existsSync(p) || statSync(p).isDirectory()) {
       res.writeHead(404); res.end('not found'); return;
     }
-    res.writeHead(200, { 'content-type': MIME[path.extname(p)] || 'application/octet-stream' });
+    const ext = path.extname(p);
+    const head = { 'content-type': MIME[ext] || 'application/octet-stream' };
+    // HTML 一律 no-store：第八节要证明「断网后页面来自 Service Worker」，
+    // 而 Chrome 自己的 HTTP 缓存也能在服务器挂掉时把 index.html 交出来 ——
+    // 那就成了假通过。真实 nginx 给 /schedule/ 配的也是 no-cache。
+    if (ext === '.html' || ext === '.json' || p.endsWith('sw.js')) head['cache-control'] = 'no-store';
+    res.writeHead(200, head);
     createReadStream(p).pipe(res);
   });
   return new Promise((r) => srv.listen(WEB_PORT, '127.0.0.1', () => r(srv)));
@@ -122,6 +128,8 @@ async function waitFor(page, expr, what, ms = 8000) {
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'sched-browser-'));
 const procs = [];
+/** 静态服务句柄。离线那一段要主动把它关掉，所以提到外面来 */
+let web = null;
 
 function track(p) { procs.push(p); return p; }
 
@@ -141,8 +149,8 @@ try {
     env: { ...process.env, PORT: String(API_PORT), SCHEDULE_DATA_DIR: dataDir },
     stdio: 'ignore',
   }));
-  const web = await serveDist();
-  procs.push({ kill: () => web.close() });
+  web = await serveDist();
+  procs.push({ kill: () => { if (web && web.listening) web.close(); } });
 
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${API_PORT}/api/health`)).ok) break; } catch (_) { /* 等 */ }
@@ -175,14 +183,30 @@ try {
   const collect = () => {
     for (const e of page.events.splice(0)) {
       if (e.method === 'Runtime.exceptionThrown') {
-        errors.push(e.params.exceptionDetails?.text || 'exception');
+        errors.push({ text: e.params.exceptionDetails?.text || 'exception', url: '' });
       } else if (e.method === 'Log.entryAdded' && e.params.entry.level === 'error') {
-        errors.push(e.params.entry.text);
+        errors.push({ text: e.params.entry.text, url: e.params.entry.url || '' });
       }
     }
   };
+  const fmt = (list) => list.map((e) => e.text + (e.url ? '  <' + e.url + '>' : '')).join('\n      ');
 
   await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+
+  console.log('\n零、装上 Service Worker 的那一刻就有离线能力');
+  // 必须在**这一趟**就断言。第六节会刷新页面，那之后缓存里必然有东西，
+  // 再查就分不清「安装时预缓存了」和「后来被动存下来的」——
+  // 而「第一次打开后断网能进」正是这个功能唯一要保证的事。
+  await waitFor(page, `!!navigator.serviceWorker.controller`, 'Service Worker 接管页面', 15000);
+  const cached = await evalJs(page, `
+    const c = await caches.open('sched-shell-v1');
+    return (await c.keys()).map((r) => new URL(r.url).pathname);
+  `);
+  ok(cached.some((p) => p.endsWith('/index.html')), '外壳 HTML 已预缓存，实际 ' + JSON.stringify(cached));
+  ok(cached.some((p) => p.includes('/assets/') && p.endsWith('.js')), '带哈希的 JS 已预缓存');
+  ok(cached.some((p) => p.includes('/assets/') && p.endsWith('.css')), '带哈希的 CSS 已预缓存');
+  ok(cached.some((p) => p.endsWith('/manifest.json')), 'manifest 已预缓存');
+  ok(cached.some((p) => p.endsWith('/icon.svg')), '图标已预缓存');
 
   console.log('\n一、未登录时是登录页');
   await waitFor(page, `!!document.querySelector('form input')`, '登录表单出现');
@@ -269,7 +293,7 @@ try {
   ok(await evalJs(page, `return !!localStorage.getItem('schedule-app-token');`), 'token 还在');
 
   collect();
-  ok(errors.length === 0, '全程没有 console 报错' + (errors.length ? '：\n      ' + errors.join('\n      ') : ''));
+  ok(errors.length === 0, '全程没有 console 报错' + (errors.length ? '：\n      ' + fmt(errors) : ''));
 
   console.log('\n七、别人邀请我 → 接受 → 多一个集');
   // 用另一个账号（直接从 API 建）向浏览器里这个人发邀请，看界面接不接得住
@@ -324,7 +348,50 @@ try {
 
   collect();
   ok(errors.length === 0, '邀请这一段也没有 console 报错'
-    + (errors.length ? '：\n      ' + errors.join('\n      ') : ''));
+    + (errors.length ? '：\n      ' + fmt(errors) : ''));
+
+  console.log('\n八、离线：外壳能打开，顶栏会说话');
+  // Service Worker 在第一趟就接管了（见「零」）。这里只确认它没在这几轮
+  // 刷新 / 邀请流程里掉线 —— 掉了的话下面那几条会以另一种方式失败
+  ok(await evalJs(page, `return !!navigator.serviceWorker.controller;`),
+    'Service Worker 一直接管着页面');
+
+  // navigator.onLine 不会因为「我把本地服务器关了」而变 —— 它反映的是网卡。
+  // 要用 CDP 模拟离线才能驱动 offline 事件。
+  await page.send('Network.enable');
+  await page.send('Network.emulateNetworkConditions', {
+    offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0,
+  });
+  await waitFor(page, `navigator.onLine === false`, '浏览器报告离线', 5000);
+  await waitFor(page, `document.querySelector('.sync-dot[title*="离线"]') ? 1 : null`,
+    '顶栏出现离线标记', 5000);
+  ok(true, '断网时顶栏告诉用户「改动先存在本机」，而不是一直转圈');
+
+  await page.send('Network.emulateNetworkConditions', {
+    offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+  });
+  await waitFor(page, `navigator.onLine === true`, '恢复联网', 5000);
+  ok(await evalJs(page, `return !document.querySelector('.sync-dot[title*="离线"]');`),
+    '联网后离线标记消失');
+
+  // 真正的离线考验：把静态服务关掉再刷新，页面只可能来自 Service Worker 缓存。
+  // closeAllConnections 是必须的 —— 光 close() 只停止接受新连接，Chrome 池子里
+  // 那条 keep-alive 还能把请求送进来，测试会假通过。
+  web.closeAllConnections?.();
+  await new Promise((r) => web.close(r));
+  await page.send('Page.reload');
+  await waitFor(page, `!!document.querySelector('.sidebar')`, '断网后仍能打开应用', 12000);
+  ok(await evalJs(page, `return document.querySelector('[data-cal]')?.textContent.trim() === '全家';`),
+    '断网打开的是同一份数据（日程集名字还在）');
+  ok(await evalJs(page, `return document.querySelectorAll('[data-nav]').length > 0;`),
+    '断网时导航也在，不是白屏');
+
+  collect();
+  // 断网时 /api/ 的请求必然失败 —— Service Worker **故意不碰接口**，这是设计如此。
+  // 引擎自己会把它记成 lastError 显示出来，所以这里只关心别的来源的报错。
+  const other = errors.filter((e) => !e.url.includes('/api/'));
+  ok(other.length === 0, '离线这一段除了接口连不上，没有别的 console 报错'
+    + (other.length ? '：\n      ' + fmt(other) : ''));
 
   page.close();
 } catch (e) {

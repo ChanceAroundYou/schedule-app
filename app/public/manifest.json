@@ -1,7 +1,7 @@
 {
   "name": "日程清单",
   "short_name": "日程",
-  "description": "日 / 周 / 月视图日程管理，带待办箱、备忘录与垃圾箱",
+  "description": "日 / 周 / 月视图日程管理，带待办箱、打卡与垃圾箱",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
