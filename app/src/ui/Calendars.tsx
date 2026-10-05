@@ -395,6 +395,15 @@ export function InviteSheet({ state, open, onClose }: {
 }) {
   const [busy, setBusy] = useState('');
 
+  /* 处理完最后一条就自己收掉。
+     浮层是从「有邀请」那个侧栏入口打开的，所以「开着但没有邀请」只可能是
+     「刚把最后一条处理完」—— 原来这里不关，遮罩就一直盖着整页，
+     用户以为界面卡死了（真事：触屏拖拽的自动化探针就是被它挡住的）。
+     还有两条的时候不关，接着处理下一条。 */
+  useEffect(() => {
+    if (open && !state.invites.length) onClose();
+  }, [open, state.invites.length, onClose]);
+
   const act = async (inv: Invite, accept: boolean) => {
     if (busy) return;
     setBusy(inv.id);
