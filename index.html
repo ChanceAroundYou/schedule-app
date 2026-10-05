@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>日程清单</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4f7cff">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <!-- ============ 侧边栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">日</div>
+      <div class="brand-name">日程清单</div>
+    </div>
+
+    <button class="quick-add" id="quickAddTop">
+      <span class="plus">＋</span><span>新建任务</span>
+    </button>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item" data-nav="inbox" draggable="true">
+        <span class="ico">📥</span><span class="label">待办箱</span>
+        <span class="count" data-count="inbox">0</span>
+      </button>
+      <button class="nav-item" data-nav="today" draggable="true">
+        <span class="ico">☀️</span><span class="label">今天</span>
+        <span class="count" data-count="today">0</span>
+      </button>
+      <button class="nav-item" data-nav="overdue" draggable="true">
+        <span class="ico">⏰</span><span class="label">逾期</span>
+        <span class="count warn" data-count="overdue">0</span>
+      </button>
+      <button class="nav-item" data-nav="calendar" draggable="true">
+        <span class="ico">📅</span><span class="label">日程</span>
+      </button>
+      <button class="nav-item" data-nav="habits" draggable="true">
+        <span class="ico">🔥</span><span class="label">打卡</span>
+        <span class="count" data-count="habits">0</span>
+      </button>
+      <button class="nav-item" data-nav="done" draggable="true">
+        <span class="ico">✔️</span><span class="label">已完成</span>
+      </button>
+    </nav>
+
+    <nav class="nav nav-bottom" id="navBottom">
+      <button class="nav-item" data-nav="trash" draggable="true">
+        <span class="ico">🗑</span><span class="label">垃圾箱</span>
+        <span class="count" data-count="trash">0</span>
+      </button>
+    </nav>
+
+    <div class="side-pulse" id="sidePulse"></div>
+
+    <div class="sidebar-footer">
+      <button class="ghost-btn" id="exportBtn">导出备份</button>
+      <button class="ghost-btn" id="importBtn">导入备份</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+      <div class="tip" id="sideTip">数据存本机浏览器，记得定期备份</div>
+    </div>
+  </aside>
+
+  <!-- ============ 主区域 ============ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="view-title" id="viewTitle">今天</h1>
+        <div class="date-nav" id="dateNav">
+          <button class="round-btn" id="prevBtn" title="上一个">‹</button>
+          <button class="round-btn" id="nextBtn" title="下一个">›</button>
+          <button class="text-btn today-btn" id="todayBtn" title="回到今天">今天</button>
+          <span class="date-range" id="dateRange"></span>
+          <div class="jump-wrap">
+            <button class="text-btn jump-btn" id="jumpBtn" title="跳到指定日期（快捷键 D）"><span class="jb-ico">📅</span><span class="jb-txt">找日期</span></button>
+            <div class="jump-pop" id="jumpPop" hidden>
+              <div class="jp-row">
+                <input type="text" id="jpInput" placeholder="输入日期，如 10月15日" autocomplete="off" spellcheck="false">
+                <button class="jp-go" id="jpGo">跳转</button>
+              </div>
+              <div class="jp-head">
+                <button class="jp-nav" id="jpPrev" title="上个月">‹</button>
+                <span class="jp-label" id="jpLabel"></span>
+                <button class="jp-nav" id="jpNext" title="下个月">›</button>
+              </div>
+              <div class="jp-week">
+                <span>一</span><span>二</span><span>三</span><span>四</span>
+                <span>五</span><span>六</span><span>日</span>
+              </div>
+              <div class="jp-grid" id="jpGrid"></div>
+              <div class="jp-bad" id="jpBad" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="search-box">
+          <span class="search-ico">🔍</span>
+          <input type="text" id="searchInput" placeholder="搜索…">
+          <button class="clear-search" id="clearSearch" hidden>✕</button>
+        </div>
+        <div class="view-switch" id="viewSwitch">
+          <button data-view="day">日</button>
+          <button data-view="week">周</button>
+          <button data-view="month">月</button>
+        </div>
+        <button class="round-btn" id="themeBtn" title="切换深浅色">🌙</button>
+      </div>
+    </header>
+
+    <div class="content" id="content"></div>
+
+    <div class="fast-add" id="fastAdd">
+      <span class="fast-plus">＋</span>
+      <input type="text" id="fastInput" placeholder="添加任务，回车保存"
+             autocomplete="off" spellcheck="false">
+      <button class="fast-clock" id="fastClock" type="button" title="选择时间">🕐</button>
+      <span class="fast-hint">Ctrl + Enter 打开详细设置</span>
+      <div class="fast-parse" id="fastParse"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ 任务详情抽屉 ============ -->
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <label class="check-wrap">
+      <input type="checkbox" id="dDone">
+      <span class="check-circle"></span>
+    </label>
+    <input type="text" id="dTitle" class="drawer-title" placeholder="任务名称">
+    <button class="icon-btn" id="dClose" title="关闭">✕</button>
+  </div>
+
+  <div class="drawer-body">
+    <div class="field-row">
+      <div class="field">
+        <label>日期</label>
+        <input type="date" id="dDate">
+      </div>
+      <div class="field">
+        <label>时间 <span class="sub">（可留空）</span></label>
+        <button class="time-trigger wide" id="dTime" type="button">
+          <span class="tt-ico">🕐</span><span class="tt-text">设置时间</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>时长</label>
+      <select id="dDuration">
+        <option value="15">15 分钟</option>
+        <option value="30">30 分钟</option>
+        <option value="45">45 分钟</option>
+        <option value="60">1 小时</option>
+        <option value="90">1.5 小时</option>
+        <option value="120">2 小时</option>
+        <option value="180">3 小时</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>重复</label>
+      <select id="dRepeat">
+        <option value="none">不重复</option>
+        <option value="day">每天</option>
+        <option value="week">每周</option>
+        <option value="month">每月</option>
+        <option value="year">每年</option>
+      </select>
+      <div class="repeat-panel" id="dRepeatPanel" hidden></div>
+    </div>
+
+    <div class="field">
+      <label>备注</label>
+      <textarea id="dNote" rows="5" placeholder="补充说明…"></textarea>
+    </div>
+
+    <div class="drawer-meta" id="dMeta"></div>
+  </div>
+
+  <div class="drawer-foot">
+    <button class="danger-btn" id="dDelete">删除任务</button>
+    <button class="primary-btn" id="dSave">完成</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ 底部标签栏（窄屏显示，侧栏在窄屏收起成「更多」抽屉） ============ -->
+<nav class="tabbar" id="tabbar" hidden>
+  <button class="tab" data-tab="today"><span class="ti">☀️</span><span class="tn">今天</span><span class="tb" data-badge="today"></span></button>
+  <button class="tab" data-tab="calendar"><span class="ti">📅</span><span class="tn">日程</span></button>
+  <button class="tab" data-tab="inbox"><span class="ti">📥</span><span class="tn">待办</span><span class="tb" data-badge="inbox"></span></button>
+  <button class="tab" data-tab="overdue"><span class="ti">⏰</span><span class="tn">逾期</span><span class="tb warn" data-badge="overdue"></span></button>
+  <button class="tab" data-more="1"><span class="ti">⋯</span><span class="tn">更多</span></button>
+</nav>
+
+<!-- ============ 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 ============ -->
+<div class="sheet-mask" id="moreMask" hidden></div>
+<div class="more-sheet" id="moreSheet" hidden>
+  <div class="ms-grab"></div>
+  <div class="ms-grid">
+    <button class="ms-item" data-go="habits"><span class="mi">🔥</span><span class="mt">打卡</span><span class="mc" data-count="habits"></span></button>
+    <button class="ms-item" data-go="done"><span class="mi">✔️</span><span class="mt">已完成</span></button>
+    <button class="ms-item" data-go="trash"><span class="mi">🗑</span><span class="mt">垃圾箱</span><span class="mc" data-count="trash"></span></button>
+    <button class="ms-item" id="msTheme"><span class="mi" id="msThemeIco">🌙</span><span class="mt">深色</span></button>
+    <button class="ms-item" id="msExport"><span class="mi">⬆️</span><span class="mt">导出</span></button>
+    <button class="ms-item" id="msImport"><span class="mi">⬇️</span><span class="mt">导入</span></button>
+  </div>
+  <div class="ms-pulse" id="msPulse"></div>
+</div>
+
+<!-- ============ 长按操作弹层：补齐触屏缺失的改期 / 排序 / 删除 ============ -->
+<div class="sheet-mask" id="actMask" hidden></div>
+<div class="act-sheet" id="actSheet" hidden>
+  <div class="as-grab"></div>
+  <div class="as-title" id="asTitle"></div>
+  <div class="as-grid" id="asGrid"></div>
+  <button class="as-cancel" id="asCancel">取消</button>
+</div>
+
+<script src="store.js"></script>
+<script src="parse.js"></script>
+<script src="views.js"></script>
+<script src="clock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

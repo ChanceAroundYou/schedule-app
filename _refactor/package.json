@@ -1,0 +1,29 @@
+{
+  "name": "schedule",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "日程管理 —— 任务、每日打卡、日/周/月三视图",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --import ./tests/node-resolve-ts.mjs --test src/lib/*.test.ts",
+    "test:e2e": "node --import ./tests/node-resolve-ts.mjs --test tests/integration.test.ts"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
