@@ -11,7 +11,22 @@
        必须按 L* 定档，**不能按对比度比值** —— 比值不是线性感知，拿比值去定
        就会把三层挤成两层（#949bab 补到 4.5:1 正好落在 #636b80 上）。
 
-   只动 --text-2 / --text-3。--text 是正文，本来就有 16.78 / 14.47，不动。 */
+   只动 --text-2 / --text-3。--text 是正文，本来就有 16.78 / 14.47，不动。
+
+   同一个道理也适用于**亮色的语义色**（--primary / --danger / --warn / --ok）与
+   快速添加那组胶囊的 fg：它们同样当正文用（错误提示、打卡连续天数、进度数字、
+   解析预览），亮色那一套原先整体只有 2.66–4.39。**暗色那一套本来就是达标的**
+   （5.56–7.96），所以只改了亮色。
+
+   语义色比灰阶多一层约束：--primary / --danger **既当文字色、也当按钮底色配白字**
+   （.check-btn.on / .chip.active / .nav-item .count.warn …），所以要同时满足
+   「对自己的 soft 底」和「#fff 对自己」两种方向 —— 只往一个方向调会让另一种更糟。
+   取值仍然按「保持色相、找最浅的达标值」来，改动尽量小。
+   --warn 是唯一视觉上明显变了的（橙→褐），因为 2.66 实在太低，绕不开。
+
+   还有 13 处 rgba(74,108,247,…) / rgba(223,74,79,…) 是旧 primary / danger 的
+   **硬编码副本**（全是阴影，α 只有 .22–.35）。新旧色差在那种透明度下看不出来，
+   没跟着改。真要较真就全局搜这两个 rgb 三元组。 */
 :root {
   --bg: #f5f6fa;
   --panel: #ffffff;
@@ -23,14 +38,14 @@
   --text-3: #687084;
   --border: #e8eaf0;
   --border-2: #d9dce6;
-  --primary: #4a6cf7;
+  --primary: #395ef6;
   --primary-soft: #edf1ff;
   --primary-pale: #f6f8ff;
-  --danger: #df4a4f;
+  --danger: #d5262c;
   --danger-soft: #fdeeef;
-  --warn: #e08b25;
+  --warn: #a16217;
   --warn-soft: #fdf3e6;
-  --ok: #1a9d67;
+  --ok: #158054;
   --ok-soft: #e8f7f0;
   --purple: #7b53d8;
   --shadow: 0 1px 2px rgba(16, 24, 40, .05);
@@ -40,10 +55,10 @@
   --wide: 920px;
 
   --chip-date-bg: #e9eeff; --chip-date-fg: #3a5bd9;
-  --chip-time-bg: #e4f6ee; --chip-time-fg: #138a5d;
+  --chip-time-bg: #e4f6ee; --chip-time-fg: #117e55;
   --chip-dur-bg: #f0eaff; --chip-dur-fg: #6b45c8;
-  --chip-pri-bg: #fdecec; --chip-pri-fg: #cf3b41;
-  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #a9691a;
+  --chip-pri-bg: #fdecec; --chip-pri-fg: #cc3238;
+  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #9e6218;
 }
 
 [data-theme="dark"] {
