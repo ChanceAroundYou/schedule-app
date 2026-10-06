@@ -32,18 +32,8 @@
   background: var(--bg, #f6f7fb);
 }
 
-/* 「更多」抽屉底部的账户行。legacy.css 里没有这一段（旧版没有账户概念） */
-.ms-user {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
-  font-size: 12px; color: var(--text-3);
-}
-.ms-logout {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px;
-  background: none; color: var(--text-2); font-size: 12px; cursor: pointer;
-}
-.ms-logout:hover { border-color: var(--input); color: var(--text); }
+/* 「更多」抽屉底部的账户行（.ms-user / .ms-logout）已随退出登录入口一起收进
+   设置页，样式跟着删掉 —— 留着就是一段没人再渲染的死 CSS。 */
 
 /*
  * 触屏长按把行「提起来」之后的状态（见 ui/dnd.ts 文件头）。

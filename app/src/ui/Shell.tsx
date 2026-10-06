@@ -21,16 +21,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
-  Flame, FolderKanban, Inbox, Layers, Loader2, LogOut, MailPlus, Moon,
-  MoreHorizontal, Plus, Search, Settings, Sun, Trash2, Upload, X, Download, Clock,
+  Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
+  MoreHorizontal, Plus, Search, Settings, Sun, Trash2, X, Clock,
 } from 'lucide-react';
-import type { LocalState, PublicUser } from '../domain/types.ts';
+import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { counts, liveTasks, CUSTOMIZABLE } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
-import { IconBtn } from './kit.tsx';
 import { CalSwitcher } from './Calendars.tsx';
 import { ClockPop } from './Clock.tsx';
 
@@ -118,15 +117,13 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites }: {
+function Sidebar({ state, onNav, onNew, onManageCal, onInvites }: {
   state: LocalState; onNav: (k: string) => void; onNew: () => void;
-  onExport: () => void; onImport: (f: File) => void; onLogout: () => void;
   onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
   const bottom = state.ui.navBottom;
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // 主区 = 顺序里不属于底部组的；底部组 = 底部数组里的（按底部数组自己的顺序）
   const main = order.filter((k) => !bottom.includes(k));
@@ -175,26 +172,12 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
       <Pulse state={state} />
 
       <div className="sidebar-footer">
-        {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事） */}
+        {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事）。
+            导入 / 导出 / 深浅 / 退出登录**只留在设置页一处** —— 这里原先各有一份
+            重复入口，收进设置页之后侧栏底部只留设置这一个动作。 */}
         <button className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
           <Settings size={13} /> 设置
         </button>
-        <button className="ghost-btn" onClick={onExport}><Upload size={13} /> 导出备份</button>
-        <button className="ghost-btn" onClick={() => fileRef.current?.click()}>
-          <Download size={13} /> 导入备份
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/json"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onImport(f);
-            e.target.value = '';
-          }}
-        />
-        <button className="ghost-btn" onClick={onLogout}><LogOut size={13} /> 退出登录</button>
         <div className="tip">数据已同步到服务器，本机也留了一份</div>
       </div>
     </aside>
@@ -298,16 +281,13 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, jump, setJump, theme, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
+export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday, onCursor, onSearch }: {
   state: LocalState; narrow: boolean;
   jump: boolean; setJump: (v: boolean) => void;
-  /** 实际生效的深浅档（auto 已解析）。图标按它渲染，不看 ui.theme */
-  theme: 'light' | 'dark';
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
   onCursor: (iso: string) => void;
-  onTheme: () => void;
   onSearch: (kw: string) => void;
 }) {
   const ui = state.ui;
@@ -435,9 +415,7 @@ export function Topbar({ state, narrow, jump, setJump, theme, onView, onShift, o
           </div>
         )}
 
-        <IconBtn label="切换深浅色" onClick={onTheme}>
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </IconBtn>
+        {/* 深浅快捷按钮已收进设置页（外观卡）—— 顶栏只留状态，不留入口 */}
 
         {/* 离线优先于「正在同步」——断网时那个转圈会一直转下去，
             看起来像卡死了，而这句「改动不会丢」才是用户真正要的信息 */}
@@ -497,20 +475,19 @@ export function Tabbar({ state, onNav, onMore }: {
 }
 
 /**
- * 「更多」抽屉：底栏没放进去的功能项 + 日程集 / 邀请 / 主题 / 备份 / 设置。
+ * 「更多」抽屉：底栏没放进去的功能项 + 日程集 / 邀请 / 设置。
  *
  * 前半截是**差集**（`navOrder` 减去 `ui.tabs`），不是写死哪几项 ——
  * 底栏那 4 格是用户自己挑的，写死就会出现「底栏有、这里也有」的重复项。
+ *
+ * **深浅 / 导入 / 导出 / 退出登录不在这儿**：它们只有设置页一个入口
+ * （外观卡、数据卡、账户卡）。抽屉里再放一份就是第二套入口，两边迟早说不到一起。
  */
-export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
-  onManageCal, onInvites, user }: {
-  state: LocalState; theme: 'light' | 'dark'; open: boolean; onClose: () => void; onNav: (k: string) => void;
-  onTheme: () => void; onExport: () => void; onImport: (f: File) => void;
-  onLogout: () => void; onManageCal: () => void; onInvites: () => void;
-  user: PublicUser | null;
+export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites }: {
+  state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
+  onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
-  const fileRef = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
   useFocusTrap(panel, open);
@@ -584,30 +561,12 @@ export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExpor
               <span className="mc">{badge(pending)}</span>
             </button>
           )}
-          <button className="ms-item" onClick={onTheme}>
-            <span className="mi">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
-            <span className="mt">{theme === 'dark' ? '浅色' : '深色'}</span>
-          </button>
-          <button className="ms-item" onClick={onExport}>
-            <span className="mi"><Upload size={20} /></span><span className="mt">导出</span>
-          </button>
-          <button className="ms-item" onClick={() => fileRef.current?.click()}>
-            <span className="mi"><Download size={20} /></span><span className="mt">导入</span>
-          </button>
           <button className="ms-item" data-nav="settings" onClick={() => goto('settings')}>
             <span className="mi"><Settings size={20} /></span><span className="mt">设置</span>
           </button>
         </div>
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
         <div className="ms-pulse"><Pulse state={state} /></div>
-        <div className="ms-user">
-          <span>{user ? user.name : ''}</span>
-          <button className="ms-logout" onClick={onLogout}><LogOut size={14} /> 退出登录</button>
-        </div>
-        <input
-          ref={fileRef} type="file" accept="application/json" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
-        />
       </div>
     </>
   );
@@ -736,19 +695,13 @@ export function QuickAdd({ state, onSubmit }: {
 /* ============================== 外壳 ============================== */
 
 export function Shell({
-  state, user, theme, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
+  state, contentRef, onNav, onNew,
   onManageCal, onInvites, more, setMore, topbar, quickAdd, children,
 }: {
-  state: LocalState; user: PublicUser | null;
-  /** 实际生效的深浅档，透给窄屏那个「更多」抽屉里的深浅按钮 */
-  theme: 'light' | 'dark';
+  state: LocalState;
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
   onNew: () => void;
-  onExport: () => void;
-  onImport: (f: File) => void;
-  onLogout: () => void;
-  onTheme: () => void;
   onManageCal: () => void;
   onInvites: () => void;
   /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
@@ -771,7 +724,6 @@ export function Shell({
       {!narrow && (
         <Sidebar
           state={state} onNav={onNav} onNew={onNew}
-          onExport={onExport} onImport={onImport} onLogout={onLogout}
           onManageCal={onManageCal} onInvites={onInvites}
         />
       )}
@@ -784,10 +736,8 @@ export function Shell({
 
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}
       <MoreSheet
-        state={state} theme={theme} open={more && narrow} onClose={() => setMore(false)}
-        user={user} onNav={onNav} onTheme={onTheme} onExport={onExport}
-        onImport={onImport} onLogout={onLogout}
-        onManageCal={onManageCal} onInvites={onInvites}
+        state={state} open={more && narrow} onClose={() => setMore(false)}
+        onNav={onNav} onManageCal={onManageCal} onInvites={onInvites}
       />
     </div>
   );

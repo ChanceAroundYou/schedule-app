@@ -65,8 +65,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
    *  用一个状态而不是两个布尔 —— 两开两关必然有一条路径忘了关另一个。 */
   const [pjSheet, setPjSheet] = useState<'new' | { id: string } | null>(null);
   /**
-   * **实际生效**的那一档（`auto` 已经解析过了），不是偏好 —— 顶栏那个图标
-   * 与「更多」里的文案要按它渲染，否则选了「跟随系统」会显示成常亮。
+   * **实际生效**的那一档（`auto` 已经解析过了），不是偏好 —— 设置页
+   * 外观卡里的色点要按它渲染（暗档的主色是提亮过的另一套值）。
    */
   const [theme, setTheme] = useState<'light' | 'dark'>(() => T.resolveTheme(store.get().ui.theme));
 
@@ -81,14 +81,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     if (state.ui.theme !== 'auto') return;
     return T.watchSystemTheme(() => setTheme(T.applyAppearance(store.get().ui)));
   }, [state.ui.theme]);
-
-  const toggleTheme = useCallback(() => {
-    // 顶栏这个是「现在就翻一个」的快捷方式，二元：按下即离开「跟随系统」。
-    // 三选一在设置页里。基准取 dataset 上那个已生效的值，不是偏好
-    // —— auto 档下 `ui.theme` 既不是 light 也不是 dark，拿它取反会翻错。
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    store.setUi({ theme: next });
-  }, []);
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
   const key = `${state.ui.nav}|${state.ui.view}|${state.ui.cursor}`;
@@ -627,18 +619,12 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   return (
     <Shell
       state={state}
-      user={user}
       contentRef={contentRef}
       onNav={nav}
       onNew={() => {
         const id = store.addTask({ title: '新任务', date: state.ui.nav === 'inbox' ? null : D.today() });
         setOpenId(id);
       }}
-      onExport={exportBackup}
-      onImport={importBackup}
-      onLogout={onLogout}
-      onTheme={toggleTheme}
-      theme={theme}
       onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
       /* 「更多」抽屉 / 找日期面板的开关都在 App 这一层：Esc 要按
@@ -662,8 +648,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
               setJumpOpen(false);
             }}
             onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
-            onTheme={toggleTheme}
-            theme={theme}
             onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
           />
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
