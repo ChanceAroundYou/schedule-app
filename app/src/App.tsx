@@ -226,6 +226,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         case 'habit':
           store.toggleHabit(id);
           return;
+        case 'toggle-tdone':
+          // 「今天已完成」的展开状态要落盘：不落的话离开页面再回来就复位了
+          store.setUi({ tdoneOpen: !store.get().ui.tdoneOpen });
+          return;
         case 'reschedule':
           store.patchTask(id, { date: act.dataset.date || null });
           toast('已改到 ' + D.fmtMD(act.dataset.date || ''));
@@ -347,6 +351,25 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       el: HTMLElement | null;
     } | null = null;
 
+    /* 拉伸时的浮标：把「现在拉成了几点 / 多长」写在手边。
+       没有它，用户只能盯着方块高度的变化去猜 —— 而 15 分钟在 64px/小时下
+       只有 16px，肉眼分不出 15 和 30 的差别 */
+    let tip: HTMLDivElement | null = null;
+    const showTip = (el: HTMLElement | null, dur: number, timeText: string | null) => {
+      if (!el) return;
+      if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'tl-resize-tip';
+        document.body.appendChild(tip);
+      }
+      const r = el.getBoundingClientRect();
+      // 上沿拖动时浮标挪到方块**上方** —— 放在下面会正好挡住正在拖的那条边
+      tip.style.top = (timeText != null ? r.top - 26 : r.bottom + 6) + 'px';
+      tip.style.left = r.left + 'px';
+      tip.textContent = (timeText ? timeText + ' · ' : '') + D.fmtDuration(dur);
+    };
+    const hideTip = () => { tip?.remove(); tip = null; };
+
     const down = (e: MouseEvent) => {
       const h = (e.target as HTMLElement).closest<HTMLElement>('[data-act="resize"],[data-act="resize-top"]');
       if (!h) return;
@@ -360,6 +383,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         el: host.querySelector<HTMLElement>(`.tl-event[data-id="${t.id}"]`),
       };
       rz.el?.classList.add('resizing');
+      showTip(rz.el, rz.dur, rz.edge === 'top' ? t.time : null);
       e.preventDefault();
     };
 
@@ -379,6 +403,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         rz.cur = Math.max(15, rz.dur + addMin);
         if (rz.el) rz.el.style.height = (rz.cur / 1440 * 1536) + 'px';
       }
+      showTip(rz.el, rz.cur, rz.edge === 'top' && rz.curStart != null ? D.minToTime(rz.curStart) : null);
     };
 
     const up = () => {
@@ -386,6 +411,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       const patchFields: Partial<Task> = { duration: Math.max(15, rz.cur) };
       if (rz.edge === 'top' && rz.curStart != null) patchFields.time = D.minToTime(rz.curStart);
       rz.el?.classList.remove('resizing');
+      hideTip();
       const id = rz.id;
       rz = null;
       store.patchTask(id, patchFields);
@@ -585,8 +611,14 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
             setJump={setJumpOpen}
             onView={(v) => store.setUi({ view: v })}
             onShift={shift}
-            onToday={() => store.setUi({ cursor: D.today(), nav: 'calendar' })}
-            onCursor={(iso) => store.setUi({ cursor: iso, nav: 'calendar' })}
+            onToday={() => {
+              // 光标拉回今天；不在日程页时顺带回「今天」清单页。
+              // 找日期面板也要关掉 —— 否则跳完它还挂在那儿挡着
+              const stay = store.get().ui.nav === 'calendar';
+              store.setUi(stay ? { cursor: D.today() } : { cursor: D.today(), nav: 'today' });
+              setJumpOpen(false);
+            }}
+            onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
             onTheme={toggleTheme}
             onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
           />
@@ -629,6 +661,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         id={openId}
         onClose={() => setOpenId(null)}
         onPatch={patch}
+        onToggle={(id) => store.toggleTask(id)}
         onDelete={removeTask}
         onDismissConflict={store.dismissConflict}
       />

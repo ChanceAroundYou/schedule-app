@@ -13,10 +13,11 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Trash2, Check, Repeat, History } from 'lucide-react';
+import { Trash2, Check, Repeat, History, Clock } from 'lucide-react';
+import { ClockPop } from './Clock.tsx';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { REPEAT_UNITS, repeatLabel, toRepeat } from '../domain/repeat.ts';
+import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { Btn, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
@@ -70,11 +71,19 @@ function showVal(field: string, v: unknown): string {
   return String(v);
 }
 
-export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflict }: {
+export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDismissConflict }: {
   state: LocalState;
   id: string | null;
   onClose: () => void;
   onPatch: (id: string, fields: Partial<Task>) => void;
+  /**
+   * 勾选完成。**必须走 `store.toggleTask()`，不能自己 patch `done`。**
+   *
+   * 差别只在重复任务上：勾完一条「每天」的任务，要由 toggleTask 派生出下一个
+   * 实例，否则下一次永远不会出现 —— 这条曾经在抽屉里被写成 `onPatch({done})`，
+   * 于是「在抽屉里勾掉重复任务 = 这个系列到此为止」，而且没有任何提示。
+   */
+  onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onDismissConflict: (entityId: string, field: string) => void;
 }) {
@@ -93,6 +102,8 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const lastId = useRef<string | null>(null);
+  const [clockOpen, setClockOpen] = useState(false);
+  const clockBtn = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!task) return;
@@ -140,6 +151,12 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
   const patch = (fields: Partial<Task>) => onPatch(task.id, fields);
   const rep: RepeatRule = task.repeat;
 
+  /**
+   * 下一次落在哪天。**实时算给用户看** —— 重复规则是「每周三 + 隔 2 周 + 到某天为止」
+   * 这种组合，光看几个下拉框想象不出结果。
+   */
+  const nextOcc = rep.unit !== 'none' ? repeatNext(task, task.date || D.today()) : null;
+
   const remove = async () => {
     const ok = await confirm({
       title: '删除这个任务？',
@@ -170,7 +187,7 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
               /* 包着它的 <label> 里一个字都没有，所以它自己没有名字 ——
                  名字只能从这儿给。措辞和 parts.tsx 的 <CheckBtn> 对齐。 */
               aria-label={task.done ? '取消完成' : '标记完成'}
-              onChange={() => onPatch(task.id, { done: !task.done, doneAt: !task.done ? Date.now() : null })}
+              onChange={() => onToggle(task.id)}
             />
             <span className="check-circle" />
           </label>
@@ -206,13 +223,34 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
             </div>
             <div className="field">
               <label htmlFor={fid + '-time'}>时间 <span className="sub">（可留空）</span></label>
-              <input
-                id={fid + '-time'}
-                type="time"
-                value={task.time || ''}
-                step={900}
-                onChange={(e) => patch({ time: e.target.value || null })}
-              />
+              {/* 原生输入框留着（可以直接敲、读屏也认），旁边补一个表盘入口。
+                  重构时只留了原生框，把表盘整个丢了 —— 而「把 9 点挪到 10 点」
+                  这种一格的事，点两下表盘比开系统控件快得多 */}
+              <div className="field-inline">
+                <input
+                  id={fid + '-time'}
+                  type="time"
+                  value={task.time || ''}
+                  step={900}
+                  onChange={(e) => patch({ time: e.target.value || null })}
+                />
+                <button
+                  ref={clockBtn}
+                  className={'fast-clock' + (task.time ? ' on' : '')}
+                  type="button"
+                  title="用表盘选择时间"
+                  onClick={() => setClockOpen((v) => !v)}
+                >
+                  <Clock size={14} />
+                </button>
+                <ClockPop
+                  open={clockOpen}
+                  anchor={clockBtn.current}
+                  value={task.time || null}
+                  onChange={(v) => { patch({ time: v }); setClockOpen(false); }}
+                  onClose={() => setClockOpen(false)}
+                />
+              </div>
             </div>
           </div>
 
@@ -266,6 +304,28 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                     })}
                   </div>
                 )}
+                {/* 「每月 N 号」这一格重构时漏了，而 repeat.ts 一直在读
+                    `monthday` —— 值照旧生效，只是用户看不到、也改不了。
+                    任务改期之后 monthday 还停在旧日期，就成了没法解释的行为 */}
+                {rep.unit === 'month' && (
+                  <div className="rp-row">
+                    <span>每月</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={rep.monthday || 1}
+                      aria-label="每月几号"
+                      onChange={(e) => patch({
+                        repeat: {
+                          ...rep,
+                          monthday: Math.max(1, Math.min(31, +e.target.value || 1)),
+                        },
+                      })}
+                    />
+                    <span className="sub">号，当月没这天就取最后一天</span>
+                  </div>
+                )}
                 <div className="rp-row">
                   <span>结束</span>
                   <select
@@ -300,6 +360,7 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                     />
                   )}
                 </div>
+                {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
               </div>
             )}
           </div>

@@ -755,10 +755,20 @@ export function useDragLayer(
 
     snapshotLayout(el);
     document.body.classList.add('dragging-active');
+    // 被拖的那一行加 .dragging（抬起 / 压暗的反馈）。**finishDrag 会清掉它** ——
+    // 所以这里只管加，不用自己配对
+    el.classList.add('dragging');
     setDragging(true);
     e.dataTransfer.effectAllowed = 'move';
     // Firefox 不设 data 就不启动拖拽
     e.dataTransfer.setData('text/plain', id);
+
+    // 不要浏览器自带的半透明拖影：落点已经由让位洞 / 时间轴引导线表达了，
+    // 再挂一个跟着鼠标的残影是两套互相打架的指示。用一张 1×1 透明图顶掉它
+    const blank = document.createElement('canvas');
+    blank.width = 1;
+    blank.height = 1;
+    e.dataTransfer.setDragImage(blank, 0, 0);
 
     // 拖走的那个时间段底纹先收起来，避免和落点线打架
     const src = document.querySelector<HTMLElement>(`.tl-event[data-id="${id}"]`);

@@ -8,7 +8,7 @@
  * `date` 撞车，靠 `+slice(1) > 0` 去猜必然误伤到别的动作上。
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeftRight, ArrowDown, ArrowUp, CalendarDays, CalendarPlus,
   ChevronLeft, ChevronRight, Clock, Moon, Timer, Trash2,
@@ -37,6 +37,12 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
 }) {
   // 第二层：在已打开的浮层里再选一档时长。一档一档选，不是循环切换
   const [durOpen, setDurOpen] = useState(false);
+
+  // 浮层开着时给 body 一个标记：窄屏下要压住底栏的按下态，别在浮层后面乱闪
+  useEffect(() => {
+    document.body.classList.toggle('sheet-open', !!id);
+    return () => document.body.classList.remove('sheet-open');
+  }, [id]);
 
   const task = id ? state.tasks[id] : null;
   if (!task) return null;
@@ -113,9 +119,4 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
       </div>
     </>
   );
-}
-
-/** 日视图里拖时间轴上下沿改时间：15 分钟步进，鼠标专用 */
-export function ResizeTip({ text }: { text: string }) {
-  return <div className="resize-tip">{text}</div>;
 }
