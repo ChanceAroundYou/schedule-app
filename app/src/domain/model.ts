@@ -9,7 +9,7 @@
 
 import * as D from './date.ts';
 import { toRepeat } from './repeat.ts';
-import type { Habit, LocalState, Role, Task, UiPrefs } from './types.ts';
+import type { AccentKey, Habit, LocalState, Role, StyleKey, Task, ThemeMode, UiPrefs } from './types.ts';
 
 /* ------------------------------------------------------------------ id */
 
@@ -362,12 +362,22 @@ export function makeHabit(title: string, order: number, calId: string, id?: stri
 
 const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'trash'];
 
+/* 外观轴的白名单。**故意与 ui/theme.ts 的 ACCENTS / STYLES 重复** ——
+   domain/ 不许引 ui/（那一层碰 DOM），而这两个列表的职责不同：
+   那边是「渲染哪些选项」（Record<Key, …>，少一个键编译不过），
+   这边是「磁盘上这个值还认不认」。加了新键要两边都补。 */
+const ACCENT_ALL: readonly AccentKey[] = ['jade', 'azure', 'clay', 'plum', 'gold', 'slate'];
+const STYLE_ALL: readonly StyleKey[] = ['soft', 'flat', 'notion'];
+const THEME_ALL: readonly ThemeMode[] = ['auto', 'light', 'dark'];
+
 export function defaultUi(): UiPrefs {
   return {
     nav: 'today',
     view: 'day',
     cursor: D.today(),
     theme: 'light',
+    accent: 'jade',
+    style: 'soft',
     search: '',
     navOrder: NAV_ALL.slice(),
     navBottom: ['trash'],
@@ -380,7 +390,11 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   const d = defaultUi();
   const ui: UiPrefs = { ...d, ...(raw || {}) };
 
-  if (ui.theme !== 'dark') ui.theme = 'light';
+  // 三档都要认。写成 `!== 'dark' ? 'light'` 会把用户选的「跟随系统」每次刷新打回
+  // 常亮 —— 而 auto 是合法值，不是「没选」。
+  if (!THEME_ALL.includes(ui.theme)) ui.theme = 'light';
+  if (!ACCENT_ALL.includes(ui.accent)) ui.accent = 'jade';
+  if (!STYLE_ALL.includes(ui.style)) ui.style = 'soft';
   // cal 只保证是字符串或 null。它到底还存不存在要等服务器把集列表发下来，
   // 那一步在 store.setCals 里做 —— normalizeUi 是纯函数，不知道有哪些集。
   if (ui.cal != null && typeof ui.cal !== 'string') ui.cal = null;

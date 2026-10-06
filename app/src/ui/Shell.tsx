@@ -257,8 +257,10 @@ function JumpPop({ open, cursor, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
+export function Topbar({ state, narrow, theme, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
   state: LocalState; narrow: boolean;
+  /** 实际生效的深浅档（auto 已解析）。图标按它渲染，不看 ui.theme */
+  theme: 'light' | 'dark';
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
@@ -354,7 +356,7 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
         )}
 
         <IconBtn label="切换深浅色" onClick={onTheme}>
-          {ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </IconBtn>
 
         {/* 离线优先于「正在同步」——断网时那个转圈会一直转下去，
@@ -408,9 +410,9 @@ export function Tabbar({ state, onNav, onMore }: {
 }
 
 /** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 / 退出 */
-export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
+export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
   onManageCal, onInvites, user }: {
-  state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
+  state: LocalState; theme: 'light' | 'dark'; open: boolean; onClose: () => void; onNav: (k: string) => void;
   onTheme: () => void; onExport: () => void; onImport: (f: File) => void;
   onLogout: () => void; onManageCal: () => void; onInvites: () => void;
   user: PublicUser | null;
@@ -452,8 +454,8 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
             </button>
           )}
           <button className="ms-item" onClick={onTheme}>
-            <span className="mi">{state.ui.theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
-            <span className="mt">{state.ui.theme === 'dark' ? '浅色' : '深色'}</span>
+            <span className="mi">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
+            <span className="mt">{theme === 'dark' ? '浅色' : '深色'}</span>
           </button>
           <button className="ms-item" onClick={onExport}>
             <span className="mi"><Upload size={20} /></span><span className="mt">导出</span>
@@ -585,10 +587,12 @@ export function QuickAdd({ state, onSubmit }: {
 /* ============================== 外壳 ============================== */
 
 export function Shell({
-  state, user, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
+  state, user, theme, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
   onManageCal, onInvites, topbar, quickAdd, children,
 }: {
   state: LocalState; user: PublicUser | null;
+  /** 实际生效的深浅档，透给窄屏那个「更多」抽屉里的深浅按钮 */
+  theme: 'light' | 'dark';
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
   onNew: () => void;
@@ -623,7 +627,7 @@ export function Shell({
 
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}
       <MoreSheet
-        state={state} open={more && narrow} onClose={() => setMore(false)}
+        state={state} theme={theme} open={more && narrow} onClose={() => setMore(false)}
         user={user} onNav={onNav} onTheme={onTheme} onExport={onExport}
         onImport={onImport} onLogout={onLogout}
         onManageCal={onManageCal} onInvites={onInvites}

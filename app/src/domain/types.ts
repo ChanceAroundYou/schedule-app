@@ -205,11 +205,24 @@ export interface SyncResponse {  cursor: number;
 }
 
 /** 设备本地偏好。**不进同步** —— 同步过去只会让手机改主题把桌面也改了。 */
+/* ------------------------------------------------------------ 外观三轴 */
+
+/** 深浅。`auto` = 跟随系统，实际生效的那一档由 ui/theme.ts 解析 */
+export type ThemeMode = 'auto' | 'light' | 'dark';
+/** 色板。只改主色族，底色归深浅那一轴 —— 见 legacy.css 的「色板轴」一段 */
+export type AccentKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate';
+/** 风格。几何（圆角 / 阴影）全在 CSS 里，TS 这边只有 label —— 见 legacy.css 的「风格轴」 */
+export type StyleKey = 'soft' | 'flat' | 'notion';
+
 export interface UiPrefs {
   nav: string;
   view: 'day' | 'week' | 'month';
   cursor: string;
-  theme: 'light' | 'dark';
+  theme: ThemeMode;
+  /** 6 套色板之一。`azure` = 换暖纸之前那套靛蓝，留着当退路 */
+  accent: AccentKey;
+  /** 柔和 / 扁平 / notion。`soft` 是空块，等价于「2026-10-06 之前的几何」 */
+  style: StyleKey;
   search: string;
   navOrder: string[];
   navBottom: string[];

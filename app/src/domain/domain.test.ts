@@ -455,6 +455,26 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
 });
 
+test('外观三轴：auto 是合法值，不是「没选」', () => {
+  // 写成 `theme !== 'dark' ? 'light'` 的话，用户选的「跟随系统」每次刷新被打回常亮，
+  // 而且是静默的 —— 这一条就是把它钉住
+  assert.equal(normalizeUi({ theme: 'auto' }).theme, 'auto');
+  assert.equal(normalizeUi({ theme: 'dark' }).theme, 'dark');
+  assert.equal(normalizeUi({ theme: 'light' }).theme, 'light');
+  assert.equal(normalizeUi({ theme: 'sepia' as never }).theme, 'light', '认不出的值兜回常亮');
+});
+
+test('外观三轴：缺省与认不出的值', () => {
+  const d = normalizeUi(undefined);
+  assert.equal(d.accent, 'jade');
+  assert.equal(d.style, 'soft', 'soft 是空块 = 与旧版逐像素相同，所以它必须是默认');
+
+  assert.equal(normalizeUi({ accent: 'clay' }).accent, 'clay');
+  assert.equal(normalizeUi({ style: 'notion' }).style, 'notion');
+  assert.equal(normalizeUi({ accent: 'chartreuse' as never }).accent, 'jade');
+  assert.equal(normalizeUi({ style: 'brutalist' as never }).style, 'soft');
+});
+
 /* ============================== 迁移 ============================== */
 
 test('v3 → v4：补 seriesId、补墓碑、丢弃已删除的模块', () => {

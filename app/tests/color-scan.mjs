@@ -87,6 +87,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('  ' + (ok ? 'ok  ' : 'FAIL') + ' ' + v);
   }
 
+  // 风格轴靠**源码顺序**压过 :root 与 [data-theme]（三者特异度都是 (0,1,0)）。
+  // 排到前面的话不报错、不崩，只是 flat+暗色还留着暗色档那套阴影 —— 最难查的半生效。
+  //
+  // 只在**令牌块**里比：规则区还有 `[data-theme="dark"] .tabbar {…}` 这种，
+  // 拿整份源码找 lastIndexOf 会命中它，判据恒假（第一版就是这么假失败的）。
+  // 注释也要剥掉 —— 这段说明自己就写着 `[data-theme="dark"]` 这几个字。
+  const bareTokens = tokens.replace(/\/\*[\s\S]*?\*\//g, '');
+  const darkAt = bareTokens.lastIndexOf('[data-theme="dark"]');
+  const styleAt = bareTokens.indexOf('[data-style=');
+  // 两个都要命中，否则 lastIndexOf 返回 -1、判据会**恒真** —— 那是比恒假更坏的哑弹
+  const order = darkAt >= 0 && styleAt >= 0 && styleAt > darkAt;
+  if (!order) failed++;
+  console.log('\n[data-style] 排在所有 [data-theme] 令牌块之后：' + (order ? 'ok' : 'FAIL'));
+  if (!order) console.log('    → 顺序反了 / 有一边没抠出来（' + darkAt + ' vs ' + styleAt + '），flat 会压不住暗色档的 --shadow*');
+
   // 只报告：还没走 --shadow* 的中性阴影。它们的几何各不相同，映射不干净，
   // 但风格轴靠 --shadow* 归零，所以漏一个，扁平风格就少平一处。
   // 判据按**值**取（`/box-shadow:\s*([^;}]*)/` 再过滤），别用 `(?!var\()`：

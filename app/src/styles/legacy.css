@@ -165,6 +165,40 @@
   --primary-fg: #14120f; --purple: #8fa0b8;
 }
 
+/* ================= 风格轴 =================
+   只改**几何**：6 个圆角刻度 + 6 个阴影令牌。颜色一个字不动 —— 那是另两轴的事。
+   这样一个风格切过去，配色不会跟着变，排查「怎么这个风格颜色不对」时不必翻色板。
+
+   三个块**必须排在 :root 与 [data-theme="dark"] 之后**：三者特异度都是 (0,1,0)，
+   靠源码顺序决胜。排在前面的话 flat + 暗色会留着暗色档那套阴影（flat 但是有影子，
+   最难查的那种半生效）。
+
+   `soft` 是**空块**：不切风格时几何与 2026-10-06 之前逐像素相同，零回归风险。
+   另外：`border-radius: 50%`（勾选圈、时间轴上的「现在」那个点）**不受影响** ——
+   那是正圆，不是圆角刻度，扁平风格里也照样是圆的。
+
+   ponytail: 只动圆角与阴影。notion 真正的特征是「拿 1px 细线代替阴影」，那要给
+   十几个卡片各加一条边框规则，回归面比收益大。等有人真觉得 flat 和 notion 太像
+   再说 —— 那时加一个 --border-strength 令牌，不是现在。 */
+
+[data-style="soft"] {
+}
+
+[data-style="flat"] {
+  --r-xs: 0; --r-sm: 0; --r-md: 0; --r-lg: 0; --r-xl: 0; --r-pill: 0;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  --shadow-up: none; --shadow-up-sm: none; --shadow-sticky: none;
+}
+
+[data-style="notion"] {
+  --r-xs: 1px; --r-sm: 3px; --r-md: 4px; --r-lg: 6px; --r-xl: 8px; --r-pill: 4px;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  /* 往上投的那三条换成一条细线：底栏 / 抽屉 / 更多浮层还是要有条界，
+     全 none 会让它们在内容上「糊」成一片 */
+  --shadow-up: 0 -1px 0 var(--border-2);
+  --shadow-up-sm: none; --shadow-sticky: none;
+}
+
 * { box-sizing: border-box; }
 
 html, body {

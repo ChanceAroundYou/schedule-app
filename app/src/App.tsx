@@ -19,6 +19,7 @@ import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from 
 import * as engine from './sync/engine.ts';
 import { readLegacy } from './data/legacy.ts';
 import { useStoreState, useScopedState, useIsNarrow, LONG_PRESS_MS } from './ui/hooks.ts';
+import * as T from './ui/theme.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
 import { HOUR_H } from './domain/layout.ts';
@@ -31,13 +32,6 @@ import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
-
-/* ============================== 主题 ============================== */
-
-function applyTheme(theme: 'light' | 'dark'): void {
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
-}
 
 /* ============================== 主体 ============================== */
 
@@ -59,18 +53,30 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const [actId, setActId] = useState<string | null>(null);
   const [calOpen, setCalOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => store.get().ui.theme);
+  /**
+   * **实际生效**的那一档（`auto` 已经解析过了），不是偏好 —— 顶栏那个图标
+   * 与「更多」里的文案要按它渲染，否则选了「跟随系统」会显示成常亮。
+   */
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => T.resolveTheme(store.get().ui.theme));
 
-  /* -------- 主题 -------- */
-  useEffect(() => { applyTheme(theme); }, [theme]);
+  /* -------- 外观三轴 -------- */
+  // 三轴任一变化都重写一遍：applyAppearance 幂等，写同样的值没副作用，
+  // 所以不需要在这里挑是哪一轴变了。
+  useEffect(() => { setTheme(T.applyAppearance(state.ui)); },
+    [state.ui.theme, state.ui.accent, state.ui.style]);
+
+  // 跟随系统：只在 auto 档订阅。切走时 effect 重跑 → 退订
   useEffect(() => {
-    if (state.ui.theme !== theme) setTheme(state.ui.theme);
-  }, [state.ui.theme, theme]);
+    if (state.ui.theme !== 'auto') return;
+    return T.watchSystemTheme(() => setTheme(T.applyAppearance(store.get().ui)));
+  }, [state.ui.theme]);
 
   const toggleTheme = useCallback(() => {
-    const next = store.get().ui.theme === 'dark' ? 'light' : 'dark';
+    // 顶栏这个是「现在就翻一个」的快捷方式，二元：按下即离开「跟随系统」。
+    // 三选一在设置页里。基准取 dataset 上那个已生效的值，不是偏好
+    // —— auto 档下 `ui.theme` 既不是 light 也不是 dark，拿它取反会翻错。
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     store.setUi({ theme: next });
-    setTheme(next);
   }, []);
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
@@ -470,6 +476,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       onImport={importBackup}
       onLogout={onLogout}
       onTheme={toggleTheme}
+      theme={theme}
       onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
       topbar={
@@ -482,6 +489,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
             onToday={() => store.setUi({ cursor: D.today(), nav: 'calendar' })}
             onCursor={(iso) => store.setUi({ cursor: iso, nav: 'calendar' })}
             onTheme={toggleTheme}
+            theme={theme}
             onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
           />
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
@@ -575,7 +583,8 @@ export default function App() {
   // 启动：有 token 就先拉一次。401 说明失效了，退回登录页。
   useEffect(() => {
     store.load();
-    applyTheme(store.get().ui.theme);
+    // 首屏前先上一次色，别等 Workbench 那个 effect（它在这次 render 之后才跑）
+    T.applyAppearance(store.get().ui);
 
     let alive = true;
     (async () => {
