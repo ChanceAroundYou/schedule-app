@@ -62,7 +62,15 @@ export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Tras
 export const SETTINGS_NAV: NavDef = { key: 'settings', label: '设置', icon: <Settings size={16} /> };
 
 const ALL_NAV = [...NAV, TRASH_NAV, SETTINGS_NAV];
-const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
+
+/**
+ * 按 nav key 取定义。**导出给设置页用** —— 那边的「功能区」卡片要画同一套
+ * 图标与名字，在这儿另抄一份的下场是改了 label 忘了改那边。
+ *
+ * 认不出的 key 回落到垃圾箱：设置页只可能拿到 CUSTOMIZABLE 里的键，
+ * 但拖拽时 dataTransfer 里塞的是用户数据，宁可画错也不要白屏。
+ */
+export const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
 
 /** 没有 navOrder 时的兜底。取自 domain 的白名单，别在这里另抄一份 */
 const DEFAULT_ORDER: readonly string[] = CUSTOMIZABLE;
@@ -390,21 +398,20 @@ export function Topbar({ state, narrow, theme, onView, onShift, onToday, onCurso
 
 /* ============================ 底部标签栏 ============================ */
 
-const TABS = [
-  { key: 'today', label: '今天', icon: <Sun size={18} />, count: 'today' as const },
-  { key: 'calendar', label: '日程', icon: <CalendarDays size={18} /> },
-  { key: 'inbox', label: '待办', icon: <Inbox size={18} />, count: 'inbox' as const },
-  // 逾期必须留在底栏 —— 用户重视的功能，不能藏进「更多」
-  { key: 'overdue', label: '逾期', icon: <AlarmClock size={18} />, count: 'overdue' as const, warn: true },
-];
-
+/**
+ * 底栏成员读 `ui.tabs`，顺序也取自它（`normalizeUi` 保证它是 navOrder 的子集，
+ * 所以侧栏拖个序，底栏跟着变 —— 两个列表的顺序没必要让用户各记一套）。
+ *
+ * 「更多」恒占最后一格，所以总格数 ≤ 5。
+ */
 export function Tabbar({ state, onNav, onMore }: {
   state: LocalState; onNav: (k: string) => void; onMore: () => void;
 }) {
   const c = counts(state);
+  const tabs = state.ui.tabs.map(navDef);
   return (
     <nav className="tabbar">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const b = badge(t.count ? (c as unknown as Record<string, number>)[t.count] : 0);
         return (
           <button className={'tab' + (state.ui.nav === t.key ? ' active' : '')} key={t.key} onClick={() => onNav(t.key)}>
@@ -422,7 +429,12 @@ export function Tabbar({ state, onNav, onMore }: {
   );
 }
 
-/** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 日程集 / 邀请 / 主题 / 备份 / 设置 */
+/**
+ * 「更多」抽屉：底栏没放进去的功能项 + 日程集 / 邀请 / 主题 / 备份 / 设置。
+ *
+ * 前半截是**差集**（`navOrder` 减去 `ui.tabs`），不是写死哪几项 ——
+ * 底栏那 4 格是用户自己挑的，写死就会出现「底栏有、这里也有」的重复项。
+ */
 export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
   onManageCal, onInvites, user }: {
   state: LocalState; theme: 'light' | 'dark'; open: boolean; onClose: () => void; onNav: (k: string) => void;
@@ -439,23 +451,35 @@ export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExpor
   const cal = state.cals.find((x) => x.id === state.ui.cal) || null;
   const pending = state.invites.length;
 
+  /**
+   * 底栏没放进去的功能项，在这里补一份。
+   *
+   * 顺序跟着 navOrder 走 —— 与侧栏一致，用户扫一眼就知道在哪儿。
+   * 差集而不是「写死哪几项」：底栏那 4 格是用户自己挑的，写死就会
+   * 出现「底栏有、这里也有」的重复项。
+   */
+  const inTabs = new Set(state.ui.tabs);
+  const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
+  const rest = order.filter((k) => !inTabs.has(k)).map(navDef);
+
+  const navTile = (def: NavDef) => {
+    const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
+    const b = badge(n);
+    return (
+      <button className="ms-item" key={def.key} data-nav={def.key} onClick={() => goto(def.key)}>
+        <span className="mi">{def.icon}</span><span className="mt">{def.label}</span>
+        {b && <span className="mc">{b}</span>}
+      </button>
+    );
+  };
+
   return (
     <>
       <div className="sheet-mask" onClick={onClose} />
       <div className="more-sheet">
         <div className="ms-grab" />
         <div className="ms-grid">
-          <button className="ms-item" onClick={() => goto('habits')}>
-            <span className="mi"><Flame size={20} /></span><span className="mt">打卡</span>
-            {badge(c.habits) && <span className="mc">{badge(c.habits)}</span>}
-          </button>
-          <button className="ms-item" onClick={() => goto('done')}>
-            <span className="mi"><CheckCircle2 size={20} /></span><span className="mt">已完成</span>
-          </button>
-          <button className="ms-item" onClick={() => goto('trash')}>
-            <span className="mi"><Trash2 size={20} /></span><span className="mt">垃圾箱</span>
-            {badge(c.trash) && <span className="mc">{badge(c.trash)}</span>}
-          </button>
+          {rest.map(navTile)}
           <button className="ms-item" onClick={() => { onManageCal(); onClose(); }}>
             <span className="mi"><Layers size={20} /></span>
             <span className="mt">{cal ? cal.name : '日程集'}</span>

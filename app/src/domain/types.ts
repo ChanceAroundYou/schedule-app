@@ -226,6 +226,14 @@ export interface UiPrefs {
   search: string;
   navOrder: string[];
   navBottom: string[];
+  /**
+   * 移动端底栏成员，1–4 项，顺序同 `navOrder`。
+   *
+   * 「更多」恒占最后一格，所以总格数 ≤ 5 —— 这是 Apple HIG 对 tab bar 的
+   * 2–5 项约束，不是随手定的。**设置不进这个列表**，理由同 `CUSTOMIZABLE`：
+   * 它是唯一能改回这份列表的地方。
+   */
+  tabs: string[];
   tdoneOpen: boolean;
   /** 当前选中的日程集。本地偏好，各设备可以看不同的集 */
   cal: string | null;

@@ -371,6 +371,17 @@ const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'tra
  */
 export const CUSTOMIZABLE: readonly string[] = NAV_ALL.filter((k) => k !== 'settings');
 
+/** 底栏最多放几项。「更多」恒占最后一格，所以总格数 ≤ 5（HIG 的 2–5 项） */
+export const TAB_MAX = 4;
+
+/**
+ * 底栏兜底。**空栏等于没有导航**，所以过滤后不足 1 项就回落到这里。
+ *
+ * 顺序与 navOrder 的前 4 项一致 —— 底栏是 navOrder 的子集（见 normalizeUi），
+ * 兜底值要是另排一套，用户会看到「恢复默认之后底栏顺序变了」。
+ */
+const DEFAULT_TABS: readonly string[] = ['inbox', 'today', 'overdue', 'calendar'];
+
 /* 外观轴的白名单。**故意与 ui/theme.ts 的 ACCENTS / STYLES 重复** ——
    domain/ 不许引 ui/（那一层碰 DOM），而这两个列表的职责不同：
    那边是「渲染哪些选项」（Record<Key, …>，少一个键编译不过），
@@ -390,6 +401,7 @@ export function defaultUi(): UiPrefs {
     search: '',
     navOrder: CUSTOMIZABLE.slice(),
     navBottom: ['trash'],
+    tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     cal: null,
   };
@@ -433,6 +445,18 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
     ? ui.navBottom.filter((k) => order.indexOf(k) >= 0)
     : null;
   ui.navBottom = bottom === null ? ['trash'] : bottom;
+
+  // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
+  // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，
+  // 两个列表各排各的，用户不知道为什么。
+  //
+  // 与 navBottom 不同：**这里空栏没有合法解释**（底栏空着等于没有
+  // 导航），所以 [] 与「没设置」一样回落到默认，不区分。
+  const tabSet = new Set(
+    Array.isArray(ui.tabs) ? ui.tabs.filter((k) => CUSTOMIZABLE.includes(k)) : [],
+  );
+  const tabList = order.filter((k) => tabSet.has(k)).slice(0, TAB_MAX);
+  ui.tabs = tabList.length ? tabList : DEFAULT_TABS.slice();
 
   return ui;
 }

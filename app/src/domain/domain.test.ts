@@ -35,6 +35,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
   return {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
     habits: {},
+    projects: {},
     cals: [],
     invites: [],
     cursor: 0,
@@ -473,6 +474,32 @@ test('外观三轴：缺省与认不出的值', () => {
   assert.equal(normalizeUi({ style: 'notion' }).style, 'notion');
   assert.equal(normalizeUi({ accent: 'chartreuse' as never }).accent, 'jade');
   assert.equal(normalizeUi({ style: 'brutalist' as never }).style, 'soft');
+});
+
+test('底栏 tabs：子集 + 顺序跟 navOrder 走 + 空了就回落', () => {
+  // 缺省
+  assert.deepEqual(normalizeUi(undefined).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 只收 CUSTOMIZABLE 里的键 —— 设置不进底栏（它在「更多」里固定有一格）
+  const mixed = normalizeUi({ tabs: ['habits', 'settings', 'inbox'] as string[] });
+  assert.deepEqual(mixed.tabs, ['inbox', 'habits'], '认不出的键被滤掉');
+  assert.ok(!mixed.tabs.includes('settings'), '设置不进底栏');
+
+  // 顺序取自 navOrder，不保留盘上自己的顺序
+  const reordered = normalizeUi({
+    navOrder: ['done', 'inbox', 'today'],
+    tabs: ['inbox', 'done'],
+  });
+  assert.deepEqual(reordered.tabs, ['done', 'inbox'], '按 navOrder 排');
+
+  // 一次操作里过滤后为空 → 回落默认。这里空栏没有合法解释，与 navBottom 不同
+  assert.deepEqual(normalizeUi({ tabs: [] }).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+  assert.deepEqual(normalizeUi({ tabs: ['nope'] as string[] }).tabs,
+    ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 超过上限的砍掉 —— UI 挡不住手改 localStorage
+  const many = normalizeUi({ tabs: ['inbox', 'today', 'overdue', 'calendar', 'habits'] });
+  assert.deepEqual(many.tabs, ['inbox', 'today', 'overdue', 'calendar']);
 });
 
 /* ============================== 迁移 ============================== */

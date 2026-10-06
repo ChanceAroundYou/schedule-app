@@ -12,24 +12,35 @@
  * 配色一律走 legacy.css 的 CSS 变量（新表面没有 legacy 规则，Tailwind 生效；
  * 写死颜色会让深色模式在这里失效）。
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Database, Info, Layers, LogOut, MailPlus, Palette, Pencil, Upload, Download,
-  Trash2, UserRound,
+  Check, Database, GripVertical, Info, Layers, LogOut, MailPlus, Palette, PanelTop,
+  Pencil, Upload, Download, Trash2, UserRound,
 } from 'lucide-react';
 import type { AccentKey, LocalState, PublicUser, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
+import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
 import { Btn, useConfirm, toast } from './kit.tsx';
+import { navDef } from './Shell.tsx';
 import { useOnline } from './hooks.ts';
 import { cx } from './cx.ts';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
 const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
-const LINE = 'border-[var(--line,rgba(0,0,0,.12))]';
+/**
+ * 描边走 **真令牌 `--border`**，不给兜底值。
+ *
+ * 老 surface（Calendars / Auth / kit）写的是 `var(--line,rgba(...))`，而
+ * `--line` 在 legacy.css 里**根本没定义** —— 有兜底值所以不报错、不白屏，
+ * 只是两套主题下都在用写死的浅色。**静默降级比直接坏掉难查得多。**
+ * 这个文件是新的，别把这个坏习惯带过来。
+ */
+const LINE = 'border-[var(--border)]';
+const HOVER = 'hover:bg-[var(--panel-3)]';
 
 /* ============================== 小组件 ============================== */
 
@@ -75,7 +86,7 @@ function Chips<K extends string>({ value, options, onPick, render }: {
               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition',
               on
                 ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                : 'text-[var(--text-2)] hover:bg-[var(--hover,rgba(0,0,0,.05))] ' + LINE,
+                : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
             )}
           >
             {render?.(k)}
@@ -86,6 +97,165 @@ function Chips<K extends string>({ value, options, onPick, render }: {
         );
       })}
     </div>
+  );
+}
+
+/* ============================ 功能区自定义 ============================ */
+
+/**
+ * 功能区自定义：底栏挑哪几项 + 侧栏怎么排。
+ *
+ * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的
+ * （`ROW_SEL`、`data-untimed`、`rawLayout` 量原始布局、`shiftCells` 让位），
+ * 套到一个 7 行的静态列表上属于杀鸡用牛刀 —— 而且它那套「按几何推列数」
+ * 的假设在这里根本不成立。这里只要「拖到谁就跟谁换」，一个局部 HTML5
+ * 拖拽就够。
+ *
+ * 拖拽期间改的是**本地 rows**，drop 时才写一次 `setUi` —— 每帧写盘的话
+ * `persist()` 的防抖会被拖成一条长尾，而且中途松手会留下半个顺序。
+ */
+function NavCard({ state }: { state: LocalState }) {
+  const ui = state.ui;
+  const order = ui.navOrder;
+  const tabs = new Set(ui.tabs);
+  const bottom = new Set(ui.navBottom);
+
+  const [rows, setRows] = useState<string[]>(order);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+  // 别处改了 navOrder（比如另一台设备同步来一份）就跟着变，别让用户
+  // 拖到一半发现列表自己重置了
+  useEffect(() => setRows(order), [order]);
+
+  const label = (k: string) => navDef(k).label;
+
+  const toggleTab = (k: string) => {
+    if (tabs.has(k)) {
+      // 底栏至少留 1 格 —— 空栏等于没有导航，用户会以为应用坏了
+      if (tabs.size <= 1) return;
+      store.setUi({ tabs: ui.tabs.filter((x) => x !== k) });
+    } else {
+      if (tabs.size >= TAB_MAX) return;
+      // 加进去时按 navOrder 排，不让它永远挂在末尾
+      store.setUi({ tabs: order.filter((x) => tabs.has(x) || x === k) });
+    }
+  };
+
+  const toggleBottom = (k: string) => {
+    const next = bottom.has(k)
+      ? ui.navBottom.filter((x) => x !== k)
+      : [...ui.navBottom, k];
+    store.setUi({ navBottom: next });
+  };
+
+  /** 拖到 `k` 上：跟它换一格。换完被拖元素就在 k 的位置，继续拖下一个还会再换 */
+  const onDragOver = (k: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragKey || dragKey === k) return;
+    const next = rows.slice();
+    const i = next.indexOf(dragKey);
+    const j = next.indexOf(k);
+    if (i < 0 || j < 0) return;
+    next[i] = k;
+    next[j] = dragKey;
+    setRows(next);
+    setOverKey(k);
+  };
+
+  const endDrag = () => {
+    if (dragKey && rows.join() !== order.join()) store.setUi({ navOrder: rows });
+    setDragKey(null);
+    setOverKey(null);
+  };
+
+  return (
+    <Card icon={<PanelTop size={14} />} title="功能区"
+      hint={'底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。'
+        + '侧栏那列可以直接拖，也可以在这儿拖 —— 两边改的是同一份顺序。'}>
+      <div className="flex flex-col gap-4">
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="text-[11.5px] text-[var(--text-3)]">底栏（手机上）</span>
+            <span className="text-[11.5px] text-[var(--text-3)]">{tabs.size}/{TAB_MAX}</span>
+          </div>
+          {/*
+            按 navOrder 排，与侧栏一致 —— 用户在这儿挑的顺序就是他眼睛里
+            侧栏的顺序。用 Chips 那个组件不合适：它是单选（aria-pressed
+            恒为 false），这里是多选开关。
+          */}
+          <div className="flex flex-wrap gap-1.5">
+            {order.map((k) => {
+              const on = tabs.has(k);
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  data-tab={k}
+                  aria-pressed={on}
+                  onClick={() => toggleTab(k)}
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition',
+                    on
+                      ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+                      : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
+                  )}
+                >
+                  {on && <Check size={12} />}
+                  {label(k)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
+            侧栏（电脑上）· 拖拽排序
+          </div>
+          <ul className="flex flex-col gap-1">
+            {rows.map((k) => (
+              <li
+                key={k}
+                data-nav-row={k}
+                draggable
+                onDragStart={(e) => {
+                  setDragKey(k);
+                  // Firefox 不给 dataTransfer 就完全不发起拖拽，必须塞点东西
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', k);
+                }}
+                onDragOver={onDragOver(k)}
+                onDrop={(e) => { e.preventDefault(); endDrag(); }}
+                onDragEnd={endDrag}
+                className={cx(
+                  'flex cursor-grab items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12.5px] active:cursor-grabbing',
+                  overKey === k && dragKey !== k
+                    ? 'border-[var(--primary)] ' + LINE
+                    : 'text-[var(--text-2)] ' + LINE,
+                )}
+              >
+                <GripVertical size={13} />
+                <span className="min-w-0 flex-1 truncate">{label(k)}</span>
+                <button
+                  type="button"
+                  data-bottom={k}
+                  aria-pressed={bottom.has(k)}
+                  onClick={() => toggleBottom(k)}
+                  className={cx(
+                    'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition',
+                    bottom.has(k)
+                      ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+                      : 'text-[var(--text-3)] ' + HOVER + ' ' + LINE,
+                  )}
+                >
+                  底部
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -175,6 +345,10 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           </div>
         </div>
       </Card>
+
+      {/* 功能区：底栏挑哪几项 + 侧栏怎么排。放在外观之后 —— 它改的是
+          导航本身，比配色更「结构性」，试完配色接着试它最自然 */}
+      <NavCard state={state} />
 
       <Card icon={<Database size={14} />} title="数据"
         hint="备份是**合并**，不是覆盖：同 id 的会被覆盖，其余原样留着。">
