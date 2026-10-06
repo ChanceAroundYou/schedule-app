@@ -770,10 +770,17 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 「今天」页有可折叠的「今天已完成」区块，状态存 `ui.tdoneOpen`，默认收起。
 在里面取消勾选会让任务自动回到日程页。
 
-**23. 侧栏顺序可拖动，`normalizeUi` 必须区分 undefined 与空数组**
+**23. 侧栏顺序存在 `ui.navOrder` / `ui.navBottom`，`normalizeUi` 必须区分 undefined 与空数组**
 
-状态存 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部 `#navBottom` 组）。
-`#nav` 与 `#navBottom` 是两个容器，垃圾箱可以被拖进主区，反之亦然。
+状态存 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部那一组）。
+底部组在窄屏是底部标签栏之外的「更多」抽屉，宽屏是侧栏的下半区。
+
+> ⚠️ **老版本的标题是「侧栏顺序可拖动」，那是过期说法。** React 重写之后
+> `ui.navOrder` / `ui.navBottom` **一度是死数据**：`ui/Shell.tsx` 还在读它们，
+> 但全项目**没有任何调用点写它们**（`grep -rn 'navBottom' app/src` 只有类型、
+> 默认值、`normalizeUi` 和读取处）。所以「拖过一次顺序就记住了」在那一版是假的 ——
+> 看到的永远是默认顺序。写入方在 2026-10-06 的「功能区自定义」里补回，
+> 入口在**设置页**（不复用 `ui/dnd.ts`，那套是给时间轴与让位洞用的）。
 
 处理在 `domain/model.ts` 的 `normalizeUi()`：
 
@@ -782,9 +789,9 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > 与「空数组 → 用户有意为之，原样保留」。
 > 代码里就是 `bottom === null ? ['trash'] : bottom`，`domain.test.ts` 有用例锁着。
 
-其他坑：浏览器 `dragend` 后可能补一次 `click`（用 `navJustDragged` 标志 +
-`setTimeout(…, 0)` 吞掉）；侧栏 active 高亮要用统一的 `$$('.nav-item')` 取，
-不能分开写 `#nav` 与 `#navBottom`。
+其他坑：侧栏 active 高亮要用统一的 `$$('.nav-item')` 取，不能分开写 `#nav`
+与 `#navBottom`。（旧版还有一条「`dragend` 后补一次 `click`，用 `navJustDragged`
+吞掉」—— 那个标志在新版代码里**不存在**，别照着找。）
 
 **24. CSS 层叠：同特异度后写的赢，给折叠元素加类要查 display**
 

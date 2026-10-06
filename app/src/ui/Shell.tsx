@@ -10,9 +10,12 @@
  *      `@media (max-width: 900px)` 是同一根线，改一处必须改另一处。
  *   3. **浮层 z-index 必须 > 标签栏的 45**，否则抽屉被标签栏压住一截。
  *
- * 侧栏顺序可拖动：`ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
+ * 导航顺序读 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
  * `navBottom` 不能用「空则给默认值」的写法 —— 那会把用户主动拖出底部的
  * 垃圾箱又塞回去。必须区分 undefined（从未设置）与 []（有意为之）。
+ *
+ * ⚠️ 这两个字段**当前只读不写** —— 写入方（设置页里的排序）还没接上，
+ *    见项目 CLAUDE.md 四、23。别以为「拖过一次就记住了」。
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
