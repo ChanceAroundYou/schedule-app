@@ -4,8 +4,9 @@ dist/
 # TypeScript 增量编译缓存（tsc -b 产生）
 *.tsbuildinfo
 
-# 依赖
-node_modules/
+# 依赖。**不带结尾斜杠**：仓库里那个 node_modules 是软链（指向本机磁盘，
+# 见 deploy/install-deps.sh），而带斜杠的模式只匹配真目录，会漏掉它。
+node_modules
 
 # 后端运行时数据：SQLite 库 + JWT 密钥 + 用户表。永远不进版本库。
 server/data/
