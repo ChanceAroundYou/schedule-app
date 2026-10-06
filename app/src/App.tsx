@@ -32,6 +32,7 @@ import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
+import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
 
@@ -437,7 +438,25 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 内容分发 -------- */
   let body: React.ReactNode;
-  if (!state.cals.length) {
+  if (state.ui.nav === 'settings') {
+    /**
+     * 设置**放在日程集那道门禁之前**。它里面有「清空本机副本」和账户卡，
+     * 而「一个集都没拿到」正是最需要点这两个的时候 —— 塞进 else 里就成了
+     * 一个修不了东西的死角。传全量 state：cals / invites / outbox 都是跨集的。
+     */
+    body = (
+      <SettingsView
+        state={state}
+        user={user}
+        theme={theme}
+        onExport={exportBackup}
+        onImport={importBackup}
+        onLogout={onLogout}
+        onManageCal={() => setCalOpen(true)}
+        onInvites={() => setInvOpen(true)}
+      />
+    );
+  } else if (!state.cals.length) {
     // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
     // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集
     body = (

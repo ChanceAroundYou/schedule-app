@@ -22,11 +22,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
-  Search, Sun, Trash2, Upload, X, Download, Clock,
+  Search, Settings, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
 import type { LocalState, PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { counts, liveTasks } from '../domain/model.ts';
+import { counts, liveTasks, CUSTOMIZABLE } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
@@ -54,10 +54,18 @@ export const NAV: NavDef[] = [
 ];
 
 export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Trash2 size={16} />, count: 'trash' };
-const ALL_NAV = [...NAV, TRASH_NAV];
+
+/**
+ * 设置**不在** `ui.navOrder` 里（见 domain/model.ts 的 CUSTOMIZABLE）：
+ * 它得能被打开，才谈得上改回来。所以它只进这张表，不参加排序。
+ */
+export const SETTINGS_NAV: NavDef = { key: 'settings', label: '设置', icon: <Settings size={16} /> };
+
+const ALL_NAV = [...NAV, TRASH_NAV, SETTINGS_NAV];
 const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
 
-const DEFAULT_ORDER = ALL_NAV.map((n) => n.key);
+/** 没有 navOrder 时的兜底。取自 domain 的白名单，别在这里另抄一份 */
+const DEFAULT_ORDER: readonly string[] = CUSTOMIZABLE;
 
 /** `>99` 显示 `99+` —— 徽标再宽就挤垮布局了 */
 function badge(n: number): string | null {
@@ -154,6 +162,10 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
       <Pulse state={state} />
 
       <div className="sidebar-footer">
+        {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事） */}
+        <button className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
+          <Settings size={13} /> 设置
+        </button>
         <button className="ghost-btn" onClick={onExport}><Upload size={13} /> 导出备份</button>
         <button className="ghost-btn" onClick={() => fileRef.current?.click()}>
           <Download size={13} /> 导入备份
@@ -283,6 +295,7 @@ export function Topbar({ state, narrow, theme, onView, onShift, onToday, onCurso
   else if (ui.nav === 'done') { title = '已完成'; range = ''; }
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
+  else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
     title = ui.view === 'day' ? '日' : ui.view === 'week' ? '周' : '月';
     if (ui.view === 'day') range = D.fmtFull(ui.cursor);
@@ -409,7 +422,7 @@ export function Tabbar({ state, onNav, onMore }: {
   );
 }
 
-/** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 / 退出 */
+/** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 日程集 / 邀请 / 主题 / 备份 / 设置 */
 export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
   onManageCal, onInvites, user }: {
   state: LocalState; theme: 'light' | 'dark'; open: boolean; onClose: () => void; onNav: (k: string) => void;
@@ -462,6 +475,9 @@ export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExpor
           </button>
           <button className="ms-item" onClick={() => fileRef.current?.click()}>
             <span className="mi"><Download size={20} /></span><span className="mt">导入</span>
+          </button>
+          <button className="ms-item" data-nav="settings" onClick={() => goto('settings')}>
+            <span className="mi"><Settings size={20} /></span><span className="mt">设置</span>
           </button>
         </div>
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
@@ -542,7 +558,8 @@ export function QuickAdd({ state, onSubmit }: {
   }, []);
 
   return (
-    <div className="fast-add" hidden={state.ui.nav === 'trash'}>
+    // 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了
+    <div className="fast-add" hidden={state.ui.nav === 'trash' || state.ui.nav === 'settings'}>
       <span className="fast-plus"><Plus size={15} /></span>
       <input
         ref={inputRef}

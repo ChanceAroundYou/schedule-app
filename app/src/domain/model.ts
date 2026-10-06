@@ -360,7 +360,16 @@ export function makeHabit(title: string, order: number, calId: string, id?: stri
 
 /* --------------------------------------------------------------- 界面偏好 */
 
-const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'trash'];
+const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'trash', 'settings'];
+
+/**
+ * 可自定义的功能项 —— `navOrder` 与 `ui.tabs` 都只从这里面选。
+ *
+ * **设置不在里面，这是有意的**：它的入口固定在侧栏底部与「更多」抽屉里。
+ * 放进来就等于允许用户把它自己隐藏掉，而「设置」正是他唯一能去改回来的地方 ——
+ * 藏起来之后没有第二条路，界面上就是一个死角。
+ */
+export const CUSTOMIZABLE: readonly string[] = NAV_ALL.filter((k) => k !== 'settings');
 
 /* 外观轴的白名单。**故意与 ui/theme.ts 的 ACCENTS / STYLES 重复** ——
    domain/ 不许引 ui/（那一层碰 DOM），而这两个列表的职责不同：
@@ -379,7 +388,7 @@ export function defaultUi(): UiPrefs {
     accent: 'jade',
     style: 'soft',
     search: '',
-    navOrder: NAV_ALL.slice(),
+    navOrder: CUSTOMIZABLE.slice(),
     navBottom: ['trash'],
     tdoneOpen: false,
     cal: null,
@@ -410,10 +419,12 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   delete bag.noteId;
   delete bag.listFilter;
 
+  // order 只收 CUSTOMIZABLE 里的键：设置不进这个列表（见上面的注释）。
+  // 过滤 + 补全用的是同一个列表，两边不一致时会出现「过滤掉的又被补回来」。
   const order = Array.isArray(ui.navOrder)
-    ? ui.navOrder.filter((k) => NAV_ALL.includes(k))
+    ? ui.navOrder.filter((k) => CUSTOMIZABLE.includes(k))
     : [];
-  for (const k of NAV_ALL) if (order.indexOf(k) < 0) order.push(k);
+  for (const k of CUSTOMIZABLE) if (order.indexOf(k) < 0) order.push(k);
   ui.navOrder = order;
 
   // navBottom 不能用「空则默认」的写法 —— 那会把用户主动拖出底部的垃圾箱又塞回去。
