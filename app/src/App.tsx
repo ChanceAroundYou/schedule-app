@@ -27,6 +27,7 @@ import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
 import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
+import { AiPanel } from './ui/AiPanel.tsx';
 import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
@@ -452,6 +453,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       case 'habits':
         body = <HabitsView state={scoped} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />;
         break;
+      // AI 是跨集的，跟今天 / 逾期 / 待办箱一组：问的是「我这周排得怎么样」，
+      // 按集切开的话它只看得见当前那个集，答出来的「空」是假的空。
+      // 它自己按 `sync.snapshot(userId)` 读，权限仍然是服务器那一关说了算。
+      case 'ai': body = <AiPanel state={state} />; break;
       default: body = <CalendarView state={scoped} />;
     }
   }
@@ -548,7 +553,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 function navLabel(nav: string): string {
   const m: Record<string, string> = {
     inbox: '待办箱', today: '今天', overdue: '逾期',
-    calendar: '日程', habits: '打卡', done: '已完成', trash: '垃圾箱',
+    calendar: '日程', habits: '打卡', done: '已完成', trash: '垃圾箱', ai: 'AI',
   };
   return m[nav] || '任务列表';
 }

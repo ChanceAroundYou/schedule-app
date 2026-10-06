@@ -93,3 +93,136 @@
 }
 .cb-x:hover { border-color: var(--border-2); color: var(--text); }
 
+/* ================================ AI 对话 ================================ */
+
+/*
+ * 面板自己管滚动（.content 是 flex:1，高度是确定的，所以这里 100% 能解析）。
+ * 输入框钉在下面，气泡区自己滚 —— 让整页跟着滚的话，输入框会被顶出屏幕。
+ */
+.ai-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+.ai-bar {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.ai-bar-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-3);
+}
+.ai-bar-actions { display: flex; align-items: center; gap: 4px; }
+
+.ai-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 14px 0;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.ai-hint {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--text-3);
+}
+
+/* -------- 气泡 -------- */
+
+/*
+ * 用户气泡用 --primary-soft 而不是 --primary 底 + 白字。
+ * 后者在亮色下只有 4.39:1（不够 4.5，见 CLAUDE.md 五、界面约定里那张表），
+ * 按钮上那几个字可以接受，一整段对话正文不行。
+ * --primary-soft 配 --text 两边都远高于 4.5，深浅两档也都拉得开。
+ */
+.ai-msg { display: flex; flex-direction: column; gap: 5px; max-width: min(680px, 92%); }
+.ai-msg.user { align-self: flex-end; align-items: flex-end; }
+.ai-bubble {
+  border-radius: 14px; padding: 9px 12px; font-size: 13.5px; line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+}
+.ai-msg.user .ai-bubble {
+  background: var(--primary-soft); color: var(--text); border-bottom-right-radius: 5px;
+}
+.ai-msg.assistant .ai-bubble {
+  background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 5px;
+}
+/* 模型调工具的那段时间通常有 1~3 秒，空着会让人以为卡住了 */
+.ai-dots { display: inline-flex; gap: 3px; }
+.ai-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); animation: ai-blink 1s infinite; }
+.ai-dots i:nth-child(2) { animation-delay: .15s; }
+.ai-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes ai-blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+/* -------- 动作条：模型正在查什么 -------- */
+
+.ai-acts { display: flex; flex-wrap: wrap; gap: 5px; }
+.ai-act {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; color: var(--text-3);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 8px;
+}
+/* 工具报错用 --danger（亮色 4.02）。不用 --warn —— 它在亮色下只有 2.66，
+   这一行是**有信息量**的字，不是装饰 */
+.ai-act.bad { color: var(--danger); border-color: var(--danger); }
+
+/* -------- 出错 -------- */
+
+.ai-err {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--danger); background: var(--danger-soft);
+  border-radius: 8px; padding: 6px 9px;
+}
+.ai-err-link {
+  border: none; background: none; padding: 0;
+  color: inherit; font-size: 12px; text-decoration: underline;
+}
+
+.ai-banner {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-2);
+  background: var(--warn-soft); border: 1px solid var(--border-2);
+  border-radius: 10px; padding: 8px 10px;
+}
+
+/* -------- 空态 -------- */
+
+.ai-intro { text-align: center; padding: 34px 12px 10px; }
+.ai-intro-ico { color: var(--primary); margin-bottom: 8px; }
+.ai-intro-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.ai-intro-sub {
+  font-size: 12.5px; line-height: 1.7; color: var(--text-3);
+  max-width: 360px; margin: 0 auto 14px;
+}
+.ai-examples { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+.ai-example {
+  border: 1px solid var(--border-2); background: var(--panel); color: var(--text-2);
+  border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+}
+.ai-example:hover { border-color: var(--primary); color: var(--text); }
+
+/* -------- 输入区 -------- */
+
+.ai-compose {
+  flex: none; display: flex; align-items: flex-end; gap: 8px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+.ai-input {
+  flex: 1; resize: none; line-height: 1.6; max-height: 140px;
+  border: 1px solid var(--border-2); border-radius: 10px;
+  background: var(--panel); padding: 8px 11px;
+}
+.ai-input:focus { outline: none; border-color: var(--primary); }
+
+/* -------- 设置浮层 -------- */
+
+.ai-set { display: flex; flex-direction: column; gap: 14px; padding-bottom: 4px; }
+.ai-set-load { font-size: 12.5px; color: var(--text-3); padding: 10px 0; }
+.ai-field { display: flex; flex-direction: column; gap: 5px; }
+.ai-field-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.ai-field input {
+  border: 1px solid var(--border-2); border-radius: 9px;
+  background: var(--panel); padding: 8px 10px;
+}
+.ai-field input:focus { outline: none; border-color: var(--primary); }
+.ai-field-tip { font-size: 11.5px; line-height: 1.6; color: var(--text-3); }
+.ai-field-tip code { background: var(--panel-3); border-radius: 4px; padding: 0 4px; }
+.ai-set-err {
+  font-size: 12px; color: var(--danger); background: var(--danger-soft);
+  border-radius: 8px; padding: 7px 10px;
+}
+

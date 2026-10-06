@@ -13,6 +13,9 @@
 import type {
   Cal, Invite, Member, Op, PublicUser, Role, SyncResponse,
 } from '../domain/types.ts';
+import type {
+  AiChatMessage, AiSessionMeta, AiSettings, AiSettingsPatch,
+} from '../domain/ai.ts';
 
 const TOKEN_KEY = 'schedule-app-token';
 
@@ -170,4 +173,25 @@ export const api = {
 
   declineInvite: (id: string) =>
     req<{ ok: boolean }>('POST', `invites/${encodeURIComponent(id)}/decline`, {}),
+
+  /* ------------------------------------------------------------------ AI */
+
+  aiSettings: () => req<AiSettings>('GET', 'ai/settings'),
+
+  /**
+   * 改配置。**`apiKey` 不传 = 保留原值**（服务端的三态），所以设置浮层
+   * 提交时只带用户真动过的字段，别图省事把整份配置回传 —— 那会把 key 抹掉。
+   */
+  aiSaveSettings: (patch: AiSettingsPatch) => req<AiSettings>('PUT', 'ai/settings', patch),
+
+  aiSessions: () =>
+    req<{ sessions: AiSessionMeta[] }>('GET', 'ai/sessions').then((r) => r.sessions),
+
+  aiSession: (id: string) =>
+    req<{ session: AiSessionMeta; messages: AiChatMessage[] }>(
+      'GET', `ai/sessions/${encodeURIComponent(id)}`, undefined,
+    ),
+
+  aiDeleteSession: (id: string) =>
+    req<{ ok: boolean }>('DELETE', `ai/sessions/${encodeURIComponent(id)}`),
 };

@@ -19,7 +19,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
-  Search, Sun, Trash2, Upload, X, Download, Clock,
+  Search, Sparkles, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
 import type { LocalState, PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -48,6 +48,7 @@ export const NAV: NavDef[] = [
   { key: 'calendar', label: '日程', icon: <CalendarDays size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
   { key: 'done', label: '已完成', icon: <CheckCircle2 size={16} /> },
+  { key: 'ai', label: 'AI', icon: <Sparkles size={16} /> },
 ];
 
 export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Trash2 size={16} />, count: 'trash' };
@@ -278,6 +279,7 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
   else if (ui.nav === 'done') { title = '已完成'; range = ''; }
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
+  else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
   else if (ui.nav === 'calendar') {
     title = ui.view === 'day' ? '日' : ui.view === 'week' ? '周' : '月';
     if (ui.view === 'day') range = D.fmtFull(ui.cursor);
@@ -433,6 +435,9 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
           </button>
           <button className="ms-item" onClick={() => goto('done')}>
             <span className="mi"><CheckCircle2 size={20} /></span><span className="mt">已完成</span>
+          </button>
+          <button className="ms-item" onClick={() => goto('ai')}>
+            <span className="mi"><Sparkles size={20} /></span><span className="mt">AI</span>
           </button>
           <button className="ms-item" onClick={() => goto('trash')}>
             <span className="mi"><Trash2 size={20} /></span><span className="mt">垃圾箱</span>
