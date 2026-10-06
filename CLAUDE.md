@@ -30,6 +30,7 @@
 │   │   ├── domain/         纯逻辑，零 React / DOM / 网络依赖
 │   │   │   ├── types.ts    LocalState · Task · Habit · Op
 │   │   │   ├── date.ts     today / addDays / weekStart / monthMatrix / fmt* / shortLoad
+│   │   │   │                / parseDateText（「找日期」输入框专用，见四、35 末）
 │   │   │   ├── parse.ts    自然语言解析（规则顺序敏感，见四、35）
 │   │   │   ├── repeat.ts   重复推进 + seriesRootOf + 派生 id
 │   │   │   ├── layout.ts   HOUR_H 等时间轴常量 + layoutOverlap
@@ -357,11 +358,12 @@ SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试�
 ### 测试
 
 ```bash
-cd app          && npm test                     # 63 条（node --test，跑 *.test.ts）
+cd app          && npm test                     # 68 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
 cd app          && node tests/contrast.mjs      # 正文 78 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
 node server/tests/api.test.js                   # 31 条接口
 node server/tests/smoke-share.mjs               # 两个人共用一个集，真走网络
+cd app          && node tests/browser-smoke.mjs   # 144 条（无头 Chrome + CDP，零 npm 依赖）
 ```
 
 后面两个会**自己起一个临时后端**（临时数据库 + 随机端口），不碰线上那份。
@@ -448,6 +450,15 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 关掉过渡但放过加载圈。验过它有牙（三处一起改坏，三条当场红）。
 > 四个坑都在「四、45」：`[role=dialog]` 的歧义、上一节留着的抽屉、
 > `getComputedStyle` 的 `1e-05s`。
+>
+> 第「十七」节（2026-10-06）补的是**此前一条断言都没有的三样**：找日期的
+> **文本输入**（不是点格子）、快速添加里那个 12 小时制转盘、侧栏跨组拖拽重排。
+> 转盘那一节顺带量出表盘在弹层里偏右 2px（`.cp-face` 写死 246px，而
+> `.clock-pop` 的 274px 扣掉边框和内边距只剩 242px，`margin: 0 auto` 塌成 0），
+> 见「五、界面约定」里那条宽度。
+> 验过它有牙：把 `parseDateText` 里裸周几那句 `if (!m[1] && d < today)` 改坏、
+> 重新构建，只有「裸周几落在将来」那一条红（差 -1 天）。
+> 三个坑都在「四、46」。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -687,6 +698,14 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 ≤900px 侧栏收进「更多」抽屉，改用底部 `.tabbar`（今天 / 日程 / 待办箱 / 逾期 / 更多）。
 **逾期必须留在底栏**（用户重视的功能，不能藏进「更多」）。
 浮层 z-index 必须 > 标签栏的 45，否则抽屉被标签栏压住一截（现在用 60 / 61）。
+
+> **浮层的宽度要按「内容盒」算，不是按外框算。** `* { box-sizing: border-box }`
+> （`legacy.css` 第 139 行）意味着 `width` 里已经扣掉了边框和内边距。
+> 时间转盘 `.clock-pop` 原先写 274px，扣掉两条 1px 边框和左右各 15px 内边距
+> 只剩 242px，而里面的 `.cp-face` 是**写死的 246px**（`C = 123` 是它的一半，
+> 见 `ui/Clock.tsx`）—— 表盘比内容盒宽 4px，`margin: 0 auto` 塌成 0，
+> 整个表盘偏右 2px。现在写 278px，内容盒恰好 246。
+> **凡是「里面有个写死宽度的东西」的浮层都要这么对一遍**，别只量外框。
 
 > `styles/legacy.css` 里**另有** `@media (max-width: 820px)` 与 `(max-width: 640px)`
 > 两处，那是排版微调（字号、间距），**不是**响应式断点，别混。
@@ -1005,6 +1024,18 @@ await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
 > **但只有「整段独立成词」时才这么做**（`if (mi === 0 && !ctx.isolated) return null`）；
 > 带「半 / 刻 / 分」时信号足够强，不需要独立成词。
 
+> **「找日期」那个输入框是另一套解析器，裸周几的口径必须和 `parse()` 一致。**
+> `domain/date.ts` 的 `parseDateText(raw, baseIso, todayIso?)` 是给「找日期」输入框
+> 专用的：它只解析一个日期片段，认得比 `parse()` 深（`1015`、`2026-10`、
+> `上个月` 都认），而且**年份基准是面板所在的月份**，不是今天 —— 12 月翻到面板
+> 显示次年 1 月时输入「1月5日」，要的是明年。
+>
+> 两处**必须一致**的是裸周几：`parse.ts` 里那条日期规则是
+> `if (d < todayIso) d = D.addDays(d, 7)`，`parseDateText` 里也得有同一句。
+> 曾经没有 —— 于是同一句「周三」，在任务标题里跳到下周三、在找日期框里跳到
+> **两天前**。改这块时两个解析器要一起看，`domain.test.ts` 有一条用例
+> 直接拿 `parse()` 的结果和 `parseDateText()` 比，口径一歪就红。
+
 **36. 窄屏的负载文字要用 `shortLoad`，不要用完整时长**
 
 月视图格子窄（53px 宽），完整文案「3小时45分」会**折成三行把日期数字挤扁**。
@@ -1170,6 +1201,22 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 - **`getComputedStyle` 回的是序列化后的值**：CSS 里写 `0.01ms`，
   它在 Chrome 里读出来是 `1e-05s`。比字符串会得到假失败，
   要按单位解析成秒再比大小。
+
+**46. 探针伺服的是 `dist/`，不是源码**
+
+`serveDist()` 读的是 `../dist`，所以**改完前端不 `npm run build` 就等于没改**：
+第十七节第一次跑出来的「裸周几落在将来」是绿的，但那时跑的是上一轮的产物 ——
+它证的是接线，不是刚修的那个 bug。**改完前端先构建，再跑探针。**
+
+同一条里还有两个同类坑：
+
+- **`dragover` 是连续事件，React 会批处理**。在同一个 `evalJs` 里
+  `dispatchEvent(dragover)` 紧接着读 DOM，读到的是**上一帧**的让位线
+  （症状：`no-ins`，看着像事件没进处理器）。要等一拍再读。
+- **断言别写死「应该是什么」，要写「和刚才量到的一致」**。侧栏拖拽那一节
+  我写的是 `navBottom === ['habits']`，而正确值是 `['trash','habits']`
+  —— 垃圾箱**本来就该**留在底部组（`navBottom` 是「哪些归底部」，
+  不是「底部组里只有谁」）。改成和 DOM 里量到的顺序比，才既对又不脆。
 
 ---
 
