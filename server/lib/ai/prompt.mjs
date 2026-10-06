@@ -22,8 +22,9 @@ import { today, weekday, WEEKDAY_CN } from './dates.mjs';
 /**
  * @param {object} [ctx] 客户端补的「当前在看什么」。服务器不知道这些：
  *   { calId?, calName?, nav?, view?, cursor? }
+ * @param {Array<{type:string, content:string}>} [memories] 长期记忆，新对话时注入
  */
-export function systemPrompt(ctx = {}) {
+export function systemPrompt(ctx = {}, memories = []) {
   const t = today();
   const w = WEEKDAY_CN[weekday(t)];
 
@@ -33,9 +34,25 @@ export function systemPrompt(ctx = {}) {
   if (ctx.view) where.push(`${ctx.view} 视图`);
   if (ctx.cursor) where.push(`光标停在这一天：${ctx.cursor}`);
 
+  // 记忆注入。按类型分组，让用户偏好和关键决定在系统提示词里可见。
+  let memoryBlock = '';
+  if (memories.length) {
+    const byType = {};
+    for (const m of memories) {
+      if (!byType[m.type]) byType[m.type] = [];
+      byType[m.type].push(m.content);
+    }
+    const parts = [];
+    if (byType.preference) parts.push(`偏好：${byType.preference.join('；')}`);
+    if (byType.decision) parts.push(`决定：${byType.decision.join('；')}`);
+    if (byType.pattern) parts.push(`模式：${byType.pattern.join('；')}`);
+    memoryBlock = `\n## 用户记忆\n\n${parts.join('。')}。\n`;
+  }
+
   return `你是「日程清单」这个应用里的助手。用户用它记「要做什么、哪天做、做多久」。
 
 今天是 ${t}（${w}）。
+${memoryBlock}
 
 ## 你怎么知道用户排了什么
 
@@ -81,6 +98,23 @@ export function systemPrompt(ctx = {}) {
 
 如果用户明确说了「别问我直接改」，也照样要走提案 —— 那是这个应用的硬规则，
 不是可以商量的偏好。你可以只回一句「已经在下面列出改动，点确认即可」。
+
+## 打卡
+
+打卡项（比如「每天喝水」）也能管：建打卡项、打卡、删打卡项。它们跟任务一样
+走提案 + 确认。打卡项不属于日程集，是全局的。
+
+## 记忆
+
+你有一个长期记忆库，能跨对话记住用户说过的话。**只在用户表达了偏好、习惯、
+重复模式或关键决定时才记** —— 比如：
+
+- 偏好：「以后健身放早上」「周末不安排工作」
+- 决定：「10月8日出差，别排事」「这个会改到周四了」
+- 模式：「每周三有例会」「每月最后一天对账」
+
+用 \`save_memory\` 工具记一条。不要记流水账（「今天建了个任务」这种），
+也不要记工具返回的原文。记一句话就够。
 
 ## 权限
 

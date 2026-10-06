@@ -403,6 +403,15 @@ function findTask(userId, id) {
   return liveTasks(userId).find((it) => it.raw.id === want) || null;
 }
 
+/** 按 id 找一个**我可见的、还活着的**打卡项。找不到返回 null */
+function findHabit(userId, id) {
+  const want = String(id || '');
+  const snap = sync.snapshot(userId);
+  const h = snap.habits[want];
+  if (!h || h.deleted === true || h.purged === true) return null;
+  return { raw: h, view: { id: h.id, title: h.title || '(无标题)' } };
+}
+
 /**
  * 记一条提案，回给模型一句「已记下」。
  *
@@ -461,6 +470,10 @@ export function writeTools({ userId, proposals }) {
         duration: Type.Optional(Type.Number({ description: '要多久，分钟，默认 60' })),
         note: Type.Optional(Type.String({ description: '备注，可省' })),
         calId: Type.Optional(Type.String({ description: '放进哪个日程集，省略 = 你唯一的那个可写集' })),
+        repeat: Type.Optional(Type.Object({
+          unit: Type.Optional(Type.String({ description: 'none|day|week|month|year，默认 none' })),
+          n: Type.Optional(Type.Number({ description: '每 n 个 unit，默认 1' })),
+        })),
       }),
       execute: async (toolCallId, args) => {
         const title = String(args.title || '').trim();
@@ -473,6 +486,15 @@ export function writeTools({ userId, proposals }) {
 
         const r = pickCal(userId, args.calId);
         if (r.error) return fail(r.error);
+
+        // 重复规则。模型只给 unit 和 n，其余字段由这里补全。
+        let repeat = null;
+        if (args.repeat && args.repeat.unit && args.repeat.unit !== 'none') {
+          const unit = String(args.repeat.unit);
+          const n = Math.max(1, Math.min(365, Number(args.repeat.n) || 1));
+          const day = date ? Number(date.slice(8, 10)) : 1;
+          repeat = { unit, n, weekdays: [], monthday: day, end: null };
+        }
 
         return propose(proposals, toolCallId, {
           kind: 'create',
@@ -488,6 +510,7 @@ export function writeTools({ userId, proposals }) {
             date,
             time,
             duration: clampDuration(args.duration),
+            repeat,
             createdAt: Date.now(),
             source: 'ai',
           },
@@ -628,6 +651,92 @@ export function writeTools({ userId, proposals }) {
         });
       },
     },
+
+    // ---- 打卡（需确认）----
+
+    {
+      name: 'create_habit',
+      label: '建一个打卡项',
+      description:
+        '新建一个打卡项（比如「每天喝水」「每天读书」）。**只记提案，不落库。**'
+        + '打卡项不属于日程集，是全局的。',
+      parameters: Type.Object({
+        title: Type.String({ description: '打卡项名称，用用户的说法' }),
+      }),
+      execute: async (toolCallId, args) => {
+        const title = String(args.title || '').trim();
+        if (!title) return fail('title 不能为空');
+
+        return propose(proposals, toolCallId, {
+          kind: 'create',
+          calId: null,
+          calName: null,
+          entity: 'habit',
+          entityId: randomUUID(),
+          title: title.slice(0, TITLE_MAX),
+          fields: {
+            title: title.slice(0, TITLE_MAX),
+            order: Object.keys(sync.snapshot(userId).habits).length,
+            log: {},
+            createdAt: Date.now(),
+            source: 'ai',
+          },
+        });
+      },
+    },
+
+    {
+      name: 'checkin_habit',
+      label: '打卡',
+      description:
+        '给一个打卡项打卡（标记今天完成了）。**只记提案，不落库。**'
+        + 'id 要用 list_tasks 或 search_tasks 结果里的 id。',
+      parameters: Type.Object({
+        id: Type.String({ description: '打卡项 id' }),
+        date: Type.Optional(Type.String({ description: '哪天，YYYY-MM-DD，默认今天' })),
+      }),
+      execute: async (toolCallId, args) => {
+        const cur = findHabit(userId, args.id);
+        if (!cur) return fail(`找不到这个打卡项：${args.id}`);
+
+        const date = args.date ? String(args.date) : today();
+        if (!isIsoDate(date)) return fail(`date 不是 YYYY-MM-DD：${date}`);
+
+        return propose(proposals, toolCallId, {
+          kind: 'checkin',
+          calId: null,
+          calName: null,
+          entity: 'habit',
+          entityId: cur.raw.id,
+          title: cur.raw.title,
+          fields: { log: { ...cur.raw.log, [date]: true } },
+        });
+      },
+    },
+
+    {
+      name: 'delete_habit',
+      label: '删一个打卡项',
+      description:
+        '删一个打卡项。**只记提案，不落库**，删是软删除 —— 它会进垃圾箱。',
+      parameters: Type.Object({
+        id: Type.String({ description: '打卡项 id' }),
+      }),
+      execute: async (toolCallId, args) => {
+        const cur = findHabit(userId, args.id);
+        if (!cur) return fail(`找不到这个打卡项：${args.id}`);
+
+        return propose(proposals, toolCallId, {
+          kind: 'delete',
+          calId: null,
+          calName: null,
+          entity: 'habit',
+          entityId: cur.raw.id,
+          title: cur.raw.title,
+          fields: { deleted: true, deletedAt: Date.now(), trashFrom: 'AI' },
+        });
+      },
+    },
   ];
 }
 
@@ -669,11 +778,54 @@ function fillFields(fields, args, cur) {
 }
 
 /**
- * 一轮对话能用的全部工具：只读 + 写入。
+ * 一轮对话能用的全部工具：只读 + 写入 + 记忆。
  * 分开导出是为了让测试能只挂只读那半边（阶段 2 的用例就是这么写的）。
  */
 export function allTools({ userId, proposals }) {
-  return [...readTools({ userId }), ...writeTools({ userId, proposals })];
+  return [...readTools({ userId }), ...writeTools({ userId, proposals }), ...memoryTools({ userId })];
+}
+
+/** 记忆工具 —— agent 自己决定记什么，不需要确认。 */
+function memoryTools({ userId }) {
+  return [
+    {
+      name: 'save_memory',
+      label: '记住一件事',
+      description:
+        '把一条信息记进长期记忆，下次对话还能用。**只在用户表达了偏好、习惯、'
+        + '重复模式或关键决定时才记** —— 比如「以后健身放早上」「每周三有例会」'
+        + '「10月8日出差，别排事」。不要记流水账。',
+      parameters: Type.Object({
+        type: Type.String({ description: 'preference | decision | pattern' }),
+        content: Type.String({ description: '要记的内容，一句话，用用户的说法' }),
+      }),
+      execute: async (_id, args) => {
+        const type = String(args.type || '').trim();
+        if (!['preference', 'decision', 'pattern'].includes(type)) {
+          return fail('type 必须是 preference、decision 或 pattern');
+        }
+        const content = String(args.content || '').trim();
+        if (!content) return fail('content 不能为空');
+        if (content.length > 300) return fail('content 太长，一句话就够了');
+
+        const { randomUUID } = await import('node:crypto');
+        db.insertMemory({
+          id: randomUUID(),
+          userId,
+          type,
+          content: content.slice(0, 300),
+          createdAt: Date.now(),
+          lastUsedAt: null,
+        });
+        db.pruneMemories(userId);
+
+        return {
+          content: text({ saved: true, type, content: content.slice(0, 300) }),
+          details: {},
+        };
+      },
+    },
+  ];
 }
 
 export const READ_TOOL_NAMES = [

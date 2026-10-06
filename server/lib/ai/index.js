@@ -19,12 +19,17 @@
 let _mod = null;
 
 /**
- * @returns {Promise<{runChat: Function} & typeof import('./sse.mjs')>}
+ * @returns {Promise<{runChat: Function, runEveningReport: Function} & typeof import('./sse.mjs')>}
  */
 function load() {
   if (!_mod) {
     _mod = Promise.all([import('./chat.mjs'), import('./sse.mjs')])
-      .then(([chat, sse]) => ({ ...sse, runChat: chat.runChat, buildModel: chat.buildModel }))
+      .then(([chat, sse]) => ({
+        ...sse,
+        runChat: chat.runChat,
+        runEveningReport: chat.runEveningReport,
+        buildModel: chat.buildModel,
+      }))
       .catch((e) => {
         // 别缓存失败的结果，否则用户装好依赖还得重启进程
         _mod = null;

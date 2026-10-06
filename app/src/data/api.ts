@@ -14,7 +14,8 @@ import type {
   Cal, Invite, Member, Op, PublicUser, Role, SyncResponse,
 } from '../domain/types.ts';
 import type {
-  AiChatMessage, AiConfirmed, AiSessionMeta, AiSettings, AiSettingsPatch,
+  AiAuthorizations, AiChatMessage, AiConfirmed, AiHistoryItem,
+  AiMemory, AiSessionMeta, AiSettings, AiSettingsPatch,
 } from '../domain/ai.ts';
 
 const TOKEN_KEY = 'schedule-app-token';
@@ -206,4 +207,30 @@ export const api = {
 
   aiDeleteSession: (id: string) =>
     req<{ ok: boolean }>('DELETE', `ai/sessions/${encodeURIComponent(id)}`),
+
+  /* ---- 记忆 ---- */
+
+  aiMemories: () =>
+    req<{ memories: AiMemory[] }>('GET', 'ai/memory').then((r) => r.memories),
+
+  aiDeleteMemory: (id: string) =>
+    req<{ ok: boolean }>('DELETE', `ai/memory/${encodeURIComponent(id)}`),
+
+  aiUpdateMemory: (id: string, content: string) =>
+    req<{ ok: boolean }>('PUT', `ai/memory/${encodeURIComponent(id)}`, { content }),
+
+  /* ---- 操作历史 ---- */
+
+  aiHistory: (aiOnly = false) =>
+    req<{ history: AiHistoryItem[] }>(
+      'GET', `ai/history${aiOnly ? '?aiOnly=1' : ''}`,
+    ).then((r) => r.history),
+
+  /* ---- 授权 ---- */
+
+  aiAuthorizations: () =>
+    req<AiAuthorizations>('GET', 'ai/authorizations'),
+
+  aiSaveAuthorizations: (patch: Partial<AiAuthorizations>) =>
+    req<AiAuthorizations>('PUT', 'ai/authorizations', patch),
 };

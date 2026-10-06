@@ -21,12 +21,14 @@ import {
 import { api } from '../data/api.ts';
 import { chatStream } from './aiClient.ts';
 import { AiSettingsSheet } from './AiSettings.tsx';
+import { AiHistory } from './AiHistory.tsx';
+import { AiMemory } from './AiMemory.tsx';
 import { Btn, IconBtn, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
 } from '../domain/ai.ts';
-import type { AiChatMessage, LiveAssistant } from '../domain/ai.ts';
+import type { AiChatMessage, AiSessionMeta, LiveAssistant } from '../domain/ai.ts';
 import type { LocalState } from '../domain/types.ts';
 
 interface Bubble extends LiveAssistant {
@@ -82,6 +84,18 @@ export function AiPanel({ state, onConfirmed }: {
   const [ready, setReady] = useState<boolean | null>(null);
   const [settings, setSettings] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** 每条提案的编辑输入：proposalId → 用户输入的修改指令 */
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  /** 当前视图：对话 / 历史 / 记忆 */
+  const [view, setView] = useState<'chat' | 'history' | 'memory'>('chat');
+  /** 对话列表 */
+  const [sessions, setSessions] = useState<AiSessionMeta[]>([]);
+  /** 对话列表是否展开 */
+  const [showSessions, setShowSessions] = useState(false);
+  /** 新手引导是否显示 */
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try { return !localStorage.getItem('schedule-ai-onboarded'); } catch (_) { return true; }
+  });
 
   const ctl = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -101,6 +115,7 @@ export function AiPanel({ state, onConfirmed }: {
 
       try {
         const list = await api.aiSessions();
+        if (alive) setSessions(list);
         if (!alive || !list.length) return;
         const one = await api.aiSession(list[0].id);
         if (!alive) return;
@@ -179,8 +194,22 @@ export function AiPanel({ state, onConfirmed }: {
   // 猜它会成功的话，被挡下时用户看到的是「卡片没了但什么也没发生」。
   //
   // 失败的**不划掉** —— 用户可能想再试一次，至少也该看见它还挂着。
+  //
+  // 如果用户在编辑框里输了修改指令，先把指令发给 agent 处理，不直接确认。
+  // agent 处理完会更新提案，用户再点一次确认。
   const confirmProposals = useCallback(async (ids: string[]) => {
     if (!ids.length || confirming) return;
+
+    // 有修改指令：发给 agent，不确认
+    const edit = edits[ids[0]]?.trim();
+    if (edit) {
+      setEdits((prev) => ({ ...prev, [ids[0]]: '' }));
+      setText(edit);
+      // 等 agent 处理完修改指令后，用户再点确认
+      void send(edit);
+      return;
+    }
+
     setConfirming(true);
     try {
       const res = await api.aiConfirm(ids);
@@ -206,23 +235,86 @@ export function AiPanel({ state, onConfirmed }: {
     } finally {
       setConfirming(false);
     }
-  }, [confirming, onConfirmed]);
+  }, [confirming, onConfirmed, edits, send]);
 
   return (
     <div className="ai-wrap">
       <div className="ai-bar">
         <span className="ai-bar-title">
-          <Sparkles size={14} /> {sessionId ? '继续这次对话' : '新对话'}
+          <Sparkles size={14} /> {view === 'chat' ? (sessionId ? '继续这次对话' : '新对话') : view === 'history' ? '操作历史' : '记忆与授权'}
         </span>
         <div className="ai-bar-actions">
-          {bubbles.length > 0 && (
+          {view === 'chat' && sessions.length > 0 && (
+            <div className="ai-sessions">
+              <Btn variant="ghost" size="sm" onClick={() => setShowSessions((v) => !v)}>
+                对话 ({sessions.length})
+              </Btn>
+              {showSessions && (
+                <div className="ai-sessions-list">
+                  {sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      className={'ai-session-item' + (s.id === sessionId ? ' active' : '')}
+                      onClick={() => {
+                        setShowSessions(false);
+                        setSessionId(s.id);
+                        setBubbles([]);
+                        setLoading(true);
+                        api.aiSession(s.id).then((one) => {
+                          setBubbles(one.messages.filter((m) => VISIBLE.has(m.role)).map(toBubble));
+                          setLoading(false);
+                        }).catch(() => setLoading(false));
+                      }}
+                    >
+                      {s.title || '未命名'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {view === 'chat' && bubbles.length > 0 && (
             <Btn variant="ghost" size="sm" onClick={fresh} disabled={busy}>新对话</Btn>
           )}
+          <IconBtn label="对话" onClick={() => setView('chat')}>
+            <Sparkles size={16} />
+          </IconBtn>
+          <IconBtn label="历史" onClick={() => setView('history')}>
+            <Settings2 size={16} />
+          </IconBtn>
+          <IconBtn label="记忆" onClick={() => setView('memory')}>
+            <Settings2 size={16} />
+          </IconBtn>
           <IconBtn label="AI 设置" onClick={() => setSettings(true)}>
             <Settings2 size={16} />
           </IconBtn>
         </div>
       </div>
+
+      {view === 'history' && <AiHistory />}
+      {view === 'memory' && <AiMemory />}
+
+      {showOnboarding && view === 'chat' && (
+        <div className="ai-onboarding">
+          <div className="ai-onboarding-title">AI 助手能做什么</div>
+          <div className="ai-onboarding-list">
+            <div>• 查排期：「这周还剩什么没做？」「下周哪天适合出去玩？」</div>
+            <div>• 改排期：说「把明天那个会挪到周四」，它会提案，你点确认才落库</div>
+            <div>• 管打卡：建打卡项、打卡、删打卡项</div>
+            <div>• 记偏好：它会记住你说过的偏好，下次对话还能用</div>
+          </div>
+          <Btn
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowOnboarding(false);
+              try { localStorage.setItem('schedule-ai-onboarded', '1'); } catch (_) { /* 隐私模式 */ }
+            }}
+          >
+            知道了
+          </Btn>
+        </div>
+      )}
 
       <div className="ai-scroll" ref={scroller}>
         {loading && (
@@ -288,22 +380,39 @@ export function AiPanel({ state, onConfirmed }: {
                 措辞是「新建」「改期」这些没发生的动词 —— 确认之前它确实没发生 */}
             {!!b.proposals.length && (
               <div className="ai-props">
-                {b.proposals.map((p) => (
-                  <div className="ai-prop" key={p.id}>
-                    <span className="ai-prop-text">
-                      {p.calName && <span className="ai-prop-cal">{p.calName} · </span>}
-                      {proposalText(p)}
-                    </span>
-                    <Btn
-                      variant="primary"
-                      size="sm"
-                      disabled={confirming}
-                      onClick={() => void confirmProposals([p.id])}
-                    >
-                      <Check size={12} /> 确认
-                    </Btn>
-                  </div>
-                ))}
+                {b.proposals.map((p) => {
+                  const edit = edits[p.id] || '';
+                  return (
+                    <div className="ai-prop" key={p.id}>
+                      <span className="ai-prop-text">
+                        {p.calName && <span className="ai-prop-cal">{p.calName} · </span>}
+                        {proposalText(p)}
+                      </span>
+                      <input
+                        className="ai-prop-edit"
+                        value={edit}
+                        placeholder="要改什么？比如「改成 10月9日」"
+                        spellCheck={false}
+                        disabled={busy || confirming}
+                        onChange={(e) => setEdits((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void confirmProposals([p.id]);
+                          }
+                        }}
+                      />
+                      <Btn
+                        variant="primary"
+                        size="sm"
+                        disabled={confirming}
+                        onClick={() => void confirmProposals([p.id])}
+                      >
+                        <Check size={12} /> 确认
+                      </Btn>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

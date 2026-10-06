@@ -30,6 +30,9 @@ const rl = require('./lib/ratelimit');
 const aiSettings = require('./lib/ai/settings');
 const aiSessions = require('./lib/ai/sessions');
 const aiConfirm = require('./lib/ai/confirm');
+const aiMemory = require('./lib/ai/memory');
+const aiHistory = require('./lib/ai/history');
+const aiAuthorizations = require('./lib/ai/authorizations');
 const ai = require('./lib/ai');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
@@ -410,6 +413,31 @@ const handlers = {
 
   'DELETE /api/ai/sessions/:sessionId': (ctx, me) =>
     aiSessions.remove(me.user.id, ctx.params.sessionId),
+
+  /* ---- 记忆 ---- */
+
+  'GET /api/ai/memory': (ctx, me) => aiMemory.list(me.user.id),
+
+  'PUT /api/ai/memory/:id': (ctx, me) =>
+    aiMemory.update(me.user.id, ctx.params.id, ctx.body || {}),
+
+  'DELETE /api/ai/memory/:id': (ctx, me) =>
+    aiMemory.remove(me.user.id, ctx.params.id),
+
+  /* ---- 操作历史 ---- */
+
+  'GET /api/ai/history': (ctx, me) =>
+    aiHistory.list(me.user.id, {
+      aiOnly: ctx.query.aiOnly === '1' || ctx.query.aiOnly === 'true',
+      limit: ctx.query.limit,
+    }),
+
+  /* ---- 授权 ---- */
+
+  'GET /api/ai/authorizations': (ctx, me) => aiAuthorizations.read(me.user.id),
+
+  'PUT /api/ai/authorizations': (ctx, me) =>
+    aiAuthorizations.update(me.user.id, ctx.body || {}),
 };
 
 /* ---------------------------------------------------------------- 路由 */
@@ -536,6 +564,55 @@ function main() {
     try { db.pruneRevoked(); } catch (_) { /* 下次再说 */ }
   }, 6 * 3600 * 1000);
   timer.unref();
+
+  // 晚间汇报：每分钟检查一次，到点了就生成。
+  // 只在服务器上跑，不阻塞任何请求。
+  const reportTimer = setInterval(() => {
+    try {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const cur = `${hh}:${mm}`;
+
+      // 遍历所有开了晚间汇报的用户
+      const users = db.all('SELECT id FROM users');
+      for (const u of users) {
+        const auth = db.getAuthorizations(u.id);
+        if (!auth.eveningReportEnabled) continue;
+        if (auth.eveningReportTime !== cur) continue;
+
+        // 检查今天有没有用过应用
+        const calIds = db.calendarIdsFor(u.id);
+        if (!calIds.length) continue;
+        const placeholders = calIds.map(() => '?').join(',');
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const changes = db.get(
+          `SELECT COUNT(*) AS n FROM changes WHERE cal_id IN (${placeholders}) AND ts > ?`,
+          ...calIds, startOfToday.getTime(),
+        );
+        if (!changes || !Number(changes.n)) continue;
+
+        // 检查今天有没有已经生成过汇报
+        const sessions = db.listAiSessions(u.id, 50);
+        const reportSession = sessions.find((s) => s.title === '每日汇报');
+        if (reportSession) {
+          const updated = new Date(Number(reportSession.updated_at));
+          if (updated.toISOString().slice(0, 10) === now.toISOString().slice(0, 10)) continue;
+        }
+
+        // 生成汇报（在后台跑，不阻塞）
+        ai.load().then((mod) => {
+          mod.runEveningReport(u.id).catch((e) => {
+            console.error('[ai] 晚间汇报失败', e && e.message ? e.message : e);
+          });
+        }).catch(() => { /* 依赖没装，跳过 */ });
+      }
+    } catch (e) {
+      console.error('[ai] 晚间汇报检查失败', e && e.message ? e.message : e);
+    }
+  }, 60 * 1000);
+  reportTimer.unref();
 
   const server = createServer();
   server.listen(PORT, HOST, () => {

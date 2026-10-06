@@ -110,6 +110,42 @@ export interface AiSettingsPatch {
   apiKey?: string;
 }
 
+/* ============================== 记忆 ============================== */
+
+export interface AiMemory {
+  id: string;
+  type: string;   // preference | decision | pattern
+  content: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+/* ============================== 操作历史 ============================== */
+
+export interface AiHistoryItem {
+  seq: number;
+  calId: string;
+  calName: string | null;
+  entity: string;
+  entityId: string;
+  field: string;
+  value: string | null;
+  ts: number;
+  deviceId: string;
+  isAi: boolean;
+}
+
+/* ============================== 授权 ============================== */
+
+export interface AiAuthorizations {
+  taskCrud: string;       // free | confirm
+  habitCheckin: string;   // free | confirm
+  calendarMgmt: string;   // free | confirm
+  eveningReportEnabled: boolean;
+  eveningReportTime: string;
+  updatedAt: number | null;
+}
+
 /* ============================== SSE 解析 ============================== */
 
 /**

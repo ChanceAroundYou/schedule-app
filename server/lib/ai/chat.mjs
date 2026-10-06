@@ -26,6 +26,7 @@ import db from '../db.js';
 import aiSettings from './settings.js';
 import { allTools } from './tools.mjs';
 import { systemPrompt } from './prompt.mjs';
+import { today, addDays } from './dates.mjs';
 
 /** 单条消息存进库的上限，防一条巨型 toolResult 把库撑起来 */
 const PAYLOAD_MAX = 512 * 1024;
@@ -182,6 +183,26 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
   }
   emit({ type: 'session', sessionId: sid, isNew });
 
+  /* --- 记忆 --- */
+  // 取最近 N 条记忆放进系统提示词。同时把 last_used_at 推上去。
+  const memories = db.listMemories(userId, 20);
+  if (memories.length) {
+    db.touchMemories(memories.map((m) => m.id), Date.now());
+  }
+
+  /* --- 每日审查 --- */
+  // 一天第一次对话时，回顾昨天的会话和日程，提取新偏好/模式，淘汰过时记忆。
+  // 这是一个独立的 agent 跑，不阻塞当前对话 —— 它在后台跑，结果写进记忆库。
+  const lastSession = db.listAiSessions(userId, 1)[0];
+  const t = today();
+  const lastActive = lastSession ? new Date(Number(lastSession.updated_at)) : null;
+  const isFirstToday = !lastActive || lastActive.toISOString().slice(0, 10) !== t;
+  if (isFirstToday) {
+    runDailyReview(userId).catch((e) => {
+      console.error('[ai] 每日审查失败', e && e.message ? e.message : e);
+    });
+  }
+
   /* --- 历史 --- */
   const history = [];
   for (const r of db.listAiMessages(sid, userId)) {
@@ -204,7 +225,7 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
   const agent = new Agent({
     streamFn: streamFn || realStreamFn(cfg),
     initialState: {
-      systemPrompt: systemPrompt(context),
+      systemPrompt: systemPrompt(context, memories),
       model: buildModel(cfg),
       tools,
       messages: history,
@@ -310,4 +331,174 @@ function friendlyError(e) {
   if (/429/.test(raw)) return '模型服务在限流（429），等一会儿再试。';
   if (/aborted/i.test(raw)) return '已取消。';
   return `模型服务出错了：${raw.slice(0, 200)}`;
+}
+
+/* -------------------------------------------------------------- 每日审查 */
+
+/**
+ * 每日审查 —— 一天第一次对话时在后台跑。
+ *
+ * 回顾昨天的会话和日程，提取新的偏好/模式/决定，写进记忆库。
+ * 这是一个独立的 agent 跑，不阻塞当前对话。
+ *
+ * 审查 agent 有 save_memory 工具，能自己决定记什么。
+ * 过时记忆由 pruneMemories 在存满时丢最旧的，不在这里删。
+ */
+async function runDailyReview(userId) {
+  const cfg = aiSettings.load(userId);
+  if (!cfg.baseUrl || !cfg.model) return; // 没配模型，跳过
+
+  // 取昨天的会话
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().slice(0, 10);
+
+  const sessions = db.listAiSessions(userId, 50);
+  const yesterdaySessions = sessions.filter((s) => {
+    const d = new Date(Number(s.created_at));
+    return d.toISOString().slice(0, 10) === yStr;
+  });
+
+  // 收集昨天的对话文本
+  const snippets = [];
+  for (const s of yesterdaySessions) {
+    const msgs = db.listAiMessages(s.id, userId);
+    for (const m of msgs) {
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      try {
+        const payload = JSON.parse(m.payload);
+        const text = (payload.content || [])
+          .filter((c) => c && c.type === 'text')
+          .map((c) => String(c.text || ''))
+          .join('')
+          .trim();
+        if (text) snippets.push(`[${m.role}] ${text.slice(0, 500)}`);
+      } catch (_) { /* 坏行跳过 */ }
+    }
+  }
+
+  if (!snippets.length) return; // 昨天没对话，没什么可审查的
+
+  const reviewPrompt = `你是「日程清单」的每日审查任务。回顾下面昨天的对话，提取用户表达过的偏好、习惯、重复模式或关键决定，用 save_memory 工具记下来。
+
+规则：
+- 只记**跨对话有用**的信息，比如「以后健身放早上」「每周三有例会」「10月8日出差」
+- 不要记流水账（「今天建了个任务」这种）
+- 不要记工具返回的原文
+- 每条记忆一句话就够
+- 如果昨天没有值得记的，就不要调 save_memory
+
+昨天的对话：
+${snippets.join('\n')}`;
+
+  const proposals = new Map();
+  const tools = allTools({ userId, proposals });
+
+  const agent = new Agent({
+    streamFn: realStreamFn(cfg),
+    initialState: {
+      systemPrompt: reviewPrompt,
+      model: buildModel(cfg),
+      tools,
+      messages: [],
+    },
+  });
+
+  try {
+    await agent.run();
+  } catch (e) {
+    console.error('[ai] 每日审查失败', e && e.message ? e.message : e);
+  }
+}
+
+/* -------------------------------------------------------------- 晚间汇报 */
+
+/**
+ * 晚间汇报 —— 一天结束时生成一份当日汇报，出现在 AI 面板里。
+ *
+ * 汇报是一个特殊会话（标题「每日汇报」），每天追加一条消息。
+ * 内容：今天做了什么、明天有什么、有没有冲突。
+ *
+ * 这是一个独立的 agent 跑，在后台执行。
+ */
+export async function runEveningReport(userId) {
+  const cfg = aiSettings.load(userId);
+  if (!cfg.baseUrl || !cfg.model) return;
+
+  // 检查今天有没有用过应用（有没有任何改动）
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const calIds = db.calendarIdsFor(userId);
+  if (!calIds.length) return;
+
+  const placeholders = calIds.map(() => '?').join(',');
+  const changesToday = db.get(
+    `SELECT COUNT(*) AS n FROM changes WHERE cal_id IN (${placeholders}) AND ts > ?`,
+    ...calIds, startOfToday.getTime(),
+  );
+  if (!changesToday || !Number(changesToday.n)) return; // 今天没用过，不生成
+
+  // 找或建「每日汇报」会话
+  const sessions = db.listAiSessions(userId, 50);
+  let reportSession = sessions.find((s) => s.title === '每日汇报');
+  if (!reportSession) {
+    const sid = randomUUID();
+    db.insertAiSession(sid, userId, '每日汇报', Date.now());
+    reportSession = { id: sid };
+  }
+
+  const t = today();
+  const tomorrow = addDays(t, 1);
+
+  const reportPrompt = `你是「日程清单」的晚间汇报任务。生成一份当日汇报。
+
+今天是 ${t}，明天是 ${tomorrow}。
+
+用工具查一下：
+1. 今天有哪些任务（list_tasks）
+2. 明天有哪些任务（list_tasks）
+3. 今天的忙闲情况（load_summary）
+
+然后生成一份简洁的汇报，包括：
+- 今天完成了什么
+- 明天有什么安排
+- 有没有冲突或需要提醒的
+
+用中文，直接说结论，别把工具返回的 JSON 倒出来。`;
+
+  const proposals = new Map();
+  const tools = allTools({ userId, proposals });
+
+  const agent = new Agent({
+    streamFn: realStreamFn(cfg),
+    initialState: {
+      systemPrompt: reportPrompt,
+      model: buildModel(cfg),
+      tools,
+      messages: [],
+    },
+  });
+
+  try {
+    const messages = [];
+    agent.on('message', (m) => { if (m) messages.push(m); });
+    await agent.run();
+
+    // 把汇报存进会话
+    const assistant = messages.filter((m) => m && m.role === 'assistant').pop();
+    if (assistant) {
+      const text = (assistant.content || [])
+        .filter((c) => c && c.type === 'text')
+        .map((c) => String(c.text || ''))
+        .join('')
+        .trim();
+      if (text) {
+        const seq = db.nextAiMessageSeq(reportSession.id, userId);
+        db.appendAiMessage(reportSession.id, userId, seq, 'assistant', JSON.stringify(assistant), null);
+        db.touchAiSession(reportSession.id, userId);
+      }
+    }
+  } catch (e) {
+    console.error('[ai] 晚间汇报失败', e && e.message ? e.message : e);
+  }
 }
