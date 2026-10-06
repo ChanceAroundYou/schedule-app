@@ -1,0 +1,557 @@
+/**
+ * domain.test.ts —— 领域层测试（node:test，零依赖）
+ *
+ *   cd app && npm test
+ *
+ * 重点用例是最后那一组：**两台设备各自离线推进同一条重复任务**。
+ * 旧版这里会派生出两个随机 id 的实例，同步后任务翻倍 —— 本次重构存在的
+ * 理由就是为了修掉它。
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import * as D from './date.ts';
+import { parse } from './parse.ts';
+import {
+  toRepeat, repeatAdvance, repeatNext, emptyRepeat,
+  instanceId, seriesRootOf, repeatLabel, parseInstanceId,
+} from './repeat.ts';
+import { layoutOverlap, timeRange } from './layout.ts';
+import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
+import {
+  counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
+  normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
+} from './model.ts';
+import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
+
+const T = '2026-10-06';   // 固定「今天」，否则用例会随真实日期漂移
+
+function repeat(partial: Partial<RepeatRule>): RepeatRule {
+  return { ...emptyRepeat(T), ...partial };
+}
+
+function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalState {
+  return {
+    tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
+    habits: {},
+    cals: [],
+    invites: [],
+    cursor: 0,
+    outbox: [],
+    ui: normalizeUi(undefined),
+    lastError: null,
+    clockBlocked: [],
+    denied: 0,
+    deniedCals: [],
+    conflicts: [],
+    syncing: false,
+    ...over,
+  };
+}
+
+/* ============================== 日期 ============================== */
+
+test('日期基础运算', () => {
+  assert.equal(D.addDays('2026-10-06', 1), '2026-10-07');
+  assert.equal(D.addDays('2026-10-31', 1), '2026-11-01');
+  assert.equal(D.addDays('2026-01-01', -1), '2025-12-31');
+
+  // 周一为一周起点
+  assert.equal(D.weekStart('2026-10-06'), '2026-10-05');   // 周二 → 周一
+  assert.equal(D.weekStart('2026-10-11'), '2026-10-05');   // 周日 → 同一周的周一
+
+  // addMonths 先把日子截到 1 号再进月，1/31 + 1 个月不该滚到 3/3
+  assert.equal(D.addMonths('2026-01-31', 1), '2026-02-28');
+  assert.equal(D.addMonths('2026-01-15', 1), '2026-02-15');
+  assert.equal(D.addMonths('2026-10-06', 12), '2027-10-06');
+});
+
+test('月视图矩阵是 42 天且以周一开头', () => {
+  const m = D.monthMatrix('2026-10-06');
+  assert.equal(m.length, 42);
+  assert.equal(D.weekdayOf(m[0]), 1, '第一格必须是周一');
+});
+
+/* ============================== 解析 ============================== */
+
+test('解析：日期 + 时段 + 时长，剩下的才是标题', () => {
+  const r = parse('明天下午3点 交周报 2小时', T);
+  assert.equal(r?.date, '2026-10-07');
+  assert.equal(r?.time, '15:00');
+  assert.equal(r?.duration, 120);
+  assert.equal(r?.title, '交周报');
+});
+
+test('解析：重复必须在日期之前被吃掉，且首次落点要自己算', () => {
+  // 「每周一」如果不先被重复规则吃掉，会被后面的日期规则当成「周一」→ 一个具体日期
+  const r = parse('每周一 团队早会', T);
+  assert.equal(r?.repeat?.unit, 'week');
+  assert.deepEqual(r?.repeat?.weekdays, [1]);
+  // T = 2026-10-06 是**周二**：首次必须落在下一个周一，不能是今天。
+  // （不写 o.date 的话 QuickAdd 会回落到 defaultDate() = 今天）
+  assert.equal(r?.date, '2026-10-12');
+  assert.equal(r?.title, '团队早会');
+});
+
+test('解析：重复的首次落点不能是「今天」，除非规则真的命中今天', () => {
+  // 周二说的「每周二」——今天就是周二，首次就是今天
+  assert.equal(parse('每周二 例会', T)?.date, '2026-10-06');
+  assert.equal(parse('每周日 例会', T)?.date, '2026-10-11');
+
+  // 「工作日」：周二 → 今天；周六 → 下一个周一
+  assert.equal(parse('工作日 站会', T)?.date, '2026-10-06');
+  assert.equal(parse('工作日 站会', '2026-10-10')?.date, '2026-10-12');
+
+  // 「每月31号」：10/6 → 10/31；10/31 当天 → 就是今天；已过则顺延
+  assert.equal(parse('每月31号 交房租', T)?.date, '2026-10-31');
+  assert.equal(parse('每月31号 交房租', '2026-10-31')?.date, '2026-10-31');
+  assert.equal(parse('每月5号 交房租', '2026-10-20')?.date, '2026-11-05');
+  // 短月截到月末
+  assert.equal(parse('每月31号 交房租', '2026-02-10')?.date, '2026-02-28');
+  // monthday 保持 31，不被 date 的截断带偏
+  assert.equal(parse('每月31号 交房租', '2026-02-10')?.repeat?.monthday, 31);
+});
+
+test('解析：昨天 / 前天 / 大前天', () => {
+  assert.equal(parse('昨天 交电费', T)?.date, '2026-10-05');
+  assert.equal(parse('前天 取快递', T)?.date, '2026-10-04');
+  assert.equal(parse('大前天 取快递', T)?.date, '2026-10-03');
+  // 不能只摘掉「前天」、把「大」留在标题里
+  assert.equal(parse('大前天 取快递', T)?.title, '取快递');
+  assert.equal(parse('前天 取快递', T)?.title, '取快递');
+  // 与「N天后」那条规则不打架
+  assert.equal(parse('3天后 交材料', T)?.date, '2026-10-09');
+});
+
+test('解析：「大后天」优先于「后天」，「下下周一」优先于「下周一」', () => {
+  assert.equal(parse('大后天 交材料', T)?.date, '2026-10-09');
+  assert.equal(parse('后天 交材料', T)?.date, '2026-10-08');
+
+  const nx = parse('下周一 开会', T);
+  const nnx = parse('下下周一 开会', T);
+  assert.equal(nx?.date, '2026-10-12');
+  assert.equal(nnx?.date, '2026-10-19');
+});
+
+test('解析：「N点」要求整段独立成词，避免误判正文里的数字', () => {
+  // 「有三点要说明」里的「三点」不是时间
+  assert.equal(parse('有三点要说明', T)?.time, null);
+  // 独立成词的「3点」才算，且口语里不修饰的 3 点指下午
+  assert.equal(parse('3点 开会', T)?.time, '15:00');
+  // 带时段修饰时不受独立成词限制
+  assert.equal(parse('下午3点开会', T)?.time, '15:00');
+  // 带「半」信号足够强，也不需要独立成词
+  assert.equal(parse('3点半开会', T)?.time, '15:30');
+});
+
+test('解析：完整日期优先于「N号」', () => {
+  assert.equal(parse('2026年10月15日 交材料', T)?.date, '2026-10-15');
+  assert.equal(parse('10月15日 交材料', T)?.date, '2026-10-15');
+  // 单个「15号」按当前月算，已过则顺延到下个月
+  assert.equal(parse('15号 交材料', T)?.date, '2026-10-15');
+  assert.equal(parse('1号 交材料', T)?.date, '2026-11-01');
+});
+
+test('解析：解析不出东西时标题回退成原文', () => {
+  assert.equal(parse('随便写点什么', T)?.title, '随便写点什么');
+  assert.equal(parse('   ', T), null);
+});
+
+/* ============================== 重复 ============================== */
+
+test('重复推进：日 / 周 / 月 / 年', () => {
+  assert.equal(repeatAdvance(repeat({ unit: 'day', n: 1 }), '2026-10-06'), '2026-10-07');
+  assert.equal(repeatAdvance(repeat({ unit: 'day', n: 3 }), '2026-10-06'), '2026-10-09');
+
+  // 每周一、三、五：从周三出发，下一个是周五
+  const mwf = repeat({ unit: 'week', weekdays: [1, 3, 5] });
+  assert.equal(repeatAdvance(mwf, '2026-10-07'), '2026-10-09');
+  // 从周五出发，跨周到下周一
+  assert.equal(repeatAdvance(mwf, '2026-10-09'), '2026-10-12');
+
+  assert.equal(repeatAdvance(repeat({ unit: 'month', monthday: 15 }), '2026-10-06'), '2026-11-15');
+  assert.equal(repeatAdvance(repeat({ unit: 'year', n: 1 }), '2026-10-06'), '2027-10-06');
+});
+
+test('重复推进：每月 31 号在 2 月被截到月末，但 monthday 不变', () => {
+  const r = repeat({ unit: 'month', monthday: 31 });
+  assert.equal(repeatAdvance(r, '2026-01-31'), '2026-02-28');
+  assert.equal(r.monthday, 31, 'monthday 不能被推进过程改掉');
+  assert.equal(repeatAdvance(r, '2026-03-31'), '2026-04-30');
+});
+
+test('repeatNext 会一路补到今天（含）之后，不会每勾一次就造一个过去的实例', () => {
+  // 一段跨度远大于旧版那个 800 次 guard 的历史：2020-01-01 到今天约 2470 天。
+  // 旧实现在第 800 步就断了，返回 2022-03-12 —— 一个过去的日期。
+  const daily = makeTask({ id: 'a', title: '每天', date: '2020-01-01', repeat: repeat({ unit: 'day' }) });
+  const next = repeatNext(daily, '2020-01-01');
+  assert.ok(next !== null, '不该因为跨度大就放弃');
+  assert.ok(next! >= D.today(), `补到的那天必须不早于今天，实际 ${next}`);
+
+  const weekly = makeTask({ id: 'b', title: '每周', date: '2020-01-01', repeat: repeat({ unit: 'week' }) });
+  const wn = repeatNext(weekly, '2020-01-01');
+  assert.ok(wn !== null && wn! >= D.today(), `每周重复同样要补齐，实际 ${wn}`);
+
+  const monthly = makeTask({ id: 'c', title: '每月', date: '2020-01-01', repeat: repeat({ unit: 'month', monthday: 1 }) });
+  const mn = repeatNext(monthly, '2020-01-01');
+  assert.ok(mn !== null && mn! >= D.today(), `每月重复同样要补齐，实际 ${mn}`);
+});
+
+test('repeatNext 的边界：今天发生的那次算数，不会跳过今天', () => {
+  const t = makeTask({ id: 'b', title: 'y', date: D.today(), repeat: repeat({ unit: 'day' }) });
+  assert.equal(repeatNext(t, D.today()), D.addDays(D.today(), 1), '从今天出发，下一次是明天');
+
+  const y = makeTask({ id: 'c', title: 'z', date: D.today(), repeat: repeat({ unit: 'day' }) });
+  assert.equal(
+    repeatNext(y, D.addDays(D.today(), -1)), D.today(),
+    '昨天那次没勾，今天这一次必须落在今天，不能被推走',
+  );
+});
+
+test('repeatNext 尊重结束条件', () => {
+  const byDate = makeTask({
+    id: 'a', title: 'x', date: '2026-10-06',
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'date', date: '2026-10-08' } },
+  });
+  assert.equal(repeatNext(byDate, '2026-10-07'), '2026-10-08');
+  assert.equal(repeatNext(byDate, '2026-10-08'), null, '超出结束日期就没了');
+
+  const byCount = makeTask({
+    id: 'b', title: 'y', date: '2099-01-01',
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'count', count: 3 } },
+    repeatSeq: 0,
+  });
+  assert.ok(repeatNext(byCount, '2099-01-01'));
+  byCount.repeatSeq = 3;
+  assert.equal(repeatNext(byCount, '2099-01-01'), null, '次数用满就没了');
+});
+
+test('旧的字符串型 repeat 能升级成对象', () => {
+  assert.equal(toRepeat('weekly', '2026-10-06').unit, 'week');
+  assert.deepEqual(toRepeat('weekly', '2026-10-06').weekdays, [2]);
+  assert.equal(toRepeat(null, '2026-10-06').unit, 'none');
+  assert.equal(toRepeat({ unit: 'day', n: 0 }, T).n, 1, 'n 至少是 1');
+});
+
+test('重复文案', () => {
+  assert.equal(repeatLabel(repeat({ unit: 'day', n: 1 })), '每天');
+  assert.equal(repeatLabel(repeat({ unit: 'day', n: 2 })), '每 2 天');
+  assert.equal(repeatLabel(repeat({ unit: 'week', weekdays: [1, 3] })), '每周一、三');
+  assert.equal(repeatLabel(repeat({ unit: 'none' })), '');
+});
+
+/* ==================== 派生 id：本次重构的死穴 ==================== */
+
+test('两台设备各自离线推进同一条重复任务，算出的实例 id 必须相同', () => {
+  const root = 'series-uuid-0001';
+  const occurrence = '2026-10-07';
+
+  // 设备 A 和 B 各自跑一遍，互不知情
+  const idA = instanceId(root, occurrence);
+  const idB = instanceId(root, occurrence);
+
+  assert.equal(idA, idB, '派生 id 必须确定性 —— 这是「任务不翻倍」的全部依据');
+  assert.equal(idA, 'series-uuid-0001#2026-10-07', '形式可读，调试时能肉眼对账');
+
+  // 反面对照：随机 id 会得到两个不同的结果，也就是旧版的行为
+  const randomA = 'a3f2c1d4-0000-4000-8000-000000000001';
+  const randomB = 'b7e9f2a6-0000-4000-8000-000000000002';
+  assert.notEqual(randomA, randomB, '随机 id 必然分叉 —— 这就是要避免的');
+});
+
+test('系列根一旦生成就不变：实例的系列根指向最初那条任务', () => {
+  const root = makeTask({ id: 'root-1', title: '早会', date: '2026-10-06', repeat: repeat({ unit: 'day' }) });
+  assert.equal(seriesRootOf(root), 'root-1');
+
+  const inst = makeTask({ id: instanceId('root-1', '2026-10-07'), title: '早会', seriesId: 'root-1', repeat: repeat({ unit: 'day' }) });
+  assert.equal(seriesRootOf(inst), 'root-1', '实例的系列根是 root-1，不是它自己');
+
+  const plain = makeTask({ id: 'p1', title: '买菜' });
+  assert.equal(seriesRootOf(plain), null, '非重复任务没有系列根');
+});
+
+test('派生的实例 id 能被反解回系列与发生日期', () => {
+  const id = instanceId('root-1', '2026-10-07');
+  assert.deepEqual(parseInstanceId(id), { seriesId: 'root-1', date: '2026-10-07' });
+  assert.equal(parseInstanceId('a-plain-uuid'), null);
+});
+
+/* ==================== LWW：客户端与服务端必须同一条规则 ==================== */
+
+test('LWW：更新的时间戳赢；时间戳相同则 deviceId 大的赢', () => {
+  assert.equal(lwwWins(200, 'aaa', 100, 'zzz'), true, '时间戳更大就赢，跟 deviceId 无关');
+  assert.equal(lwwWins(100, 'zzz', 200, 'aaa'), false);
+
+  assert.equal(lwwWins(100, 'bbb', 100, 'aaa'), true);
+  assert.equal(lwwWins(100, 'aaa', 100, 'bbb'), false);
+
+  // 同样两个值，谁先到都一样 —— 这是收敛的前提
+  const fold = (order: [number, string][]) => {
+    let ts = -Infinity; let dev = '';
+    for (const [t, d] of order) if (lwwWins(t, d, ts, dev)) { ts = t; dev = d; }
+    return dev;
+  };
+  assert.equal(
+    fold([[100, 'aaa'], [100, 'bbb']]),
+    fold([[100, 'bbb'], [100, 'aaa']]),
+    '到达顺序不影响最终赢家',
+  );
+});
+
+test('合并时不覆盖本地更新的字段', () => {
+  const t = makeTask({ id: 'x', title: '本地标题' });
+  writeFields(t, { title: '本地标题' }, 1000, 'devLocal');
+
+  // 对方的改动更旧 → 拒绝
+  assert.equal(mergeChange(t, 'title', '对方标题', 900, 'devRemote'), false);
+  assert.equal(t.title, '本地标题');
+
+  // 对方的改动更新 → 接受
+  assert.equal(mergeChange(t, 'title', '对方标题', 1100, 'devRemote'), true);
+  assert.equal(t.title, '对方标题');
+  assert.equal(t._ts.title, 1100);
+});
+
+test('合并是按字段的：一方改标题、另一方改日期，两个都留住', () => {
+  const t = makeTask({ id: 'x', title: '会议', date: '2026-10-06' });
+  writeFields(t, { title: '会议', date: '2026-10-06' }, 1000, 'devA');
+
+  mergeChange(t, 'date', '2026-10-08', 1100, 'devB');   // 桌面改期
+  mergeChange(t, 'title', '周会', 1050, 'devA');        // 手机改标题
+
+  assert.equal(t.title, '周会', '标题该保住');
+  assert.equal(t.date, '2026-10-08', '日期该保住');
+});
+
+/* ============================== 摆放 ============================== */
+
+test('重叠分列：不重叠的任务各占满整行', () => {
+  const placed = layoutOverlap([
+    { item: 'a', start: 9 * 60, end: 10 * 60 },
+    { item: 'b', start: 11 * 60, end: 12 * 60 },
+    { item: 'c', start: 13 * 60, end: 14 * 60 },
+  ]);
+  assert.ok(placed.every((p) => p.cols === 1), '不重叠就不该被压窄');
+  assert.ok(placed.every((p) => p.col === 0));
+});
+
+test('重叠分列：只有真正重叠的那一簇分列', () => {
+  const placed = layoutOverlap([
+    { item: 'a', start: 9 * 60, end: 10 * 60 },
+    { item: 'b', start: 9 * 60 + 30, end: 10 * 60 + 30 },   // 与 a 重叠
+    { item: 'c', start: 15 * 60, end: 16 * 60 },             // 独处
+  ]);
+  const byItem = Object.fromEntries(placed.map((p) => [p.item, p]));
+  assert.equal(byItem.a.cols, 2);
+  assert.equal(byItem.b.cols, 2);
+  assert.notEqual(byItem.a.col, byItem.b.col, '重叠的两个必须分到不同列');
+  assert.equal(byItem.c.cols, 1, '后面独处的任务不该被前面的重叠拖成半宽');
+  assert.equal(byItem.c.col, 0);
+});
+
+test('重叠分列：三件互相重叠时分三列', () => {
+  const placed = layoutOverlap([
+    { item: 'a', start: 540, end: 660 },
+    { item: 'b', start: 550, end: 670 },
+    { item: 'c', start: 560, end: 680 },
+  ]);
+  assert.ok(placed.every((p) => p.cols === 3));
+  assert.deepEqual(placed.map((p) => p.col).sort(), [0, 1, 2]);
+});
+
+test('重叠分列：首尾相接不算重叠', () => {
+  const placed = layoutOverlap([
+    { item: 'a', start: 540, end: 600 },
+    { item: 'b', start: 600, end: 660 },
+  ]);
+  assert.ok(placed.every((p) => p.cols === 1));
+});
+
+test('时间段文案，跨零点标次日', () => {
+  assert.equal(timeRange(9 * 60 + 30, 60), '09:30 – 10:30');
+  assert.equal(timeRange(23 * 60 + 30, 60), '23:30 – 次日 00:30');
+});
+
+test('方向键微调上下沿：底边只改时长，上沿固定底边', () => {
+  // 底边往下 = 变长
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'bottom', 1), { duration: 75 });
+  // 时长下限 15，再往下按不动
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'bottom', -1), { duration: 15 });
+
+  // 上沿往上 = 开始提前、总长变长，**底边 10:00 不动**
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', -1), { time: '08:45', duration: 75 });
+  // 上沿往下 = 开始推迟、总长变短
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', 1), { time: '09:15', duration: 45 });
+  // 上沿不能越过底边（最少留 15 分钟），也不能早于 0:00
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'top', 1), { time: '09:00', duration: 15 });
+  assert.deepEqual(D.nudgeEdge('00:05', 60, 'top', -1), { time: '00:00', duration: 65 });
+
+  // 跨过整点也要对
+  assert.deepEqual(D.nudgeEdge('09:50', 60, 'top', 1), { time: '10:05', duration: 45 });
+});
+
+/* ============================== 查询口径 ============================== */
+
+test('逾期与今天互不重叠，同一个任务不会被数两次', () => {
+  const t = D.today();
+  const s = stateWith([
+    makeTask({ id: 'a', title: '今天', date: t }),
+    makeTask({ id: 'b', title: '逾期', date: D.addDays(t, -1) }),
+    makeTask({ id: 'c', title: '未来', date: D.addDays(t, 1) }),
+    makeTask({ id: 'd', title: '待办箱', date: null }),
+    makeTask({ id: 'e', title: '已完成逾期', date: D.addDays(t, -2), done: true }),
+  ]);
+  const c = counts(s);
+  assert.equal(c.today, 1, '今天只数今天');
+  assert.equal(c.overdue, 1, '已完成的逾期任务不算逾期');
+  assert.equal(c.inbox, 1);
+  assert.equal(overdueTasks(s).length, c.overdue, '列表与徽标必须同源');
+});
+
+test('墓碑不进任何正常列表，只进垃圾箱', () => {
+  const s = stateWith([
+    makeTask({ id: 'live', title: '活着', date: D.today() }),
+    makeTask({ id: 'gone', title: '删了', date: D.today(), deleted: true, deletedAt: 1 }),
+    makeTask({ id: 'purged', title: '彻底删了', date: D.today(), deleted: true, purged: true, deletedAt: 1 }),
+  ]);
+  const ids = liveTasks(s).map((x) => x.id);
+  assert.deepEqual(ids, ['live']);
+  assert.equal(counts(s).trash, 1, '彻底删除的不再出现在垃圾箱');
+  assert.ok(isTrashed(s.tasks.gone));
+  assert.ok(!isTrashed(s.tasks.purged));
+});
+
+test('排序：有时间的在前按时间，未定时的按手动位次', () => {
+  const list = [
+    makeTask({ id: 'u2', title: '未定时2', date: T, order: 2 }),
+    makeTask({ id: 't14', title: '两点', date: T, time: '14:00' }),
+    makeTask({ id: 'u1', title: '未定时1', date: T, order: 1 }),
+    makeTask({ id: 't09', title: '九点', date: T, time: '09:00' }),
+  ];
+  assert.deepEqual(sortTasks(list).map((x) => x.id), ['t09', 't14', 'u1', 'u2']);
+});
+
+test('排序：用户拖过的（ord 有值）优先，没拖过的按默认口径接在后面', () => {
+  const a = makeTask({ id: 'a', title: 'a', date: T, ord: 2 });
+  const b = makeTask({ id: 'b', title: 'b', date: T, ord: 0 });
+  const c = makeTask({ id: 'c', title: 'c', date: T, ord: null });
+
+  const sorted = [a, b, c].sort(ordCmp(orderCmp));
+  assert.deepEqual(sorted.map((x) => x.id), ['b', 'a', 'c']);
+});
+
+test('打卡连续天数：今天没打则从昨天起算', () => {
+  const t = D.today();
+  const h = { id: 'h', calId: '', title: 'x', order: 0, createdAt: 0, _ts: {}, _dev: {},
+    log: { [t]: true as const, [D.addDays(t, -1)]: true as const, [D.addDays(t, -2)]: true as const } };
+  assert.equal(habitStreak(h), 3);
+
+  const h2 = { ...h, log: { [D.addDays(t, -1)]: true as const, [D.addDays(t, -2)]: true as const } };
+  assert.equal(habitStreak(h2), 2, '今天还没打，但昨天打了，连续数继续');
+
+  const h3 = { ...h, log: {} };
+  assert.equal(habitStreak(h3), 0);
+});
+
+test('某一天的负载只算没完成、有时间的任务', () => {
+  const s = stateWith([
+    makeTask({ id: 'a', title: 'a', date: T, time: '09:00', duration: 60 }),
+    makeTask({ id: 'b', title: 'b', date: T, time: '11:00', duration: 30 }),
+    makeTask({ id: 'c', title: 'c', date: T, time: null }),
+    makeTask({ id: 'd', title: 'd', date: T, time: '13:00', duration: 60, done: true }),
+  ]);
+  assert.deepEqual(dayLoad(s, T), { mins: 90, count: 3 });
+});
+
+test('侧栏顺序：区分「从未设置」与「用户有意清空」', () => {
+  assert.deepEqual(normalizeUi(undefined).navBottom, ['trash'], '没设置过 → 给默认');
+  assert.deepEqual(
+    normalizeUi({ navBottom: [] }).navBottom, [],
+    '空数组是用户把垃圾箱拖出底部后的合法状态，不能又塞回去',
+  );
+  assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
+});
+
+/* ============================== 迁移 ============================== */
+
+test('v3 → v4：补 seriesId、补墓碑、丢弃已删除的模块', () => {
+  const r = migrateV3({
+    version: 3,
+    tasks: [
+      { id: 't1', title: '每天的事', date: '2026-10-06', repeat: 'daily', createdAt: 1000 },
+      { id: 't2', title: '一次性', date: '2026-10-07', repeat: null, createdAt: 2000 },
+    ],
+    trash: [
+      { id: 'x1', kind: 'task', payload: { id: 't9', title: '删掉的' }, from: '今天', deletedAt: 5000 },
+      { id: 'x2', kind: 'note', payload: { id: 'n1' }, deletedAt: 5000 },
+    ],
+    habits: [{ id: 'h1', title: '学英语', order: 0, log: { '2026-10-06': true }, createdAt: 3000 }],
+    ui: { nav: 'today', theme: 'dark' },
+  });
+
+  const byId = Object.fromEntries(r.tasks.map((t) => [t.id, t]));
+  assert.equal(byId.t1.repeat.unit, 'day', '字符串型 repeat 要升级成对象');
+  assert.equal(byId.t1.seriesId, 't1', '重复任务以自己为系列根');
+  assert.equal(byId.t2.seriesId, null, '非重复任务没有系列根');
+
+  assert.equal(byId.t9.deleted, true, '旧 trash 要变成墓碑');
+  assert.equal(byId.t9.deletedAt, 5000);
+  assert.equal(byId.t9.title, '删掉的', '墓碑要带着原内容，垃圾箱里才看得见');
+
+  assert.equal(r.habits.length, 1);
+  assert.equal(r.ui.theme, 'dark');
+  assert.ok(r.ignored >= 1, '备忘录那条应被计入忽略');
+});
+
+test('v3 → v4 的实体带空的 _ts/_dev，等 store 建 op 时统一填', () => {
+  const r = migrateV3({ tasks: [{ id: 't1', title: 'x', date: null }] });
+  assert.deepEqual(r.tasks[0]._ts, {});
+  assert.deepEqual(r.tasks[0]._dev, {});
+});
+
+/* ============================== 冲突提示 ============================== */
+
+/** 造一条「我这一轮推上去的 op」 */
+const op = (fields: Record<string, unknown>, over: Partial<Op> = {}): Op => ({
+  opId: 'o1', deviceId: 'me', ts: 1000, calId: 'c1', entity: 'task', entityId: 't1',
+  fields, ...over,
+});
+/** 造一条「这一轮响应里带回来的别人的改动」 */
+const chg = (field: string, value: unknown, over: Partial<Change> = {}): Change => ({
+  entity: 'task', entityId: 't1', field, value, ts: 2000, deviceId: 'other', ...over,
+});
+
+test('同一字段两边都改过才算冲突，方向两个都报', () => {
+  // 对方更新 → 对方赢
+  const lose = findConflicts([op({ title: '我的' })], [chg('title', '对方的', { ts: 2000 })], 'me');
+  assert.equal(lose.length, 1);
+  assert.equal(lose[0].winner, 'theirs');
+  assert.equal(lose[0].mine, '我的');
+  assert.equal(lose[0].theirs, '对方的');
+
+  // 对方更旧（比如他那台时钟慢）→ 我赢，但一样要报：他那一下被盖掉了
+  const win = findConflicts([op({ title: '我的' })], [chg('title', '对方的', { ts: 500 })], 'me');
+  assert.equal(win.length, 1);
+  assert.equal(win[0].winner, 'mine');
+});
+
+test('改的不是同一个字段、不是同一条、以及自己刚推的回显，都不算冲突', () => {
+  assert.deepEqual(findConflicts([op({ title: 'x' })], [chg('note', 'y')], 'me'), [],
+    '我改标题、对方改备注，两个改动都留得住，没什么好提示的');
+  assert.deepEqual(
+    findConflicts([op({ title: 'x' })], [chg('title', 'y', { entityId: 't2' })], 'me'), [],
+    '不同的实体');
+  assert.deepEqual(
+    findConflicts([op({ title: 'x' })], [chg('title', 'x', { deviceId: 'me', ts: 3000 })], 'me'), [],
+    '自己刚推上去的那条会原样回显，不能当成别人改的');
+});
+
+test('一条 op 带了几个字段，就逐个字段各判一次', () => {
+  const r = findConflicts(
+    [op({ title: '我的标题', time: '09:00' })],
+    [chg('title', '对方的标题'), chg('time', '10:00')],
+    'me',
+  );
+  assert.deepEqual(r.map((c) => c.field).sort(), ['time', 'title']);
+});

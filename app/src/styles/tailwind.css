@@ -1,0 +1,95 @@
+/**
+ * tailwind.css —— 样式入口
+ *
+ * 层叠顺序是本文件唯一需要动脑的地方：
+ *
+ *   Tailwind 4 把它的东西（含 preflight 重置）全部塞进 @layer。而**没有层的
+ *   作者样式永远赢过任何层内的样式** —— 所以下面这份 legacy.css 一旦不带 layer
+ *   引入，它就在所有 Tailwind 工具类之上。
+ *
+ * 这正是我们要的：legacy.css 是这个应用已经定稿的设计系统（67KB、踩过坑的），
+ * React 重写要沿用同一套视觉，不能在重写过程中被 preflight 或工具类悄悄改掉
+ * 按钮边框、输入框底色这类东西。
+ *
+ * 代价要说清楚：**在 legacy.css 已经覆盖的元素上，Tailwind 工具类不生效**。
+ * 新表面（登录页、浮层、按钮）用的是 legacy 里根本没有的类名，不受影响；
+ * 但想用工具类去改一个已有元素（比如给 .task-row 加个 mt-2）是会白写的。
+ */
+@import "tailwindcss";
+@import "./legacy.css";
+
+/* ---------------------------------------------------------------- 新表面 */
+
+/*
+ * 新表面的配色跟着 legacy.css 的 CSS 变量走，不另起一套。
+ * 写死颜色会让深色模式在登录页上失效 —— 那是最容易被漏掉的一屏。
+ */
+.auth-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg, #f6f7fb);
+}
+
+/* 「更多」抽屉底部的账户行。legacy.css 里没有这一段（旧版没有账户概念） */
+.ms-user {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+}
+.ms-logout {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px;
+  background: none; color: var(--text-2); font-size: 12px; cursor: pointer;
+}
+.ms-logout:hover { border-color: var(--input); color: var(--text); }
+
+/*
+ * 触屏长按把行「提起来」之后的状态（见 ui/dnd.ts 文件头）。
+ *
+ * 这一步**还不是拖动**，是「抓住了」的反馈：给个抬起阴影 + 抬高层级，
+ * 不然长按完屏幕毫无变化，用户不知道可以拖了。
+ *
+ * `position: relative` 是为了让 z-index 生效（行本来就占位，不影响布局）；
+ * 位移由 JS 写 inline transform —— 所以这里**不能**写 transform，会被覆盖。
+ * 也不用自己写背景色：行本来就有 `background: var(--panel)`。
+ */
+.touch-drag {
+  position: relative;
+  z-index: 55;                 /* 高于内容，低于浮层的 60 */
+  box-shadow: var(--shadow-lg);
+}
+
+/*
+ * 详情抽屉里那条「另一台设备也改过这个任务」（见 domain/merge.ts 的
+ * findConflicts）。配色跟着 legacy.css 的变量走 —— 写死颜色会让深色模式
+ * 在这块失效（新表面的通例，见 CLAUDE.md 四、27）。
+ *
+ * 用 warn 那条暖色，但**不做成报错红**：数据是好的，LWW 已经判完了，
+ * 只是有一边的改动不在了。做成红色会让用户以为出了问题。
+ */
+.conflict-box {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: var(--warn-soft);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cb-head {
+  display: flex; align-items: center; gap: 5px;
+  color: var(--text); font-weight: 600; margin-bottom: 5px;
+}
+.cb-row { display: flex; align-items: baseline; gap: 8px; }
+.cb-row + .cb-row { margin-top: 4px; }
+.cb-text { flex: 1; line-height: 1.5; }
+.cb-x {
+  flex: none; border: 1px solid var(--input); border-radius: 6px;
+  background: none; color: var(--text-2); font-size: 11.5px;
+  padding: 2px 8px; cursor: pointer;
+}
+.cb-x:hover { border-color: var(--input); color: var(--text); }
+

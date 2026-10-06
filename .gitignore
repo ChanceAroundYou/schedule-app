@@ -1,6 +1,9 @@
 # 部署产物（由 app/ 的 vite build 生成，不手改）
 dist/
 
+# TypeScript 增量编译缓存（tsc -b 产生）
+*.tsbuildinfo
+
 # 依赖
 node_modules/
 

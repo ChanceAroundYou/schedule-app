@@ -1,0 +1,45 @@
+# 日程清单后端 —— Node 22 + node:sqlite，零 npm 依赖，监听 127.0.0.1:25692。
+#
+# 部署到：~/.config/systemd/user/schedule-backend.service
+#   cp deploy/schedule-backend.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now schedule-backend
+#
+# 这台机器已经开了 linger（`loginctl show-user xiaokubao` → Linger=yes），
+# 所以用户级服务在注销后依然活着，不需要 root 的 system 单元。
+#
+# 只在 127.0.0.1 上听：对外只通过 nginx 的 /schedule/api/ 反代出去，
+# 后端自己不暴露端口，也就不必在应用层再做一层 TLS。
+
+[Unit]
+Description=日程清单后端 (127.0.0.1:25692)
+After=network.target
+
+[Service]
+Type=simple
+
+# 钉死 node 版本。**别改成 /usr/local/bin/node** —— 那是个指向 nvm
+# v22.16.0 的符号链接，而 node:sqlite 在 22.16 上还要 --experimental-sqlite。
+# 升级 node 时改这一行，然后 systemctl --user restart schedule-backend。
+ExecStart=/home/xiaokubao/.nvm/versions/node/v22.22.3/bin/node server/server.js
+
+# NAS 上那份是软链进来的（/home/xiaokubao/family → /mnt/fnos/family），
+# 两个路径都通，用软链这条和别的服务保持一致。
+WorkingDirectory=/home/xiaokubao/family/星星包/coding/日程管理
+
+# ⚠️ 数据落在**本机磁盘**，不在工程目录里。
+#    工程目录挂在 NAS 的 SMB 共享上，SQLite 的文件锁在 CIFS 上不可靠，
+#    库写坏了是不可恢复的。备份就是拷这一个目录。
+Environment=SCHEDULE_DATA_DIR=/home/xiaokubao/.local/share/schedule
+Environment=NODE_ENV=production
+Environment=PATH=/home/xiaokubao/.nvm/versions/node/v22.22.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+Restart=always
+RestartSec=3
+
+# 日志走 journal：journalctl --user -u schedule-backend -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
