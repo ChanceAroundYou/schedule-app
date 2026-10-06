@@ -4,8 +4,9 @@ dist/
 # TypeScript 增量编译缓存（tsc -b 产生）
 *.tsbuildinfo
 
-# 依赖
-node_modules/
+# 依赖。不带斜杠：worktree 里 app/node_modules 是指向主仓库的**符号链接**，
+# 而 `node_modules/` 这种带斜杠的写法只匹配目录，符号链接会漏成 untracked。
+node_modules
 
 # 后端运行时数据：SQLite 库 + JWT 密钥 + 用户表。永远不进版本库。
 server/data/
