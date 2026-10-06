@@ -329,6 +329,7 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
             type="text"
             value={kw}
             placeholder="搜索…"
+            aria-label="搜索任务"
             onChange={(e) => setKw(e.target.value)}
           />
           {!!kw && (
@@ -340,9 +341,12 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
 
         {ui.nav === 'calendar' && (
           <div className="view-switch">
-            <button className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
-            <button className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
-            <button className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
+            {/* data-view 是给探针用的：这三个按钮原先只能靠文字「日 / 周 / 月」去找，
+                而文字是最不稳的定位方式。全应用其余可点元素都带 data-*，
+                这里补上同一个约定。 */}
+            <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
+            <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
+            <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
           </div>
         )}
 
@@ -540,6 +544,7 @@ export function QuickAdd({ state, onSubmit }: {
         type="text"
         value={text}
         placeholder={placeholderFor(state)}
+        aria-label="快速添加"
         autoComplete="off"
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}

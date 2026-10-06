@@ -798,6 +798,190 @@ try {
   ok(other.length === 0, '离线这一段除了接口连不上，没有别的 console 报错'
     + (other.length ? '：\n      ' + fmt(other) : ''));
 
+  // 放在最后、且刻意在「关掉静态服务」之后：这一节全是纯 DOM 查询，
+  // 不需要网络，而断网那一节已经把服务器关了 —— 插在它前面会被它的
+  // closeAllConnections 打乱状态，插在后面则完全不动已有状态。
+  console.log('\n十三、无障碍：勾选圈都是真按钮，每个输入框都有名字');
+  //
+  // 这一节守的是一条不变量，不是某个具体页面。勾选圈原先在**六个地方各写了
+  // 一遍**，于是各自长歪了：月 / 周视图那个是 <span>（Tab 进不去、没有按钮
+  // 角色、读屏念不出），打卡页和时间轴那两个没有可访问名字，逾期行的标题
+  // 写死成「标记完成」（已完成时也是这句）。现在六个调用点全走
+  // parts.tsx 的 <CheckBtn>，这里就是看门人：谁再手写一个 span.check-btn、
+  // 或者漏掉一个 aria-label / htmlFor，这一节就会红。
+  //
+  // 验过它有牙：把 CheckBtn 里那个 <button> 换回 <span>，第一条立刻失败。
+  // 注意这里**不带 return** —— 它是一段表达式，方便和别的字段拼在一个
+  // evalJs 里（下面 scan() 就是这么用的）。
+  const A11Y = `(() => {
+    const bad = [];
+    const nameOf = (el) => {
+      if (el.getAttribute('aria-label')) return 'aria-label';
+      if (el.getAttribute('title')) return 'title';
+      if (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) return 'label[for]';
+      if (el.closest('label')) return '包在 label 里';
+      // 按钮的可见文字**就是**它的可访问名字，和 aria-label 等价 ——
+      // 第一版漏了这一条，把 nav-item / ghost-btn 这些带字的全报成了「没名字」，
+      // 是探针自己的 bug（见 CLAUDE.md 四、40：这种症状先怀疑探针）
+      if (el.tagName === 'BUTTON' && el.textContent.trim()) return 'textContent';
+      if (el.tagName === 'INPUT' && /^(submit|button|reset)$/.test(el.type) && el.value) return 'value';
+      // placeholder 会在最后一档当名字用，但那是退化行为，不算数（见下面 title 框）
+      return '';
+    };
+    // 光用 tagName + 自己的 class 会**把不同的元素压成同一行** ——
+    // 顶栏搜索和快速添加那两个 input 都没有 class、都没有名字，
+    // Set 一去重就只剩一条，看着像只有一处有问题。补上父元素的类名，
+    // 失败信息才指得到具体哪一个。
+    // （注意：这段字符串是模板字面量，注释里不能出现反引号，
+    //   否则会把模板当场截断、后面半截漏到 Node 里跑 —— 已经踩过一次）
+    const cls = (el) => {
+      const own = el.tagName.toLowerCase();
+      if (typeof el.className === 'string' && el.className) return own + '.' + el.className.split(' ')[0];
+      const p = el.parentElement;
+      const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
+      return own + ' in .' + pc;
+    };
+    for (const el of document.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
+    for (const el of document.querySelectorAll('button,input,select,textarea')) {
+      if (el.type === 'hidden' || el.disabled) continue;
+      // 没渲染出来的不算 —— 导入备份那个 <input type=file> 就是藏起来的，
+      // 由旁边那个有名字的按钮触发，是标准做法
+      if (!el.getClientRects().length) continue;
+      if (!nameOf(el)) bad.push('没名字：' + cls(el));
+    }
+    for (const l of document.querySelectorAll('label')) {
+      if (l.htmlFor) {
+        if (!document.getElementById(l.htmlFor)) bad.push('label[for] 指向不存在的 id：' + l.htmlFor);
+      } else if (!l.querySelector('input,select,textarea')) {
+        bad.push('label 既没有 for 也没包住控件：' + l.textContent.trim().slice(0, 20));
+      }
+    }
+    return [...new Set(bad)];
+  })()`;
+
+  // 先切到待办箱再造一条待查的 —— 断网了，quickAdd 只写本机发件箱，不影响别的断言
+  await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
+  await waitFor(page,
+    `(document.body.innerText.includes('待办箱是空的') || !!document.querySelector('[data-scope="inbox"]'))`,
+    '切到待办箱', 8000);
+
+  /**
+   * 扫描 + **顺便数一下「本该被扫到的控件有几个」**。
+   *
+   * 这一步不是多余的：第一版只断言 `bad.length === 0`，而待办箱里根本没有
+   * `task-pill`（胶囊只在月 / 周视图渲染），于是把 CheckBtn 换回 <span>
+   * 重跑，断言照样整段绿 —— 一条没有候选的断言等于没写。
+   * `cands` 就是用来堵这个的：候选为 0 时单独报错，而不是装作通过。
+   */
+  const scan = async () => {
+    const r = await evalJs(page, `return { bad: ${A11Y}, cands: document.querySelectorAll('.task-el').length };`);
+    return r;
+  };
+
+  // —— 先换集，再建任务 ——
+  // **顺序不能反。** 任务建在「当前选中的集」里；先建后换的话，换过去之后
+  // 月视图（按集）根本看不到它，下面那条又会空过一轮。
+  //
+  // 而且必须挑一个**有写权限的**集（owner / editor）：第十节把爸爸在别的集里
+  // 降成了只读，随手挑「另一个集」正好挑中只读的那个 —— quickAdd 会被
+  // deny() 挡下、任务根本不出现，探针卡在「等不到任务出现」上，
+  // 报错却指向快速添加，看着像输入框坏了。按 role 挑就没有这个问题。
+  //
+  // 挑哪个集也**不按名字**：第六节把集改过名，照着名字找会静默找不到。
+  const switched = await evalJs(page, `
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    const canWrite = (r) => r === 'owner' || r === 'editor';
+    const mine = (st.cals || []).filter((c) => canWrite(c.role));
+    const pick = mine.find((c) => c.id !== st.ui.cal) || mine[0];
+    const el = pick && [...document.querySelectorAll('[data-cal]')].find((x) => x.dataset.cal === pick.id);
+    if (el) el.click();
+    return pick ? pick.name + ' / ' + pick.role : 'none';
+  `);
+  ok(switched !== 'none', '切到了有写权限的日程集（' + switched + '）');
+
+  await quickAdd(page, '无障碍检查');
+  const list = await scan();
+  ok(list.cands > 0, '待办箱里有任务行可查（候选 ' + list.cands + ' 个 —— 为 0 时下面那条是空过）');
+  ok(list.bad.length === 0, '待办箱没有假按钮 / 无名控件'
+    + (list.bad.length ? '：\n      ' + list.bad.join('\n      ') : ''));
+
+  // 抽屉里字段最多（日期 / 时间 / 时长 / 重复 / 备注 + 重复面板里的几个），
+  // label 配没配上在这里最容易露馅
+  ok(await clickEl(page, `
+    [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .find((e) => e.textContent.includes('无障碍检查'))
+  `) !== 'missing', '点开刚建的那条任务');
+  await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
+  const draw = await evalJs(page, `return { bad: ${A11Y},
+    cands: document.querySelectorAll('.drawer.open input, .drawer.open select, .drawer.open textarea').length };`);
+  ok(draw.cands >= 5, '抽屉里有 ' + draw.cands + ' 个表单控件可查（日期 / 时间 / 时长 / 重复 / 备注）');
+  ok(draw.bad.length === 0, '详情抽屉里每个输入框都有名字、每个 label 都配上了控件'
+    + (draw.bad.length ? '：\n      ' + draw.bad.join('\n      ') : ''));
+
+  // htmlFor 真配上没配上，光看属性不算数 —— 点一下 label，光标该进对应控件。
+  // 这一条同时也是「移动端点小字标签能不能聚焦到框」的代理断言
+  const focusOk = await evalJs(page, `
+    const l = document.querySelector('.drawer.open .field label[for]');
+    if (!l) return '没有带 for 的 label';
+    const want = l.htmlFor;
+    l.click();
+    const a = document.activeElement;
+    return a && a.id === want ? 'ok' : ('焦点跑到了 ' + (a ? (a.id || a.tagName) : 'null'));
+  `);
+  ok(focusOk === 'ok', '点「日期」这个 label 能把光标送进日期框，实际 ' + focusOk);
+
+  // 顺手把这条任务填上日期 —— 下面月视图要用的那条**有日期的**任务就是它。
+  //
+  // 走抽屉的日期框，不走快速添加的自然语言：本探针的 store 里本来一条有日期
+  // 的任务都没有，而「快速添加 → 解析出日期」那条路别处已经单独覆盖过，
+  // 这里再依赖一次只会多一个可能失败的地方。
+  const todayIso = await evalJs(page, `
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  `);
+  const dated = await evalJs(page, `
+    const inp = document.querySelector('.drawer.open .field input[type="date"]');
+    if (!inp) return 'missing';
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(inp, ${JSON.stringify(todayIso)});
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'ok';
+  `);
+  ok(dated === 'ok', '在抽屉里给它填上今天（' + todayIso + '），实际 ' + dated);
+  // waitFor 前面会被补一个 return，所以这里只能写一个**表达式**，不能带 const
+  //（见 CLAUDE.md 四、39 —— 已经踩过一次）
+  await waitFor(page, `
+    Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks || {})
+      .some((t) => t.title === '无障碍检查' && t.date === ${JSON.stringify(todayIso)}) ? 1 : null
+  `, '日期落盘了', 8000);
+
+  await clickEl(page, `document.querySelector('.drawer.open .drawer-head .icon-btn')`);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '抽屉关上了', 8000);
+
+  // 先切回日程页再选月视图 —— `.view-switch` 只在 nav === 'calendar' 时才渲染，
+  // 少了这一步 querySelector 直接拿到 null
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await evalJs(page, `document.querySelector('[data-view="month"]').click(); return true;`);
+  await waitFor(page, `document.querySelector('[data-view="month"].on') ? 1 : null`, '切到月视图', 8000);
+  await new Promise((r) => setTimeout(r, 400));   // 等这一帧画完再数
+  const month = await scan();
+  const pills = await evalJs(page, `return document.querySelectorAll('.task-pill').length;`);
+  // 失败时把「为什么没有胶囊」直接打出来 —— 否则只能看到「0 个」，
+  // 而 0 个有一堆可能：选中的集没切成、月份不对、格子被折叠成「还有 N 项」
+  const diag = await evalJs(page, `return {
+    cals: [...document.querySelectorAll('[data-cal]')].map((x) => x.textContent.trim()),
+    activeCal: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cal,
+    cursor: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cursor,
+    monthCells: document.querySelectorAll('.month-cell').length,
+    collapsed: (document.body.innerText.match(/还有 \\d+ 项/g) || []),
+  };`);
+  ok(pills > 0, '月视图里确实有胶囊可查（' + pills + ' 个 —— 为 0 时下面那条是空过）'
+    + '　诊断：' + JSON.stringify(diag));
+  ok(month.bad.length === 0, '月视图格子里的勾选圈也是真按钮'
+    + (month.bad.length ? '：\n      ' + month.bad.join('\n      ') : ''));
+
   page.close();
 } catch (e) {
   failures++;

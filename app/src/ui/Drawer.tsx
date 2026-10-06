@@ -12,7 +12,7 @@
  * 下拉 —— 自由输入迟早会有人填 7 分钟，而 15 分钟是时间轴的最小步进。
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Trash2, Check, Repeat, History } from 'lucide-react';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -79,6 +79,11 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
 }) {
   const confirm = useConfirm();
   const task = id ? state.tasks[id] : null;
+  /** 每个字段的 label / 控件配对用的 id 前缀。
+   *  `.field label` 是**兄弟**关系且没有 htmlFor —— 点 label 不会聚焦控件，
+   *  读屏也念不出这个框是干什么的。用 useId 配上，别写死字符串（同页面
+   *  万一渲染两份就撞了）。见 CLAUDE.md 五、无障碍。 */
+  const fid = useId();
 
   // 标题是本地草稿：每敲一个字就写库会让输入框在重渲染里跳光标（旧版踩过）
   const [title, setTitle] = useState('');
@@ -132,6 +137,7 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
             type="text"
             className="drawer-title"
             placeholder="任务名称"
+            aria-label="任务名称"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { const v = title.trim() || '未命名任务'; setTitle(v); if (v !== task.title) patch({ title: v }); }}
@@ -149,16 +155,18 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
 
           <div className="field-row">
             <div className="field">
-              <label>日期</label>
+              <label htmlFor={fid + '-date'}>日期</label>
               <input
+                id={fid + '-date'}
                 type="date"
                 value={task.date || ''}
                 onChange={(e) => patch({ date: e.target.value || null })}
               />
             </div>
             <div className="field">
-              <label>时间 <span className="sub">（可留空）</span></label>
+              <label htmlFor={fid + '-time'}>时间 <span className="sub">（可留空）</span></label>
               <input
+                id={fid + '-time'}
                 type="time"
                 value={task.time || ''}
                 step={900}
@@ -168,15 +176,16 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
           </div>
 
           <div className="field">
-            <label>时长</label>
-            <select value={task.duration || 60} onChange={(e) => patch({ duration: +e.target.value })}>
+            <label htmlFor={fid + '-dur'}>时长</label>
+            <select id={fid + '-dur'} value={task.duration || 60} onChange={(e) => patch({ duration: +e.target.value })}>
               {DURATIONS.map((m) => <option value={m} key={m}>{D.fmtDuration(m)}</option>)}
             </select>
           </div>
 
           <div className="field">
-            <label>重复</label>
+            <label htmlFor={fid + '-rep'}>重复</label>
             <select
+              id={fid + '-rep'}
               value={rep.unit}
               onChange={(e) => {
                 const unit = e.target.value as RepeatRule['unit'];
@@ -191,6 +200,7 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                   <span>每</span>
                   <input
                     type="number" min={1} max={99} value={rep.n}
+                    aria-label="重复间隔"
                     onChange={(e) => patch({ repeat: { ...rep, n: Math.max(1, +e.target.value || 1) } })}
                   />
                   <span>{{ day: '天', week: '周', month: '个月', year: '年', none: '' }[rep.unit]}</span>
@@ -219,6 +229,7 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                   <span>结束</span>
                   <select
                     value={rep.end?.type || 'never'}
+                    aria-label="重复结束方式"
                     onChange={(e) => {
                       const v = e.target.value;
                       patch({
@@ -253,8 +264,9 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
           </div>
 
           <div className="field">
-            <label>备注</label>
+            <label htmlFor={fid + '-note'}>备注</label>
             <textarea
+              id={fid + '-note'}
               rows={5}
               placeholder="补充说明…"
               value={note}

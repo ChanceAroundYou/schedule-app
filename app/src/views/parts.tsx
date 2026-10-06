@@ -19,6 +19,42 @@ import * as D from '../domain/date.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { habitStreak } from '../domain/model.ts';
 
+/* ============================== 勾选圈 ============================== */
+
+/**
+ * 勾选圈 —— 全应用**唯一**的实现。
+ *
+ * 这东西原先在六个地方各写了一遍，于是各自长歪了：月 / 周视图那个是 `<span>`
+ * （Tab 进不去、没有按钮角色、读屏念不出），打卡页和时间轴那两个**没有可访问
+ * 名字**，逾期行的标题写死成「标记完成」（已完成时也是这句，读屏听起来是反的）。
+ * 收成一个组件，这些漂移就不可能再发生。
+ *
+ * 必须是 `<button>`：这是全应用点得最多的控件，得能 Tab 到、得能回车触发。
+ * 尺寸 / 内外边距 / 边框 / 圆角全由 `.check-btn` 显式定死，不会带进 UA 默认样式。
+ * 24×24 的命中区由 `legacy.css` 里 `.check-btn::before` 撑出来（视觉尺寸不变）。
+ */
+export function CheckBtn({ id, on, act = 'toggle', sm }: {
+  id: string;
+  on?: boolean;
+  /** 'toggle' = 勾任务，'habit' = 勾打卡。决定 title 的文案 */
+  act?: 'toggle' | 'habit';
+  sm?: boolean;
+}) {
+  const label = act === 'habit'
+    ? (on ? '取消今日打卡' : '今日打卡')
+    : (on ? '取消完成' : '标记完成');
+  return (
+    <button
+      type="button"
+      className={'check-btn' + (sm ? ' sm' : '') + (on ? ' on' : '')}
+      data-act={act}
+      data-id={id}
+      title={label}
+      aria-label={label}
+    />
+  );
+}
+
 /* ============================== 分隔点 ============================== */
 
 function Meta({ items }: { items: ReactNode[] }) {
@@ -51,10 +87,13 @@ export interface TaskRowProps {
 
 export function TaskRow({ task: t, bare, showDoneAt, extra, className }: TaskRowProps) {
   const meta: ReactNode[] = [];
+  const today = D.today();
   if (!bare) {
     if (t.time) meta.push(<span className="m-time" key="t">{t.time}</span>);
-    if (t.date) {
-      const over = t.date < D.today() && !t.done;
+    /* 「今天」不写：今天页整页都是今天，已完成页的组标题也已经写了 —— 行里再写一遍
+       只是占地方（窄屏那一行本来就只有 390px）。逾期 / 别的日子照写。 */
+    if (t.date && t.date !== today) {
+      const over = t.date < today && !t.done;
       meta.push(<span className={'m-date' + (over ? ' over' : '')} key="d">{D.relLabel(t.date)}</span>);
     }
     if (t.duration && t.time) meta.push(<span className="m-dur" key="u">{D.fmtDuration(t.duration)}</span>);
@@ -81,12 +120,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className }: TaskRow
       data-untimed={t.time ? undefined : '1'}
       draggable
     >
-      <button
-        className={'check-btn' + (t.done ? ' on' : '')}
-        data-act="toggle"
-        data-id={t.id}
-        title={t.done ? '取消完成' : '标记完成'}
-      />
+      <CheckBtn id={t.id} on={!!t.done} />
       <div className="row-main">
         <div className="row-title">{t.title}</div>
         <Meta items={meta} />
@@ -106,11 +140,10 @@ export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean
       draggable
       title={t.title}
     >
-      <span
-        className={'check-btn sm' + (t.done ? ' on' : '')}
-        data-act="toggle"
-        data-id={t.id}
-      />
+      {/* 月 / 周视图格子里唯一一个勾选入口。**必须是 <button>**：
+          原先这里是 <span>，于是既进不了 Tab 序列、也没有按钮角色、
+          读屏也念不出它是什么 —— 而另外五个同样的勾选都是 button。 */}
+      <CheckBtn id={t.id} on={!!t.done} sm />
       {showTime && t.time && <span className="pill-time">{t.time}</span>}
       <span className="pill-title">{t.title}</span>
     </div>
@@ -153,13 +186,7 @@ export function CheckinStrip({ habits, onManage }: {
           const st = habitStreak(h);
           return (
             <div className={'ci-item' + (hd ? ' done' : '')} key={h.id} data-habit={h.id}>
-              <button
-                type="button"
-                className={'check-btn sm' + (hd ? ' on' : '')}
-                data-act="habit"
-                data-id={h.id}
-                title="今日打卡"
-              />
+              <CheckBtn id={h.id} on={hd} act="habit" sm />
               <span className="ci-title">{h.title}</span>
               {st > 1 && (
                 <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>

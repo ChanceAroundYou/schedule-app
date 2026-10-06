@@ -17,7 +17,7 @@ import { Flame, Plus, X } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { habitStreak, liveHabits } from '../domain/model.ts';
-import { Empty, HabitHeat } from './parts.tsx';
+import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
 
 export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title: string) => void }) {
   const [draft, setDraft] = useState('');
@@ -72,7 +72,7 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
               data-kind="habit"
               draggable
             >
-              <button className={'check-btn sm' + (done ? ' on' : '')} data-act="habit" data-id={h.id} />
+              <CheckBtn id={h.id} on={done} act="habit" sm />
               <div className="habit-main">
                 <div className="habit-title">
                   {h.title}

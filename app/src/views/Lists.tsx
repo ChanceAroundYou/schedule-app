@@ -18,7 +18,7 @@ import * as D from '../domain/date.ts';
 import {
   doneTasks, liveHabits, overdueCount, overdueTasks, todayDoneTasks, todayTasks, inboxTasks,
 } from '../domain/model.ts';
-import { Caret, CheckinStrip, Empty, TaskRow } from './parts.tsx';
+import { Caret, CheckBtn, CheckinStrip, Empty, TaskRow } from './parts.tsx';
 
 /* ============================== 待办箱 ============================== */
 
@@ -102,7 +102,7 @@ function OverdueRow({ task: t, days }: { task: Task; days: number }) {
   const t0 = D.today();
   return (
     <div className="task-row task-el od-row" data-id={t.id} data-untimed="1" draggable>
-      <button className={'check-btn' + (t.done ? ' on' : '')} data-act="toggle" data-id={t.id} title="标记完成" />
+      <CheckBtn id={t.id} on={!!t.done} />
       <div className="row-main">
         <div className="row-title">{t.title}</div>
         <div className="row-meta">

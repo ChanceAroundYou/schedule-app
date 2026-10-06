@@ -20,7 +20,7 @@ import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { DAY_H, HOUR_H, layoutOverlap, timeRange, type Slot } from '../domain/layout.ts';
 import { dayLoad, tasksOn, untimedOn } from '../domain/model.ts';
-import { TaskPill, loadLevel } from './parts.tsx';
+import { CheckBtn, TaskPill, loadLevel } from './parts.tsx';
 
 /* ============================== 小工具 ============================== */
 
@@ -111,7 +111,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
                   style={{ top, height: hgt, left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
                 >
                   <div className="ev-head">
-                    <button className={'check-btn sm' + (t.done ? ' on' : '')} data-act="toggle" data-id={t.id} />
+                    <CheckBtn id={t.id} on={!!t.done} sm />
                     <span className="ev-title">{t.title}</span>
                   </div>
                   {roomy && <span className="ev-time">{timeRange(e.start, e.end - e.start)}</span>}

@@ -9,7 +9,7 @@
  * 真正的错误（重名、弱密码、限流）由服务器返回，直接显示原文。
  */
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { CalendarCheck, Loader2, LogIn, UserPlus } from 'lucide-react';
 import { api, ApiError, setToken } from '../data/api.ts';
 import { Btn } from './kit.tsx';
@@ -23,6 +23,8 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** 见 Drawer.tsx 同名注释：label 与控件必须靠 id 配上，不能只做兄弟 */
+  const fid = useId();
 
   const register = mode === 'register';
 
@@ -76,8 +78,9 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           </div>
         )}
 
-        <label className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">用户名</label>
+        <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">用户名</label>
         <input
+          id={fid + '-name'}
           className="mb-3 w-full rounded-lg border border-[var(--line,rgba(0,0,0,.12))] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"
           value={name}
@@ -87,8 +90,9 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           spellCheck={false}
         />
 
-        <label className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">密码</label>
+        <label htmlFor={fid + '-pwd'} className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">密码</label>
         <input
+          id={fid + '-pwd'}
           type="password"
           className="w-full rounded-lg border border-[var(--line,rgba(0,0,0,.12))] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"

@@ -779,6 +779,17 @@ b, strong { font-variant-numeric: tabular-nums; }
 .check-btn.sm { width: 14px; height: 14px; flex-basis: 14px; }
 .check-btn.sm.on::after { left: 3.5px; top: 1px; width: 3px; height: 6px; }
 
+/* 命中区补到 24×24（WCAG 2.5.8 的下限），**视觉尺寸不变**。
+   这是全应用点得最多的一个控件（勾任务、勾打卡），而它本体只有 18px，
+   .sm 更小只有 14px。用 ::before 往外撑，不是把圆点画大 —— 画大就毁了列表密度。
+   用 ::before 而不是 ::after：勾那一下子已经被 ::after 占了。
+   安全边际：它两侧最近的邻居是 .ci-item 的 9px 内边距 / 7px gap、
+   .habit-row 的 11px gap，都容得下这 5px，不会和隔壁的按钮抢点击。 */
+.check-btn::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 24px; height: 24px; transform: translate(-50%, -50%);
+}
+
 /* 完成瞬间的小动效 */
 .task-el.popping { animation: taskPop .3s cubic-bezier(.3, .8, .3, 1) forwards; }
 .task-el.popping .check-btn { animation: checkPop .3s ease; }
