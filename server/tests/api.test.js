@@ -564,3 +564,92 @@ test('一条时钟异常的 op 不拖垮同批的其他改动', async () => {
   assert.strictEqual(snap.tasks.t13.title, '正常');
   assert.ok(!snap.tasks.t12);
 });
+
+/* ------------------------------------------------------------ AI 配置 */
+
+const SECRET_KEY = 'sk-must-never-come-back-1234567890';
+
+test('没配过时读回默认值，且不带 apiKey', async () => {
+  const r = await api('GET', '/api/ai/settings', { token: dad.token });
+  assert.strictEqual(r.status, 200);
+  assert.ok(r.body.baseUrl, '要有默认 Base URL，开箱能用');
+  assert.ok(r.body.model, '要有默认模型');
+  assert.strictEqual(r.body.hasKey, false, '没配过就是没有 key');
+  assert.ok(!('apiKey' in r.body), '读接口里不该有 apiKey 这个字段');
+});
+
+test('存了 key 之后读回来只有 hasKey —— 明文永远不出服务器', async () => {
+  const put = await api('PUT', '/api/ai/settings', {
+    token: dad.token, body: { apiKey: SECRET_KEY },
+  });
+  assert.strictEqual(put.status, 200);
+  assert.strictEqual(put.body.hasKey, true);
+  assert.ok(!('apiKey' in put.body), '写的回包里也不该有 apiKey');
+  assert.ok(!JSON.stringify(put.body).includes(SECRET_KEY), '回包里出现了 key 本身');
+
+  const get = await api('GET', '/api/ai/settings', { token: dad.token });
+  assert.strictEqual(get.body.hasKey, true);
+  assert.ok(!('apiKey' in get.body));
+  assert.ok(!JSON.stringify(get.body).includes(SECRET_KEY),
+    '读接口把 key 明文发回浏览器了 —— 这条挂了说明有人为了「回填表单方便」加回了这个字段');
+});
+
+test('只改模型名不会把 key 抹掉（apiKey 省略 = 保留）', async () => {
+  await api('PUT', '/api/ai/settings', { token: dad.token, body: { apiKey: SECRET_KEY } });
+  const r = await api('PUT', '/api/ai/settings', { token: dad.token, body: { model: 'another-model' } });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.model, 'another-model');
+  assert.strictEqual(r.body.hasKey, true, '没传 apiKey 就该保持原值');
+
+  // 反过来：传空串才是清空
+  const cleared = await api('PUT', '/api/ai/settings', { token: dad.token, body: { apiKey: '' } });
+  assert.strictEqual(cleared.body.hasKey, false, '空串要能把 key 清掉');
+});
+
+test('Base URL 与模型名的校验', async () => {
+  const cases = [
+    [{ baseUrl: '' }, '空 Base URL'],
+    [{ baseUrl: 'not a url' }, '不是网址'],
+    [{ baseUrl: 'file:///etc/passwd' }, '非 http(s) 协议'],
+    [{ baseUrl: 'ftp://example.com' }, 'ftp'],
+    [{ baseUrl: 'http://169.254.169.254/latest/meta-data/' }, '云元数据地址'],
+    [{ model: '   ' }, '空模型名'],
+  ];
+  for (const [body, what] of cases) {
+    const r = await api('PUT', '/api/ai/settings', { token: dad.token, body });
+    assert.strictEqual(r.status, 400, `${what} 应该被拒，实际 ${r.status}`);
+    assert.ok(r.body.error, `${what} 要给出原因`);
+  }
+
+  const ok = await api('PUT', '/api/ai/settings', {
+    token: dad.token, body: { baseUrl: 'http://127.0.0.1:25001/v1', model: 'claude-sonnet-5.5' },
+  });
+  assert.strictEqual(ok.status, 200, '本机网关地址必须放行 —— 它就是默认值');
+});
+
+test('配置跟着账号走：别人看不到我的 key', async () => {
+  const mineBefore = await api('GET', '/api/ai/settings', { token: dad.token });
+  const theirs = await api('GET', '/api/ai/settings', { token: mom.token });
+
+  assert.strictEqual(theirs.status, 200);
+  assert.strictEqual(theirs.body.hasKey, false, '另一个账号不该继承我的 key');
+  assert.ok(!('apiKey' in theirs.body));
+
+  // 我写我的，不能影响他
+  await api('PUT', '/api/ai/settings', {
+    token: dad.token, body: { model: 'dad-only-model', apiKey: SECRET_KEY },
+  });
+  const theirsAfter = await api('GET', '/api/ai/settings', { token: mom.token });
+  assert.notStrictEqual(theirsAfter.body.model, 'dad-only-model', '配置串到别的账号去了');
+
+  const mineAfter = await api('GET', '/api/ai/settings', { token: dad.token });
+  assert.strictEqual(mineAfter.body.model, 'dad-only-model', '自己的改动要留住');
+  assert.ok(mineBefore.body.model !== 'dad-only-model');
+});
+
+test('没登录读写配置一律 401', async () => {
+  assert.strictEqual((await api('GET', '/api/ai/settings')).status, 401);
+  assert.strictEqual(
+    (await api('PUT', '/api/ai/settings', { body: { model: 'x' } })).status, 401,
+  );
+});

@@ -27,6 +27,7 @@ const sync = require('./lib/sync');
 const calendars = require('./lib/calendars');
 const invites = require('./lib/invites');
 const rl = require('./lib/ratelimit');
+const aiSettings = require('./lib/ai/settings');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 25692);
@@ -320,6 +321,16 @@ const handlers = {
       },
     };
   },
+
+  /* ---------------------------------------------------------------- AI */
+
+  /**
+   * 模型配置。**只回 hasKey，绝不回显 key** —— 见 lib/ai/settings.js。
+   * 读接口不限流：它既不烧额度、也不回答「这个密码对不对」。
+   */
+  'GET /api/ai/settings': (ctx, me) => aiSettings.read(me.user.id),
+
+  'PUT /api/ai/settings': (ctx, me) => aiSettings.update(me.user.id, ctx.body || {}),
 };
 
 /* ---------------------------------------------------------------- 路由 */

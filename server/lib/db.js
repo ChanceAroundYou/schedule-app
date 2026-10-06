@@ -579,6 +579,28 @@ function pruneRevoked() {
   return run('DELETE FROM revoked WHERE expires_at <= ?', Date.now());
 }
 
+/* ---------------------------------------------------------- AI 配置 / 会话 */
+
+/** 我的模型配置。没有就返回 null（用默认值），不预先塞一行。 */
+function getAiSettings(userId) {
+  return get('SELECT * FROM ai_settings WHERE user_id = ?', String(userId));
+}
+
+/** 整行覆盖。apiKey 传 null 表示清空 —— 「这次不改」由调用方先读旧值再传回来。 */
+function putAiSettings(userId, s) {
+  return run(`
+    INSERT INTO ai_settings (user_id, provider, base_url, model, api_key, updated_at)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      provider   = excluded.provider,
+      base_url   = excluded.base_url,
+      model      = excluded.model,
+      api_key    = excluded.api_key,
+      updated_at = excluded.updated_at
+  `, String(userId), String(s.provider), String(s.baseUrl),
+     String(s.model), s.apiKey == null ? null : String(s.apiKey), Number(s.updatedAt));
+}
+
 /* ------------------------------------------------------------------ 杂项 */
 
 function file() { return _file; }
@@ -598,5 +620,6 @@ module.exports = {
   invitesFor, invitesSentBy, cancelPendingInvites,
   putField, maxSeq, appendChange, changesSince, allFields,
   isRevoked, revokeJti, pruneRevoked,
+  getAiSettings, putAiSettings,
   file, close,
 };
