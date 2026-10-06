@@ -9,8 +9,9 @@
  *   流怎么读          → ui/aiClient.ts
  *   key 怎么存        → AiSettings.tsx + 服务器
  *
- * **这一版只读。** 模型能查、能算、能建议，但不改数据 —— 写路径要等提案卡片
- * 那一套做完（阶段 3）。所以这里没有「确认」按钮。
+ * **读 + 提案确认。** 模型能查、能算、能建议，也能提出改动 —— 但改数据要用户
+ * 在卡片上点「确认」才落库（`POST /api/ai/confirm`）。写工具本身只造提案，
+ * 见 server/lib/ai/tools.mjs 的文件头。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,7 +24,7 @@ import { AiSettingsSheet } from './AiSettings.tsx';
 import { Btn, IconBtn, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
-  applyEvent, actionText, buildContext, newLiveAssistant,
+  applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
 } from '../domain/ai.ts';
 import type { AiChatMessage, LiveAssistant } from '../domain/ai.ts';
 import type { LocalState } from '../domain/types.ts';
@@ -68,11 +69,16 @@ const EXAMPLES = [
   '最近排得怎么样，有什么落下的吗',
 ];
 
-export function AiPanel({ state }: { state: LocalState }) {
+export function AiPanel({ state, onConfirmed }: {
+  state: LocalState;
+  /** 确认成功之后调一次，把 AI 写进来的 op 拉回来。省略 = 等下一轮轮询 */
+  onConfirmed?: () => void;
+}) {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [ready, setReady] = useState<boolean | null>(null);
   const [settings, setSettings] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -167,6 +173,41 @@ export function AiPanel({ state }: { state: LocalState }) {
     setText('');
   };
 
+  /* -------- 确认提案 -------- */
+  // 点「确认」= 同意 AI 改这一条。划不划卡片**按服务器的回话定**，不做乐观更新：
+  // 服务器那边会重查权限再落库（提案生成到确认之间用户可能被降级），
+  // 猜它会成功的话，被挡下时用户看到的是「卡片没了但什么也没发生」。
+  //
+  // 失败的**不划掉** —— 用户可能想再试一次，至少也该看见它还挂着。
+  const confirmProposals = useCallback(async (ids: string[]) => {
+    if (!ids.length || confirming) return;
+    setConfirming(true);
+    try {
+      const res = await api.aiConfirm(ids);
+      const okIds = new Set(res.done.map((d) => d.id));
+
+      if (okIds.size) {
+        setBubbles((prev) => prev.map((b) => ({
+          ...b,
+          proposals: b.proposals.filter((p) => !okIds.has(p.id)),
+        })));
+        onConfirmed?.();
+      }
+
+      // 成功和失败说在同一条 toast 里 —— 分两条的话后一条把前一条盖掉了
+      const parts = [];
+      if (res.done.length) parts.push(`已确认 ${res.done.length} 条改动`);
+      if (res.failed.length) {
+        parts.push(`没成 ${res.failed.length} 条：${res.failed.map((f) => f.reason).join('；')}`);
+      }
+      if (parts.length) toast(parts.join('，'));
+    } catch (_) {
+      toast('确认失败，请稍后再试');
+    } finally {
+      setConfirming(false);
+    }
+  }, [confirming, onConfirmed]);
+
   return (
     <div className="ai-wrap">
       <div className="ai-bar">
@@ -240,6 +281,29 @@ export function AiPanel({ state }: { state: LocalState }) {
                 <AlertTriangle size={14} />
                 <span>{b.error}</span>
                 <button className="ai-err-link" onClick={() => setSettings(true)}>打开设置</button>
+              </div>
+            )}
+
+            {/* 提案卡片：AI 打算改什么，等用户点确认。
+                措辞是「新建」「改期」这些没发生的动词 —— 确认之前它确实没发生 */}
+            {!!b.proposals.length && (
+              <div className="ai-props">
+                {b.proposals.map((p) => (
+                  <div className="ai-prop" key={p.id}>
+                    <span className="ai-prop-text">
+                      {p.calName && <span className="ai-prop-cal">{p.calName} · </span>}
+                      {proposalText(p)}
+                    </span>
+                    <Btn
+                      variant="primary"
+                      size="sm"
+                      disabled={confirming}
+                      onClick={() => void confirmProposals([p.id])}
+                    >
+                      <Check size={12} /> 确认
+                    </Btn>
+                  </div>
+                ))}
               </div>
             )}
           </div>

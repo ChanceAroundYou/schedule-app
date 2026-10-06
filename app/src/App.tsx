@@ -456,7 +456,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       // AI 是跨集的，跟今天 / 逾期 / 待办箱一组：问的是「我这周排得怎么样」，
       // 按集切开的话它只看得见当前那个集，答出来的「空」是假的空。
       // 它自己按 `sync.snapshot(userId)` 读，权限仍然是服务器那一关说了算。
-      case 'ai': body = <AiPanel state={state} />; break;
+      //
+      // onConfirmed 是「用户点了确认」之后要做的：把 AI 写进来的 op 拉回来。
+      // 不传的话卡片照样能点，只是界面要等下一次轮询才看见新任务。
+      case 'ai': body = <AiPanel state={state} onConfirmed={() => void engine.syncNow()} />; break;
       default: body = <CalendarView state={scoped} />;
     }
   }
