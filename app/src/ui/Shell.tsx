@@ -21,8 +21,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
-  Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
-  Search, Settings, Sun, Trash2, Upload, X, Download, Clock,
+  Flame, FolderKanban, Inbox, Layers, Loader2, LogOut, MailPlus, Moon,
+  MoreHorizontal, Plus, Search, Settings, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
 import type { LocalState, PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -49,6 +49,7 @@ export const NAV: NavDef[] = [
   { key: 'today', label: '今天', icon: <Sun size={16} />, count: 'today' },
   { key: 'overdue', label: '逾期', icon: <AlarmClock size={16} />, count: 'overdue', warn: true },
   { key: 'calendar', label: '日程', icon: <CalendarDays size={16} /> },
+  { key: 'projects', label: '项目', icon: <FolderKanban size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
   { key: 'done', label: '已完成', icon: <CheckCircle2 size={16} /> },
 ];

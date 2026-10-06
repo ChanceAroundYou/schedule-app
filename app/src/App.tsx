@@ -26,12 +26,14 @@ import { HOUR_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
 import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
+import { ProjectSheet } from './ui/ProjectSheet.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
 import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
+import { ProjectsView } from './views/Projects.tsx';
 import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
@@ -54,6 +56,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const [actId, setActId] = useState<string | null>(null);
   const [calOpen, setCalOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  /** 项目浮层：`'new'` = 新建，`{ id }` = 编辑那个项目，`null` = 关着。
+   *  用一个状态而不是两个布尔 —— 两开两关必然有一条路径忘了关另一个。 */
+  const [pjSheet, setPjSheet] = useState<'new' | { id: string } | null>(null);
   /**
    * **实际生效**的那一档（`auto` 已经解析过了），不是偏好 —— 顶栏那个图标
    * 与「更多」里的文案要按它渲染，否则选了「跟随系统」会显示成常亮。
@@ -477,6 +482,17 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       case 'trash': body = <TrashView state={state} />; break;
       // 按集：这几页只画当前选中的那个集
       case 'done': body = <DoneView state={scoped} />; break;
+      // 按集：跟日程 / 打卡 / 已完成一样，看的是当前选中的那个集
+      case 'projects':
+        body = (
+          <ProjectsView
+            state={scoped}
+            onNew={() => setPjSheet('new')}
+            onEdit={(id) => setPjSheet({ id })}
+            onNext={(id, v) => store.patchProject(id, { next: v })}
+          />
+        );
+        break;
       case 'habits':
         body = <HabitsView state={scoped} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />;
         break;
@@ -569,6 +585,13 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       {/* 两个浮层都传全量 state：它们要读 cals / invites，那是跨集的东西 */}
       <ManageSheet state={state} open={calOpen} onClose={() => setCalOpen(false)} />
       <InviteSheet state={state} open={invOpen} onClose={() => setInvOpen(false)} />
+      {pjSheet && (
+        <ProjectSheet
+          state={state}
+          id={pjSheet === 'new' ? null : pjSheet.id}
+          onClose={() => setPjSheet(null)}
+        />
+      )}
     </Shell>
   );
 }

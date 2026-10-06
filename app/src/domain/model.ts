@@ -491,7 +491,9 @@ export function sortProjects(s: LocalState, list: Project[]): Project[] {
 
 /* --------------------------------------------------------------- 界面偏好 */
 
-const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'trash', 'settings'];
+const NAV_ALL = [
+  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'done', 'trash', 'settings',
+];
 
 /**
  * 可自定义的功能项 —— `navOrder` 与 `ui.tabs` 都只从这里面选。

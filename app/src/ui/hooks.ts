@@ -38,7 +38,12 @@ export function useScopedState(): LocalState {
     for (const [id, t] of Object.entries(all.tasks)) if (t.calId === cal) tasks[id] = t;
     const habits: LocalState['habits'] = {};
     for (const [id, h] of Object.entries(all.habits)) if (h.calId === cal) habits[id] = h;
-    return { ...all, tasks, habits };
+    // 项目也是**按集**的（跟日程 / 打卡 / 已完成一样）：泳道看的是「这个集里
+    // 在推进什么」，混着别人的会看不懂。跨集那四个页面（今天/逾期/待办箱/
+    // 垃圾箱）照旧拿全量。
+    const projects: LocalState['projects'] = {};
+    for (const [id, p] of Object.entries(all.projects)) if (p.calId === cal) projects[id] = p;
+    return { ...all, tasks, habits, projects };
     // all 是可变的同一个引用，靠 version 触发重算
   }, [all, cal, version]);
 }
