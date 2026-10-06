@@ -12,13 +12,13 @@
  */
 
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState,
+  createContext, useCallback, useContext, useEffect, useId, useRef, useState,
   type ReactNode, type ButtonHTMLAttributes, type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cx } from './cx.ts';
-import { useOutsideClose } from './hooks.ts';
+import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
@@ -80,7 +80,10 @@ interface SheetProps {
  */
 export function Sheet({ open, onClose, title, children, footer, dismissable = true }: SheetProps) {
   const panel = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  const tid = useId();
   useOutsideClose(panel, open && dismissable, onClose);
+  useFocusTrap(panel, open);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +92,21 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose, dismissable]);
 
+  /* 焦点送进面板本身而不是第一个按钮 —— 见 Drawer.tsx 里那段：送进控件
+     会顺手把手机软键盘弹出来。关掉时还回原来那个元素。 */
+  useEffect(() => {
+    if (!open) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return createPortal(
@@ -96,11 +114,14 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
     // 里面那层 max-h 用 min(86dvh, 100%) —— 没键盘时还是原来的 86dvh，
     // 有键盘时 100% 就是「键盘上沿以上」那点空间，不会把按钮顶出屏幕。
     <div className="fixed inset-0 z-[70] flex items-end justify-center pb-[var(--kb,0px)] sm:items-center">
-      <div className="absolute inset-0 bg-black/40" />
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title !== undefined ? tid : undefined}
+        aria-label={title === undefined ? '提示' : undefined}
+        tabIndex={-1}
         className={cx(
           'relative z-10 w-full max-w-md bg-[var(--panel)] text-[var(--text)]',
           'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[min(86dvh,100%)] flex flex-col',
@@ -108,7 +129,7 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
       >
         {title !== undefined && (
           <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
-            <div className="text-[15px] font-semibold">{title}</div>
+            <div className="text-[15px] font-semibold" id={tid}>{title}</div>
             <Btn variant="ghost" size="sm" onClick={onClose} aria-label="关闭">
               <X size={16} />
             </Btn>

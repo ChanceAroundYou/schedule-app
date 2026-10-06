@@ -111,6 +111,11 @@ export function CalSwitcher({ state, onManage, onInvites }: {
           type="button"
           onClick={onInvites}
           data-cal-invites="1"
+          /* 打开的是浮层（Sheet / 管理浮层），先告诉读屏「按下去会弹东西」。
+             这里用静态的 haspopup 而不是 aria-expanded：开没开是 App.tsx 的状态，
+             两个布尔值要穿过两层 props 才传得到这儿，而浮层自己已经在开的那一瞬间
+             念出名字了 —— 多这一层线不值得。 */
+          aria-haspopup="dialog"
           className="mx-1 mt-1 flex items-center gap-2 rounded-lg bg-[var(--primary-soft)]
                      px-2.5 py-1.5 text-left text-[12.5px] text-[var(--primary)]"
         >
@@ -124,6 +129,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         onClick={onManage}
         disabled={!active}
         data-cal-manage="1"
+        aria-haspopup="dialog"
         className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] text-[var(--text-3)]
                    hover:bg-[var(--panel-3)] hover:text-[var(--text)] disabled:opacity-40"
       >

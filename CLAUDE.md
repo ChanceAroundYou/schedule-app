@@ -51,8 +51,10 @@
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
+│   │   │   ├── Clock.tsx   12 小时制时间转盘（快速添加里那个钟表按钮）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
-│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline / useOutsideClose
+│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline /
+│   │   │   │                useOutsideClose / useKeyboardInset / useFocusTrap
 │   │   │   └── cx.ts
 │   │   ├── views/          纯展示，零回调，只出 data-* 属性
 │   │   │   ├── Calendar.tsx  DayView · WeekView · MonthView · useViewLayout
@@ -355,7 +357,7 @@ SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试�
 ### 测试
 
 ```bash
-cd app          && npm test                     # 62 条（node --test，跑 *.test.ts）
+cd app          && npm test                     # 63 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
 cd app          && node tests/contrast.mjs      # 正文 78 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
 node server/tests/api.test.js                   # 31 条接口
@@ -379,7 +381,8 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 **长按提起 → 拖到别处排序 → 原地松手弹操作层** →
 **鼠标拖拽同一套落点** → **被降成只读后提示点名集名** →
 **另一台设备改过同一字段 → 抽屉里那条提示 → 知道了** →
-离线小标 → **把静态服务关掉还能打开**。
+离线小标 → **把静态服务关掉还能打开** → 无障碍点名 → **方向键微调时间轴把手** →
+**软键盘变量 --kb 两端接没接上** → **抽屉的 dialog 语义与焦点圈**。
 全程收集 console 报错，有一条就算失败。
 
 > 之所以不用 `vite preview`：它的代理写死指向 25692，**那是线上后端**，
@@ -437,6 +440,14 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 第「十五」节专测**软键盘避让的管道**：`useKeyboardInset` 有没有写 `--kb`、
 > 固定浮层有没有读它。真软键盘无头里造不出来，所以只验这两端（同触屏那条的限度）。
 > 写这两节时连踩了三个**伪装成产品 bug 的探针坑**，见「四、43」。
+>
+> 第「十六」节（2026-10-06）专测**语义与焦点**：抽屉是不是 `[role=dialog]`、
+> 焦点开时进不进面板（要落在面板本身，不是第一个输入框）、Tab 圈不圈得住
+> （从**最后一个**可聚焦元素按，才证得了）、关掉还回不还回原处；
+> 侧栏的 `aria-current`、找日期的 `aria-expanded`；以及 `prefers-reduced-motion`
+> 关掉过渡但放过加载圈。验过它有牙（三处一起改坏，三条当场红）。
+> 四个坑都在「四、45」：`[role=dialog]` 的歧义、上一节留着的抽屉、
+> `getComputedStyle` 的 `1e-05s`。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -1140,6 +1151,26 @@ await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', c
 
 `keyDown` 和 `rawKeyDown` 都进得来（实测同效），`keyUp` 要跟着发一个。
 
+**45. 探针里的 `[role="dialog"]` 现在是个歧义选择器**
+
+详情抽屉也变成 `role="dialog"` 之后，第十六节原来那句
+`waitFor('[role="dialog"]' 存在)` 会**先命中抽屉**（它本来就开着）：
+「确认浮层打开」当场假通过，结尾那句「等它关掉」则永远等不到 —— 报的是
+「等不到确认浮层关掉」，指向的是 Sheet 的实现，而真正的问题在选择器。
+
+Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
+或者按文字筛。**加了一个 `role` 就要回头看看有没有别的选择器被它带偏。**
+
+同一条里还有两个同类坑：
+
+- **上一节把抽屉留在打开状态，下一节点一行不会重挂组件**，靠 `[id]` 触发的
+  focus-in `useEffect` 根本不会跑 —— 那一节要验的东西会全体落空
+  （症状：焦点读到的是快速添加框、末尾「还回原处」等不到）。
+  断言的**前置条件**也要自己造，别假设上一节给你留了个干净盘子。
+- **`getComputedStyle` 回的是序列化后的值**：CSS 里写 `0.01ms`，
+  它在 Chrome 里读出来是 `1e-05s`。比字符串会得到假失败，
+  要按单位解析成秒再比大小。
+
 ---
 
 ## 五、界面约定
@@ -1409,6 +1440,75 @@ await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', c
 无头里造不出真软键盘（和触屏那条同理，真机手感只能人看）。
 验过它有牙：把 Sheet 那句 `pb-[var(--kb,0px)]` 摘掉重跑，
 「容器读到了 --kb」当场变成 `0px`。
+
+### 浮层的语义与焦点（2026-10-06）
+
+**凡是真的盖住整页的浮层，必须同时做四件事**，少一件就有一句是假话：
+
+| 做什么 | 在哪 | 少了会怎样 |
+|---|---|---|
+| `role="dialog"` + `aria-modal="true"` + 名字 | `Drawer.tsx`（`aria-label="任务详情：<标题>"`）、`kit.tsx` 的 `Sheet`（`aria-labelledby` 指向标题那个 `div`）、`Shell.tsx` 的 `MoreSheet` | 读屏只念到一堆孤立的输入框，不知道它们在一片对话框里 |
+| **`useFocusTrap(panel, open)`** | `ui/hooks.ts`，三个浮层都挂 | `aria-modal` 是对读屏的承诺「外面别念」，Tab 却能走到背后 —— 那句承诺当场变成假的 |
+| 开时把焦点送进**面板本身**（`tabIndex={-1}` + `panel.focus()`） | `Drawer` / `Sheet` / `MoreSheet` | 送进第一个输入框会**当场弹出手机软键盘**，而用户点一行往往只是想看看（用户明确要求过：别抢焦点弹键盘） |
+| 关时 `prevFocus.focus()` 还回原处 | 同上 | 焦点掉到 `body` 上，键盘用户得从页首重新 Tab 一遍 |
+
+两条实现细节：
+
+- **记录「原来那个元素」之前先看焦点在不在浮层里**（`panel.current?.contains(document.activeElement)`）。
+  从一条任务切到另一条时 `id` 变了但组件不卸载，这时 `activeElement` 就是浮层自己，
+  记下来等于把「还回哪」擦掉。
+- 遮罩加 `aria-hidden="true"`：它只是个鼠标目标（键盘走 Escape），别让读屏念一个空 div。
+- `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `legacy.css` 末尾
+  **关掉焦点环** —— 一圈 2px 顺着整个浮层轮廓跑，看着像界面坏了。
+  （必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer` 里，压不过它，见四、27。）
+
+**锁在哪**：`browser-smoke.mjs` **第十六节**。它从**最后一个**可聚焦元素按 Tab
+（从中间按证不了什么 —— 前后都在浮层里，圈不圈都一样），再按 Escape 看焦点有没有
+回到开浮层前那个输入框。验过它有牙：一次把 `useFocusTrap(panel,false)`、
+`panel.focus()`、勾选圈的 `aria-label` 三处同时改坏，
+「焦点落在面板本身」「Tab 绕回抽屉里」「抽屉里每个输入框都有名字」三条当场红。
+
+> **抽屉头上那个勾选圈原先 `display:none`** —— 那是把它从无障碍树里整个摘掉
+> （读屏不知道任务做没做完，键盘也够不着）。现在是「看不见但还在」
+> （1px、透明、出流，视觉零变化），焦点环画在旁边那个可见的圈上，
+> 名字走 `aria-label`（包着它的 `<label>` 里一个字都没有，给不出名字）。
+
+### 状态语义：`aria-current` / `aria-expanded` / `aria-haspopup`（2026-10-06）
+
+这三个各有各的场合，**别混着用**（`aria-expanded` 摆在只是弹浮层的按钮上，
+读屏会念成「已折叠」——那里根本没折叠这回事）：
+
+| 属性 | 用在哪 | 判据 |
+|---|---|---|
+| `aria-current="page"` | 侧栏 `.nav-item`、底部标签栏 `.tab` | 「现在在哪一页」。视觉上靠 `.active` 那点底色，读屏只认这个 |
+| `aria-expanded`（+ `aria-controls`） | 「今天已完成」的 `.td-head`、「找日期」的 `.jump-btn` | **真的是个折叠开关**：按一下展开、再按一下收起 |
+| `aria-haspopup="dialog"` | 管理当前日程集 / 邀请收件箱 / 找日期 | 按下去会弹一个浮层，但开没开是 App 那一层的状态 |
+
+> 后两个的差别就是「开没开这个状态**在谁手里**」。`.td-head` 和 `.jump-btn` 的
+> 开合是组件自己的 `useState`，白送一个 `aria-expanded`；
+> 管理浮层 / 邀请收件箱的开关在 `App.tsx`，两个布尔值要穿两层 props 才到得了
+> 侧栏，而浮层自己已经在开的那一瞬间念出名字了 —— 那里只写静态的 `aria-haspopup`。
+>
+> 锁在**第十六节**最后三条：侧栏有且只有当前项带 `aria-current="page"`
+> （和 `.active` 对得上），`jump-btn` 的 `aria-expanded` 跟着开合 `false → true`。
+
+### 降低动态效果：全站关，只有「正在同步」例外（2026-10-06）
+
+`legacy.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
+通配 `*` + `!important` 把 `animation-duration` / `transition-duration` 压到
+`.01ms`、`scroll-behavior` 复位。
+
+- **为什么不挑几个「大动作」**：会动的地方有十几处（抽屉 / 浮层的 .24s 位移、
+  拖拽让位的 180ms、方块 hover 的位移、各处颜色过渡），挑漏一处就等于没关，
+  而且日后再加一处也不会有人记得回来补。
+- **唯一的例外是 `.animate-spin`**（同步中的加载圈）：它不是动效，是在说
+  「正在同步，别以为卡死了」。停下来传达的正好是相反的意思。
+- 这一条必须**压得过内联 style 和 Tailwind 层**，所以 `!important` 不是偷懒。
+
+**锁在哪**：第十六节先量一遍**没开时**的值当基准，再 `Emulation.setEmulatedMedia`
+切到 `reduce` 量第二遍 —— 不量基准的话「过渡是 0s」可能本来就是（压根没写过渡），
+断言会假通过。注意 `getComputedStyle` 回的是**序列化后**的值：
+写 `0.01ms` 它给你 `1e-05s`，所以按秒解析再比大小，**别比字符串**。
 
 ---
 

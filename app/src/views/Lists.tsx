@@ -81,7 +81,15 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
       {/* 今天已完成的收口：日程页不再显示它们，这里随时能回看、也能反悔取消 */}
       {!!doneToday.length && (
         <div className={'today-done' + (doneOpen ? ' open' : '')} id="todayDone">
-          <button className="td-head" data-toggle-tdone="1" onClick={() => setDoneOpen((v) => !v)}>
+          {/* 折叠块的真开关。视觉上靠那个转着的三角形，读屏只认 aria-expanded，
+              所以要连 aria-controls 一起给 —— 不然「展开了什么」是句空话 */}
+          <button
+            className="td-head"
+            data-toggle-tdone="1"
+            aria-expanded={doneOpen}
+            aria-controls="todayDone"
+            onClick={() => setDoneOpen((v) => !v)}
+          >
             <Caret open={doneOpen} />
             <span className="td-title">今天已完成</span>
             <span className="td-count">{doneToday.length}</span>

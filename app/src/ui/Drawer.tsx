@@ -18,6 +18,7 @@ import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/type
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, toRepeat } from '../domain/repeat.ts';
 import { Btn, useConfirm } from './kit.tsx';
+import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
 
@@ -79,6 +80,9 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
 }) {
   const confirm = useConfirm();
   const task = id ? state.tasks[id] : null;
+  const panel = useRef<HTMLElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  useFocusTrap(panel, !!task);
   /** 每个字段的 label / 控件配对用的 id 前缀。
    *  `.field label` 是**兄弟**关系且没有 htmlFor —— 点 label 不会聚焦控件，
    *  读屏也念不出这个框是干什么的。用 useId 配上，别写死字符串（同页面
@@ -105,6 +109,32 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
     return () => document.removeEventListener('keydown', onKey);
   }, [id, onClose]);
 
+  /**
+   * 开的时候把焦点送进来、关的时候还回去。
+   *
+   * **送进来的是抽屉本身，不是第一个输入框** —— 送进输入框会当场弹出手机软键盘，
+   * 挡住半个屏幕，而用户点一行只是想「看看」。所以面板吃 tabIndex={-1}，
+   * Tab 从它开始往第一个真控件走（读屏会先念出 aria-label 那句）。
+   *
+   * 还回去的是**原来那一行**：不还的话焦点掉到 body 上，键盘用户得从页首
+   * 重新 Tab 一遍才能回到刚才那一行旁边。
+   *
+   * 记录前先看焦点在不在抽屉里 —— 从一条任务直接切到另一条时 id 变了、
+   * 抽屉不卸载，这时 activeElement 就是抽屉自己，记下来等于把「还回哪」擦掉。
+   */
+  useEffect(() => {
+    if (!id) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [id]);
+
   if (!task) return null;
 
   const patch = (fields: Partial<Task>) => onPatch(task.id, fields);
@@ -122,13 +152,24 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
 
   return (
     <>
-      <div className="mask show" onClick={onClose} />
-      <aside className="drawer open">
+      {/* 遮罩是纯鼠标目标（键盘走 Escape），对读屏没有意义，别让它念出一个空 div */}
+      <div className="mask show" aria-hidden="true" onClick={onClose} />
+      <aside
+        className="drawer open"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={'任务详情：' + task.title}
+        tabIndex={-1}
+      >
         <div className="drawer-head">
           <label className="check-wrap">
             <input
               type="checkbox"
               checked={!!task.done}
+              /* 包着它的 <label> 里一个字都没有，所以它自己没有名字 ——
+                 名字只能从这儿给。措辞和 parts.tsx 的 <CheckBtn> 对齐。 */
+              aria-label={task.done ? '取消完成' : '标记完成'}
               onChange={() => onPatch(task.id, { done: !task.done, doneAt: !task.done ? Date.now() : null })}
             />
             <span className="check-circle" />

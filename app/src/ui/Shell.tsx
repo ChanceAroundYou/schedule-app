@@ -26,7 +26,7 @@ import * as D from '../domain/date.ts';
 import { counts, liveTasks } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
-import { useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
+import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { IconBtn } from './kit.tsx';
 import { CalSwitcher } from './Calendars.tsx';
 import { ClockPop } from './Clock.tsx';
@@ -171,6 +171,9 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
         className={'nav-item' + (state.ui.nav === k ? ' active' : '') + (dragK === k ? ' nav-dragging' : '')}
         key={k}
         data-nav={k}
+        /* 当前在哪一页：视觉上靠 .active 那点底色，读屏只认这个属性。
+           侧栏和底部标签栏指同一件事（同一份 ui.nav），两处都写。 */
+        aria-current={state.ui.nav === k ? 'page' : undefined}
         draggable
         onDragStart={(e) => {
           dragKey.current = k;
@@ -511,6 +514,8 @@ export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday,
               <button
                 className={'text-btn jump-btn' + (jump ? ' on' : '')}
                 title="跳到指定日期（快捷键 D）"
+                aria-haspopup="dialog"
+                aria-expanded={jump}
                 onClick={() => setJump(!jump)}
               >
                 <span className="jb-ico"><CalendarDays size={13} /></span>
@@ -598,7 +603,12 @@ export function Tabbar({ state, onNav, onMore }: {
       {TABS.map((t) => {
         const b = badge(t.count ? (c as unknown as Record<string, number>)[t.count] : 0);
         return (
-          <button className={'tab' + (state.ui.nav === t.key ? ' active' : '')} key={t.key} onClick={() => onNav(t.key)}>
+          <button
+            className={'tab' + (state.ui.nav === t.key ? ' active' : '')}
+            key={t.key}
+            aria-current={state.ui.nav === t.key ? 'page' : undefined}
+            onClick={() => onNav(t.key)}
+          >
             <span className="ti">{t.icon}</span>
             <span className="tn">{t.label}</span>
             {b && <span className={'tb' + (t.warn ? ' warn' : '')}>{b}</span>}
@@ -625,6 +635,26 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
 }) {
   const c = counts(state);
   const fileRef = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  useFocusTrap(panel, open);
+
+  /* 同 Drawer：焦点送进面板本身（送进控件会弹软键盘），关掉还回去。
+     这个浮层盖着一层遮罩，Tab 能溜到背后的侧栏上 —— 那正是 aria-modal
+     答应读屏「外面别念」之后不能出现的事。 */
+  useEffect(() => {
+    if (!open) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const goto = (k: string) => { onNav(k); onClose(); };
@@ -634,8 +664,15 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
 
   return (
     <>
-      <div className="sheet-mask" onClick={onClose} />
-      <div className="more-sheet">
+      <div className="sheet-mask" aria-hidden="true" onClick={onClose} />
+      <div
+        className="more-sheet"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="更多"
+        tabIndex={-1}
+      >
         <div className="ms-grab" />
         <div className="ms-grid">
           <button className="ms-item" onClick={() => goto('habits')}>

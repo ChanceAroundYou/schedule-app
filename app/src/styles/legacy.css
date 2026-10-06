@@ -1112,7 +1112,17 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .drawer.open { transform: none; }
 .drawer-head { display: flex; align-items: center; gap: 11px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
 .check-wrap { display: flex; }
-.check-wrap input { display: none; }
+/* 抽屉头上那个勾选圈里**真的有**一个 checkbox（那是 label + input 的标准写法），
+   而它原先被 display:none 藏了 —— 那等于把它从无障碍树里整个摘掉：
+   读屏不知道这条任务做没做完，键盘也够不着（鼠标点得到，Tab 进不去）。
+   改成「看不见但还在」：出流、1px、透明。视觉一个像素都没变（原先也不占位），
+   但 Tab 能进去、勾选状态念得出来，焦点环画在旁边那个可见的圈上。
+   pointer-events 关掉，免得那 1px 抢走圈上的点击（label 本来就会转发）。 */
+.check-wrap input {
+  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+  opacity: 0; pointer-events: none;
+}
+.check-wrap input:focus-visible + .check-circle { outline: 2px solid var(--primary); outline-offset: 1px; }
 .check-circle {
   width: 20px; height: 20px; border: 2px solid var(--input); border-radius: 50%;
   cursor: pointer; position: relative; flex: 0 0 20px;
@@ -1549,3 +1559,35 @@ button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-v
    .ev-resize 也是同类：把手贴在 .tl-event 的上下沿上，外环整条被裁掉。 */
 .view-switch > *:focus-visible, .md-cell:focus-visible,
 .ev-resize:focus-visible { outline-offset: -2px; }
+
+/* 浮层容器（Detail 抽屉 / Sheet）自己是 tabIndex=-1 的落点，不是控件。
+   上面那条 [tabindex]:focus-visible 会给它描一圈 2px 的外环 —— 一圈顺着
+   整个抽屉轮廓跑，看着像界面坏了。Radix / shadcn 同样在容器上关掉它。 */
+.drawer:focus-visible,
+[role="dialog"]:focus-visible { outline: none; }
+
+/* ── 降低动态效果（WCAG 2.3.3）────────────────────────────────────────────
+   一套收官式的全站关闭：前庭功能障碍的用户开这个开关，是为了让画面**别动**。
+
+   为什么必须整站关，而不是挑几个「大动作」：这个应用里会动的地方有十几处
+   （抽屉 / 浮层的 .24s 位移、拖拽让位的 180ms、方块 hover 的位移、
+   各处 color / background 的过渡），挑漏一处就等于没关，而且日后再加一处
+   也不会有人记得回来补。所以走通配 + !important —— 它必须压过内联
+   style 和 Tailwind 层里的样式，这一条**不能用「反正差不多」的写法**。
+
+   唯一的例外是转圈的那个图标：它不是在「动效」，是在说「正在同步，别以为
+   卡死了」。停下来反而传达错意思，正好和用户开这个开关想避免的东西相反。
+   所以它保留 1s 一圈（原来也是 1s）—— 不是「动一下意思意思」，是真在转。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 同步中的加载圈：例外，理由见上 */
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

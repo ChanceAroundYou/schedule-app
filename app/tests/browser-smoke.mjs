@@ -853,7 +853,11 @@ try {
       if (el.getAttribute('aria-label')) return 'aria-label';
       if (el.getAttribute('title')) return 'title';
       if (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) return 'label[for]';
-      if (el.closest('label')) return '包在 label 里';
+      // 包在 label 里**也得 label 里有字**才算有名字：抽屉头上那个勾选圈
+      // 包在一个空 label 里（圈是旁边一个 span），空 label 本身给不出名字 ——
+      // 原先这里不看文字，等于给「没名字」开了个后门。
+      const lab = el.closest('label');
+      if (lab && lab.textContent.trim()) return '包在 label 里';
       // 按钮的可见文字**就是**它的可访问名字，和 aria-label 等价 ——
       // 第一版漏了这一条，把 nav-item / ghost-btn 这些带字的全报成了「没名字」，
       // 是探针自己的 bug（见 CLAUDE.md 四、40：这种症状先怀疑探针）
@@ -1170,10 +1174,16 @@ try {
   // 它是 `pb-[var(--kb,0px)]` 唯一的无条件消费点。
   // 抽屉自己那条 --kb 只在 ≤900px 生效（宽屏是侧栏面板，键盘盖不到），
   // 而这一节跑在桌面视口下 —— 所以这里测的是 Sheet 这条路径。
+  //
+  // **选择器不能只写 `[role="dialog"]`**：详情抽屉现在也是 dialog，而且它就开在
+  // 下面一层 —— 裸选择器会先命中抽屉，于是「确认浮层打开」当场假通过
+  // （抽屉早就在那儿了），末尾那句「等它关掉」则永远等不到（抽屉一直开着）。
+  // Sheet 是 portal 到 body 的：body > 浮层容器 > 面板。
+  const SHEET = `document.querySelector('body > div > div[role="dialog"]')`;
   await clickEl(page, `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}]')`);
   await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
   await clickEl(page, `[...document.querySelectorAll('.drawer.open button')].find((b) => b.textContent.includes('删除任务'))`);
-  await waitFor(page, `!!document.querySelector('[role="dialog"]')`, '确认浮层打开', 8000);
+  await waitFor(page, `${SHEET} ? 1 : null`, '确认浮层打开', 8000);
 
   // 探针自己把 --kb 顶到 200px（无头里造不出键盘，只能直接写这个变量），
   // 然后量浮层有没有整体抬上去。**写完立刻量** —— getBoundingClientRect 会
@@ -1182,8 +1192,7 @@ try {
     const root = document.documentElement;
     const prev = root.style.getPropertyValue('--kb');
     root.style.setProperty('--kb', '200px');
-    const dlg = [...document.querySelectorAll('[role="dialog"]')]
-      .find((d) => d.textContent.includes('删除这个任务'));
+    const dlg = ${SHEET};
     if (!dlg) { root.style.setProperty('--kb', prev); return { err: '确认浮层没找到' }; }
     const r = dlg.getBoundingClientRect();
     const out = {
@@ -1206,7 +1215,155 @@ try {
 
   // 取消掉，别真删 —— 这条任务前面几节还要用
   await clickEl(page, `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.trim() === '取消')`);
-  await waitFor(page, `document.querySelector('[role="dialog"]') ? null : 1`, '确认浮层关掉', 8000);
+  await waitFor(page, `${SHEET} ? null : 1`, '确认浮层关掉', 8000);
+
+  console.log('\n十六、抽屉是 dialog、焦点进得去出得来；状态语义与降低动效');
+  //
+  // 这一节管的是**语义与焦点**，和别的节不重叠：
+  //   · 抽屉原先没有任何 role，读屏只会念到一堆孤立的输入框，不知道它们在一片
+  //     「对话框」里、也不知道背后那一页此刻是惰性的。标了 aria-modal 之后
+  //     Tab 就**必须真被圈住** —— 圈不住的话那句承诺是假的（读屏照样念背后整页）。
+  //   · 焦点进来时落在**面板本身**，不是第一个输入框：落进输入框会当场弹出
+  //     手机软键盘，而用户点一行往往只是想看看。
+  //   · 焦点出去时要还回原来那个元素，否则键盘用户得从页首重新 Tab 一遍。
+  //   · 降低动效是 WCAG 2.3.3，全站关掉，只有「正在同步」那个转圈例外。
+
+  // 上一节把抽屉留在了打开状态（它只收掉了里面那层确认浮层）。**必须先关掉**：
+  // 抽屉已经开着的时候再点一行只是换了任务、组件不重挂，focus-in 那条 effect
+  // 不会重跑 —— 这一节要验的东西全体落空（第一次跑就是这么假失败的：
+  // 「焦点落在面板本身」读到的是快速添加框，末尾「还回原处」也等不到）。
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '先把上一节留着的抽屉关掉', 8000);
+
+  // 先把光标放到一个真输入框里当「原来那个元素」。合成的 pointerdown 不会移
+  // 焦点（浏览器只对受信任的 mousedown 做默认聚焦），所以点抽屉之前它还在 ——
+  // 正好用来验「关掉之后还回原处」。
+  const RESTORE = '.fast-add input';
+  ok(await evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(RESTORE)});
+    if (!el) return 'missing';
+    el.focus();
+    return document.activeElement === el ? 'ok' : 'no';
+  `) === 'ok', '先把光标放在快速添加框里（关掉抽屉之后要还回这儿）');
+
+  await clickEl(page, `document.querySelector('#content .tl-event, #content .task-row')`);
+  await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
+
+  const sem = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const mask = document.querySelector('.mask.show');
+    const a = document.activeElement;
+    return {
+      role: d.getAttribute('role'),
+      modal: d.getAttribute('aria-modal'),
+      name: d.getAttribute('aria-label'),
+      mask: mask ? mask.getAttribute('aria-hidden') : 'no-mask',
+      active: a === d ? 'panel' : (a === document.body ? 'BODY' : (a.className || a.tagName)),
+    };
+  `);
+  ok(sem.role === 'dialog' && sem.modal === 'true',
+    '抽屉是 [role=dialog][aria-modal=true]，实际 ' + JSON.stringify(sem.role + '/' + sem.modal));
+  ok(/任务详情/.test(String(sem.name)), '抽屉有名字（读屏念得出这片是干什么的），实际 ' + JSON.stringify(sem.name));
+  ok(sem.mask === 'true', '遮罩对读屏是隐藏的（它只是个鼠标目标），实际 ' + JSON.stringify(sem.mask));
+  ok(sem.active === 'panel',
+    '焦点落在面板本身，不是第一个输入框（落进输入框会当场弹软键盘），实际 ' + JSON.stringify(sem.active));
+
+  // Tab 圈住：从**最后一个**可聚焦元素按 Tab，应该绕回抽屉里的第一个。
+  // 从中间按 Tab 证不了什么 —— 前后都在抽屉里，圈不圈都一样。
+  const trap = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const items = [...d.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
+      .filter((el) => el.getClientRects().length);
+    if (items.length < 2) return { n: items.length };
+    items[items.length - 1].focus();
+    return { n: items.length, last: document.activeElement === items[items.length - 1] };
+  `);
+  ok(trap.n >= 2 && trap.last, '抽屉里能数出可聚焦元素，最后一个也拿得到焦点（' + trap.n + ' 个）');
+  await key(page, 'Tab', 'Tab', 9);
+  const afterTab = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const a = document.activeElement;
+    return { inside: !!d && d.contains(a), desc: a === document.body ? 'BODY（跑出去了）' : (a.className || a.tagName) };
+  `);
+  ok(afterTab.inside, '在抽屉最后一个控件上按 Tab 会绕回抽屉里，实际 焦点落在 ' + afterTab.desc);
+
+  // 降低动效：**先量一遍开着的值当基准** —— 不量基准的话「过渡是 0s」可能本来
+  // 就是（压根没写过渡），断言会假通过。
+  const motion = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const spin = document.createElement('div');
+    spin.className = 'animate-spin';
+    document.body.appendChild(spin);
+    const out = { drawer: getComputedStyle(d).transitionDuration, spin: getComputedStyle(spin).animationDuration };
+    spin.remove();
+    return out;
+  `);
+  await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  const reduced = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const spin = document.createElement('div');
+    spin.className = 'animate-spin';
+    document.body.appendChild(spin);
+    const out = { drawer: getComputedStyle(d).transitionDuration, spin: getComputedStyle(spin).animationDuration };
+    spin.remove();
+    return out;
+  `);
+  await page.send('Emulation.setEmulatedMedia', { features: [] });
+  // getComputedStyle 给的是**序列化后**的值：写 `0.01ms` 它回 `1e-05s`。
+  // 所以按秒解析再比大小，别去比字符串（第一版就是比字符串，报了个假失败）。
+  const secs = (v) => Math.max(...String(v).split(',').map((p) => {
+    const t = p.trim();
+    return parseFloat(t) * (t.endsWith('ms') ? 0.001 : 1);
+  }));
+  ok(secs(motion.drawer) > 0.1,
+    '没开降低动效时抽屉的过渡是真过渡（基准 ' + motion.drawer + '）');
+  ok(secs(reduced.drawer) < 0.01,
+    '开了 prefers-reduced-motion 之后过渡被关掉：' + motion.drawer + ' → ' + reduced.drawer);
+  ok(reduced.spin === '1s',
+    '加载圈是例外，照转不误（它不是动效，是在说「正在同步」）：' + motion.spin + ' → ' + reduced.spin);
+
+  // 关掉抽屉：焦点要还给刚才那个输入框
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '抽屉关掉', 8000);
+  const restored = await waitFor(page, `
+    (() => { const a = document.activeElement; return (a && a.matches(${JSON.stringify(RESTORE)})) ? 'ok' : null; })()
+  `, '焦点还给快速添加框', 8000);
+  ok(restored === 'ok', '关掉之后焦点回到原来那个元素，不是掉在 body 上');
+
+  // 侧栏当前项：视觉上靠 .active 那点底色，读屏只认 aria-current
+  const cur = await evalJs(page, `
+    const items = [...document.querySelectorAll('.nav-item')];
+    const marked = items.filter((e) => e.getAttribute('aria-current') === 'page');
+    const active = items.find((e) => e.className.includes('active'));
+    return {
+      n: items.length,
+      marked: marked.map((e) => e.dataset.nav),
+      activeNav: active ? active.dataset.nav : null,
+      stray: marked.filter((e) => !e.className.includes('active')).map((e) => e.dataset.nav),
+    };
+  `);
+  ok(cur.n > 3 && cur.marked.length === 1 && cur.stray.length === 0 && cur.marked[0] === cur.activeNav,
+    '侧栏只有当前那一项带 aria-current="page"（' + cur.n + ' 项，标的 '
+    + JSON.stringify(cur.marked) + '，当前页 ' + JSON.stringify(cur.activeNav) + '）');
+
+  // 「找日期」是个真的折叠开关：aria-expanded 得跟着开合走
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'calendar')`);
+  await waitFor(page, `document.querySelector('.jump-btn') ? 1 : null`, '切到日程页（找日期按钮在那儿）', 8000);
+  const jumpState = () => evalJs(page, `
+    const b = document.querySelector('.jump-btn');
+    return { exp: b.getAttribute('aria-expanded'), hd: b.getAttribute('aria-haspopup') };
+  `);
+  const j0 = await jumpState();
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'true' ? 1 : null`,
+    '找日期面板打开', 8000);
+  const j1 = await jumpState();
+  ok(j0.exp === 'false' && j1.exp === 'true',
+    '「找日期」的 aria-expanded 跟着开合：' + j0.exp + ' → ' + j1.exp);
+  ok(j0.hd === 'dialog', '「找日期」说了按下去会弹东西（aria-haspopup=dialog），实际 ' + JSON.stringify(j0.hd));
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'false' ? 1 : null`,
+    '找日期面板收起', 8000);
 
   page.close();
 } catch (e) {
