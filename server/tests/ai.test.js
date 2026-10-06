@@ -37,6 +37,23 @@ db.upsertMember(CAL, USER, 'owner');
 
 /** 造一条任务。走 applyOps，和真客户端同一条路 */
 let seq = 0;
+/**
+ * 造数据的时间戳：**从「一秒前」起算并严格递增**。
+ *
+ * 别写成 `Date.now() + seq`。seed 出来的是「早就在的数据」，时间戳就该在过去；
+ * 写成未来是**时序竞态**：确认那一步用的是 `confirm.js` 里从 `Date.now()` 起算的
+ * `nextTs()`，两者谁赢只取决于「seed 到确认之间隔了几毫秒」。`seq` 涨到 13 时
+ * AI 那边实测只赢 5ms，机器快一点就判负 —— 表现是 `failed: []`（LWW 判负的 op
+ * 也算 applied，见 sync.js:85）但字段没变，测试随机红。
+ *
+ * 严格递增是因为同毫秒的两条 op 比较键会完全相同，后一条白写。
+ */
+let seedTs = 0;
+function nextSeedTs() {
+  seedTs = Math.max(Date.now() - 1000, seedTs + 1);
+  return seedTs;
+}
+
 function seed(entityId, fields, calId = CAL) {
   seq += 1;
   const r = sync.applyOps(USER, [{
@@ -45,7 +62,7 @@ function seed(entityId, fields, calId = CAL) {
     calId,
     entity: 'task',
     entityId,
-    ts: Date.now() + seq,
+    ts: nextSeedTs(),
     // fields 传的是**原始值**，不是 JSON 串：applyOps 自己会 JSON.stringify。
     // 传 `'买菜'` 进来会被二次编码，读出来是带引号的字面量 `"买菜"` ——
     // 日期这么写的话字符串比较全错，任务会诡异地落进 overdue。
