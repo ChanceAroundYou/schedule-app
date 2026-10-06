@@ -755,7 +755,103 @@ try {
   await clickEl(page, `document.querySelector('.drawer.open .drawer-head .icon-btn')`);
   await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '抽屉关上了', 5000);
 
-  console.log('\n十二、离线：外壳能打开，顶栏会说话');
+  /* -------- AI：假模型 → 提案卡片 → 确认 → 服务器上真有 -------- */
+  // 这一节证的是写路径的**接线**：模型调工具 → 工具造提案 → SSE 推卡片 →
+  // 用户点确认 → 服务器落库。假模型按剧本吐 chunk，不联网、不烧额度。
+  //
+  // 假模型服务说 OpenAI chat-completions + SSE。pi-ai 用 OpenAI SDK 发请求，
+  // SDK 期望 `data: [DONE]` 结尾（见 openai/src/core/streaming.ts:133）。
+  console.log('\n十二、AI：假模型提一条改动 → 确认 → 服务器上真有');
+  const MODEL_PORT = 25711;
+  let modelCalls = 0;
+  const modelSrv = createServer((req, res) => {
+    if (req.method !== 'POST' || !req.url.includes('/chat/completions')) {
+      res.writeHead(404); res.end(); return;
+    }
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      modelCalls++;
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      const send = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
+
+      if (modelCalls === 1) {
+        // 第一轮：调 create_task。arguments 分片发，模拟真模型的流式
+        send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_ai_1', type: 'function', function: { name: 'create_task', arguments: '' } }] }, finish_reason: null }] });
+        send({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"title":"买菜","date":"2026-10-08","time":"14:00"}' } }] }, finish_reason: null }] });
+        send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] });
+      } else {
+        // 第二轮：文本收尾
+        send({ choices: [{ delta: { content: '好的，我给你建了一条任务。' }, finish_reason: null }] });
+        send({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+  });
+  await new Promise((r) => modelSrv.listen(MODEL_PORT, '127.0.0.1', r));
+  track({ kill: () => modelSrv.close() });
+
+  // 把 AI 设置指向假模型（token 从浏览器里读，Node 侧没有 localStorage）
+  const aiToken = await evalJs(page, `return localStorage.getItem('schedule-app-token');`);
+  const aiSet = await fetch(`http://127.0.0.1:${API_PORT}/api/ai/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiToken },
+    body: JSON.stringify({ baseUrl: `http://127.0.0.1:${MODEL_PORT}/v1`, model: 'fake-model' }),
+  });
+  ok(aiSet.status === 200, 'AI 设置已指向假模型');
+
+  // 切到 AI 页
+  await evalJs(page, `document.querySelector('[data-nav="ai"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('.ai-wrap')`, 'AI 面板渲染出来', 8000);
+
+  // 发一句话。`.ai-input` 是 <textarea>，setter 必须取 HTMLTextAreaElement
+  // 那个原型上的 —— 拿 HTMLInputElement 的来 call 会当场 `Illegal invocation`
+  await evalJs(page, `
+    const inp = document.querySelector('.ai-input');
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    set.call(inp, '帮我建一条买菜的任务');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  `);
+
+  // 等提案卡片出现
+  await waitFor(page, `!!document.querySelector('.ai-prop')`, '提案卡片出现', 15000);
+  const propText = await evalJs(page, `return document.querySelector('.ai-prop-text').innerText;`);
+  ok(propText.includes('买菜'), '卡片上写着「买菜」，实际 ' + JSON.stringify(propText));
+  ok(propText.includes('新建'), '措辞是「新建」而不是「已建好」，实际 ' + JSON.stringify(propText));
+
+  // 确认之前服务器上不能有这条任务。
+  // `snapshot.tasks` 是**按 id 索引的对象**（见 server/lib/sync.js 的 snapshot），
+  // 不是数组 —— 写 `.some(...)` 会当场 TypeError
+  const syncNow = () => fetch(`http://127.0.0.1:${API_PORT}/api/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiToken },
+    body: JSON.stringify({ cursor: 0 }),
+  }).then((r) => r.json());
+
+  const before = await syncNow();
+  const findBuy = (s) => Object.values(s.snapshot?.tasks || {}).find((t) => t.title === '买菜');
+  ok(!findBuy(before), '确认之前服务器上没有「买菜」');
+
+  // 点确认
+  await clickEl(page, `document.querySelector('.ai-prop button')`);
+  await waitFor(page, `document.querySelector('.ai-prop') ? null : 1`, '确认后卡片消失', 8000);
+
+  const made = findBuy(await syncNow());
+  ok(!!made, '确认之后服务器上真有「买菜」这条任务');
+  // `_dev` 是这一节真正要证的东西：这条不是别的路径写进去的，是 AI 那条路写的
+  // （deviceId 固定 'ai'，见 server/lib/ai/confirm.js 的文件头）
+  ok(made && made._dev?.title === 'ai', '它的写入设备是 ai（不是碰巧被别的路径建的）'
+    + (made ? '，实际 ' + JSON.stringify(made._dev) : ''));
+  ok(made && made.date === '2026-10-08' && made.time === '14:00',
+    '日期和时间跟卡片上写的一致' + (made ? '，实际 ' + JSON.stringify([made.date, made.time]) : ''));
+
+  collect();
+  ok(errors.length === 0, 'AI 这一段没有 console 报错' + (errors.length ? '：\n      ' + fmt(errors) : ''));
+
+  console.log('\n十三、离线：外壳能打开，顶栏会说话');
   // Service Worker 在第一趟就接管了（见「零」）。这里只确认它没在这几轮
   // 刷新 / 邀请流程里掉线 —— 掉了的话下面那几条会以另一种方式失败
   ok(await evalJs(page, `return !!navigator.serviceWorker.controller;`),
@@ -801,7 +897,7 @@ try {
   // 放在最后、且刻意在「关掉静态服务」之后：这一节全是纯 DOM 查询，
   // 不需要网络，而断网那一节已经把服务器关了 —— 插在它前面会被它的
   // closeAllConnections 打乱状态，插在后面则完全不动已有状态。
-  console.log('\n十三、无障碍：勾选圈都是真按钮，每个输入框都有名字');
+  console.log('\n十四、无障碍：勾选圈都是真按钮，每个输入框都有名字');
   //
   // 这一节守的是一条不变量，不是某个具体页面。勾选圈原先在**六个地方各写了
   // 一遍**，于是各自长歪了：月 / 周视图那个是 <span>（Tab 进不去、没有按钮
