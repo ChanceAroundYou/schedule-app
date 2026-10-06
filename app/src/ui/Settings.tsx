@@ -12,9 +12,9 @@
  * 配色一律走 legacy.css 的 CSS 变量（新表面没有 legacy 规则，Tailwind 生效；
  * 写死颜色会让深色模式在这里失效）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
-  Check, Database, GripVertical, Info, Layers, LogOut, MailPlus, Palette, PanelTop,
+  Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
   Pencil, Upload, Download, Trash2, UserRound,
 } from 'lucide-react';
 import type { AccentKey, LocalState, PublicUser, StyleKey, ThemeMode } from '../domain/types.ts';
@@ -23,7 +23,8 @@ import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, useConfirm, toast } from './kit.tsx';
+import { Btn, Sheet, useConfirm, toast } from './kit.tsx';
+import { api } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useOnline } from './hooks.ts';
 import { cx } from './cx.ts';
@@ -259,6 +260,80 @@ function NavCard({ state }: { state: LocalState }) {
   );
 }
 
+/* ============================ 修改密码 ============================ */
+
+/**
+ * 改口令的浮层。
+ *
+ * **「确认」那一栏必须有。** 没有它的话，手一抖把密码改成一个想不起来的，
+ * 这个应用**没有找回口令的路子**（没有邮箱、没有手机、没有管理员）——
+ * 那一下就是账号彻底没了。宁可多一个框。
+ */
+function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
+  const fid = useId();
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    setErr(null);
+    if (next !== again) { setErr('两次输入的新密码不一样'); return; }
+    if (next === cur) { setErr('新密码和当前密码相同'); return; }
+    setBusy(true);
+    try {
+      await api.changePassword(cur, next);
+      toast('密码已修改，其他设备已经退出登录');
+      onClose();
+    } catch (e) {
+      // 后端会说人话（「密码至少 6 位」「当前密码不对」），原样转述，
+      // 不要在这里另写一套规则 —— 两套规则一定会漂，漂了以后用户看到的
+      // 提示和实际挡下的理由对不上
+      setErr(e instanceof Error ? e.message : '修改失败，请重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open onClose={onClose} title="修改密码">
+      <div className="flex flex-col gap-3">
+        <div className="field">
+          <label htmlFor={fid + '-c'}>当前密码</label>
+          <input id={fid + '-c'} type="password" autoComplete="current-password" value={cur}
+            onChange={(e) => setCur(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor={fid + '-n'}>新密码</label>
+          <input id={fid + '-n'} type="password" autoComplete="new-password" value={next}
+            onChange={(e) => setNext(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor={fid + '-a'}>再输一遍</label>
+          <input id={fid + '-a'} type="password" autoComplete="new-password" value={again}
+            onChange={(e) => setAgain(e.target.value)} />
+        </div>
+
+        {err && (
+          <div role="alert" className="text-[12px] text-[var(--danger)]">{err}</div>
+        )}
+
+        <div className="drawer-foot">
+          <Btn variant="ghost" onClick={onClose}>取消</Btn>
+          <Btn
+            variant="primary"
+            disabled={busy || !cur || !next || !again}
+            onClick={() => void submit()}
+          >
+            修改
+          </Btn>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 /* ================================ 页面 ================================ */
 
 export function SettingsView({ state, user, theme, onExport, onImport, onLogout, onManageCal, onInvites }: {
@@ -277,6 +352,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   const online = useOnline();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const cal = state.cals.find((c) => c.id === ui.cal) || null;
   const pending = state.invites.length;
@@ -392,6 +468,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
       <Card icon={<UserRound size={14} />} title="账户">
         <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
+          <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
+            <KeyRound size={13} /> 修改密码
+          </Btn>
           <Btn variant="ghost" size="sm" onClick={onLogout}>
             <LogOut size={13} /> 退出登录
           </Btn>
@@ -419,6 +498,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
         </div>
       </Card>
 
+      {pwOpen && <ChangePasswordSheet onClose={() => setPwOpen(false)} />}
     </div>
   );
 }
