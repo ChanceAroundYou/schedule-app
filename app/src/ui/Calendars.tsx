@@ -99,7 +99,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         >
           <span className="min-w-0 flex-1 truncate">{c.name}</span>
           {c.role !== 'owner' && (
-            <span className="shrink-0 rounded bg-[var(--chip,rgba(0,0,0,.05))] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+            <span className="shrink-0 rounded bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
               {ROLE_LABEL[c.role]}
             </span>
           )}
@@ -111,8 +111,8 @@ export function CalSwitcher({ state, onManage, onInvites }: {
           type="button"
           onClick={onInvites}
           data-cal-invites="1"
-          className="mx-1 mt-1 flex items-center gap-2 rounded-lg bg-[var(--accent-soft,rgba(79,124,255,.12))]
-                     px-2.5 py-1.5 text-left text-[12.5px] text-[var(--accent,#4f7cff)]"
+          className="mx-1 mt-1 flex items-center gap-2 rounded-lg bg-[var(--primary-soft)]
+                     px-2.5 py-1.5 text-left text-[12.5px] text-[var(--primary)]"
         >
           <MailPlus size={13} className="shrink-0" />
           <span className="flex-1">{state.invites.length} 个邀请等你处理</span>
@@ -231,9 +231,9 @@ export function ManageSheet({ state, open, onClose }: {
             data-cal-name="1"
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-            className="min-w-0 flex-1 rounded-lg border border-[var(--line,rgba(0,0,0,.12))]
+            className="min-w-0 flex-1 rounded-lg border border-[var(--border-2)]
                        bg-transparent px-3 py-1.5 text-sm outline-none
-                       focus:border-[var(--accent,#4f7cff)] disabled:opacity-60"
+                       focus:border-[var(--primary)] disabled:opacity-60"
           />
           {manage && (
             <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
@@ -250,9 +250,9 @@ export function ManageSheet({ state, open, onClose }: {
         </div>
         <div className="flex flex-col gap-1.5">
           {members.map((m) => (
-            <div key={m.id} className="flex items-center gap-2 rounded-lg bg-[var(--chip,rgba(0,0,0,.04))] px-2.5 py-1.5">
+            <div key={m.id} className="flex items-center gap-2 rounded-lg bg-[var(--panel-3)] px-2.5 py-1.5">
               <span className="shrink-0">
-                {m.role === 'owner' ? <Crown size={14} className="text-[var(--accent,#4f7cff)]" />
+                {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
                   : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
                     : <Pencil size={14} className="text-[var(--text-3)]" />}
               </span>
@@ -266,7 +266,7 @@ export function ManageSheet({ state, open, onClose }: {
                       await api.setRole(calId, m.id, e.target.value as Role);
                       toast('权限已更新');
                     })}
-                    className="rounded-md border border-[var(--line,rgba(0,0,0,.12))] bg-transparent
+                    className="rounded-md border border-[var(--border-2)] bg-transparent
                                px-1.5 py-1 text-[12px] outline-none"
                   >
                     {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -312,13 +312,13 @@ export function ManageSheet({ state, open, onClose }: {
               spellCheck={false}
               onChange={(e) => setInviteName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-              className="min-w-0 flex-1 rounded-lg border border-[var(--line,rgba(0,0,0,.12))]
-                         bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border-2)]
+                         bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
             />
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-lg border border-[var(--line,rgba(0,0,0,.12))] bg-transparent px-2 text-[13px] outline-none"
+              className="rounded-lg border border-[var(--border-2)] bg-transparent px-2 text-[13px] outline-none"
             >
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
@@ -332,7 +332,7 @@ export function ManageSheet({ state, open, onClose }: {
             <div className="mt-3 flex flex-col gap-1.5">
               {sent.map((i) => (
                 <div key={i.id} className="flex items-center gap-2 rounded-lg border border-dashed
-                                           border-[var(--line,rgba(0,0,0,.14))] px-2.5 py-1.5">
+                                           border-[var(--border-2)] px-2.5 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
                     {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
                   </span>
@@ -356,7 +356,7 @@ export function ManageSheet({ state, open, onClose }: {
       )}
 
       {/* 危险区 */}
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--line,rgba(0,0,0,.08))] pt-3">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
         {manage ? (
           <button
             type="button"
@@ -432,7 +432,7 @@ export function InviteSheet({ state, open, onClose }: {
       )}
       <div className="flex flex-col gap-2">
         {state.invites.map((i) => (
-          <div key={i.id} className="rounded-xl border border-[var(--line,rgba(0,0,0,.1))] p-3">
+          <div key={i.id} className="rounded-xl border border-[var(--border-2)] p-3">
             <div className="text-[13.5px]">
               <b>{i.fromName || '有人'}</b> 邀请你加入「{i.calName}」
             </div>

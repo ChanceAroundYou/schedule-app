@@ -24,11 +24,19 @@ import { useOutsideClose } from './hooks.ts';
 
 type Variant = 'primary' | 'ghost' | 'danger' | 'chip';
 
+/* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
+   兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
+   --accent / --card / --line / --chip / --hover / --accent-soft 那一批，
+   而 --accent / --accent-soft / --card / --chip / --hover / --line
+   在 legacy.css 里**一个都没有** —— 于是两套主题下全是写死的颜色，
+   主按钮那个 #4f7cff 压白字只有 3.70:1，暗色也没跟着 --primary 走。
+   没有兜底值时写错名字会当场看得见（声明失效→继承），不会悄悄糊过去。
+   tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-[var(--accent,#4f7cff)] text-white hover:brightness-95 active:brightness-90',
-  ghost: 'bg-transparent text-[var(--text-2,#5b6070)] hover:bg-[var(--hover,rgba(0,0,0,.05))]',
-  danger: 'bg-[var(--danger,#e5484d)] text-white hover:brightness-95',
-  chip: 'bg-[var(--chip,rgba(0,0,0,.05))] text-[var(--text,#1c1f26)] hover:brightness-95',
+  primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
+  ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
+  danger: 'bg-[var(--danger)] text-[var(--on-primary)] hover:brightness-95',
+  chip: 'bg-[var(--panel-3)] text-[var(--text)] hover:brightness-95',
 };
 
 interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -91,7 +99,7 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
         role="dialog"
         aria-modal="true"
         className={cx(
-          'relative z-10 w-full max-w-md bg-[var(--card,#fff)] text-[var(--text,#1c1f26)]',
+          'relative z-10 w-full max-w-md bg-[var(--panel)] text-[var(--text)]',
           'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[86dvh] flex flex-col',
         )}
       >
@@ -228,7 +236,9 @@ export function ToastHost() {
           {t.action && (
             <button
               type="button"
-              className="rounded-md px-2 py-0.5 font-medium text-[var(--accent,#8fb0ff)] hover:bg-white/10"
+              /* 写死不跟 --primary：toast 的底是 rgba(24,26,32,.94)，两套主题都深，
+                 所以动作文字必须**恒浅**。跟 --primary 的话亮色那个 #395ef6 压上去只有 3.69。 */
+              className="rounded-md px-2 py-0.5 font-medium text-[#8fb0ff] hover:bg-white/10"
               onClick={() => { t.action!.run(); setList((p) => p.filter((x) => x.id !== t.id)); }}
             >
               {t.action.label}
@@ -257,7 +267,7 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
       {...rest}
       className={cx(
         'inline-flex h-8 w-8 items-center justify-center rounded-full transition',
-        'text-[var(--text-2,#5b6070)] hover:bg-[var(--hover,rgba(0,0,0,.05))]',
+        'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
         'disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}

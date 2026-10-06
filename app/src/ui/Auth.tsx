@@ -54,35 +54,35 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg,#f5f6f8)] p-6">
+    <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg)] p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl bg-[var(--card,#fff)] p-7 shadow-lg
-                   text-[var(--text,#1c1f26)]"
+        className="w-full max-w-sm rounded-2xl bg-[var(--panel)] p-7 shadow-lg
+                   text-[var(--text)]"
       >
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl
-                          bg-[var(--accent,#4f7cff)] text-white">
+                          bg-[var(--primary)] text-[var(--on-primary)]">
             <CalendarCheck size={24} />
           </div>
           <div className="text-lg font-semibold">日程清单</div>
-          <div className="text-[13px] text-[var(--text-2,#5b6070)]">
+          <div className="text-[13px] text-[var(--text-2)]">
             {register ? '注册后自动建一个「我的日程」' : '登录以同步你的日程'}
           </div>
         </div>
 
         {register && (
-          <div className="mb-4 rounded-xl bg-[var(--chip,rgba(0,0,0,.05))] p-3
-                          text-[12.5px] leading-relaxed text-[var(--text-2,#5b6070)]">
+          <div className="mb-4 rounded-xl bg-[var(--panel-3)] p-3
+                          text-[12.5px] leading-relaxed text-[var(--text-2)]">
             家里人各自注册一个账户，然后互相邀请进同一个日程集就能一起用了。
           </div>
         )}
 
-        <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">用户名</label>
+        <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
         <input
           id={fid + '-name'}
-          className="mb-3 w-full rounded-lg border border-[var(--line,rgba(0,0,0,.12))] bg-transparent
-                     px-3 py-2 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"
+          className="mb-3 w-full rounded-lg border border-[var(--border-2)] bg-transparent
+                     px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoComplete="username"
@@ -90,19 +90,19 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           spellCheck={false}
         />
 
-        <label htmlFor={fid + '-pwd'} className="mb-1 block text-[12.5px] text-[var(--text-2,#5b6070)]">密码</label>
+        <label htmlFor={fid + '-pwd'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">密码</label>
         <input
           id={fid + '-pwd'}
           type="password"
-          className="w-full rounded-lg border border-[var(--line,rgba(0,0,0,.12))] bg-transparent
-                     px-3 py-2 text-sm outline-none focus:border-[var(--accent,#4f7cff)]"
+          className="w-full rounded-lg border border-[var(--border-2)] bg-transparent
+                     px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={register ? 'new-password' : 'current-password'}
         />
-        {register && <div className="mt-1 text-[11.5px] text-[var(--text-3,#8b90a0)]">至少 6 位</div>}
+        {register && <div className="mt-1 text-[11.5px] text-[var(--text-3)]">至少 6 位</div>}
 
-        {err && <div className="mt-3 text-[12.5px] text-[var(--danger,#e5484d)]">{err}</div>}
+        {err && <div className="mt-3 text-[12.5px] text-[var(--danger)]">{err}</div>}
 
         <Btn variant="primary" type="submit" disabled={busy} className="mt-5 w-full">
           {busy ? <Loader2 size={15} className="animate-spin" />
@@ -110,12 +110,12 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           {busy ? '请稍候…' : register ? '注册并进入' : '登录'}
         </Btn>
 
-        <div className="mt-4 text-center text-[12.5px] text-[var(--text-2,#5b6070)]">
+        <div className="mt-4 text-center text-[12.5px] text-[var(--text-2)]">
           {register ? '已经有账户了？' : '还没有账户？'}
           <button
             type="button"
             onClick={() => swap(register ? 'login' : 'register')}
-            className="ml-1 font-medium text-[var(--accent,#4f7cff)] hover:underline"
+            className="ml-1 font-medium text-[var(--primary)] hover:underline"
           >
             {register ? '去登录' : '注册一个'}
           </button>

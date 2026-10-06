@@ -487,8 +487,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
               时用户完全不知道为什么内容不变 */}
           {!!state.lastError && (
-            <div className="mx-4 mb-2 rounded-lg bg-[var(--danger-soft,rgba(229,72,77,.1))]
-                            px-3 py-1.5 text-[12.5px] text-[var(--danger,#e5484d)]">
+            <div className="mx-4 mb-2 rounded-lg bg-[var(--danger-soft)]
+                            px-3 py-1.5 text-[12.5px] text-[var(--danger)]">
               {state.lastError}
             </div>
           )}

@@ -18,11 +18,24 @@
    解析预览），亮色那一套原先整体只有 2.66–4.39。**暗色那一套本来就是达标的**
    （5.56–7.96），所以只改了亮色。
 
-   语义色比灰阶多一层约束：--primary / --danger **既当文字色、也当按钮底色配白字**
+   语义色比灰阶多一层约束：--primary / --danger **既当文字色、也当按钮底色配字**
    （.check-btn.on / .chip.active / .nav-item .count.warn …），所以要同时满足
-   「对自己的 soft 底」和「#fff 对自己」两种方向 —— 只往一个方向调会让另一种更糟。
+   「对自己的 soft 底」和「--on-primary 对自己」两种方向 —— 只往一个方向调会让另一种更糟。
    取值仍然按「保持色相、找最浅的达标值」来，改动尽量小。
    --warn 是唯一视觉上明显变了的（橙→褐），因为 2.66 实在太低，绕不开。
+
+   --on-primary 是**压在语义色上的文字色**，亮色白、暗色近黑。
+
+   为什么暗色必须反过来：暗色的 --primary (#6d8bff) 是个**亮蓝**，白字压上去只有
+   3.09；--danger (#f0656a) 同理 3.10。这不是没调好 —— 枚举过整个色相不变的范围，
+   让 --primary 既要在 #181b22 上读得清（要够亮，≥4.5）又扛得住 #fff 压上来
+   （要够暗，≥4.5），**满足两个条件的取值有 0 个**。单色无解，只能多一个变量。
+   暗色改用近黑字之后是 6.1:1，亮色本来就够深，白字 5.11 —— 两套都过。
+   19 处 color:#fff 押在 --primary / --danger 上的，一律走 var(--on-primary)。
+
+   两处**故意留 #fff**：.brand-logo 是 32×32 的图标字，WCAG 1.4.3 明文豁免
+   logotype（而且它的渐变第二站是 #7b53d8，换深色字反而掉到 3.66）；
+   .toast 的底是写死的深色（两套主题都深），换深色字会看不见。
 
    还有 13 处 rgba(74,108,247,…) / rgba(223,74,79,…) 是旧 primary / danger 的
    **硬编码副本**（全是阴影，α 只有 .22–.35）。新旧色差在那种透明度下看不出来，
@@ -41,6 +54,7 @@
   --primary: #395ef6;
   --primary-soft: #edf1ff;
   --primary-pale: #f6f8ff;
+  --on-primary: #ffffff;
   --danger: #d5262c;
   --danger-soft: #fdeeef;
   --warn: #a16217;
@@ -75,6 +89,7 @@
   --primary: #6d8bff;
   --primary-soft: #202739;
   --primary-pale: #1a2030;
+  --on-primary: #101216;
   --danger: #f0656a;
   --danger-soft: #332024;
   --warn: #e8a24a;
@@ -137,6 +152,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 .brand-logo {
   width: 32px; height: 32px; border-radius: 9px;
   background: linear-gradient(140deg, var(--primary), #7b53d8);
+  /* 故意不用 --on-primary：① 是图标字，WCAG 1.4.3 豁免 logotype；
+     ② 渐变的第二站 #7b53d8 偏深，暗色改近黑字反而掉到 3.66。 */
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 600;
@@ -147,7 +164,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .quick-add {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 10px; margin-bottom: 16px;
-  background: var(--primary); color: #fff;
+  background: var(--primary); color: var(--on-primary);
   border: none; border-radius: 10px;
   font-size: 13px; font-weight: 500; letter-spacing: .3px;
   box-shadow: 0 2px 10px rgba(74, 108, 247, .28);
@@ -185,10 +202,10 @@ b, strong { font-variant-numeric: tabular-nums; }
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; text-align: center; line-height: 19px; font-variant-numeric: tabular-nums;
 }
-.nav-item.active .count { background: var(--primary); color: #fff; }
+.nav-item.active .count { background: var(--primary); color: var(--on-primary); }
 /* 逾期徽标用红色，一眼看出有几件拖着 */
 .nav-item .count.warn { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-.nav-item.active .count.warn { background: var(--danger); color: #fff; }
+.nav-item.active .count.warn { background: var(--danger); color: var(--on-primary); }
 .nav-bottom { margin-top: auto; }
 
 /* 今日进度 */
@@ -276,7 +293,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-row input:focus { outline: none; border-color: var(--primary); background: var(--panel); }
 .jp-go {
   padding: 0 11px; border: none; border-radius: 8px;
-  background: var(--primary); color: #fff; font-size: 12.5px;
+  background: var(--primary); color: var(--on-primary); font-size: 12.5px;
 }
 .jp-go:hover { filter: brightness(1.08); }
 
@@ -308,7 +325,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .jp-cell.has.lv2::after { width: 14px; }
 .jp-cell.has.lv3::after { width: 19px; }
-.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: #fff; }
+.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: var(--on-primary); }
 .jp-cell.has.cur { border-color: var(--primary); }
 .jp-cell.cur::after { background: #fff; }
 
@@ -332,7 +349,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   transition: background .14s, color .14s;
 }
 .view-switch button:hover { background: var(--panel-3); }
-.view-switch button.active { background: var(--primary); color: #fff; }
+.view-switch button.active { background: var(--primary); color: var(--on-primary); }
 
 /* ================= 内容区 ================= */
 
@@ -422,7 +439,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px rgba(74, 108, 247, .3); }
 .tl-resize-tip {
   position: fixed; z-index: 80; pointer-events: none;
-  background: var(--primary); color: #fff; font-size: 11px; font-weight: 600;
+  background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
   padding: 2px 7px; border-radius: 7px; font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md); transform: translateY(3px);
 }
@@ -464,7 +481,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
 }
 .week-head-cell.today .wh-day {
-  background: var(--primary); color: #fff; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary); border-radius: 50%;
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 8px rgba(74, 108, 247, .3);
 }
@@ -577,8 +594,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .cell-date:hover { background: var(--primary-soft); color: var(--primary); }
 .cell-date.busy { font-weight: 700; }
-.month-cell.today .cell-date { background: var(--primary); color: #fff; }
-.cell-today { font-size: 10px; background: var(--primary); color: #fff; border-radius: 5px; padding: 0 5px; }
+.month-cell.today .cell-date { background: var(--primary); color: var(--on-primary); }
+.cell-today { font-size: 10px; background: var(--primary); color: var(--on-primary); border-radius: 5px; padding: 0 5px; }
 .cell-load { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .month-cell.lv3 .cell-load { color: var(--danger); }
 .cell-tasks { display: flex; flex-direction: column; gap: 3px; }
@@ -789,7 +806,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
 }
-.od-btn:hover { background: var(--primary); color: #fff; }
+.od-btn:hover { background: var(--primary); color: var(--on-primary); }
 .od-btn.ghost { background: transparent; border: 1px solid var(--border-2); }
 .od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
 
@@ -839,7 +856,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   transition: border-color .14s, color .14s, background .14s;
 }
 .chip:hover { border-color: var(--primary); color: var(--primary); }
-.chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .chip.tiny { padding: 2px 8px; font-size: 11px; }
 .chip.danger { color: var(--danger); border-color: var(--danger); }
 
@@ -921,7 +938,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .tl-guide span {
   position: absolute; left: 6px; top: -9px;
   padding: 1px 6px; border-radius: 6px;
-  background: var(--primary); color: #fff;
+  background: var(--primary); color: var(--on-primary);
   font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md);
 }
@@ -1001,7 +1018,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-ap:hover { background: var(--panel-3); }
-.cp-ap.on { background: var(--primary); color: #fff; font-weight: 600; }
+.cp-ap.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 
 .cp-face {
   position: relative; width: 246px; height: 246px; margin: 0 auto;
@@ -1020,7 +1037,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-num:hover { background: var(--primary-soft); color: var(--primary); }
-.cp-num.on { background: var(--primary); color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(74, 108, 247, .35); }
+.cp-num.on { background: var(--primary); color: var(--on-primary); font-weight: 600; box-shadow: 0 2px 8px rgba(74, 108, 247, .35); }
 .cp-tip { text-align: center; font-size: 11px; color: var(--text-3); padding: 9px 0 3px; }
 .cp-foot { display: flex; align-items: center; gap: 6px; }
 .cp-foot .grow { flex: 1; }
@@ -1100,7 +1117,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
 .primary-btn {
   padding: 9px 20px; border: none; border-radius: 9px;
-  background: var(--primary); color: #fff; font-size: 13px; font-weight: 500;
+  background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 500;
   box-shadow: 0 2px 8px rgba(74, 108, 247, .26);
   transition: filter .14s, transform .12s;
 }
@@ -1117,6 +1134,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .toast {
   position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(12px);
   display: flex; align-items: center; gap: 16px;
+  /* 底是写死的深色（两套主题都深），所以这里恒用白字，不跟 --on-primary。 */
   background: #1b1f28; color: #fff; padding: 11px 18px; border-radius: 11px;
   font-size: 13px; box-shadow: var(--shadow-lg);
   opacity: 0; pointer-events: none; transition: all .22s cubic-bezier(.3, .8, .3, 1); z-index: 80;
@@ -1154,7 +1172,7 @@ input, select, textarea { font-size: max(14px, 16px); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
   .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
   .sidebar-footer .ghost-btn:hover, .today-btn.away:hover { background: none; color: inherit; }
-  .quick-add:hover { background: var(--primary); color: #fff; }
+  .quick-add:hover { background: var(--primary); color: var(--on-primary); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
@@ -1198,8 +1216,8 @@ input, select, textarea { font-size: max(14px, 16px); }
   font-variant-numeric: tabular-nums;
 }
 .tab .tb:empty { display: none; }
-.tab.active .tb { background: var(--primary); color: #fff; }
-.tab .tb.warn { background: var(--danger); color: #fff; font-weight: 600; }
+.tab.active .tb { background: var(--primary); color: var(--on-primary); }
+.tab .tb.warn { background: var(--danger); color: var(--on-primary); font-weight: 600; }
 
 /* ---- 「更多」抽屉 ---- */
 /* z-index 要高于底部标签栏（45），否则抽屉会被标签栏压住一截 */
