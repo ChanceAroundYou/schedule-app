@@ -35,6 +35,8 @@
 │   │   │   ├── layout.ts   HOUR_H 等时间轴常量 + layoutOverlap
 │   │   │   ├── model.ts    counts / liveTasks / dayLoad / 各种选择器
 │   │   │   ├── merge.ts    逐字段 LWW 客户端侧合并 + findConflicts（冲突判定）
+│   │   │   ├── ai.ts       AI：SSE 行解析 + 工具调用→人话 + 提案→人话（纯逻辑，见二、AI）
+│   │   │   ├── ai.test.ts
 │   │   │   └── domain.test.ts
 │   │   ├── data/
 │   │   │   ├── store.ts    localStorage 持久化 + 增删改查 + ui.* （K = schedule-app-v4）
@@ -49,6 +51,9 @@
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
 │   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
+│   │   │   ├── AiPanel.tsx  AI 对话面板：气泡 + 动作条 + **提案卡片**（点确认才落库）
+│   │   │   ├── AiSettings.tsx  Base URL / 模型 / key 的设置浮层
+│   │   │   ├── aiClient.ts  fetch + ReadableStream 读 SSE（带 Authorization）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
@@ -67,22 +72,35 @@
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
 │       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
 │
-├── server/                 后端（Node 22，**零 npm 依赖**）
+├── server/                 后端（Node 22，**只引 AI 那一组依赖**，见六、1）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
 │   ├── lib/db.js           node:sqlite：建表 / field_state / changes / users / cals
 │   ├── lib/auth.js         scrypt 哈希 + 自签 JWT + 用户名口令校验
 │   ├── lib/sync.js         逐字段 LWW + 快照 + 全量游标增量 + 按集鉴权
 │   ├── lib/calendars.js    日程集：建 / 改名 / 删 / 退出 + 成员与角色
 │   ├── lib/invites.js      邀请：发出 → 待接受 → 接受 / 谢绝 / 撤回
-│   ├── lib/ratelimit.js    定点窗口限速（登录 / 注册 / 邀请）
+│   ├── lib/ratelimit.js    定点窗口限速（登录 / 注册 / 邀请 / AI）
+│   ├── lib/ai/             **AI 唯一能碰 pi 的地方**（见二、AI；依赖见六、1）
+│   │   ├── index.js        惰性 import 的入口：依赖没装好也起得来
+│   │   ├── chat.mjs        装配 pi 的 Agent + 事件→SSE 映射（pi 只在这儿）
+│   │   ├── tools.mjs       工具定义：只读直接跑，写入**只造提案**
+│   │   ├── confirm.js      提案落库点（CJS，不碰 pi）：重查权限 → applyOps
+│   │   ├── prompt.mjs      系统提示词（今天是哪天 + 先提案后确认）
+│   │   ├── settings.js     每人一行的模型配置，key 只进不出
+│   │   ├── sessions.js     会话与消息的读写
+│   │   ├── sse.mjs         SSE 写出
+│   │   └── dates.mjs       服务器侧的几个日期小工具
 │   └── tests/
-│       ├── api.test.js        31 条接口用例
+│       ├── api.test.js        37 条接口用例
+│       ├── migration.test.js  schema 迁移（**唯一会吃掉用户数据的代码**）
+│       ├── ai.test.js         18 条 AI 层用例（假模型，不联网）
 │       └── smoke-share.mjs    真走网络：两个人共用一个集的全流程
 │
 ├── dist/                   构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                 nginx conf + systemd 单元的本地副本
 ├── legacy/                 旧版纯静态应用，**冻结**（回滚用，见 DEPLOY.md 七）
 ├── docs/                   接口.md · 重构路线.md
+├── package.json            只声明 AI 那一组依赖（见六、1），**没有 build 脚本**
 └── README.md  CLAUDE.md  DEPLOY.md
 ```
 
@@ -267,6 +285,65 @@ interface Task {
 - 抽屉里那条提示显示的是**输的那一方**的值 —— 赢的那版就在上面几个输入框里。
   配色走 `--warn`，**不做成报错红**：数据是好的，只是有一边的改动不在了。
 
+### AI：它是「另一台设备」，不是一条新通道（2026-10-06 加的）
+
+应用内一个对话面板，模型自己去查排期再回答，并且**能提出改动** —— 但改动要用户
+点确认才落库。
+
+**核心判断：AI 读走 `sync.snapshot(userId)`，写走 `sync.applyOps(userId, ops)`，
+`deviceId` 固定 `'ai'`。** 三个复用，每个都对应上面一条明文约束：
+
+| 复用 | 为什么不能另起一套 |
+|---|---|
+| 读 `sync.snapshot()` | 它已经按 `calendarIdsFor(userId)` 过滤、已经剔掉墓碑。自己写 SQL 读 `field_state`，权限过滤迟早漏一处 |
+| 写 `sync.applyOps()` | `calendars.canWrite(db.roleOf(...))` 在**这个函数里**，是全项目唯一的服务端权限把关点。AI 绕过去 = 只读成员能被 AI 写穿 |
+| 落到界面 `engine.syncNow()` | AI 的 op 会写进 `changes` 并带一个新 `seq`，客户端本来就会拉到，不用给 AI 单做推送通道 |
+
+于是 AI 会**自然地**出现在两处已有机制里，而且都是对的：客户端拉到的改动
+`_dev` 里是 `'ai'`；用户同一轮手改了同一字段时，`findConflicts` 会把 AI 当
+「另一台设备」报冲突 —— **这是诚实的，不要特判掉**（确实有另一个写入者）。
+
+**写路径：工具、提案、确认，三段。** 这是这个功能里最要紧的一条：
+
+1. **写工具（`create_task` 等五个）的 `execute` 正常返回，但只造提案、不落库。**
+   `tools.mjs` 里存进 `Map<toolCallId, proposal>`，返回一个成功结果。
+   > **不用 pi 的 `beforeToolCall` 拦。** 计划里原本写的是那个闸门，实现时改了：
+   > `block` 会产生一个**错误工具结果**，模型会以为工具坏了、换个说法反复重试。
+   > 真正的强制是**结构性**的 —— 写工具根本没有写的能力。
+2. 提案按 **`toolCallId`** 关联到 assistant 消息（**不按执行顺序**：pi 默认并行
+   执行同一轮的工具，`tool_execution_end` 回来的顺序和消息里 toolCall 块的顺序
+   可以不一样），存进 `ai_messages.proposals`，所以刷新后卡片还在。
+3. `POST /api/ai/confirm` 是**唯一真正落库的地方**（`lib/ai/confirm.js`）。
+   它**只信 id 不信参数**：按 id 从库里读回提案，**重查一遍权限**
+   （生成到确认之间用户可能被降级 / 被移出），再走 `sync.applyOps`。
+   信客户端回传的 args 等于把权限判断交给浏览器。
+
+**提案里存的是 `fields`（最终要落进 op 的字段），不是「意图」。** 所以确认那一步
+完全不认识 `kind`、不需要知道任何工具语义。界面同理：`proposalText(p)` 读 `fields`
+就能把「打算改什么」说清楚。
+
+**几个具体约定**：
+
+- 确认时的时间戳走 `confirm.js` 的 `nextTs()`（`max(Date.now(), lastTs+1)`）——
+  同一毫秒的两条 op 比较键完全相同，后一条会白写。起点仍是 `Date.now()`，
+  因为 `validateOp` 会拒掉与服务器时间差 24h 以上的 op。
+- 重复任务**拒绝**标完成（`tools.mjs` 里 `fail`）：推进逻辑在客户端的
+  `repeatAdvance()` 里，服务端不复制一份。
+- 软删除带 `trashFrom: 'AI'`，垃圾箱那行看得出是 AI 干的。
+- `lib/ai/confirm.js` 是**CJS、直接 require**，不走 `ai/index.js` 那条惰性 import：
+  确认是纯数据库操作，一条都不碰 pi。依赖没装好时，用户最需要的恰恰是把已经
+  排好的改动确认掉。
+- 界面上的动作条文案（「正在查 10月7日的安排」）**写死在 `domain/ai.ts` 里**，
+  不让模型自己说 —— 那是给用户看的确定性提示，而模型在同一轮里还没开始说话。
+
+**密钥**：Base URL / 模型 / API key 由用户在设置浮层里填，存服务器
+`ai_settings`，**只回 `hasKey: true/false`，绝不回显**。`PUT` 时 `apiKey`
+字段省略 = 保留原值、传空串 = 清空 —— 这个三态必须保住，否则一打开一保存就把
+key 抹了。key 是明文落在 `schedule.db` 里的，与 `secret.key` 同一级信任
+（靠数据目录的 nginx 404 + 文件权限隔离）。
+
+**没有 seed、也没有「演示模型」。** 模型来源是本机或用户自填的 OpenAI 兼容端点。
+
 ### 重复规则
 
 `repeat` 对象化（2026-10-05 升级，旧数据里的字符串 `'weekly'` 由 `U.toRepeat` 转换）：
@@ -347,16 +424,37 @@ cd app && npm run build          # tsc -b && vite build → ../dist/
 ```bash
 node server/server.js                        # 127.0.0.1:25692，数据落 server/data/
 SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试时用）
+
+# 依赖装在**本机磁盘**上，不在共享盘（CIFS 上成千上万个小文件正是四、30
+# 那个丢文件风险）。靠工程根目录一个软链接指过去：
+ls -la node_modules
+#   node_modules -> /home/xiaokubao/.local/share/schedule-deps/node_modules
+#
+# 换台机器 / 新拉一份 checkout，都要补这个链接（否则 AI 页报「依赖没装好」）：
+ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 ```
+
+> **软链，不是 `NODE_PATH`。** 两种都行，实际用的是软链 —— 因为它**不需要**
+> systemd 那条 Environment，也不挑进程是从哪个目录起的。`node_modules` 在
+> `.gitignore` 里，所以链接不会进版本库，**每份 checkout 都得自己补一次**。
+
+> **`node server/server.js` 从此不再自包含。** AI 那组依赖（见六、1）没装的时候，
+> `server/lib/ai/index.js` 是**惰性 import**，所以服务照常起得来 —— 只是 AI 页
+> 会报「依赖没装好」。确认提案那条路（`ai/confirm.js`）走 CJS 直接 require、
+> 一条都不碰 pi，所以**依赖没装好也能把已经排好的改动确认掉**。
+> 装法见 [DEPLOY.md](DEPLOY.md) 的「依赖」一节。
 
 线上那份由 `systemctl --user` 管，见 [DEPLOY.md](DEPLOY.md) 2.4。
 
 ### 测试
 
 ```bash
-cd app          && npm test                     # 51 条（node --test，跑 *.test.ts）
+cd app          && npm test                     # 77 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
-node server/tests/api.test.js                   # 31 条接口
+npm test                                        # 根目录：server/tests/ 那三个 node --test 文件
+node server/tests/api.test.js                   # 37 条接口
+node server/tests/migration.test.js             # 8 条 schema 迁移
+node --test server/tests/ai.test.js             # 18 条 AI 层（假模型，不联网不烧额度）
 node server/tests/smoke-share.mjs               # 两个人共用一个集，真走网络
 ```
 
@@ -377,6 +475,7 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 **长按提起 → 拖到别处排序 → 原地松手弹操作层** →
 **鼠标拖拽同一套落点** → **被降成只读后提示点名集名** →
 **另一台设备改过同一字段 → 抽屉里那条提示 → 知道了** →
+**AI 提案卡片 → 确认 → 服务器上真有** →
 离线小标 → **把静态服务关掉还能打开**。
 全程收集 console 报错，有一条就算失败。
 
@@ -426,13 +525,28 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 只在「冲突记到本地」那一步中断。
 > 写这一节时踩到 `persist()` 防抖（见「四、41」）和 waitFor 只吃表达式（「四、42」）。
 
+> 第「十二」节专测 **AI 写路径的接线**：模型调工具 → 工具造提案 → SSE 推卡片 →
+> 用户点确认 → 服务器落库。它自己另起一个 **40 行的假模型服务**（说 OpenAI
+> chat-completions + SSE，第一轮吐一个 `create_task` 的 tool_call、第二轮吐文本
+> 收尾），所以不联网、不烧额度。四条断言分别卡：卡片文案对 → **确认之前**服务器上
+> 没有 → 确认之后有 → 那条的 `_dev.title === 'ai'`（证明是 AI 这条路写的，
+> 不是碰巧被别的路径建出来的）。
+> 假模型服务返回的流**必须以 `data: [DONE]` 结尾**，SDK 认这个（见
+> `openai/src/core/streaming.ts:133`），漏了就一直等。
+> 写这一节踩到三个探针自己的坑：`.ai-input` 是 **textarea**，value setter 要用
+> `HTMLTextAreaElement` 的原型（拿 `HTMLInputElement` 的来 call 会当场
+> `Illegal invocation`）；`snapshot.tasks` 是**按 id 索引的对象**不是数组
+> （见 `server/lib/sync.js` 的 `snapshot`），写 `.some()` 直接 TypeError。
+
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
 
 其余探针坑见「四、33」。
 
-> **旧版根目录那个 `package.json`（`npm test` 空转的那个）已经没有了。**
-> 现在根目录没有 `package.json`，`npm test` 只在 `app/` 里跑真测试。
+> **旧版根目录那个 `package.json`（`npm test` 空转的那个）已经没有了，
+> 但 2026-10-06 又建了一个新的** —— 就是现在这一个，只声明 AI 那一组依赖，
+> 外加一个 `test` 脚本跑 `server/tests/` 里那三个 `node --test` 文件。
+> **前端仍然只在 `app/` 里跑**：`cd app && npm test`。
 
 ---
 
@@ -1191,8 +1305,17 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 
 ## 六、给 AI 的硬约束
 
-1. **后端不许引 npm 依赖。** 只用 Node 标准库（`node:http` / `node:sqlite` /
-   `node:crypto`）。这是「十年后 `node server.js` 还能跑」的代价换来的。
+1. **后端只许引 AI 那一组依赖，别的一律不许。** 其它全部用 Node 标准库
+   （`node:http` / `node:sqlite` / `node:crypto`）。
+   零依赖原本换来的是「十年后 `node server.js` 还能跑」，这个代价在 2026-10-06
+   被用户明确推翻（原话：*「不要守着 0 依赖，那个没有意义，你可以积极去组合使用
+   相关生态下的控件」*），为的是接 pi 的 agent 框架而不是手搓工具循环。
+   **这是一次有范围的让步，不是「以后随便引」** —— 加 AI 之外的依赖仍然要先问。
+   现状：`@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`，两个都锁精确
+   版本（没到 1.0，API 会动），装在本机磁盘而不是共享盘上（见 [DEPLOY.md](DEPLOY.md)），
+   且 **pi 的调用只关在 `server/lib/ai/chat.mjs` 一个文件里** —— 升版时只改它。
+   `server/lib/ai/confirm.js` 走 CJS 直接 require、一条都不碰 pi：依赖没装好时
+   用户最需要的恰恰是把已经排好的改动确认掉。
 2. **不引入 `v1` / `v2` 版本号并存。** 数据结构变了就归档旧 key + 写迁移。
 3. **不改 nginx 的路径结构**（没有 `/schedule2/` 这种东西）。就一套路径，
    回滚靠换 `dist/` 的内容。

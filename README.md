@@ -22,9 +22,23 @@
 ```
 
 七个入口：**待办箱**（没定日期的）· **今天** · **逾期** · **日程**（日/周/月）·
-**打卡** · **已完成** · **垃圾箱**。
+**打卡** · **已完成** · **垃圾箱**，外加一个 **AI**（见下）。
 
-侧栏那 7 项**可以拖动排序**，垃圾箱也能拖进主区，顺序会自动记住。
+侧栏这 8 项**可以拖动排序**，垃圾箱也能拖进主区，顺序会自动记住。
+
+### AI 助手
+
+多一个「AI」页：用大白话问排期，它**自己查**你的日程集再回答，不是靠你复述。
+
+```text
+这周还剩什么没做？          下周哪天适合出去玩？        最近有什么落下的吗
+```
+
+它也能**改数据** —— 建任务、改期、标完成、删除 —— 但**不会直接改**：
+它先把改动列成卡片，你点「确认」才真的落库。没点确认之前一个字都不会写进去。
+
+模型在哪配：AI 页右上角 ⚙ ，填 **Base URL / 模型名 / API key**（任意 OpenAI
+兼容端点，本机的也行）。**key 存在服务器上**，不回传给浏览器。
 
 ---
 
@@ -209,20 +223,22 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 │   ├── tests/smoke.mjs           旧的端到端冒烟，打的是已部署的那份
 │   └── public/            icon.svg / manifest.json / sw.js（离线外壳）
 │
-├── server/                后端（Node 22，零 npm 依赖）
+├── server/                后端（Node 22，**只引 AI 那一组依赖**）
 │   ├── server.js          HTTP 路由
 │   ├── lib/db.js          SQLite（node:sqlite）
 │   ├── lib/auth.js        注册 / 登录 / 令牌
 │   ├── lib/calendars.js   日程集与成员 —— **权限的唯一实现处**
 │   ├── lib/invites.js     两段式邀请
-│   ├── lib/ratelimit.js   登录 / 注册 / 邀请的频次限制
+│   ├── lib/ratelimit.js   登录 / 注册 / 邀请 / AI 的频次限制
 │   ├── lib/sync.js        逐字段 LWW + 游标
-│   └── tests/             api.test.js（接口）+ smoke-share.mjs（真网络协作演练）
+│   ├── lib/ai/            AI 对话：工具、提示词、SSE、提案确认
+│   └── tests/             api.test.js + migration.test.js + ai.test.js + smoke-share.mjs
 │
 ├── dist/                  构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                nginx conf + systemd 单元的本地副本
 ├── legacy/                旧版纯静态应用，冻结存档（可回滚，见 DEPLOY.md）
 ├── docs/重构路线.md        这次重写的决策记录
+├── package.json           后端依赖（只有 AI 那一组，见「技术栈」）
 ├── CLAUDE.md              给 AI 编码助手
 ├── DEPLOY.md              部署与运维
 └── README.md              本文件
@@ -254,16 +270,27 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 ```text
 前端    React 18 + TypeScript 5.7 + Vite 6 + Tailwind 4
         图标 lucide-react（不用 emoji）；弹层用 Radix headless
-后端    Node 22，零 npm 依赖 —— 只用 node:http + node:sqlite
+后端    Node 22 —— node:http + node:sqlite，**外加 AI 那一组依赖**（见下）
 存储    服务端 SQLite（权威）+ 浏览器 localStorage（离线副本）
 离线    手写 Service Worker（app/public/sw.js）缓存外壳 + 发件箱排队，可装到桌面
 同步    服务端权威 + 客户端 outbox + 逐字段 LWW + 游标增量拉取
+AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
+        模型是任意 OpenAI 兼容端点；AI 读走快照、写走同步，改动要用户点确认
 部署    nginx 伺服 dist/，/schedule/api/ 反代到 127.0.0.1:25692
 ```
 
 **为什么不引数据库 / ORM / 同步框架**：这个应用的数据量是「一个人一辈子的
 待办」，SQLite 单文件足够；同步用「逐字段 LWW + 幂等 op」就够，不需要 CRDT。
-后端零依赖意味着**十年后 `node server.js` 还能跑** —— 这是刻意的取舍。
+
+**关于「零依赖」**（2026-10-06 变了）：后端原本一个 npm 包都不引，换来的是
+「十年后 `node server.js` 还能跑、部署就是拷文件」。这一条被**有意推翻**了 ——
+为了接 `pi` 这个 agent 框架（tools / 流式 / 工具循环都是它管的），
+而不是自己手搓一遍。**这是一次有范围的让步**：只许引 AI 这一组，加别的仍然
+要先问；而且依赖锁精确版本、只在一个文件里调用。
+
+> 代价说清楚：`node server/server.js` 从此不再自包含，部署多一步装依赖
+> （装法见 [DEPLOY.md](DEPLOY.md) 1.3）。没装也能起服务、也能用剩下所有功能，
+> 只是 AI 页会报「依赖没装好」。
 
 **为什么保留 `legacy/`**：旧版是能用的，新版出问题时可以整体退回去
 （见 [DEPLOY.md](DEPLOY.md) 「回滚」）。旧数据 key 也一直没删。
