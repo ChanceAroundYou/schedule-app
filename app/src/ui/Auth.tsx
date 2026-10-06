@@ -81,7 +81,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
         <input
           id={fid + '-name'}
-          className="mb-3 w-full rounded-lg border border-[var(--border-2)] bg-transparent
+          className="mb-3 w-full rounded-lg border border-[var(--input)] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -94,7 +94,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         <input
           id={fid + '-pwd'}
           type="password"
-          className="w-full rounded-lg border border-[var(--border-2)] bg-transparent
+          className="w-full rounded-lg border border-[var(--input)] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

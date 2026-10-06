@@ -65,6 +65,23 @@ const SEMANTIC = [
 export const ON_ACCENT = '--on-primary';
 
 /**
+ * 非文本对比（WCAG 1.4.11）：**控件描边要求 3:1，不是 4.5:1**。
+ *
+ * 这是和上面那条**不同的线**，混在一起会两头错：拿 4.5 去卡描边会把界面
+ * 变得像表格线，拿 3 去卡正文又会让小字糊掉。所以每一行自带一个 `min`。
+ *
+ * 为什么 --input 必须过 3:1：它是输入框 / 下拉 / 勾选圈 / 幽灵按钮的**全部**
+ * 可见边界。勾选圈尤其要紧 —— 20px 的空圈只有它自己说明「这里能点」，
+ * 而这个应用是给家里长辈用的。旧值亮 #d9dce6 只有 1.37，暗 #343b48 只有 1.53。
+ *
+ * 底色要列全：输入框会落在 --panel（白卡片）也落在 --panel-2（嵌套一格），
+ * --panel-3 是最难的那档，一并算上。
+ */
+const NONTEXT = [
+  { fg: '--input', bgs: ['--panel', '--panel-2', '--panel-3', '--bg'] },
+];
+
+/**
  * 扫 `src/` 里所有 `var(--x)`，报出 legacy.css / tailwind.css 里**没有定义**的那些。
  *
  * 为什么要锁：新 surface（登录页 / 浮层 / Btn）原先写的是
@@ -135,6 +152,13 @@ export function audit(src) {
       // 压在它身上的文字色（按钮底 / 计数气泡 / 选中态）
       if (onIt && v[ON_ACCENT]) rows.push({ theme, group: '语义色', label: ON_ACCENT + ' on ' + fg, fg: v[ON_ACCENT], bg: v[fg], r: ratio(v[ON_ACCENT], v[fg]) });
     }
+    // 非文本：控件描边。**min 是 3**，见 NONTEXT 上面那段
+    for (const { fg, bgs } of NONTEXT) {
+      if (!v[fg]) continue;
+      for (const b of bgs) {
+        if (v[b]) rows.push({ theme, group: '控件描边', label: fg + ' on ' + b, fg: v[fg], bg: v[b], r: ratio(v[fg], v[b]), min: 3 });
+      }
+    }
     // 快速添加那组胶囊：fg / bg 成对预置，自动认出来
     for (const k of Object.keys(v)) {
       const m = /^--chip-(.+)fg$/.exec(k);
@@ -147,19 +171,21 @@ export function audit(src) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const rows = audit(readFileSync(CSS, 'utf8'));
-  const mark = (r) => (r >= 4.5 ? '✓' : r >= 3 ? '✗ 只够大字' : '✗✗ 不足');
+  /** 每行自带下限：正文 4.5（1.4.3），控件描边 3（1.4.11）。见 NONTEXT 上面那段。 */
+  const floor = (r) => r.min ?? 4.5;
+  const mark = (r) => { const m = floor(r); return r.r >= m ? '✓' : r.r >= m - 1.5 ? '✗ 差一点' : '✗✗ 不足'; };
   let failed = 0;
 
   for (const theme of ['亮色', '暗色']) {
-    for (const g of ['正文三档', '语义色', '胶囊']) {
+    for (const g of ['正文三档', '语义色', '胶囊', '控件描边']) {
       const list = rows.filter((x) => x.theme === theme && x.group === g);
       if (!list.length) continue;
-      console.log('\n' + theme + '　' + g);
+      console.log('\n' + theme + '　' + g + (g === '控件描边' ? '（下限 3:1，WCAG 1.4.11）' : ''));
       for (const r of list) {
-        const ok = r.r >= 4.5;
+        const ok = r.r >= floor(r);
         if (!ok) failed++;
         console.log('  ' + (ok ? 'ok  ' : 'FAIL') + ' ' + r.label.padEnd(30)
-          + r.fg + ' / ' + r.bg + '  ' + r.r.toFixed(2).padStart(6) + '  ' + mark(r.r));
+          + r.fg + ' / ' + r.bg + '  ' + r.r.toFixed(2).padStart(6) + '  ' + mark(r));
       }
     }
   }

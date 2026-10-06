@@ -359,6 +359,18 @@ try {
   ok(sheetText.includes('创建者'), '自己的角色显示为「创建者」');
   ok(sheetText.includes('邀请成员'), '创建者能看到发邀请的入口');
 
+  // 浮层里的控件也要有名字。**这一段是补漏**：「每个输入框都有名字」原来只扫了
+  // 抽屉（第十三节），管理浮层的名字框和两个角色下拉一个都没有可访问名字 ——
+  // 它们从来就没被任何断言看过。
+  //
+  // 放在这里而不是第十三节：成员是**联网拉的**，第十三节跑在断网之后，
+  // 那时成员列表是空的、角色下拉根本不渲染，扫过去等于空过（候选数为 0）。
+  const sheetA11y = await evalJs(page, `return { bad: ${a11y('[role="dialog"]')},
+    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select').length };`);
+  ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 两个角色下拉）');
+  ok(sheetA11y.bad.length === 0, '管理浮层里每个控件都有名字'
+    + (sheetA11y.bad.length ? '：\n      ' + sheetA11y.bad.join('\n      ') : ''));
+
   await evalJs(page, `
     const inp = document.querySelector('[data-cal-name]');
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -813,8 +825,16 @@ try {
   // 验过它有牙：把 CheckBtn 里那个 <button> 换回 <span>，第一条立刻失败。
   // 注意这里**不带 return** —— 它是一段表达式，方便和别的字段拼在一个
   // evalJs 里（下面 scan() 就是这么用的）。
-  const A11Y = `(() => {
+  // 用具名函数而不是 const —— **函数声明会提升**，管理浮层那一节（第五节）
+  // 在定义之前就要用它；const 在 TDZ 里，那样写会当场 ReferenceError。
+  //
+  // 参数 root 是个选择器，**不带就扫全文档**。为什么要能缩范围：第五节的浮层是
+  // 叠在整页上的，扫全文档的话侧栏里任何一个没名字的控件都会算到这条断言头上，
+  // 失败信息就指错了地方 —— 这个文件里已经栽过一次（见上面 waitFor 那段）。
+  function a11y(root) { return `(() => {
     const bad = [];
+    const box = ${root ? `document.querySelector(${JSON.stringify(root)})` : 'document'};
+    if (!box) return ['扫描范围没找到：' + ${JSON.stringify(root || '')}];
     const nameOf = (el) => {
       if (el.getAttribute('aria-label')) return 'aria-label';
       if (el.getAttribute('title')) return 'title';
@@ -836,20 +856,27 @@ try {
     //   否则会把模板当场截断、后面半截漏到 Node 里跑 —— 已经踩过一次）
     const cls = (el) => {
       const own = el.tagName.toLowerCase();
+      // 光看 class 管理浮层那两个框会压成同一条（前缀都是 min-w-0），
+      // 失败信息指不出是哪一个 —— 那一次报的就是这条，白查了一轮。
+      // data-* 最准（探针本来就认 data-cal-name 这些抓手），其次 placeholder。
+      const dk = el.getAttributeNames().find((n) => n.startsWith('data-'));
+      const ph = el.getAttribute('placeholder');
+      const tag = own + (dk ? '[' + dk + ']' : '') + (ph ? '[placeholder=' + ph + ']' : '');
+      if (dk || ph) return tag;
       if (typeof el.className === 'string' && el.className) return own + '.' + el.className.split(' ')[0];
       const p = el.parentElement;
       const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
       return own + ' in .' + pc;
     };
-    for (const el of document.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
-    for (const el of document.querySelectorAll('button,input,select,textarea')) {
+    for (const el of box.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
+    for (const el of box.querySelectorAll('button,input,select,textarea')) {
       if (el.type === 'hidden' || el.disabled) continue;
       // 没渲染出来的不算 —— 导入备份那个 <input type=file> 就是藏起来的，
       // 由旁边那个有名字的按钮触发，是标准做法
       if (!el.getClientRects().length) continue;
       if (!nameOf(el)) bad.push('没名字：' + cls(el));
     }
-    for (const l of document.querySelectorAll('label')) {
+    for (const l of box.querySelectorAll('label')) {
       if (l.htmlFor) {
         if (!document.getElementById(l.htmlFor)) bad.push('label[for] 指向不存在的 id：' + l.htmlFor);
       } else if (!l.querySelector('input,select,textarea')) {
@@ -857,7 +884,7 @@ try {
       }
     }
     return [...new Set(bad)];
-  })()`;
+  })()`; }
 
   // 先切到待办箱再造一条待查的 —— 断网了，quickAdd 只写本机发件箱，不影响别的断言
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
@@ -874,7 +901,7 @@ try {
    * `cands` 就是用来堵这个的：候选为 0 时单独报错，而不是装作通过。
    */
   const scan = async () => {
-    const r = await evalJs(page, `return { bad: ${A11Y}, cands: document.querySelectorAll('.task-el').length };`);
+    const r = await evalJs(page, `return { bad: ${a11y()}, cands: document.querySelectorAll('.task-el').length };`);
     return r;
   };
 
@@ -912,7 +939,7 @@ try {
       .find((e) => e.textContent.includes('无障碍检查'))
   `) !== 'missing', '点开刚建的那条任务');
   await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
-  const draw = await evalJs(page, `return { bad: ${A11Y},
+  const draw = await evalJs(page, `return { bad: ${a11y()},
     cands: document.querySelectorAll('.drawer.open input, .drawer.open select, .drawer.open textarea').length };`);
   ok(draw.cands >= 5, '抽屉里有 ' + draw.cands + ' 个表单控件可查（日期 / 时间 / 时长 / 重复 / 备注）');
   ok(draw.bad.length === 0, '详情抽屉里每个输入框都有名字、每个 label 都配上了控件'

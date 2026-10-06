@@ -43,7 +43,7 @@
   padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px;
   background: none; color: var(--text-2); font-size: 12px; cursor: pointer;
 }
-.ms-logout:hover { border-color: var(--border-2); color: var(--text); }
+.ms-logout:hover { border-color: var(--input); color: var(--text); }
 
 /*
  * 触屏长按把行「提起来」之后的状态（见 ui/dnd.ts 文件头）。
@@ -70,7 +70,7 @@
  * 只是有一边的改动不在了。做成红色会让用户以为出了问题。
  */
 .conflict-box {
-  border: 1px solid var(--border-2);
+  border: 1px solid var(--border);
   border-left: 3px solid var(--warn);
   border-radius: 8px;
   padding: 8px 10px;
@@ -87,9 +87,9 @@
 .cb-row + .cb-row { margin-top: 4px; }
 .cb-text { flex: 1; line-height: 1.5; }
 .cb-x {
-  flex: none; border: 1px solid var(--border-2); border-radius: 6px;
+  flex: none; border: 1px solid var(--input); border-radius: 6px;
   background: none; color: var(--text-2); font-size: 11.5px;
   padding: 2px 8px; cursor: pointer;
 }
-.cb-x:hover { border-color: var(--border-2); color: var(--text); }
+.cb-x:hover { border-color: var(--input); color: var(--text); }
 

@@ -13,7 +13,7 @@
  * 权限判断一律用 types.ts 的 canWrite / canManage，别在这里写 role === 'owner'。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import {
   AlertTriangle, Check, Crown, Eye, LogOut, MailPlus, Pencil, Plus, Settings,
   Trash2, UserMinus, UserPlus, Users, X,
@@ -148,6 +148,9 @@ export function ManageSheet({ state, open, onClose }: {
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('editor');
   const [busy, setBusy] = useState(false);
+  /** 同 Drawer.tsx：label 与控件必须靠 id 配上。这里的「名字」原来是个 div，
+   *  读屏念不出这个框是干什么的（见 CLAUDE.md 五、无障碍）。 */
+  const fid = useId();
 
   const reload = useCallback(async () => {
     if (!calId) return;
@@ -223,15 +226,16 @@ export function ManageSheet({ state, open, onClose }: {
     <Sheet open={open} onClose={onClose} title="管理日程集">
       {/* 改名 */}
       <div className="mb-5">
-        <div className="mb-1.5 text-[12px] text-[var(--text-2)]">名字</div>
+        <label htmlFor={fid + '-name'} className="mb-1.5 block text-[12px] text-[var(--text-2)]">名字</label>
         <div className="flex gap-2">
           <input
+            id={fid + '-name'}
             value={name}
             disabled={!manage}
             data-cal-name="1"
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-            className="min-w-0 flex-1 rounded-lg border border-[var(--border-2)]
+            className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
                        bg-transparent px-3 py-1.5 text-sm outline-none
                        focus:border-[var(--primary)] disabled:opacity-60"
           />
@@ -262,11 +266,12 @@ export function ManageSheet({ state, open, onClose }: {
                   <select
                     value={m.role}
                     disabled={busy}
+                    aria-label={`「${m.name}」的权限`}
                     onChange={(e) => void run(async () => {
                       await api.setRole(calId, m.id, e.target.value as Role);
                       toast('权限已更新');
                     })}
-                    className="rounded-md border border-[var(--border-2)] bg-transparent
+                    className="rounded-md border border-[var(--input)] bg-transparent
                                px-1.5 py-1 text-[12px] outline-none"
                   >
                     {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -308,17 +313,19 @@ export function ManageSheet({ state, open, onClose }: {
             <input
               value={inviteName}
               placeholder="对方的用户名"
+              aria-label="对方的用户名"
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setInviteName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-              className="min-w-0 flex-1 rounded-lg border border-[var(--border-2)]
+              className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
                          bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
             />
             <select
               value={inviteRole}
+              aria-label="邀请的权限"
               onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-lg border border-[var(--border-2)] bg-transparent px-2 text-[13px] outline-none"
+              className="rounded-lg border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
             >
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
@@ -332,7 +339,7 @@ export function ManageSheet({ state, open, onClose }: {
             <div className="mt-3 flex flex-col gap-1.5">
               {sent.map((i) => (
                 <div key={i.id} className="flex items-center gap-2 rounded-lg border border-dashed
-                                           border-[var(--border-2)] px-2.5 py-1.5">
+                                           border-[var(--border)] px-2.5 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
                     {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
                   </span>
@@ -432,7 +439,7 @@ export function InviteSheet({ state, open, onClose }: {
       )}
       <div className="flex flex-col gap-2">
         {state.invites.map((i) => (
-          <div key={i.id} className="rounded-xl border border-[var(--border-2)] p-3">
+          <div key={i.id} className="rounded-xl border border-[var(--border)] p-3">
             <div className="text-[13.5px]">
               <b>{i.fromName || '有人'}</b> 邀请你加入「{i.calName}」
             </div>
