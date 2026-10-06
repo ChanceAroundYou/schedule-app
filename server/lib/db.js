@@ -5,7 +5,7 @@
  * 字段（手机改标题、桌面改日期）时，只有真正冲突的那个字段需要决出胜负。
  * 整条任务存一坨的话，后写的那次会把对方那个字段一起抹掉。
  *
- * 六张表：
+ * 九张表：
  *   users             账户。平等多用户，没有管理员
  *   calendars         日程集 —— 数据的归属单位，相当于共享相册
  *   calendar_members  谁能看见哪个集、以什么身份（权限的**唯一**真相）
@@ -13,6 +13,12 @@
  *   field_state       当前值 + 每个字段各自的最后写入者 —— 同步的核心
  *   changes           追加流水，客户端按 seq 游标拉增量
  *   revoked           已登出的 jti，避免「登出后旧 token 还能用」
+ *   ai_settings       每人一行的模型配置（v3 加）
+ *   ai_sessions       对话会话（v3 加）
+ *   ai_messages       会话里的消息 + 待确认提案（v3 加）
+ *
+ * 后三张表**不参与 LWW 同步**：模型配置是「我的凭据」，对话是「我问过什么」，
+ * 都不是日程集里的共享内容，按 userId 归属，跟账号走。
  *
  * **数据的归属是日程集，不是人。** 所以 field_state 与 changes 的键都是
  * cal_id —— 一个集里的所有人看到的是同一份数据，不是各存一份再互相同步。
@@ -31,7 +37,63 @@ let _db = null;
 let _file = null;
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+
+/* --------------------------------------------------------------- v3 新增 */
+
+/**
+ * AI 那三张表。**新建库与老库升级共用这一段** —— 分成两份写迟早会只改一处，
+ * 于是新装的库和老库升上来的库结构悄悄不一致。
+ */
+const AI_TABLES = [
+  // 每人一行。api_key 明文落库，信任级别与同目录的 secret.key 相同：
+  // 数据目录不在 nginx 的伺服范围里，且靠文件权限隔离。接口**永不回显**它。
+  `CREATE TABLE IF NOT EXISTS ai_settings (
+     user_id    TEXT PRIMARY KEY,
+     provider   TEXT    NOT NULL,
+     base_url   TEXT    NOT NULL,
+     model      TEXT    NOT NULL,
+     api_key    TEXT,
+     updated_at INTEGER NOT NULL
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS ai_sessions (
+     id         TEXT PRIMARY KEY,
+     user_id    TEXT    NOT NULL,
+     title      TEXT    NOT NULL,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_sessions_user ON ai_sessions(user_id, updated_at)`,
+
+  // payload 存整条 pi AgentMessage 的 JSON，不拆列：消息的形状归 pi 管，
+  // 拆列等于替它定 schema，它一升版我们就得跟着迁。
+  // proposals 是这条 assistant 消息里**待确认的写入提案**，天然属于「哪一轮回答」，
+  // 所以不另建表。
+  `CREATE TABLE IF NOT EXISTS ai_messages (
+     id         TEXT PRIMARY KEY,
+     session_id TEXT    NOT NULL,
+     user_id    TEXT    NOT NULL,
+     seq        INTEGER NOT NULL,
+     role       TEXT    NOT NULL,
+     payload    TEXT    NOT NULL,
+     proposals  TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, seq)`,
+];
+
+/**
+ * 从 vN 升到 v(N+1) 要执行的语句。**只允许追加式**：
+ * CREATE TABLE / CREATE INDEX / ALTER TABLE ADD COLUMN。
+ *
+ * **绝不 DROP、绝不 UPDATE 已有数据。** 库里是用户的真实日程，
+ * 一条「顺手清理一下」的语句就是一次不可恢复的数据丢失。
+ * 加语句前先读 open() 上那段注释，改完跑 server/tests/migration.test.js。
+ */
+const MIGRATIONS = {
+  2: AI_TABLES,
+};
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -107,26 +169,84 @@ CREATE TABLE IF NOT EXISTS revoked (
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_revoked_exp ON revoked(expires_at);
+
 `;
+
+/** 建库语句 = v2 那七张 + v3 追加的三张。两处拼同一个真源，见 AI_TABLES */
+const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n';
 
 /** 旧 schema 的全部表名 —— 库是空的时候用来推倒重建 */
 const ALL_TABLES = [
   'users', 'calendars', 'calendar_members', 'invites',
   'field_state', 'changes', 'revoked',
+  'ai_settings', 'ai_sessions', 'ai_messages',
 ];
+
+/**
+ * 把库从 from 升到 SCHEMA_VERSION。
+ *
+ * 排在动手之前**先把每一级的脚本都找齐**：中间缺一级就整件事不做。
+ * 走一半再抛的话，库会停在一个既不是旧版也不是新版的中间态，比不升更糟。
+ *
+ * 真正的执行放在一个事务里，并且 `user_version` 也在事务内改 ——
+ * SQLite 的 PRAGMA user_version 是写库头的，跟着事务一起回滚。
+ */
+function migrateFrom(from) {
+  for (let v = from; v < SCHEMA_VERSION; v += 1) {
+    if (!MIGRATIONS[v]) {
+      throw new Error(
+        `数据库是 schema v${from}，当前代码要 v${SCHEMA_VERSION}，` +
+        `但没有 v${v} → v${v + 1} 的迁移脚本。\n` +
+        `拒绝自动改动，请先备份 ${_file} 再手工迁移（见 DEPLOY.md 的「数据结构升级」）。`,
+      );
+    }
+  }
+
+  _db.exec('BEGIN IMMEDIATE');
+  try {
+    for (let v = from; v < SCHEMA_VERSION; v += 1) {
+      for (const sql of MIGRATIONS[v]) _db.exec(sql);
+    }
+    _db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    _db.exec('COMMIT');
+  } catch (e) {
+    try { _db.exec('ROLLBACK'); } catch (_) { /* 已回滚 */ }
+    throw new Error(
+      `升级数据库失败，已回滚到 v${from}（数据没动）：${e && e.message ? e.message : e}`,
+    );
+  }
+}
 
 /**
  * 打开（首次时建表）数据库。幂等。
  *
- * schema 变了怎么办：只有**一个用户都没有**时才敢推倒重建（此时没有任何人
- * 的数据可丢）。只要库里有账户就拒绝启动，把「要不要迁、怎么迁」交回给人 ——
- * 静默重建等于把用户数据吃掉，那种事不能自动化。
+ * schema 变了怎么办，分两条路：
+ *   - **空库**（一个账户都没有）：推倒重建。此时没有任何人的数据可丢。
+ *   - **有数据的库**：跑 MIGRATIONS 里的追加式脚本，只加表加列。
+ *     某一级没有脚本 → 仍然拒绝启动，把「要不要迁、怎么迁」交回给人。
+ *
+ * 原来只有第一条路：版本号一不对、库里有账户就直接 throw。v3 加了三张表，
+ * 版本号必须动，所以必须给有数据的库补上第二条路 —— 否则线上库一升级就起不来。
+ * 但「静默重建等于把用户数据吃掉」那条底线没变：**任何删除性的操作都不在
+ * 自动路径上。**
  */
 function open(dir) {
   if (_db) return _db;
   fs.mkdirSync(dir, { recursive: true });
   _file = path.join(dir, 'schedule.db');
   _db = new DatabaseSync(_file);
+  try {
+    return initSchema();
+  } catch (e) {
+    // 起不来就把句柄放掉。留着的话 _db 非空，下一次 open() 会直接返回这个
+    // 半死的连接 —— 调用方以为库是好的，实际上一张表都没建。
+    try { _db.close(); } catch (_) { /* 已关 */ }
+    _db = null;
+    throw e;
+  }
+}
+
+function initSchema() {
   // WAL：读写并发不互相阻塞。NORMAL 对本项目足够——掉电最多丢最后一次事务。
   _db.exec('PRAGMA journal_mode = WAL');
   _db.exec('PRAGMA synchronous = NORMAL');
@@ -140,19 +260,33 @@ function open(dir) {
     const hasOldData = tables.includes('users')
       && Number(_db.prepare('SELECT COUNT(*) AS n FROM users').get().n) > 0;
 
-    if (hasOldData) {
+    if (hasOldData && found > SCHEMA_VERSION) {
+      // 代码比库旧。跑了只会按旧结构去读新表，读出来的东西是错的，不如不跑。
       throw new Error(
-        `数据库是 schema v${found}，当前代码要 v${SCHEMA_VERSION}，而库里已经有账户。\n` +
-        `拒绝自动改动，请先备份 ${_file} 再手工迁移（见 DEPLOY.md 的「数据结构升级」）。`,
+        `数据库是 schema v${found}，比当前代码的 v${SCHEMA_VERSION} 还新。\n` +
+        `说明这份代码比库旧，请先更新代码（库文件没动）。`,
       );
     }
-    // 空库：直接推倒重建。以前留下的表结构不兼容，留着反而是隐患
-    _db.exec('PRAGMA foreign_keys = OFF');
-    for (const t of ALL_TABLES) _db.exec(`DROP TABLE IF EXISTS ${t}`);
-    _db.exec('PRAGMA foreign_keys = ON');
+
+    if (hasOldData) {
+      migrateFrom(found);
+    } else {
+      // 空库：直接推倒重建。以前留下的表结构不兼容，留着反而是隐患
+      _db.exec('PRAGMA foreign_keys = OFF');
+      for (const t of ALL_TABLES) _db.exec(`DROP TABLE IF EXISTS ${t}`);
+      _db.exec('PRAGMA foreign_keys = ON');
+    }
   }
 
-  _db.exec(SCHEMA);
+  /**
+   * 最后无条件再跑一遍建表语句。
+   *
+   * ⚠️ 它会把迁移里**忘了建**的表补上，也会把迁移里**误删**的表**用一个空壳
+   * 重建回来** —— 表名看着一切正常，里面的行已经没了。所以「迁移有没有删东西」
+   * 光看表名是看不出来的，`migration.test.js` 比的是**行数**。
+   * 这是上一版就有的兜底，别当成迁移正确性的证明。
+   */
+  _db.exec(FULL_SCHEMA);
   _db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return _db;
 }
@@ -454,7 +588,7 @@ function close() {
 }
 
 module.exports = {
-  SCHEMA_VERSION, ROLES,
+  SCHEMA_VERSION, MIGRATIONS, ALL_TABLES, ROLES,
   open, tx, run, get, all,
   countUsers, findUserByName, findUserById, insertUser,
   insertCalendar, findCalendar, renameCalendar, softDeleteCalendar,
