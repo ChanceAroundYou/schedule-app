@@ -68,6 +68,22 @@ export interface Task extends SyncMeta {
   deletedAt?: number;
   /** 从哪个页面删的，只在垃圾箱里显示 */
   trashFrom?: string;
+
+  /**
+   * 属于哪个项目。`null` / 缺失 = 不属于任何项目。
+   *
+   * **可选字段，不是必填** —— 这就是它零迁移的原因：旧任务、旧 op、旧快照
+   * 缺了它一律按「没归属」处理，跟加这个字段之前的行为逐像素相同。
+   */
+  projectId?: string | null;
+  /**
+   * 泳道中间那一列。`true` = 进行中；缺失 = 待办。
+   *
+   * **与 `done` 是两个独立字段，不合并。** `done` 被 `counts()` / 今天页 /
+   * 逾期页 / 重复推进共用，动它会牵动一大片。列判定是
+   * `done → 已完成 / !done && doing → 进行中 / 否则 待办`（`projectColumn`）。
+   */
+  doing?: boolean;
 }
 
 export interface Habit extends SyncMeta {
@@ -82,7 +98,40 @@ export interface Habit extends SyncMeta {
   deletedAt?: number;
 }
 
-export type Entity = 'task' | 'habit';
+export type Entity = 'task' | 'habit' | 'project';
+
+/* ============================== 项目 ============================== */
+
+/**
+ * 项目自己的状态，写在泳道头上。
+ *
+ * **与「关联任务做完没有」是两回事**：任务全做完了项目也可以还是 `active`
+ * （下一个阶段还没开始）。所以它是**手填**的，不由任务推导。
+ */
+export type ProjectStatus = 'active' | 'waiting' | 'paused' | 'done';
+
+/**
+ * 长周期项目。
+ *
+ * 这是 PARA 里 **Area**（持续关注、无结束点）的形态，**不是**有起止日的
+ * Project —— 所以它**没有开始日 / 截止日**，也因此排除了甘特图：
+ * 甘特图强制每根横条有起止日，会逼用户给每个项目编一个假日期。
+ * 面板围绕「多久没动 + 下一步是什么」组织，见 `projectTouchedAt`。
+ */
+export interface Project extends SyncMeta {
+  name: string;
+  note: string;
+  status: ProjectStatus;
+  /** 下一步：一行字，空串 = 还没写 */
+  next: string;
+  /** 手填进度覆盖（0–100）；null = 按关联任务自动算 */
+  progress: number | null;
+  createdAt: number;
+
+  deleted?: boolean;
+  purged?: boolean;
+  deletedAt?: number;
+}
 
 /* ============================== 日程集 ============================== */
 
@@ -198,7 +247,15 @@ export interface SyncResponse {  cursor: number;
   rejected: Rejected[];
   changes?: Change[];
   truncated?: boolean;
-  snapshot?: { tasks: Record<string, Task>; habits: Record<string, Habit> };
+  /**
+   * `projects` 是可选的：前后端**必须同批发布**，但老响应落在新客户端上
+   * 不该炸 —— 缺这一桶就是「还没有任何项目」，与加这个实体之前一样。
+   */
+  snapshot?: {
+    tasks: Record<string, Task>;
+    habits: Record<string, Habit>;
+    projects?: Record<string, Project>;
+  };
   /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
   cals?: Cal[];
   invites?: Invite[];
@@ -242,6 +299,7 @@ export interface UiPrefs {
 export interface LocalState {
   tasks: Record<string, Task>;
   habits: Record<string, Habit>;
+  projects: Record<string, Project>;
   /** 我加入的日程集。服务器每次同步都会刷新 */
   cals: Cal[];
   /** 待我处理的邀请 */

@@ -564,3 +564,57 @@ test('一条时钟异常的 op 不拖垮同批的其他改动', async () => {
   assert.strictEqual(snap.tasks.t13.title, '正常');
   assert.ok(!snap.tasks.t12);
 });
+
+/* ================================================================ 项目 */
+
+test('项目实体走的是和任务同一条通道：推上去、拉得回、快照里有', async () => {
+  const p = op('proj-1', { name: '星星包', status: 'active', next: '排期' }, 20000, 'devA', 'project');
+  const r = await push([p]);
+  assert.deepStrictEqual(r.body.applied, [p.opId], 'project 不该被 ENTITIES 挡下');
+
+  const snap = await snapshot();
+  assert.ok(snap.projects, '快照必须带上 projects 这一桶');
+  assert.strictEqual(snap.projects['proj-1'].name, '星星包');
+  assert.strictEqual(snap.projects['proj-1'].status, 'active');
+  assert.strictEqual(snap.projects['proj-1'].calId, CAL, '每条都要带 calId，客户端据此归位');
+
+  // 增量这一路也要认得它 —— 否则第二台设备永远看不到别人改的项目
+  const cur = await api('POST', '/api/sync', { token: dad.token, body: { cursor: 0, ops: [] } });
+  const delta = await api('POST', '/api/sync', {
+    token: dad.token,
+    body: { cursor: cur.body.cursor, ops: [op('proj-1', { next: '已排期' }, 21000, 'devA', 'project')] },
+  });
+  const ch = delta.body.changes.find((c) => c.entity === 'project' && c.field === 'next');
+  assert.ok(ch, 'project 的增量必须能拉到');
+  assert.strictEqual(ch.value, '已排期');
+});
+
+test('项目墓碑不进快照，但仍然留库供别的设备拉', async () => {
+  await push([op('proj-2', { name: '要删的' }, 22000, 'devA', 'project')]);
+  await push([op('proj-2', { deleted: true, deletedAt: 23000 }, 23000, 'devA', 'project')]);
+
+  assert.ok(!(await snapshot()).projects['proj-2'], '墓碑不该出现在快照里');
+
+  const rows = db.allFields(calsOf(dad.userId))
+    .filter((r) => r.entity === 'project' && r.entity_id === 'proj-2' && r.field === 'deleted');
+  assert.strictEqual(rows.length, 1, '墓碑必须留库');
+});
+
+test('写 project 也要过权限：非成员推不进去', async () => {
+  // 把关点只有 applyOps 一处，所以这里证的是「project 没绕过它」。
+  // 用 mom：她这时已经被踢出 CAL 了，推任何东西都该被挡。
+  const sneaky = op('proj-1', { name: '偷改的' }, 24000, 'devMom', 'project', CAL);
+  const r = await push([sneaky], 1, mom.token);
+  assert.ok(!r.body.applied.includes(sneaky.opId), '非成员不该写进去');
+  assert.strictEqual(r.body.rejected[0].code, 'forbidden');
+
+  const after = (await snapshot(dad.token)).projects;
+  assert.strictEqual(after['proj-1'].name, '星星包', 'dad 的项目名字不能被 mom 改掉');
+});
+
+test('认不出的实体仍然被拒 —— 加了 project 不等于放开了口子', async () => {
+  const bad = op('x', { a: 1 }, 25000, 'devA', 'projectX');
+  const r = await push([bad]);
+  assert.strictEqual(r.body.rejected[0].code, 'bad_request');
+  assert.strictEqual(r.body.applied.length, 0);
+});

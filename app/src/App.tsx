@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PublicUser, Task } from './domain/types.ts';
+import type { Project, PublicUser, Task } from './domain/types.ts';
 import * as D from './domain/date.ts';
 import * as store from './data/store.ts';
 import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from './data/api.ts';
@@ -376,10 +376,11 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const exportBackup = useCallback(() => {
     const s = store.get();
     const blob = new Blob([JSON.stringify({
-      version: 4,
+      version: 5,
       exportedAt: Date.now(),
       tasks: Object.values(s.tasks),
       habits: Object.values(s.habits),
+      projects: Object.values(s.projects),
       ui: s.ui,
     }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -392,7 +393,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   }, []);
 
   const importBackup = useCallback(async (file: File) => {
-    let data: { tasks?: Task[]; habits?: never[] };
+    // projects 可选：**旧备份（version 4）没有这个键**，缺了就是「没有项目」，
+    // 不该拒绝整个文件 —— 那会让用户以为备份坏了。
+    let data: { tasks?: Task[]; habits?: never[]; projects?: Project[] };
     try {
       data = JSON.parse(await file.text());
     } catch (_) { toast('这个文件不是有效的备份'); return; }
@@ -405,7 +408,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       confirmText: '导入',
     });
     if (!ok) return;
-    const added = store.loadMigrated(data.tasks, []);
+    const added = store.loadMigrated(data.tasks, [], data.projects || []);
     toast(`已导入 ${added} 条，正在同步`);
     void engine.syncNow();
   }, [confirm]);

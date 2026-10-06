@@ -29,7 +29,7 @@
 const db = require('./db');
 const calendars = require('./calendars');
 
-const ENTITIES = new Set(['task', 'habit']);
+const ENTITIES = new Set(['task', 'habit', 'project']);
 
 /** 派生 id 形如 `a3f2…#2026-10-07`，uuid 是 hex + 短横，都在这个字符集里 */
 const ID_RE = /^[A-Za-z0-9_.:#@-]{1,200}$/;
@@ -149,17 +149,19 @@ function applyOps(userId, ops) {
  * 墓碑不进快照 —— 客户端要的是「现在还活着的东西」，不是删除史。
  */
 function snapshot(userId) {
-  const out = { tasks: {}, habits: {} };
+  const out = { tasks: {}, habits: {}, projects: {} };
   // 每条状态都带上它属于哪个集，客户端据此归位（也是上面那个「新集」判断的依据）
   for (const r of db.allFields(db.calendarIdsFor(userId))) {
-    const bucket = r.entity === 'habit' ? out.habits : out.tasks;
+    const bucket = r.entity === 'habit' ? out.habits
+      : r.entity === 'project' ? out.projects
+        : out.tasks;
     let e = bucket[r.entity_id];
     if (!e) e = bucket[r.entity_id] = { id: r.entity_id, calId: r.cal_id, _ts: {}, _dev: {} };
     e[r.field] = safeParse(r.value);
     e._ts[r.field] = Number(r.ts);
     e._dev[r.field] = r.device_id;
   }
-  for (const bucket of [out.tasks, out.habits]) {
+  for (const bucket of [out.tasks, out.habits, out.projects]) {
     for (const id of Object.keys(bucket)) {
       if (bucket[id].deleted === true) delete bucket[id];
     }
