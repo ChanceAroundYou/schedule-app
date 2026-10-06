@@ -28,11 +28,16 @@ const calendars = require('./lib/calendars');
 const invites = require('./lib/invites');
 const rl = require('./lib/ratelimit');
 const aiSettings = require('./lib/ai/settings');
+const aiSessions = require('./lib/ai/sessions');
+const ai = require('./lib/ai');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 25692);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 16 * 1024 * 1024;   // 首次导入历史数据可能一次推几千条 op
+
+/** 一次问 AI 的字数上限。够写一大段话了，再长基本是粘错了东西 */
+const TEXT_MAX = 4000;
 
 /** 自助注册是开放的，给个上限，免得被刷成垃圾账户库。家庭场景用不到 200 */
 const MAX_USERS = Number(process.env.MAX_USERS || 200);
@@ -331,6 +336,62 @@ const handlers = {
   'GET /api/ai/settings': (ctx, me) => aiSettings.read(me.user.id),
 
   'PUT /api/ai/settings': (ctx, me) => aiSettings.update(me.user.id, ctx.body || {}),
+
+  /**
+   * 发一轮对话。**这个处理器自己写响应**（流式），所以返回 `{ raw: true }`
+   * 让路由层别再去 send()。见 lib/ai/sse.mjs 里的说明。
+   *
+   * 限流放在开流之前：开了流再报 429 的话，前端拿到的是一个 200 的流里
+   * 夹着一条错误，比直接 429 难处理得多。它烧的是用户的额度，必须限。
+   */
+  'POST /api/ai/chat': async (ctx, me) => {
+    const userId = me.user.id;
+    const limited = rl.hitBoth([`ai-chat:${userId}`], 30, 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
+    const text = String((ctx.body || {}).text || '').trim();
+    if (!text) return { status: 400, body: { error: '说点什么' } };
+    if (text.length > TEXT_MAX) return { status: 400, body: { error: `一次最多 ${TEXT_MAX} 字` } };
+
+    let mod;
+    try {
+      mod = await ai.load();
+    } catch (e) {
+      return { status: 503, body: { error: e.message } };
+    }
+    const { runChat, openStream, sendEvent, endStream, abortOnClose } = mod;
+
+    openStream(ctx.res);
+    // 用户关掉页面 / 点取消 → 把上游那一次请求也掐掉，别让它在后台继续烧
+    const ac = new AbortController();
+    abortOnClose(ctx.res, () => ac.abort());
+
+    try {
+      await runChat({
+        userId,
+        sessionId: ctx.body.sessionId,
+        text,
+        context: ctx.body.context,
+        emit: (e) => sendEvent(ctx.res, e),
+        signal: ac.signal,
+      });
+    } catch (e) {
+      // runChat 自己会兜住上游错误并 emit error 事件，走到这里说明是更外层的意外
+      console.error('[ai/chat]', e && e.stack ? e.stack : e);
+      sendEvent(ctx.res, { type: 'error', message: '服务器内部错误', code: 'server' });
+    } finally {
+      endStream(ctx.res);
+    }
+    return { raw: true };
+  },
+
+  'GET /api/ai/sessions': (ctx, me) => aiSessions.list(me.user.id),
+
+  'GET /api/ai/sessions/:sessionId': (ctx, me) =>
+    aiSessions.one(me.user.id, ctx.params.sessionId),
+
+  'DELETE /api/ai/sessions/:sessionId': (ctx, me) =>
+    aiSessions.remove(me.user.id, ctx.params.sessionId),
 };
 
 /* ---------------------------------------------------------------- 路由 */
@@ -423,11 +484,25 @@ function createServer() {
     }
 
     try {
-      const out = handlers[route.key]({ req, res, body, params: route.params }, me);
+      // await 是必须的：AI 那条对话路径是 async（它要 await 动态 import 的
+      // .mjs）。同步处理器 await 一个非 Promise 值没有代价。
+      const out = await handlers[route.key]({ req, res, body, params: route.params }, me);
+      // `{ raw: true }` = 处理器自己把响应写完了（SSE 那条路）。
+      // 这里必须**立刻返回**，再去 send() 就是写第二遍头，Node 会抛
+      // ERR_HTTP_HEADERS_SENT，而那时流已经发出去了，用户只看到对话断在半截。
+      if (out && out.raw) return undefined;
       return send(res, out.status, out.body);
     } catch (e) {
       // 不外泄堆栈：它可能带着库文件路径
       console.error(`[${route.key}]`, e && e.message ? e.message : e);
+      // 同上：SSE 已经开了流的话不能再 send()，只能在流里补一条错误
+      if (res.headersSent) {
+        try {
+          res.write(`data: ${JSON.stringify({ type: 'error', message: '服务器内部错误', code: 'server' })}\n\n`);
+          res.end();
+        } catch (_) { /* 连接已经没了 */ }
+        return undefined;
+      }
       return send(res, 500, { error: '服务器内部错误' });
     }
   });
