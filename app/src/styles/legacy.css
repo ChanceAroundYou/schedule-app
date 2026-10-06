@@ -1,41 +1,46 @@
 /* 三档灰（--text / --text-2 / --text-3）的取值是**算出来的**，不是挑出来的。
    两个约束同时成立，改之前先读懂：
 
-   (a) 每一档对最难的那个底色（亮 --panel-3 #f3f5fa / 暗 --panel-3 #232833）
-       的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。--text-2 / --text-3 不是装饰色，
-       在 10.5–12px 的**有信息量**文字上用了 38 处（时间轴刻度 .tl-label、
-   .ev-time、.m-note、.wh-count、.cell-load、.od-date、.drawer-meta、.tip…）。
-       旧值 #949bab 只有 2.79:1，看着「淡雅」，实际读不清。
+   (a) 每一档对**每一种底色**的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。
+       --text-2 / --text-3 不是装饰色，在 10.5–12px 的**有信息量**文字上用了
+       38 处（时间轴刻度 .tl-label、.ev-time、.m-note、.wh-count、.cell-load、
+       .od-date、.drawer-meta、.tip…）。旧值 #949bab 只有 2.79:1，看着「淡雅」，
+       实际读不清。
 
    (b) 三档之间的 **L\* 感知档距按原比例**保留，只是整体压进达标区间。
        必须按 L* 定档，**不能按对比度比值** —— 比值不是线性感知，拿比值去定
        就会把三层挤成两层（#949bab 补到 4.5:1 正好落在 #636b80 上）。
 
-   只动 --text-2 / --text-3。--text 是正文，本来就有 16.78 / 14.47，不动。 */
+   下面的数字是 2026-10-06 换暖纸之后重算的。**换底色 / 改色板之后必须重跑
+   `node tests/contrast.mjs`** —— 暖纸比原来的冷白深，最难的那一档从
+   --panel-3 #f3f5fa 变成 #f0ede8，--text-3 因此从 #687084 压到 #5f6577
+   （4.54 → 4.98）。不重算就会静默掉到线下，而这个脚本**会**断言它。
+
+   --text 是正文，两档底色下都有 14 以上，一直不动。 */
 :root {
-  --bg: #f5f6fa;
-  --panel: #ffffff;
-  --panel-2: #fafbfd;
-  --panel-3: #f3f5fa;
-  --sidebar: #ffffff;
+  --bg: #f6f5f3;
+  --panel: #fffefc;
+  --panel-2: #fbfaf8;
+  --panel-3: #f0ede8;
+  --sidebar: #fbfaf8;
   --text: #1a1d29;
-  --text-2: #4b5160;
-  --text-3: #687084;
-  --border: #e8eaf0;
-  --border-2: #d9dce6;
-  --primary: #4a6cf7;
-  --primary-soft: #edf1ff;
-  --primary-pale: #f6f8ff;
+  --text-2: #474955;
+  --text-3: #5f6577;
+  --border: #e7e4de;
+  --border-2: #d8d3ca;
+  --primary: #2a8261;
+  --primary-soft: #e6f3ec;
+  --primary-pale: #f1f9f5;
   --danger: #df4a4f;
   --danger-soft: #fdeeef;
   --warn: #e08b25;
   --warn-soft: #fdf3e6;
   --ok: #1a9d67;
   --ok-soft: #e8f7f0;
-  --purple: #7b53d8;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .05);
-  --shadow-md: 0 4px 12px rgba(16, 24, 40, .08);
-  --shadow-lg: 0 16px 40px rgba(16, 24, 40, .14);
+  --purple: #3f7d8c;
+  --shadow: 0 1px 2px rgba(38, 32, 24, .06);
+  --shadow-md: 0 4px 12px rgba(38, 32, 24, .09);
+  --shadow-lg: 0 16px 40px rgba(38, 32, 24, .15);
   /* 圆角刻度。原本 67 处写死值收敛到这 6 个 —— 风格轴靠改这 6 个值换几何，
      所以**新加的圆角一律引用刻度，别再写死 px**。取的是各档的众数，
      最坏情况下单个元素差 2px（8px→7px 那一档），肉眼看不出来。 */
@@ -66,35 +71,98 @@
 }
 
 [data-theme="dark"] {
-  --bg: #101216;
-  --panel: #181b22;
-  --panel-2: #1d212a;
-  --panel-3: #232833;
-  --sidebar: #14171d;
-  --text: #e9ebf2;
-  --text-2: #aeb5c4;
-  --text-3: #878ea0;
-  --border: #272c37;
-  --border-2: #343b48;
-  --primary: #6d8bff;
-  --primary-soft: #202739;
-  --primary-pale: #1a2030;
+  --bg: #14120f;
+  --panel: #1c1a17;
+  --panel-2: #22201c;
+  --panel-3: #2a2723;
+  --sidebar: #181613;
+  --text: #eae7e2;
+  --text-2: #b8b3ab;
+  --text-3: #97928a;
+  --border: #302c27;
+  --border-2: #3d3831;
+  --primary: #6fc0a0;
+  --primary-soft: #1a2e27;
+  --primary-pale: #152420;
   --danger: #f0656a;
   --danger-soft: #332024;
   --warn: #e8a24a;
   --warn-soft: #33291a;
   --ok: #37b57f;
   --ok-soft: #1b3028;
-  --purple: #a184f0;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .3);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, .36);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .5);
-
+  --purple: #7bb3c2;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
+  --primary-fg: #14120f;
+  --danger-fg: #1a0f0d;
   --chip-date-bg: #223052; --chip-date-fg: #9db4ff;
   --chip-time-bg: #1c3b30; --chip-time-fg: #6fd6a8;
   --chip-dur-bg: #2c2445; --chip-dur-fg: #bfa4ff;
   --chip-pri-bg: #40262a; --chip-pri-fg: #ff9ba0;
   --chip-rep-bg: #3a2c19; --chip-rep-fg: #f0bd7a;
+}
+
+/* ================= 色板轴 =================
+   6 套，只改主色族（--primary / soft / pale / fg / --purple）与语义色的冷暖。
+   底色（--bg / --panel*）**不随色板走**，那是「深浅」那一轴的事 —— 两轴混在一起
+   会变成 6×2 套手工配色，改一处要翻 12 个地方。
+
+   --primary-fg 是主色上的**前景色**：主色是浅色时（暗色档全部、以后的浅色板）
+   它必须是深色，否则白字压浅底读不出来。这是原来 21 处写死 color:#fff 的病根。
+   azure 那一套例外，两个档都是 #fff —— 它的职责就是「还原成今天的样子」。
+
+   暗色档用复合选择器 [data-theme="dark"][data-accent="…"]，特异度比单属性的
+   高一级，所以不依赖两块的先后顺序 —— 但也别把暗色档写到亮色档前面去。 */
+
+[data-accent="jade"] {
+  --primary: #2a8261; --primary-soft: #e6f3ec; --primary-pale: #f1f9f5;
+  --primary-fg: #fff; --purple: #3f7d8c;
+}
+[data-accent="azure"] {
+  --primary: #4a6cf7; --primary-soft: #edf1ff; --primary-pale: #f6f8ff;
+  --primary-fg: #fff; --purple: #7b53d8;
+}
+[data-accent="clay"] {
+  --primary: #b45c3f; --primary-soft: #fbeee8; --primary-pale: #fdf6f2;
+  --primary-fg: #fff; --purple: #8a5a7a;
+}
+[data-accent="plum"] {
+  --primary: #8a4a86; --primary-soft: #f7ecf6; --primary-pale: #fbf5fa;
+  --primary-fg: #fff; --purple: #5f4a9c;
+}
+[data-accent="gold"] {
+  --primary: #8f6614; --primary-soft: #faf1dc; --primary-pale: #fdf8ee;
+  --primary-fg: #fff; --purple: #6b7a3a;
+}
+[data-accent="slate"] {
+  --primary: #4b5b70; --primary-soft: #eaeef3; --primary-pale: #f4f6f9;
+  --primary-fg: #fff; --purple: #5c6b80;
+}
+
+[data-theme="dark"][data-accent="jade"] {
+  --primary: #6fc0a0; --primary-soft: #1a2e27; --primary-pale: #152420;
+  --primary-fg: #14120f; --purple: #7bb3c2;
+}
+[data-theme="dark"][data-accent="azure"] {
+  --primary: #6d8bff; --primary-soft: #202739; --primary-pale: #1a2030;
+  --primary-fg: #fff; --purple: #a184f0;
+}
+[data-theme="dark"][data-accent="clay"] {
+  --primary: #e08a68; --primary-soft: #301f19; --primary-pale: #261914;
+  --primary-fg: #14120f; --purple: #c395b5;
+}
+[data-theme="dark"][data-accent="plum"] {
+  --primary: #c98cc4; --primary-soft: #2c1f2b; --primary-pale: #231a22;
+  --primary-fg: #14120f; --purple: #a48cd8;
+}
+[data-theme="dark"][data-accent="gold"] {
+  --primary: #d9b055; --primary-soft: #2c2517; --primary-pale: #231e13;
+  --primary-fg: #14120f; --purple: #a8b06a;
+}
+[data-theme="dark"][data-accent="slate"] {
+  --primary: #9aabc2; --primary-soft: #1e2530; --primary-pale: #191f28;
+  --primary-fg: #14120f; --purple: #8fa0b8;
 }
 
 * { box-sizing: border-box; }
