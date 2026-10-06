@@ -28,6 +28,13 @@
   --text-3: #5f6577;
   --border: #e7e4de;
   --border-2: #d8d3ca;
+  /* 可见边框的宽度。风格轴靠它换「线」的粗细：soft / notion 都是 1px，
+     flat 是 2px（Minimalist Flat 的硬边框感）。规则区里凡是全边的
+     `border: … solid …` 都引用它，**别再写死 1px** —— 写死的那一处会在
+     flat 档下原地不动，而它不报错、不崩，只是「这一圈线没变粗」。
+     `border: 1px solid transparent`（占位边框）不引用它：那种不参与视觉，
+     只是撑住尺寸防抖动，加粗反而会挤动布局。 */
+  --border-w: 1px;
   --primary: #395ef6;
   --primary-soft: #e6f3ec;
   --primary-pale: #f1f9f5;
@@ -166,8 +173,9 @@
 }
 
 /* ================= 风格轴 =================
-   只改**几何**：6 个圆角刻度 + 6 个阴影令牌。颜色一个字不动 —— 那是另两轴的事。
-   这样一个风格切过去，配色不会跟着变，排查「怎么这个风格颜色不对」时不必翻色板。
+   改**几何**：6 个圆角刻度 + 6 个阴影令牌 + 一个边框宽度。颜色一个字不动 ——
+   那是另两轴的事。这样一个风格切过去，配色不会跟着变，排查「怎么这个风格颜色
+   不对」时不必翻色板。
 
    三个块**必须排在 :root 与 [data-theme="dark"] 之后**：三者特异度都是 (0,1,0)，
    靠源码顺序决胜。排在前面的话 flat + 暗色会留着暗色档那套阴影（flat 但是有影子，
@@ -177,9 +185,14 @@
    另外：`border-radius: 50%`（勾选圈、时间轴上的「现在」那个点）**不受影响** ——
    那是正圆，不是圆角刻度，扁平风格里也照样是圆的。
 
-   ponytail: 只动圆角与阴影。notion 真正的特征是「拿 1px 细线代替阴影」，那要给
-   十几个卡片各加一条边框规则，回归面比收益大。等有人真觉得 flat 和 notion 太像
-   再说 —— 那时加一个 --border-strength 令牌，不是现在。 */
+   三档现在各自的特征（参考 stylekit.top 的定义）：
+     soft   大圆角 + 柔和阴影 + 1px 边框（默认，原样）
+     flat   零圆角 + 零阴影 + **2px 硬边框**（Minimalist Flat）
+     notion 小圆角 + 零阴影 + 1px 微妙边框（Notion Style）
+
+   边框这一维靠 `--border-w`：规则区里凡是全边 `border: … solid …` 都引用它。
+   这就是原来 flat / notion 看起来差不多的原因 —— 之前只改了圆角与阴影，
+   而边框（三档都有 1px）一直没跟着动，flat 少了「硬边框」这个最显眼的特征。 */
 
 [data-style="soft"] {
 }
@@ -188,6 +201,8 @@
   --r-xs: 0; --r-sm: 0; --r-md: 0; --r-lg: 0; --r-xl: 0; --r-pill: 0;
   --shadow: none; --shadow-md: none; --shadow-lg: none;
   --shadow-up: none; --shadow-up-sm: none; --shadow-sticky: none;
+  /* Minimalist Flat 的硬边框：全边边框统一加粗到 2px */
+  --border-w: 2px;
 }
 
 [data-style="notion"] {
@@ -197,6 +212,24 @@
      全 none 会让它们在内容上「糊」成一片 */
   --shadow-up: 0 -1px 0 var(--border-2);
   --shadow-up-sm: none; --shadow-sticky: none;
+  /* 边框仍是 1px —— Notion 的特征是「1px 微妙细线」，不是粗边框 */
+  --border-w: 1px;
+}
+
+/* flat / notion 的阴影都归零，下面这几个「只靠阴影浮在内容之上」的面就没界了。
+   卡片 / 任务行 / 时间轴方块**本来就有 1px 边框**（.task-row / .habit-row /
+   .tl-event / .checkin-strip…，三档都带），不用管；缺界的只有这几个整页浮层。
+   补一条真边框，soft 档有阴影、本来就没这个问题，不动它（保持零回归）。
+
+   特异度 (0,2,0) 压过 `.drawer { border-left: … }` 那种 (0,1,0)，所以不必
+   担心它定义在本节之后 —— 覆盖靠的是特异度，不是源码顺序。 */
+[data-style="flat"] .drawer,
+[data-style="flat"] .more-sheet,
+[data-style="flat"] .act-sheet,
+[data-style="notion"] .drawer,
+[data-style="notion"] .more-sheet,
+[data-style="notion"] .act-sheet {
+  border: var(--border-w) solid var(--border);
 }
 
 * { box-sizing: border-box; }
@@ -300,7 +333,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* 今日进度 */
 .side-pulse {
   margin: 14px 0 2px; padding: 11px 13px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
 }
 .sp-head { display: flex; align-items: baseline; justify-content: space-between; }
 .sp-title { font-size: 11.5px; color: var(--text-2); letter-spacing: .3px; }
@@ -315,7 +348,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .sidebar-footer { padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .ghost-btn {
-  flex: 1; padding: 7px; border: 1px solid var(--border-2); background: none;
+  flex: 1; padding: 7px; border: var(--border-w) solid var(--border-2); background: none;
   color: var(--text-2); border-radius: var(--r-md); font-size: 12px;
   transition: background .14s, color .14s, border-color .14s;
 }
@@ -337,13 +370,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 .round-btn {
-  width: 30px; height: 30px; border: 1px solid var(--border-2); background: none;
+  width: 30px; height: 30px; border: var(--border-w) solid var(--border-2); background: none;
   border-radius: var(--r-md); color: var(--text-2); font-size: 15px; line-height: 1;
   transition: background .14s, color .14s, border-color .14s;
 }
 .round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
 .text-btn {
-  padding: 6px 12px; border: 1px solid var(--border-2); background: none;
+  padding: 6px 12px; border: var(--border-w) solid var(--border-2); background: none;
   border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s, border-color .14s;
 }
@@ -367,7 +400,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jump-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
   width: 268px; padding: 12px;
-  background: var(--panel); border: 1px solid var(--border-2);
+  background: var(--panel); border: var(--border-w) solid var(--border-2);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   animation: fadeUp .14s ease;
 }
@@ -376,7 +409,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-row { display: flex; gap: 6px; }
 .jp-row input {
   flex: 1; min-width: 0; padding: 6px 9px; font-size: 12.5px;
-  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  border: var(--border-w) solid var(--border-2); border-radius: var(--r-sm);
   background: var(--panel-2); color: var(--text);
 }
 .jp-row input:focus { outline: none; border-color: var(--primary); background: var(--panel); }
@@ -423,7 +456,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .search-box {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border: 1px solid var(--border-2);
+  padding: 6px 11px; border: var(--border-w) solid var(--border-2);
   border-radius: var(--r-md); background: var(--panel-2);
   transition: border-color .14s, background .14s;
 }
@@ -432,7 +465,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .search-ico { font-size: 12px; opacity: .6; }
 .clear-search { border: none; background: none; color: var(--text-3); font-size: 12px; }
 
-.view-switch { display: flex; border: 1px solid var(--border-2); border-radius: var(--r-md); overflow: hidden; }
+.view-switch { display: flex; border: var(--border-w) solid var(--border-2); border-radius: var(--r-md); overflow: hidden; }
 .view-switch button {
   padding: 6px 14px; border: none; background: none; color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s;
@@ -453,7 +486,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* ================= 日视图 ================= */
 
 .allday-zone {
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); padding: 12px 16px; margin-bottom: 12px;
   box-shadow: var(--shadow);
 }
@@ -470,7 +503,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .zone-empty { font-size: 12px; color: var(--text-3); padding: 5px 0; grid-column: 1 / -1; }
 
 .tl-wrap {
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); padding: 16px 14px 16px 62px;
   box-shadow: var(--shadow);
 }
@@ -492,7 +525,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .tl-event {
   position: absolute; border-radius: var(--r-sm); padding: 4px 7px;
-  background: var(--primary-soft); border: 1px solid var(--border);
+  background: var(--primary-soft); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
   overflow: hidden; cursor: pointer; min-height: 22px;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线） */
@@ -545,7 +578,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   display: flex; flex-direction: column;
   height: calc(100vh - 168px); min-height: 420px;
   overflow-y: auto; overflow-x: hidden;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
 }
 .week-head {
@@ -644,7 +677,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* 定时任务按时间落格 */
 .wk-event {
   position: absolute; border-radius: var(--r-sm); padding: 2px 5px;
-  background: var(--primary-soft); border: 1px solid var(--border);
+  background: var(--primary-soft); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
   overflow: hidden; cursor: pointer;
   display: flex; flex-direction: column; gap: 1px;
@@ -666,7 +699,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .month-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
   gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
+  border: var(--border-w) solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
 }
 .month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
 .month-cell:hover { background: var(--panel-2); }
@@ -698,7 +731,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .task-pill {
   display: flex; align-items: center; gap: 5px;
   padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
-  border: 1px solid var(--border); border-left: 3px solid var(--primary);
+  border: var(--border-w) solid var(--border); border-left: 3px solid var(--primary);
   font-size: 12px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
 }
@@ -757,7 +790,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 /* ===== 每日打卡条（今天顶部） ===== */
 .checkin-strip {
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--panel); border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   padding: 12px 14px; margin-bottom: 16px; box-shadow: var(--shadow);
 }
 .ci-head {
@@ -774,7 +807,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .ci-item {
   display: flex; align-items: center; gap: 7px;
   padding: 6px 11px 6px 9px; border-radius: var(--r-pill);
-  background: var(--panel-2); border: 1px solid var(--border);
+  background: var(--panel-2); border: var(--border-w) solid var(--border);
 }
 .ci-item.done { background: var(--primary-soft); border-color: transparent; }
 .ci-title { font-size: 13px; color: var(--text); }
@@ -784,7 +817,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* ===== 打卡（习惯）页 ===== */
 .habit-add { display: flex; gap: 8px; margin-bottom: 18px; }
 .habit-add input {
-  flex: 1; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--r-lg);
+  flex: 1; padding: 11px 13px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   background: var(--panel); color: var(--text); font-size: 14px;
 }
 .habit-add input:focus { outline: none; border-color: var(--primary); }
@@ -792,7 +825,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .habit-list { display: flex; flex-direction: column; gap: 9px; }
 .habit-row {
   display: flex; align-items: center; gap: 11px;
-  padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
+  padding: 12px 14px; background: var(--panel); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary); border-radius: var(--r-lg); box-shadow: var(--shadow);
 }
 .habit-row.done { opacity: .72; }
@@ -802,7 +835,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .habit-heat { display: flex; gap: 4px; }
 .heat-dot {
   width: 13px; height: 13px; border-radius: var(--r-xs); background: var(--panel-3);
-  border: 1px solid var(--border);
+  border: var(--border-w) solid var(--border);
 }
 .heat-dot.on { background: var(--primary); border-color: var(--primary); }
 .habit-del {
@@ -815,7 +848,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   position: relative;
   display: flex; align-items: center; gap: 10px;
   padding: 11px 32px 11px 13px; margin-bottom: 7px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary); border-radius: var(--r-lg);
   cursor: pointer;
   transition: box-shadow .14s, transform .14s, border-color .14s;
@@ -895,7 +928,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
 }
 .od-btn:hover { background: var(--primary); color: var(--primary-fg); }
-.od-btn.ghost { background: transparent; border: 1px solid var(--border-2); }
+.od-btn.ghost { background: transparent; border: var(--border-w) solid var(--border-2); }
 .od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
 
 .check-btn {
@@ -939,7 +972,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 
 .chip {
-  padding: 4px 10px; border: 1px solid var(--border-2); background: var(--panel);
+  padding: 4px 10px; border: var(--border-w) solid var(--border-2); background: var(--panel);
   border-radius: var(--r-sm); color: var(--text-2); font-size: 12px;
   transition: border-color .14s, color .14s, background .14s;
 }
@@ -1036,7 +1069,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-add {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 6px 22px 18px; padding: 11px 16px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
   transition: border-color .16s, box-shadow .16s;
 }
@@ -1046,7 +1079,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
 .fast-clock {
-  border: 1px solid var(--border-2); background: none; color: var(--text-2);
+  border: var(--border-w) solid var(--border-2); background: none; color: var(--text-2);
   border-radius: var(--r-md); padding: 5px 9px; font-size: 13px; line-height: 1;
   transition: border-color .14s, color .14s, background .14s;
 }
@@ -1073,7 +1106,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .time-trigger {
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border: 1px solid var(--border-2); border-radius: var(--r-md);
+  padding: 7px 12px; border: var(--border-w) solid var(--border-2); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, color .14s;
 }
@@ -1091,7 +1124,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
      写成 274 时内容盒只有 242，表盘比它宽 4px，`margin: 0 auto` 塌成 0，
      表盘就整体偏右 2px（探针第十七节量左右空隙，差超过 1px 就红）。 */
   width: 278px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-xl); box-shadow: var(--shadow-lg); padding: 15px;
 }
 .cp-display { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 11px; }
@@ -1116,7 +1149,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .cp-face {
   position: relative; width: 246px; height: 246px; margin: 0 auto;
-  border-radius: 50%; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 50%; background: var(--panel-2); border: var(--border-w) solid var(--border);
 }
 .cp-hand {
   position: absolute; left: 50%; top: 50%; margin-top: -1px; height: 2px;
@@ -1141,12 +1174,12 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .repeat-panel {
   margin-top: 10px; padding: 12px 14px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
 }
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .rp-l { flex: 0 0 34px; font-size: 12px; color: var(--text-2); }
 .rp-row input[type="number"], .rp-row select, .rp-row input[type="date"] {
-  padding: 6px 9px; border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  padding: 6px 9px; border: var(--border-w) solid var(--border-2); border-radius: var(--r-sm);
   background: var(--panel); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
@@ -1200,7 +1233,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .field .sub { color: var(--text-3); }
 .field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
 .field input[type="date"], .field input[type="time"], .field select, .field textarea {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--border-2);
+  width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--border-2);
   border-radius: var(--r-md); background: var(--panel-2); outline: none;
   transition: border-color .14s, background .14s;
 }
@@ -1217,7 +1250,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .primary-btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
 .danger-btn {
-  padding: 9px 15px; border: 1px solid var(--danger); border-radius: var(--r-md);
+  padding: 9px 15px; border: var(--border-w) solid var(--danger); border-radius: var(--r-md);
   background: none; color: var(--danger); font-size: 13px;
   transition: background .14s;
 }
@@ -1337,7 +1370,7 @@ body.sheet-open .tab:active { background: none; }
 .ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .ms-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 13px 6px; border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 13px 6px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   background: var(--panel-2); color: var(--text); position: relative;
 }
 .ms-item:active { background: var(--panel-3); }
@@ -1372,7 +1405,7 @@ body.sheet-open .tab:active { background: none; }
 .as-grid:empty + .as-cancel { margin-top: 0; }
 .as-btn {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 12px 4px; border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 12px 4px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   background: var(--panel-2); color: var(--text); font-size: 12px;
 }
 .as-btn:active { background: var(--panel-3); }

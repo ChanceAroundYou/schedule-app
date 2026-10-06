@@ -48,6 +48,12 @@ const BANNED = [
   // 值里带 px 又没引用 var() 的圆角。`50%` 与 `0` 是正圆 / 方角，不算写死
   ['写死的圆角', /border-radius:\s*([^;{}]*)/g,
     (v) => /\d+px/.test(v) && !v.includes('var('), '改引用 --r-xs/sm/md/lg/xl/pill'],
+  // 全边边框写死 1px 就绕过了风格轴 —— flat 那一档的「2px 硬边框」全靠
+  // --border-w，写死的那一处会原地不动。`transparent` 的占位边框豁免
+  // （它不参与视觉、只撑尺寸），单边的 `border-left: 1px solid` 也豁免
+  // （那是分隔线，不跟风格轴走），所以这里只盯 `border:` 这个全边简写
+  ['写死的边框宽度', /\bborder:\s*([^;{}]*)/g,
+    (v) => /\b1px\s+solid/.test(v) && !v.includes('transparent'), '全边边框改 var(--border-w)'],
   ['主色上的白字', /\bcolor:\s*#fff\b/gi, null, '改 color: var(--primary-fg)'],
   ['旧主色的 RGB', /rgba\(74,\s*108,\s*247/g, null, '改用 rgb(from var(--primary) r g b / a)'],
   ['写死的紫', /#7b53d8/gi, null, '改 var(--purple)'],
@@ -58,7 +64,7 @@ const BANNED = [
 const REQUIRED = [
   '--r-xs', '--r-sm', '--r-md', '--r-lg', '--r-xl', '--r-pill',
   '--primary-fg', '--danger-fg', '--toast-bg', '--toast-fg', '--toast-link',
-  '--font', '--shadow-up', '--shadow-up-sm', '--shadow-sticky',
+  '--font', '--shadow-up', '--shadow-up-sm', '--shadow-sticky', '--border-w',
 ];
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
