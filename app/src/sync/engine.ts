@@ -203,7 +203,8 @@ export async function bootstrap(): Promise<void> {
   await syncNow();
 
   const s = store.get();
-  if (Object.keys(s.tasks).length || Object.keys(s.habits).length) return;
+  if (Object.keys(s.tasks).length || Object.keys(s.habits).length
+      || Object.keys(s.projects).length) return;
 
   const legacy = readLegacy();
   if (!legacy) return;

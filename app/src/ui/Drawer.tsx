@@ -18,6 +18,7 @@ import { ClockPop } from './Clock.tsx';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
+import { liveProjects } from '../domain/model.ts';
 import { Btn, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
@@ -92,6 +93,10 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
   const panel = useRef<HTMLElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
   useFocusTrap(panel, !!task);
+  // 归属跨集选不了：项目是**按集**的（跟日程 / 打卡 / 已完成一样），
+  // 所以这里列的是当前这个集里的项目 —— 挂到别的集的项目上，
+  // 那条泳道在那边会凭空多出一张卡，而用户从没在那边建过它
+  const projs = liveProjects(state);
   /** 每个字段的 label / 控件配对用的 id 前缀。
    *  `.field label` 是**兄弟**关系且没有 htmlFor —— 点 label 不会聚焦控件，
    *  读屏也念不出这个框是干什么的。用 useId 配上，别写死字符串（同页面
@@ -363,6 +368,23 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                 {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
               </div>
             )}
+          </div>
+
+          {/*
+            项目归属**只在这一处改**，拖拽不改它。
+            拖进泳道列只换「哪一列」，搬归属是这条下拉的职责 ——
+            拖动顺手把「搬家」也做掉，比什么都不做更让人措手不及。
+          */}
+          <div className="field">
+            <label htmlFor={fid + '-proj'}>项目</label>
+            <select
+              id={fid + '-proj'}
+              value={task.projectId || ''}
+              onChange={(e) => onPatch(task.id, { projectId: e.target.value || null })}
+            >
+              <option value="">不属于任何项目</option>
+              {projs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
 
           <div className="field">

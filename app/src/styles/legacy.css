@@ -1,139 +1,202 @@
 /* 三档灰（--text / --text-2 / --text-3）的取值是**算出来的**，不是挑出来的。
    两个约束同时成立，改之前先读懂：
 
-   (a) 每一档对最难的那个底色（亮 --panel-3 #f3f5fa / 暗 --panel-3 #232833）
-       的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。--text-2 / --text-3 不是装饰色，
-       在 10.5–12px 的**有信息量**文字上用了 38 处（时间轴刻度 .tl-label、
-   .ev-time、.m-note、.wh-count、.cell-load、.od-date、.drawer-meta、.tip…）。
-       旧值 #949bab 只有 2.79:1，看着「淡雅」，实际读不清。
+   (a) 每一档对**每一种底色**的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。
+       --text-2 / --text-3 不是装饰色，在 10.5–12px 的**有信息量**文字上用了
+       38 处（时间轴刻度 .tl-label、.ev-time、.m-note、.wh-count、.cell-load、
+       .od-date、.drawer-meta、.tip…）。旧值 #949bab 只有 2.79:1，看着「淡雅」，
+       实际读不清。
 
    (b) 三档之间的 **L\* 感知档距按原比例**保留，只是整体压进达标区间。
        必须按 L* 定档，**不能按对比度比值** —— 比值不是线性感知，拿比值去定
        就会把三层挤成两层（#949bab 补到 4.5:1 正好落在 #636b80 上）。
 
-   只动 --text-2 / --text-3。--text 是正文，本来就有 16.78 / 14.47，不动。
+   下面的数字是 2026-10-06 换暖纸之后重算的。**换底色 / 改色板之后必须重跑
+   `node tests/contrast.mjs`** —— 暖纸比原来的冷白深，最难的那一档从
+   --panel-3 #f3f5fa 变成 #f0ede8，--text-3 因此从 #687084 压到 #5f6577
+   （4.54 → 4.98）。不重算就会静默掉到线下，而这个脚本**会**断言它。
 
-   同一个道理也适用于**亮色的语义色**（--primary / --danger / --warn / --ok）与
-   快速添加那组胶囊的 fg：它们同样当正文用（错误提示、打卡连续天数、进度数字、
-   解析预览），亮色那一套原先整体只有 2.66–4.39。**暗色那一套本来就是达标的**
-   （5.56–7.96），所以只改了亮色。
-
-   语义色比灰阶多一层约束：--primary / --danger **既当文字色、也当按钮底色配字**
-   （.check-btn.on / .chip.active / .nav-item .count.warn …），所以要同时满足
-   「对自己的 soft 底」和「--on-primary 对自己」两种方向 —— 只往一个方向调会让另一种更糟。
-   取值仍然按「保持色相、找最浅的达标值」来，改动尽量小。
-   --warn 是唯一视觉上明显变了的（橙→褐），因为 2.66 实在太低，绕不开。
-
-   --on-primary 是**压在语义色上的文字色**，亮色白、暗色近黑。
-
-   为什么暗色必须反过来：暗色的 --primary (#6d8bff) 是个**亮蓝**，白字压上去只有
-   3.09；--danger (#f0656a) 同理 3.10。这不是没调好 —— 枚举过整个色相不变的范围，
-   让 --primary 既要在 #181b22 上读得清（要够亮，≥4.5）又扛得住 #fff 压上来
-   （要够暗，≥4.5），**满足两个条件的取值有 0 个**。单色无解，只能多一个变量。
-   暗色改用近黑字之后是 6.1:1，亮色本来就够深，白字 5.11 —— 两套都过。
-   19 处 color:#fff 押在 --primary / --danger 上的，一律走 var(--on-primary)。
-
-   两处**故意留 #fff**：.brand-logo 是 32×32 的图标字，WCAG 1.4.3 明文豁免
-   logotype（而且它的渐变第二站是 #7b53d8，换深色字反而掉到 3.66）；
-   .toast 的底是写死的深色（两套主题都深），换深色字会看不见。
-
-   13 处光晕（12 个 box-shadow + .ev-resize::after 那条抓手）原先写的是
-   rgba(74,108,247,…) / rgba(223,74,79,…) —— 那是**旧版 --primary (#4a6cf7)
-   与 --danger (#df4a4f) 的硬编码副本**，而这两个颜色现在全站哪里都没有了
-   （亮色是 #395ef6 / #d5262c，暗色是 #6d8bff / #f0656a）。已改成
-   color-mix(in srgb, var(--primary) N%, transparent)：位移 / 模糊 / 扩散
-   一个字节没动，只有**颜色**回到当前主题的语义色上，α 也原样保留。
-   暗色下现在会跟着 --primary 变亮，不再是一层发灰的旧蓝。
-
-   ── 边框只有两档 + 一条焦点环，别再分第三档 ──────────────────────────────
-   --border  装饰分隔线 · 表面轮廓 · 中性填充。**不要求 3:1** —— 它画的是
-             「两块东西挨着」，不是「这里能点」。时间轴刻度、月历格线、
-             卡片边、浮层边、进度槽、拖拽抓手、置灰的完成胶囊，都是它。
-             一档兼「线」和「填充」是常见做法（Radix 第 6 步、Tailwind 的
-             border-gray-200 + bg-gray-200 都是同一个色值两用）。
-   --input   交互控件描边，**要求 3:1**（WCAG 1.4.11）。输入框、下拉、
-             勾选圈、幽灵按钮、视图切换、滚动条把手。
-             旧值亮 #d9dce6 只有 1.37、暗 #343b48 只有 1.53 —— 那个 20px 的
-             空勾选圈，只有它自己说明「这里能点」，而这是给家里长辈用的。
-             旧名字 --border-2 也和常见范式反着：多数设计系统里带「2」的那个
-             是**更弱**的（Ant 的 colorBorderSecondary 就是），而它实际更强。
-             现在的名字取自 shadcn 的 --input / Material 3 的 outline / Primer 的
-             control-borderColor —— 按**角色**命名，不按序号。
-
-             归类只认一条：**用户能不能操作它**。提示框（.conflict-box）、
-             邀请卡片、发出去的邀请那行虚线，都是「表面」，走 --border。
-             浮动面板（.jump-pop）同理，它有 --shadow-lg，本来就是浮起来的。
-             曾经按「有没有边框」去分类，结果把卡片也塞进 --input 了。
-
-   --primary 还兼一件事：**焦点环**（见文件末尾那条 :focus-visible）。
-   不要为它单开变量 —— 环的颜色就是 --primary，没有第二个取值。 */
-
+   --text 是正文，两档底色下都有 14 以上，一直不动。 */
 :root {
-  --bg: #f5f6fa;
-  --panel: #ffffff;
-  --panel-2: #fafbfd;
-  --panel-3: #f3f5fa;
-  --sidebar: #ffffff;
+  --bg: #f6f5f3;
+  --panel: #fffefc;
+  --panel-2: #fbfaf8;
+  --panel-3: #f0ede8;
+  --sidebar: #fbfaf8;
   --text: #1a1d29;
-  --text-2: #4b5160;
-  --text-3: #687084;
-  --border: #e8eaf0;
-  --input: #82889b;
+  --text-2: #474955;
+  --text-3: #5f6577;
+  --border: #e7e4de;
+  --border-2: #d8d3ca;
   --primary: #395ef6;
-  --primary-soft: #edf1ff;
-  --primary-pale: #f6f8ff;
-  --on-primary: #ffffff;
+  --primary-soft: #e6f3ec;
+  --primary-pale: #f1f9f5;
   --danger: #d5262c;
   --danger-soft: #fdeeef;
   --warn: #a16217;
   --warn-soft: #fdf3e6;
   --ok: #158054;
   --ok-soft: #e8f7f0;
-  --purple: #7b53d8;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .05);
-  --shadow-md: 0 4px 12px rgba(16, 24, 40, .08);
-  --shadow-lg: 0 16px 40px rgba(16, 24, 40, .14);
-  --radius: 12px;
+  --purple: #3f7d8c;
+  --shadow: 0 1px 2px rgba(38, 32, 24, .06);
+  --shadow-md: 0 4px 12px rgba(38, 32, 24, .09);
+  --shadow-lg: 0 16px 40px rgba(38, 32, 24, .15);
+  /* 圆角刻度。原本 67 处写死值收敛到这 6 个 —— 风格轴靠改这 6 个值换几何，
+     所以**新加的圆角一律引用刻度，别再写死 px**。取的是各档的众数，
+     最坏情况下单个元素差 2px（8px→7px 那一档），肉眼看不出来。 */
+  --r-xs: 2px; --r-sm: 7px; --r-md: 9px; --r-lg: 12px; --r-xl: 18px; --r-pill: 999px;
+
+  /* 主色上的前景色。主色本身是浅色时（暗色档的主色、以后的青玉那类色板）
+     它必须翻成深色，否则白字压浅底读不出来 —— 原来 21 处写死 color:#fff。 */
+  --primary-fg: #fff;
+  --danger-fg: #fff;
+
+  /* toast 是反色的小黑条，深浅两档都长这样，所以它自带三个值 */
+  --toast-bg: #1b1f28; --toast-fg: #fff; --toast-link: #9db4ff;
+
+  --font: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+
+  /* 方向与 --shadow* 相反的三条：底栏 / 抽屉 / 更多浮层往上投，
+     周视图未定时行那条只有 2px 的贴边阴影。它们没法用 --shadow* 表达。 */
+  --shadow-up: 0 -8px 30px rgba(16, 24, 40, .18);
+  --shadow-up-sm: 0 -2px 12px rgba(16, 24, 40, .06);
+  --shadow-sticky: 0 4px 10px -8px rgba(0, 0, 0, .35);
   --wide: 920px;
 
   --chip-date-bg: #e9eeff; --chip-date-fg: #3a5bd9;
-  --chip-time-bg: #e4f6ee; --chip-time-fg: #117e55;
+  --chip-time-bg: #e4f6ee; --chip-time-fg: #138a5d;
   --chip-dur-bg: #f0eaff; --chip-dur-fg: #6b45c8;
-  --chip-pri-bg: #fdecec; --chip-pri-fg: #cc3238;
-  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #9e6218;
+  --chip-pri-bg: #fdecec; --chip-pri-fg: #cf3b41;
+  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #a9691a;
 }
 
 [data-theme="dark"] {
-  --bg: #101216;
-  --panel: #181b22;
-  --panel-2: #1d212a;
-  --panel-3: #232833;
-  --sidebar: #14171d;
-  --text: #e9ebf2;
-  --text-2: #aeb5c4;
-  --text-3: #878ea0;
-  --border: #272c37;
-  --input: #71767f;
-  --primary: #6d8bff;
-  --primary-soft: #202739;
-  --primary-pale: #1a2030;
-  --on-primary: #101216;
+  --bg: #14120f;
+  --panel: #1c1a17;
+  --panel-2: #22201c;
+  --panel-3: #2a2723;
+  --sidebar: #181613;
+  --text: #eae7e2;
+  --text-2: #b8b3ab;
+  --text-3: #97928a;
+  --border: #302c27;
+  --border-2: #3d3831;
+  --primary: #6fc0a0;
+  --primary-soft: #1a2e27;
+  --primary-pale: #152420;
   --danger: #f0656a;
   --danger-soft: #332024;
   --warn: #e8a24a;
   --warn-soft: #33291a;
   --ok: #37b57f;
   --ok-soft: #1b3028;
-  --purple: #a184f0;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .3);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, .36);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .5);
-
+  --purple: #7bb3c2;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
+  --primary-fg: #14120f;
+  --danger-fg: #1a0f0d;
   --chip-date-bg: #223052; --chip-date-fg: #9db4ff;
   --chip-time-bg: #1c3b30; --chip-time-fg: #6fd6a8;
   --chip-dur-bg: #2c2445; --chip-dur-fg: #bfa4ff;
   --chip-pri-bg: #40262a; --chip-pri-fg: #ff9ba0;
   --chip-rep-bg: #3a2c19; --chip-rep-fg: #f0bd7a;
+}
+
+/* ================= 色板轴 =================
+   6 套，只改主色族（--primary / soft / pale / fg / --purple）与语义色的冷暖。
+   底色（--bg / --panel*）**不随色板走**，那是「深浅」那一轴的事 —— 两轴混在一起
+   会变成 6×2 套手工配色，改一处要翻 12 个地方。
+
+   --primary-fg 是主色上的**前景色**：主色是浅色时（暗色档全部、以后的浅色板）
+   它必须是深色，否则白字压浅底读不出来。这是原来 21 处写死 color:#fff 的病根。
+   azure 那一套例外，两个档都是 #fff —— 它的职责就是「还原成今天的样子」。
+
+   暗色档用复合选择器 [data-theme="dark"][data-accent="…"]，特异度比单属性的
+   高一级，所以不依赖两块的先后顺序 —— 但也别把暗色档写到亮色档前面去。 */
+
+[data-accent="jade"] {
+  --primary: #2a8261; --primary-soft: #e6f3ec; --primary-pale: #f1f9f5;
+  --primary-fg: #fff; --purple: #3f7d8c;
+}
+[data-accent="azure"] {
+  --primary: #4a6cf7; --primary-soft: #edf1ff; --primary-pale: #f6f8ff;
+  --primary-fg: #fff; --purple: #7b53d8;
+}
+[data-accent="clay"] {
+  --primary: #b45c3f; --primary-soft: #fbeee8; --primary-pale: #fdf6f2;
+  --primary-fg: #fff; --purple: #8a5a7a;
+}
+[data-accent="plum"] {
+  --primary: #8a4a86; --primary-soft: #f7ecf6; --primary-pale: #fbf5fa;
+  --primary-fg: #fff; --purple: #5f4a9c;
+}
+[data-accent="gold"] {
+  --primary: #8f6614; --primary-soft: #faf1dc; --primary-pale: #fdf8ee;
+  --primary-fg: #fff; --purple: #6b7a3a;
+}
+[data-accent="slate"] {
+  --primary: #4b5b70; --primary-soft: #eaeef3; --primary-pale: #f4f6f9;
+  --primary-fg: #fff; --purple: #5c6b80;
+}
+
+[data-theme="dark"][data-accent="jade"] {
+  --primary: #6fc0a0; --primary-soft: #1a2e27; --primary-pale: #152420;
+  --primary-fg: #14120f; --purple: #7bb3c2;
+}
+[data-theme="dark"][data-accent="azure"] {
+  --primary: #6d8bff; --primary-soft: #202739; --primary-pale: #1a2030;
+  --primary-fg: #fff; --purple: #a184f0;
+}
+[data-theme="dark"][data-accent="clay"] {
+  --primary: #e08a68; --primary-soft: #301f19; --primary-pale: #261914;
+  --primary-fg: #14120f; --purple: #c395b5;
+}
+[data-theme="dark"][data-accent="plum"] {
+  --primary: #c98cc4; --primary-soft: #2c1f2b; --primary-pale: #231a22;
+  --primary-fg: #14120f; --purple: #a48cd8;
+}
+[data-theme="dark"][data-accent="gold"] {
+  --primary: #d9b055; --primary-soft: #2c2517; --primary-pale: #231e13;
+  --primary-fg: #14120f; --purple: #a8b06a;
+}
+[data-theme="dark"][data-accent="slate"] {
+  --primary: #9aabc2; --primary-soft: #1e2530; --primary-pale: #191f28;
+  --primary-fg: #14120f; --purple: #8fa0b8;
+}
+
+/* ================= 风格轴 =================
+   只改**几何**：6 个圆角刻度 + 6 个阴影令牌。颜色一个字不动 —— 那是另两轴的事。
+   这样一个风格切过去，配色不会跟着变，排查「怎么这个风格颜色不对」时不必翻色板。
+
+   三个块**必须排在 :root 与 [data-theme="dark"] 之后**：三者特异度都是 (0,1,0)，
+   靠源码顺序决胜。排在前面的话 flat + 暗色会留着暗色档那套阴影（flat 但是有影子，
+   最难查的那种半生效）。
+
+   `soft` 是**空块**：不切风格时几何与 2026-10-06 之前逐像素相同，零回归风险。
+   另外：`border-radius: 50%`（勾选圈、时间轴上的「现在」那个点）**不受影响** ——
+   那是正圆，不是圆角刻度，扁平风格里也照样是圆的。
+
+   ponytail: 只动圆角与阴影。notion 真正的特征是「拿 1px 细线代替阴影」，那要给
+   十几个卡片各加一条边框规则，回归面比收益大。等有人真觉得 flat 和 notion 太像
+   再说 —— 那时加一个 --border-strength 令牌，不是现在。 */
+
+[data-style="soft"] {
+}
+
+[data-style="flat"] {
+  --r-xs: 0; --r-sm: 0; --r-md: 0; --r-lg: 0; --r-xl: 0; --r-pill: 0;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  --shadow-up: none; --shadow-up-sm: none; --shadow-sticky: none;
+}
+
+[data-style="notion"] {
+  --r-xs: 1px; --r-sm: 3px; --r-md: 4px; --r-lg: 6px; --r-xl: 8px; --r-pill: 4px;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  /* 往上投的那三条换成一条细线：底栏 / 抽屉 / 更多浮层还是要有条界，
+     全 none 会让它们在内容上「糊」成一片 */
+  --shadow-up: 0 -1px 0 var(--border-2);
+  --shadow-up-sm: none; --shadow-sticky: none;
 }
 
 * { box-sizing: border-box; }
@@ -143,7 +206,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -154,7 +217,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; color: var(--te
 b, strong { font-variant-numeric: tabular-nums; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--input); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: var(--r-sm); border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
@@ -178,27 +241,25 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 18px; }
 .brand-logo {
-  width: 32px; height: 32px; border-radius: 9px;
-  background: linear-gradient(140deg, var(--primary), #7b53d8);
-  /* 故意不用 --on-primary：① 是图标字，WCAG 1.4.3 豁免 logotype；
-     ② 渐变的第二站 #7b53d8 偏深，暗色改近黑字反而掉到 3.66。 */
-  color: #fff;
+  width: 32px; height: 32px; border-radius: var(--r-md);
+  background: linear-gradient(140deg, var(--primary), var(--purple));
+  color: var(--primary-fg);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 600;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 32%, transparent);
+  box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .32);
 }
 .brand-name { font-size: 14.5px; font-weight: 650; letter-spacing: .2px; }
 
 .quick-add {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 10px; margin-bottom: 16px;
-  background: var(--primary); color: var(--on-primary);
-  border: none; border-radius: 10px;
+  background: var(--primary); color: var(--primary-fg);
+  border: none; border-radius: var(--r-md);
   font-size: 13px; font-weight: 500; letter-spacing: .3px;
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--primary) 28%, transparent);
+  box-shadow: 0 2px 10px rgb(from var(--primary) r g b / .28);
   transition: transform .12s, box-shadow .12s, filter .12s;
 }
-.quick-add:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 5px 16px color-mix(in srgb, var(--primary) 34%, transparent); }
+.quick-add:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 5px 16px rgb(from var(--primary) r g b / .34); }
 .quick-add:active { transform: none; }
 .quick-add .plus { font-size: 15px; }
 
@@ -206,56 +267,56 @@ b, strong { font-variant-numeric: tabular-nums; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; border: none; background: none; position: relative;
-  border-radius: 9px; color: var(--text); font-size: 13.5px; text-align: left;
+  border-radius: var(--r-md); color: var(--text); font-size: 13.5px; text-align: left;
   transition: background .14s, color .14s;
   cursor: grab;
 }
 .nav-item:hover { background: var(--panel-3); }
 /* 拖动排序：整块保持原色，只加一点浮起阴影，方便看清拖到哪 */
-.nav-item.nav-dragging { opacity: 1; cursor: grabbing; background: var(--panel-3); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 22%, transparent); }
+.nav-item.nav-dragging { opacity: 1; cursor: grabbing; background: var(--panel-3); box-shadow: 0 6px 16px rgb(from var(--primary) r g b / .22); }
 /* 落点提示：一条细插入线，不给整片底色 */
 .nav-ins {
-  height: 2px; margin: 1px 6px; border-radius: 2px;
+  height: 2px; margin: 1px 6px; border-radius: var(--r-xs);
   background: var(--primary); flex: 0 0 auto;
 }
 .nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 550; }
 .nav-item.active::before {
   content: ''; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 20px; border-radius: 0 3px 3px 0; background: var(--primary);
+  width: 3px; height: 20px; border-radius: 0 var(--r-xs) var(--r-xs) 0; background: var(--primary);
 }
 .nav-item .ico { width: 17px; font-size: 13px; text-align: center; }
 .nav-item .label { flex: 1; }
 .nav-item .count {
-  min-width: 20px; padding: 0 6px; border-radius: 10px;
+  min-width: 20px; padding: 0 6px; border-radius: var(--r-md);
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; text-align: center; line-height: 19px; font-variant-numeric: tabular-nums;
 }
-.nav-item.active .count { background: var(--primary); color: var(--on-primary); }
+.nav-item.active .count { background: var(--primary); color: var(--primary-fg); }
 /* 逾期徽标用红色，一眼看出有几件拖着 */
 .nav-item .count.warn { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-.nav-item.active .count.warn { background: var(--danger); color: var(--on-primary); }
+.nav-item.active .count.warn { background: var(--danger); color: var(--danger-fg); }
 .nav-bottom { margin-top: auto; }
 
 /* 今日进度 */
 .side-pulse {
   margin: 14px 0 2px; padding: 11px 13px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
 }
 .sp-head { display: flex; align-items: baseline; justify-content: space-between; }
 .sp-title { font-size: 11.5px; color: var(--text-2); letter-spacing: .3px; }
 .sp-num { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .sp-num b { font-size: 16px; color: var(--text); font-weight: 650; }
 .side-pulse.all-done .sp-num b { color: var(--ok); }
-.sp-bar { height: 4px; background: var(--border); border-radius: 2px; margin: 7px 0 6px; overflow: hidden; }
-.sp-bar i { display: block; height: 100%; background: var(--primary); border-radius: 2px; transition: width .35s ease; }
+.sp-bar { height: 4px; background: var(--border); border-radius: var(--r-xs); margin: 7px 0 6px; overflow: hidden; }
+.sp-bar i { display: block; height: 100%; background: var(--primary); border-radius: var(--r-xs); transition: width .35s ease; }
 .side-pulse.all-done .sp-bar i { background: var(--ok); }
 .sp-foot { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
 .sp-over { color: var(--danger); }
 
 .sidebar-footer { padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .ghost-btn {
-  flex: 1; padding: 7px; border: 1px solid var(--input); background: none;
-  color: var(--text-2); border-radius: 9px; font-size: 12px;
+  flex: 1; padding: 7px; border: 1px solid var(--border-2); background: none;
+  color: var(--text-2); border-radius: var(--r-md); font-size: 12px;
   transition: background .14s, color .14s, border-color .14s;
 }
 .ghost-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
@@ -276,14 +337,14 @@ b, strong { font-variant-numeric: tabular-nums; }
 .date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 .round-btn {
-  width: 30px; height: 30px; border: 1px solid var(--input); background: none;
-  border-radius: 9px; color: var(--text-2); font-size: 15px; line-height: 1;
+  width: 30px; height: 30px; border: 1px solid var(--border-2); background: none;
+  border-radius: var(--r-md); color: var(--text-2); font-size: 15px; line-height: 1;
   transition: background .14s, color .14s, border-color .14s;
 }
 .round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
 .text-btn {
-  padding: 6px 12px; border: 1px solid var(--input); background: none;
-  border-radius: 9px; color: var(--text-2); font-size: 12.5px;
+  padding: 6px 12px; border: 1px solid var(--border-2); background: none;
+  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s, border-color .14s;
 }
 .text-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
@@ -306,8 +367,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jump-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
   width: 268px; padding: 12px;
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  background: var(--panel); border: 1px solid var(--border-2);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   animation: fadeUp .14s ease;
 }
 .jump-pop[hidden] { display: none; }
@@ -315,13 +376,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-row { display: flex; gap: 6px; }
 .jp-row input {
   flex: 1; min-width: 0; padding: 6px 9px; font-size: 12.5px;
-  border: 1px solid var(--input); border-radius: 8px;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
   background: var(--panel-2); color: var(--text);
 }
 .jp-row input:focus { outline: none; border-color: var(--primary); background: var(--panel); }
 .jp-go {
-  padding: 0 11px; border: none; border-radius: 8px;
-  background: var(--primary); color: var(--on-primary); font-size: 12.5px;
+  padding: 0 11px; border: none; border-radius: var(--r-sm);
+  background: var(--primary); color: var(--primary-fg); font-size: 12.5px;
 }
 .jp-go:hover { filter: brightness(1.08); }
 
@@ -329,7 +390,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-label { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .jp-nav {
   width: 24px; height: 24px; border: none; background: none;
-  color: var(--text-2); border-radius: 7px; font-size: 15px; line-height: 1;
+  color: var(--text-2); border-radius: var(--r-sm); font-size: 15px; line-height: 1;
 }
 .jp-nav:hover { background: var(--panel-3); color: var(--text); }
 
@@ -339,7 +400,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .jp-cell {
   position: relative; height: 30px; padding: 0 0 5px;
-  border: 1px solid transparent; background: none; border-radius: 8px;
+  border: 1px solid transparent; background: none; border-radius: var(--r-sm);
   color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums;
   line-height: 24px; transition: background .12s, color .12s, border-color .12s;
 }
@@ -349,11 +410,11 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-cell.has.out { background: none; font-weight: 400; }
 .jp-cell.has::after {
   content: ''; position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: 3px; width: 9px; height: 3px; border-radius: 2px; background: var(--primary);
+  bottom: 3px; width: 9px; height: 3px; border-radius: var(--r-xs); background: var(--primary);
 }
 .jp-cell.has.lv2::after { width: 14px; }
 .jp-cell.has.lv3::after { width: 19px; }
-.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: var(--on-primary); }
+.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: var(--primary-fg); }
 .jp-cell.has.cur { border-color: var(--primary); }
 .jp-cell.cur::after { background: #fff; }
 
@@ -362,8 +423,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .search-box {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border: 1px solid var(--input);
-  border-radius: 9px; background: var(--panel-2);
+  padding: 6px 11px; border: 1px solid var(--border-2);
+  border-radius: var(--r-md); background: var(--panel-2);
   transition: border-color .14s, background .14s;
 }
 .search-box:focus-within { border-color: var(--primary); background: var(--panel); }
@@ -371,13 +432,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .search-ico { font-size: 12px; opacity: .6; }
 .clear-search { border: none; background: none; color: var(--text-3); font-size: 12px; }
 
-.view-switch { display: flex; border: 1px solid var(--input); border-radius: 9px; overflow: hidden; }
+.view-switch { display: flex; border: 1px solid var(--border-2); border-radius: var(--r-md); overflow: hidden; }
 .view-switch button {
   padding: 6px 14px; border: none; background: none; color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s;
 }
 .view-switch button:hover { background: var(--panel-3); }
-.view-switch button.active { background: var(--primary); color: var(--on-primary); }
+.view-switch button.active { background: var(--primary); color: var(--primary-fg); }
 
 /* ================= 内容区 ================= */
 
@@ -393,7 +454,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .allday-zone {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 16px; margin-bottom: 12px;
+  border-radius: var(--r-lg); padding: 12px 16px; margin-bottom: 12px;
   box-shadow: var(--shadow);
 }
 .zone-title { font-size: 12.5px; color: var(--text-2); margin-bottom: 9px; display: flex; gap: 8px; align-items: baseline; }
@@ -410,7 +471,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .tl-wrap {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px 14px 16px 62px;
+  border-radius: var(--r-lg); padding: 16px 14px 16px 62px;
   box-shadow: var(--shadow);
 }
 .timeline { position: relative; }
@@ -419,19 +480,18 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
-.tl-busy { position: absolute; left: 0; right: 0; background: var(--primary-pale); border-radius: 6px; }
+.tl-busy { position: absolute; left: 0; right: 0; background: var(--primary-pale); border-radius: var(--r-sm); }
 /* 正在拖动的那一段，底纹立刻让位给方块，原位置不再留一块颜色 */
 .tl-busy.drag-src { display: none; }
-[data-theme="dark"] .tl-busy { background: #1a1f2b; }
 
 .tl-now { position: absolute; left: -8px; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
-.tl-now i { position: absolute; left: -4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
+.tl-now i { position: absolute; left: -4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
 .tl-now span { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--danger); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .tl-events { position: absolute; top: 0; bottom: 0; left: 4px; right: 6px; }
 
 .tl-event {
-  position: absolute; border-radius: 8px; padding: 4px 7px;
+  position: absolute; border-radius: var(--r-sm); padding: 4px 7px;
   background: var(--primary-soft); border: 1px solid var(--border);
   border-left: 3px solid var(--primary);
   overflow: hidden; cursor: pointer; min-height: 22px;
@@ -459,22 +519,20 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .ev-resize-top { top: 0; bottom: auto; }
 .tl-event:hover .ev-resize { opacity: .85; }
-/* 键盘 Tab 进来时也要看得见 —— 否则焦点环画在一个 opacity:0 的元素上 */
-.ev-resize:focus-visible { opacity: .85; }
 .ev-resize::after {
-  content: ''; width: 24px; height: 3px; border-radius: 3px;
-  background: color-mix(in srgb, var(--primary) 55%, transparent);
+  content: ''; width: 24px; height: 3px; border-radius: var(--r-xs);
+  background: rgb(from var(--primary) r g b / .55);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
-.tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 30%, transparent); }
+.tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
 .tl-resize-tip {
   position: fixed; z-index: 80; pointer-events: none;
-  background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
-  padding: 2px 7px; border-radius: 7px; font-variant-numeric: tabular-nums;
+  background: var(--primary); color: var(--primary-fg); font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md); transform: translateY(3px);
 }
 /* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点 */
-.tl-event.dragging { opacity: 1; box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 32%, transparent); z-index: 9; }
+.tl-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
 
 /* ================= 周视图（时间网格） ================= */
 
@@ -488,18 +546,18 @@ b, strong { font-variant-numeric: tabular-nums; }
   height: calc(100vh - 168px); min-height: 420px;
   overflow-y: auto; overflow-x: hidden;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: var(--shadow);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
 }
 .week-head {
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
   flex: 0 0 auto; position: sticky; top: 0; z-index: 6;
-  background: var(--panel); border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--panel); border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .week-head-gutter { }
 .week-head-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .week-head-cell {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 8px 0 6px; border: none; background: none; border-radius: 10px;
+  padding: 8px 0 6px; border: none; background: none; border-radius: var(--r-md);
   color: var(--text-2); font-size: 12px;
   transition: background .14s, color .14s;
 }
@@ -511,12 +569,12 @@ b, strong { font-variant-numeric: tabular-nums; }
   min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
 }
 .week-head-cell.today .wh-day {
-  background: var(--primary); color: var(--on-primary); border-radius: 50%;
+  background: var(--primary); color: var(--primary-fg); border-radius: 50%;
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .3);
 }
-.wh-load { display: block; width: 46px; max-width: 60%; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.wh-load i { display: block; height: 100%; background: var(--primary); border-radius: 2px; transition: width .3s ease; }
+.wh-load { display: block; width: 46px; max-width: 60%; height: 3px; background: var(--border); border-radius: var(--r-xs); overflow: hidden; }
+.wh-load i { display: block; height: 100%; background: var(--primary); border-radius: var(--r-xs); transition: width .3s ease; }
 .wh-load.lv2 i { background: var(--warn); }
 .wh-load.lv3 i { background: var(--danger); }
 .wh-count { font-size: 10.5px; color: var(--text-3); line-height: 1; }
@@ -563,7 +621,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   flex: 0 0 auto; display: grid; grid-template-columns: 46px minmax(0, 1fr);
   background: var(--panel); border-bottom: 1px solid var(--border);
   position: sticky; top: var(--week-head-h, 79px); z-index: 5;
-  box-shadow: 0 4px 10px -8px rgba(0, 0, 0, .35);
+  box-shadow: var(--shadow-sticky);
 }
 .week-un-gutter {
   border-right: 1px solid var(--border);
@@ -585,7 +643,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 /* 定时任务按时间落格 */
 .wk-event {
-  position: absolute; border-radius: 6px; padding: 2px 5px;
+  position: absolute; border-radius: var(--r-sm); padding: 2px 5px;
   background: var(--primary-soft); border: 1px solid var(--border);
   border-left: 3px solid var(--primary);
   overflow: hidden; cursor: pointer;
@@ -594,7 +652,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .wk-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
 .wk-event.done { opacity: .5; }
-.wk-event.dragging { opacity: 1; box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 32%, transparent); z-index: 9; }
+.wk-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
 .wk-time { font-size: 9.5px; color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.2; }
 .wk-title { font-size: 11px; font-weight: 550; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -608,7 +666,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .month-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
   gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
 }
 .month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
 .month-cell:hover { background: var(--panel-2); }
@@ -624,8 +682,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .cell-date:hover { background: var(--primary-soft); color: var(--primary); }
 .cell-date.busy { font-weight: 700; }
-.month-cell.today .cell-date { background: var(--primary); color: var(--on-primary); }
-.cell-today { font-size: 10px; background: var(--primary); color: var(--on-primary); border-radius: 5px; padding: 0 5px; }
+.month-cell.today .cell-date { background: var(--primary); color: var(--primary-fg); }
+.cell-today { font-size: 10px; background: var(--primary); color: var(--primary-fg); border-radius: var(--r-sm); padding: 0 5px; }
 .cell-load { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .month-cell.lv3 .cell-load { color: var(--danger); }
 .cell-tasks { display: flex; flex-direction: column; gap: 3px; }
@@ -639,7 +697,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .task-pill {
   display: flex; align-items: center; gap: 5px;
-  padding: 4px 8px; border-radius: 7px; background: var(--panel-2);
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
   border: 1px solid var(--border); border-left: 3px solid var(--primary);
   font-size: 12px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
@@ -686,12 +744,12 @@ b, strong { font-variant-numeric: tabular-nums; }
   padding: 0 0 9px; display: flex; align-items: center; gap: 7px; letter-spacing: .2px;
 }
 .group-title.over { color: var(--danger); }
-.group-count { font-size: 11px; background: var(--panel-3); color: var(--text-2); border-radius: 9px; padding: 1px 7px; font-weight: 400; }
+.group-count { font-size: 11px; background: var(--panel-3); color: var(--text-2); border-radius: var(--r-md); padding: 1px 7px; font-weight: 400; }
 .gt-day.today { color: var(--primary); }
 .group-sub { font-size: 11px; color: var(--text-3); font-weight: 400; }
 .group-load {
   font-size: 11px; color: var(--text-2); font-weight: 400;
-  margin-left: auto; padding: 1px 7px; border-radius: 9px; background: var(--panel-3);
+  margin-left: auto; padding: 1px 7px; border-radius: var(--r-md); background: var(--panel-3);
   font-variant-numeric: tabular-nums;
 }
 .group-load.over { color: var(--warn); background: var(--warn-soft); }
@@ -699,7 +757,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 /* ===== 每日打卡条（今天顶部） ===== */
 .checkin-strip {
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: 12px 14px; margin-bottom: 16px; box-shadow: var(--shadow);
 }
 .ci-head {
@@ -709,13 +767,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .ci-head .ci-sub { font-size: 11px; font-weight: 400; color: var(--text-3); }
 .ci-manage {
   margin-left: auto; border: none; background: none; color: var(--primary);
-  font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 6px;
+  font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm);
 }
 .ci-manage:hover { background: var(--primary-soft); }
 .ci-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .ci-item {
   display: flex; align-items: center; gap: 7px;
-  padding: 6px 11px 6px 9px; border-radius: 20px;
+  padding: 6px 11px 6px 9px; border-radius: var(--r-pill);
   background: var(--panel-2); border: 1px solid var(--border);
 }
 .ci-item.done { background: var(--primary-soft); border-color: transparent; }
@@ -726,7 +784,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* ===== 打卡（习惯）页 ===== */
 .habit-add { display: flex; gap: 8px; margin-bottom: 18px; }
 .habit-add input {
-  flex: 1; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--radius);
+  flex: 1; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--panel); color: var(--text); font-size: 14px;
 }
 .habit-add input:focus { outline: none; border-color: var(--primary); }
@@ -735,7 +793,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .habit-row {
   display: flex; align-items: center; gap: 11px;
   padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
-  border-left: 3px solid var(--primary); border-radius: var(--radius); box-shadow: var(--shadow);
+  border-left: 3px solid var(--primary); border-radius: var(--r-lg); box-shadow: var(--shadow);
 }
 .habit-row.done { opacity: .72; }
 .habit-main { flex: 1; min-width: 0; }
@@ -743,13 +801,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .habit-row.done .habit-title { color: var(--text-2); }
 .habit-heat { display: flex; gap: 4px; }
 .heat-dot {
-  width: 13px; height: 13px; border-radius: 3px; background: var(--panel-3);
+  width: 13px; height: 13px; border-radius: var(--r-xs); background: var(--panel-3);
   border: 1px solid var(--border);
 }
 .heat-dot.on { background: var(--primary); border-color: var(--primary); }
 .habit-del {
   border: none; background: none; color: var(--text-3); cursor: pointer;
-  font-size: 14px; padding: 6px 8px; border-radius: 8px;
+  font-size: 14px; padding: 6px 8px; border-radius: var(--r-sm);
 }
 .habit-del:hover { background: var(--danger-soft); color: var(--danger); }
 
@@ -758,7 +816,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   display: flex; align-items: center; gap: 10px;
   padding: 11px 32px 11px 13px; margin-bottom: 7px;
   background: var(--panel); border: 1px solid var(--border);
-  border-left: 3px solid var(--primary); border-radius: var(--radius);
+  border-left: 3px solid var(--primary); border-radius: var(--r-lg);
   cursor: pointer;
   transition: box-shadow .14s, transform .14s, border-color .14s;
 }
@@ -774,7 +832,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .row-main { flex: 1; min-width: 0; }
 .row-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); margin-top: 3px; flex-wrap: wrap; }
-.row-meta .dot { color: var(--border); }
+.row-meta .dot { color: var(--border-2); }
 .m-time { color: var(--primary); font-variant-numeric: tabular-nums; }
 .m-date.over { color: var(--danger); }
 .m-dur { color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -789,7 +847,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   display: flex; align-items: center; gap: 7px; width: 100%;
   padding: 7px 10px; margin-bottom: 8px;
   background: var(--danger-soft); border: 1px solid transparent;
-  border-radius: 9px; color: var(--danger);
+  border-radius: var(--r-md); color: var(--danger);
   font-size: 12.5px; font-weight: 550; text-align: left;
   transition: border-color .14s;
 }
@@ -814,7 +872,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .today-done.open .td-caret { transform: rotate(90deg); }
 .td-title { font-weight: 600; letter-spacing: .2px; }
 .td-count {
-  background: var(--panel-3); border-radius: 9px; padding: 0 7px;
+  background: var(--panel-3); border-radius: var(--r-md); padding: 0 7px;
   font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums;
 }
 .td-body { display: none; margin-top: 8px; }
@@ -832,17 +890,17 @@ b, strong { font-variant-numeric: tabular-nums; }
 .od-row .od-late { color: var(--danger); font-weight: 600; }
 .od-quick { display: inline-flex; gap: 4px; margin-left: 4px; }
 .od-btn {
-  padding: 1px 8px; border-radius: 9px; white-space: nowrap;
+  padding: 1px 8px; border-radius: var(--r-md); white-space: nowrap;
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
 }
-.od-btn:hover { background: var(--primary); color: var(--on-primary); }
-.od-btn.ghost { background: transparent; border: 1px solid var(--input); }
-.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--input); }
+.od-btn:hover { background: var(--primary); color: var(--primary-fg); }
+.od-btn.ghost { background: transparent; border: 1px solid var(--border-2); }
+.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
 
 .check-btn {
   width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
-  border: 1.5px solid var(--input); border-radius: 50%;
+  border: 1.5px solid var(--border-2); border-radius: 50%;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
 }
@@ -881,12 +939,12 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 
 .chip {
-  padding: 4px 10px; border: 1px solid var(--input); background: var(--panel);
-  border-radius: 7px; color: var(--text-2); font-size: 12px;
+  padding: 4px 10px; border: 1px solid var(--border-2); background: var(--panel);
+  border-radius: var(--r-sm); color: var(--text-2); font-size: 12px;
   transition: border-color .14s, color .14s, background .14s;
 }
 .chip:hover { border-color: var(--primary); color: var(--primary); }
-.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.chip.active { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
 .chip.tiny { padding: 2px 8px; font-size: 11px; }
 .chip.danger { color: var(--danger); border-color: var(--danger); }
 
@@ -918,7 +976,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   position: absolute;
   z-index: 5;
   border: 1.5px dashed var(--primary);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   background: var(--primary-soft);
   opacity: .5;
   pointer-events: none;
@@ -940,7 +998,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .task-row.dragging, .task-pill.dragging, .habit-row.dragging {
   opacity: .96;
   cursor: grabbing;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--primary) 26%, transparent);
+  box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
   transform: scale(1.012);
   z-index: 8;
   position: relative;
@@ -953,9 +1011,9 @@ b, strong { font-variant-numeric: tabular-nums; }
   opacity: .4;
   transform: none !important;
   box-shadow: none;
-  outline: 1.5px dashed var(--input);
+  outline: 1.5px dashed var(--border-2);
   outline-offset: -2px;
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
 }
 /* 拖动中禁止文字选中，否则拖过的地方会留下一片选区高亮 */
 body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }
@@ -967,8 +1025,8 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .tl-guide span {
   position: absolute; left: 6px; top: -9px;
-  padding: 1px 6px; border-radius: 6px;
-  background: var(--primary); color: var(--on-primary);
+  padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--primary); color: var(--primary-fg);
   font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md);
 }
@@ -979,7 +1037,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 6px 22px 18px; padding: 11px 16px;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 13px; box-shadow: var(--shadow);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
   transition: border-color .16s, box-shadow .16s;
 }
 .fast-add:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
@@ -988,8 +1046,8 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
 .fast-clock {
-  border: 1px solid var(--input); background: none; color: var(--text-2);
-  border-radius: 9px; padding: 5px 9px; font-size: 13px; line-height: 1;
+  border: 1px solid var(--border-2); background: none; color: var(--text-2);
+  border-radius: var(--r-md); padding: 5px 9px; font-size: 13px; line-height: 1;
   transition: border-color .14s, color .14s, background .14s;
 }
 .fast-clock:hover { border-color: var(--primary); color: var(--primary); }
@@ -1002,7 +1060,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .fast-parse.show { display: flex; animation: fadeUp .16s ease; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-.fp-chip { padding: 2px 9px; border-radius: 7px; font-variant-numeric: tabular-nums; }
+.fp-chip { padding: 2px 9px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
 .fp-chip.k-title { background: var(--panel-3); color: var(--text-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-chip.k-date { background: var(--chip-date-bg); color: var(--chip-date-fg); }
 .fp-chip.k-time { background: var(--chip-time-bg); color: var(--chip-time-fg); }
@@ -1015,7 +1073,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .time-trigger {
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border: 1px solid var(--input); border-radius: 9px;
+  padding: 7px 12px; border: 1px solid var(--border-2); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, color .14s;
 }
@@ -1034,11 +1092,11 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
      表盘就整体偏右 2px（探针第十七节量左右空隙，差超过 1px 就红）。 */
   width: 278px;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 16px; box-shadow: var(--shadow-lg); padding: 15px;
+  border-radius: var(--r-xl); box-shadow: var(--shadow-lg); padding: 15px;
 }
 .cp-display { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 11px; }
 .cp-cell {
-  min-width: 66px; padding: 3px 10px; border: none; border-radius: 9px;
+  min-width: 66px; padding: 3px 10px; border: none; border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2);
   font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums;
   transition: background .14s, color .14s;
@@ -1049,12 +1107,12 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .cp-ampm { display: flex; justify-content: center; gap: 6px; margin-bottom: 9px; }
 .cp-ap {
-  padding: 4px 16px; border: none; border-radius: 9px; cursor: pointer;
+  padding: 4px 16px; border: none; border-radius: var(--r-md); cursor: pointer;
   background: var(--panel-2); color: var(--text-2); font-size: 12px;
   transition: background .14s, color .14s;
 }
 .cp-ap:hover { background: var(--panel-3); }
-.cp-ap.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-ap.on { background: var(--primary); color: var(--primary-fg); font-weight: 600; }
 
 .cp-face {
   position: relative; width: 246px; height: 246px; margin: 0 auto;
@@ -1062,7 +1120,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .cp-hand {
   position: absolute; left: 50%; top: 50%; margin-top: -1px; height: 2px;
-  background: var(--primary); transform-origin: left center; border-radius: 2px;
+  background: var(--primary); transform-origin: left center; border-radius: var(--r-xs);
   transition: transform .18s cubic-bezier(.3, .8, .3, 1);
 }
 .cp-dot { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--primary); }
@@ -1073,7 +1131,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-num:hover { background: var(--primary-soft); color: var(--primary); }
-.cp-num.on { background: var(--primary); color: var(--on-primary); font-weight: 600; box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 35%, transparent); }
+.cp-num.on { background: var(--primary); color: var(--primary-fg); font-weight: 600; box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
 .cp-tip { text-align: center; font-size: 11px; color: var(--text-3); padding: 9px 0 3px; }
 .cp-foot { display: flex; align-items: center; gap: 6px; }
 .cp-foot .grow { flex: 1; }
@@ -1083,12 +1141,12 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 .repeat-panel {
   margin-top: 10px; padding: 12px 14px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
 }
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .rp-l { flex: 0 0 34px; font-size: 12px; color: var(--text-2); }
 .rp-row input[type="number"], .rp-row select, .rp-row input[type="date"] {
-  padding: 6px 9px; border: 1px solid var(--input); border-radius: 8px;
+  padding: 6px 9px; border: 1px solid var(--border-2); border-radius: var(--r-sm);
   background: var(--panel); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
@@ -1118,19 +1176,9 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .drawer.open { transform: none; }
 .drawer-head { display: flex; align-items: center; gap: 11px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
 .check-wrap { display: flex; }
-/* 抽屉头上那个勾选圈里**真的有**一个 checkbox（那是 label + input 的标准写法），
-   而它原先被 display:none 藏了 —— 那等于把它从无障碍树里整个摘掉：
-   读屏不知道这条任务做没做完，键盘也够不着（鼠标点得到，Tab 进不去）。
-   改成「看不见但还在」：出流、1px、透明。视觉一个像素都没变（原先也不占位），
-   但 Tab 能进去、勾选状态念得出来，焦点环画在旁边那个可见的圈上。
-   pointer-events 关掉，免得那 1px 抢走圈上的点击（label 本来就会转发）。 */
-.check-wrap input {
-  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
-  opacity: 0; pointer-events: none;
-}
-.check-wrap input:focus-visible + .check-circle { outline: 2px solid var(--primary); outline-offset: 1px; }
+.check-wrap input { display: none; }
 .check-circle {
-  width: 20px; height: 20px; border: 2px solid var(--input); border-radius: 50%;
+  width: 20px; height: 20px; border: 2px solid var(--border-2); border-radius: 50%;
   cursor: pointer; position: relative; flex: 0 0 20px;
   transition: border-color .14s, background .14s, transform .12s;
 }
@@ -1141,7 +1189,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 .drawer-title { flex: 1; border: none; background: none; outline: none; font-size: 16.5px; font-weight: 650; }
-.icon-btn { border: none; background: none; color: var(--text-3); font-size: 14px; padding: 5px; border-radius: 7px; transition: background .14s, color .14s; }
+.icon-btn { border: none; background: none; color: var(--text-3); font-size: 14px; padding: 5px; border-radius: var(--r-sm); transition: background .14s, color .14s; }
 .icon-btn:hover { color: var(--text); background: var(--panel-3); }
 .icon-btn.tiny { font-size: 12px; padding: 2px; }
 
@@ -1152,8 +1200,8 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .field .sub { color: var(--text-3); }
 .field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
 .field input[type="date"], .field input[type="time"], .field select, .field textarea {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--input);
-  border-radius: 9px; background: var(--panel-2); outline: none;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border-2);
+  border-radius: var(--r-md); background: var(--panel-2); outline: none;
   transition: border-color .14s, background .14s;
 }
 .field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }
@@ -1162,14 +1210,14 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .drawer-meta { font-size: 11px; color: var(--text-3); padding-top: 10px; border-top: 1px solid var(--border); }
 .drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
 .primary-btn {
-  padding: 9px 20px; border: none; border-radius: 9px;
-  background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 500;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 26%, transparent);
+  padding: 9px 20px; border: none; border-radius: var(--r-md);
+  background: var(--primary); color: var(--primary-fg); font-size: 13px; font-weight: 500;
+  box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .26);
   transition: filter .14s, transform .12s;
 }
 .primary-btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
 .danger-btn {
-  padding: 9px 15px; border: 1px solid var(--danger); border-radius: 9px;
+  padding: 9px 15px; border: 1px solid var(--danger); border-radius: var(--r-md);
   background: none; color: var(--danger); font-size: 13px;
   transition: background .14s;
 }
@@ -1180,13 +1228,12 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .toast {
   position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(12px);
   display: flex; align-items: center; gap: 16px;
-  /* 底是写死的深色（两套主题都深），所以这里恒用白字，不跟 --on-primary。 */
-  background: #1b1f28; color: #fff; padding: 11px 18px; border-radius: 11px;
+  background: var(--toast-bg); color: var(--toast-fg); padding: 11px 18px; border-radius: var(--r-md);
   font-size: 13px; box-shadow: var(--shadow-lg);
   opacity: 0; pointer-events: none; transition: all .22s cubic-bezier(.3, .8, .3, 1); z-index: 80;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-.toast button { border: none; background: none; color: #9db4ff; font-size: 13px; font-weight: 500; }
+.toast button { border: none; background: none; color: var(--toast-link); font-size: 13px; font-weight: 500; }
 
 /* ================= 响应式 ================= */
 
@@ -1210,7 +1257,7 @@ input, select, textarea { font-size: max(14px, 16px); }
   .tl-event:hover .ev-resize { opacity: .8; }
   .task-row::after { opacity: .4; }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
-  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--input); color: var(--text-2); }
+  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--border-2); color: var(--text-2); }
   .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
   .view-switch button.active:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
@@ -1218,15 +1265,15 @@ input, select, textarea { font-size: max(14px, 16px); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
   .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
   .sidebar-footer .ghost-btn:hover, .today-btn.away:hover { background: none; color: inherit; }
-  .quick-add:hover { background: var(--primary); color: var(--on-primary); }
+  .quick-add:hover { background: var(--primary); color: var(--primary-fg); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
   .primary-btn:hover { transform: none; }
   .today-btn.away:hover { background: var(--primary-pale); }
-  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
-  .search-box:hover { border-color: var(--input); background: var(--panel-2); }
+  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--border-2); background: var(--panel-2); }
+  .search-box:hover { border-color: var(--border-2); background: var(--panel-2); }
   .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
 }
 
@@ -1237,7 +1284,7 @@ input, select, textarea { font-size: max(14px, 16px); }
   height: calc(56px + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--panel); border-top: 1px solid var(--border);
-  box-shadow: 0 -2px 12px rgba(16, 24, 40, .06);
+  box-shadow: var(--shadow-up-sm);
 }
 [data-theme="dark"] .tabbar { box-shadow: none; }
 .tabbar[hidden] { display: none; }
@@ -1252,18 +1299,18 @@ input, select, textarea { font-size: max(14px, 16px); }
 .tab.active { color: var(--primary); }
 .tab.active::before {
   content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 22px; height: 2px; border-radius: 0 0 2px 2px; background: var(--primary);
+  width: 22px; height: 2px; border-radius: 0 0 var(--r-xs) var(--r-xs); background: var(--primary);
 }
 .tab .tb {
   position: absolute; top: 5px; left: 50%; margin-left: 6px;
-  min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+  min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-sm);
   background: var(--panel-3); color: var(--text-2);
   font-size: 9.5px; line-height: 15px; text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .tab .tb:empty { display: none; }
-.tab.active .tb { background: var(--primary); color: var(--on-primary); }
-.tab .tb.warn { background: var(--danger); color: var(--on-primary); font-weight: 600; }
+.tab.active .tb { background: var(--primary); color: var(--primary-fg); }
+.tab .tb.warn { background: var(--danger); color: var(--danger-fg); font-weight: 600; }
 
 /* ---- 「更多」抽屉 ---- */
 /* z-index 要高于底部标签栏（45），否则抽屉会被标签栏压住一截 */
@@ -1280,17 +1327,17 @@ body.sheet-open .tab:active { background: none; }
 .more-sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
   padding: 6px 16px calc(18px + env(safe-area-inset-bottom, 0px));
-  background: var(--panel); border-radius: 18px 18px 0 0;
-  box-shadow: 0 -8px 30px rgba(16, 24, 40, .18);
+  background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-up);
   animation: slideUp .22s cubic-bezier(.3, .8, .3, 1);
 }
 .more-sheet[hidden] { display: none; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
-.ms-grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 6px auto 14px; }
+.ms-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border-2); margin: 6px auto 14px; }
 .ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .ms-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 13px 6px; border: 1px solid var(--border); border-radius: 13px;
+  padding: 13px 6px; border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--panel-2); color: var(--text); position: relative;
 }
 .ms-item:active { background: var(--panel-3); }
@@ -1298,7 +1345,7 @@ body.sheet-open .tab:active { background: none; }
 .ms-item .mt { font-size: 12px; }
 .ms-item .mc {
   position: absolute; top: 7px; right: 9px;
-  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-sm);
   background: var(--panel-3); color: var(--text-2);
   font-size: 10px; line-height: 16px; text-align: center;
 }
@@ -1311,12 +1358,12 @@ body.sheet-open .tab:active { background: none; }
 .act-sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 47;
   padding: 6px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: var(--panel); border-radius: 18px 18px 0 0;
-  box-shadow: 0 -8px 30px rgba(16, 24, 40, .18);
+  background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-up);
   animation: slideUp .2s cubic-bezier(.3, .8, .3, 1);
 }
 .act-sheet[hidden] { display: none; }
-.as-grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 6px auto 10px; }
+.as-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border-2); margin: 6px auto 10px; }
 .as-title {
   font-size: 13.5px; font-weight: 600; padding: 0 2px 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1325,7 +1372,7 @@ body.sheet-open .tab:active { background: none; }
 .as-grid:empty + .as-cancel { margin-top: 0; }
 .as-btn {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 12px 4px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 4px; border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--panel-2); color: var(--text); font-size: 12px;
 }
 .as-btn:active { background: var(--panel-3); }
@@ -1335,7 +1382,7 @@ body.sheet-open .tab:active { background: none; }
 .as-btn.danger { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
 .as-cancel {
   width: 100%; margin-top: 10px; padding: 12px;
-  border: none; border-radius: 12px; background: var(--panel-3);
+  border: none; border-radius: var(--r-lg); background: var(--panel-3);
   color: var(--text-2); font-size: 13.5px;
 }
 .as-cancel:active { background: var(--border); }
@@ -1420,13 +1467,9 @@ body.sheet-open .tab:active { background: none; }
   .drawer {
     top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
     height: 88dvh; border-left: none; border-top: 1px solid var(--border);
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
     transform: translateY(100%);
     transition: transform .24s cubic-bezier(.3, .8, .3, 1);
-    /* 软键盘弹出时把内容让出来（--kb 由 ui/hooks.ts 量，见那里的注释）。
-       垫在底部而不是改 height：面板仍然贴着屏幕下沿，看着是「被键盘盖住」，
-       而不是整块被抬起来露出一条背景。 */
-    padding-bottom: var(--kb, 0px);
   }
   .drawer.open { transform: none; }
   .drawer-head { padding: 14px 15px; }
@@ -1522,7 +1565,7 @@ body.sheet-open .tab:active { background: none; }
     background: var(--primary); border: none; overflow: hidden;
     font-size: 0; gap: 0;
   }
-  .cell-tasks .task-pill.done { background: var(--border); }
+  .cell-tasks .task-pill.done { background: var(--border-2); }
   .cell-more { font-size: 9.5px; padding-left: 0; }
 }
 
@@ -1540,139 +1583,6 @@ body.sheet-open .tab:active { background: none; }
   .wh-load { width: 34px; }
 }
 
-/* ══ 重构时漏掉的那批类名 ═══════════════════════════════════════════════════
-   下面这几组在 React 版里**只写了类名、没有对应规则**，于是渲染出来是一片
-   没有样式的裸元素：找日期面板是 42 个裸按钮，冲突提示是一堆挤在一起的
-   纯文本，重复面板的星期按钮没有选中态。
-
-   两种修法里选了「补 CSS」而不是「改类名」：
-     · 视图切换按钮新代码用的是 `on`，而这里原本写的是 `.active`。
-       改类名更干净，但 `tests/browser-smoke.mjs` 里有一句
-       `[data-view="month"].on` 在等它 —— 探针依赖类名，那就让 CSS 去迁就代码，
-       而不是让一条跑不起来的测试去承担风险。
-     · 其余几组（.cb-* / .sync-dot / .ms-user / .fc-time / .rp-day）旧版压根
-       没有对照物，是新写的表面，直接按同一套变量补上即可。
-
-   配色一律走变量 —— 写死颜色会让深色模式在这些新表面上失效。 */
-
-/* 视图切换：新代码出的是 .on，和原本的 .active 一并认 */
-.view-switch button.on {
-  background: var(--primary); color: var(--on-primary);
-}
-/* 快速添加栏的时钟按钮：同上，.set 是旧名，.on 是新名 */
-.fast-clock.on {
-  background: var(--primary-soft); border-color: var(--primary); color: var(--primary);
-}
-/* 选中时间后贴着图标显示的那个时间文字 */
-.fast-clock .fc-time {
-  margin-left: 3px; font-size: 11.5px; font-variant-numeric: tabular-nums;
-}
-
-/* 重复面板：星期那七个按钮 */
-.rp-row.rp-wd { gap: 4px; }
-.rp-wd .rp-day {
-  width: 28px; height: 26px; padding: 0;
-  border: 1px solid var(--input); border-radius: 8px;
-  background: var(--panel); color: var(--text-2); font-size: 11.5px;
-  transition: background .14s, color .14s, border-color .14s;
-}
-.rp-wd .rp-day:hover { border-color: var(--primary); color: var(--primary); }
-.rp-wd .rp-day.on {
-  background: var(--primary); border-color: var(--primary);
-  color: var(--on-primary); font-weight: 600;
-}
-
-/* 「另一台设备也改过这个任务」那条提示。
-   **不用报错红**：数据是好的，LWW 已经判完了，只是有一边的改动不在了。
-   走 --warn（琥珀色），跟危险动作区分开 */
-.conflict-box {
-  margin-bottom: 12px; padding: 10px 12px;
-  border: 1px solid var(--warn); border-radius: 12px;
-  background: color-mix(in srgb, var(--warn) 9%, var(--panel));
-}
-.conflict-box .cb-head {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 7px;
-}
-.conflict-box .cb-row {
-  display: flex; align-items: flex-start; gap: 9px;
-  padding: 5px 0; border-top: 1px dashed color-mix(in srgb, var(--warn) 35%, transparent);
-  font-size: 12px; line-height: 1.55; color: var(--text-2);
-}
-.conflict-box .cb-row:first-of-type { border-top: none; padding-top: 0; }
-.conflict-box .cb-text { flex: 1; min-width: 0; }
-.conflict-box .cb-x {
-  flex: 0 0 auto; padding: 2px 9px;
-  border: 1px solid var(--border); border-radius: 7px;
-  background: var(--panel); color: var(--text-2); font-size: 11.5px;
-}
-.conflict-box .cb-x:hover { border-color: var(--primary); color: var(--primary); }
-
-/* 顶栏右侧的同步状态小标：离线 ☁︎ / 同步中转圈 */
-.sync-dot {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 50%;
-  color: var(--text-3);
-}
-
-/* 「更多」抽屉底部那行：当前账户 + 退出 */
-.ms-user {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-top: 12px; padding-top: 11px;
-  border-top: 1px solid var(--border);
-  font-size: 12.5px; color: var(--text-2);
-}
-.ms-user .ms-logout {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--panel); color: var(--text-2); font-size: 12px;
-}
-.ms-user .ms-logout:hover { border-color: var(--danger); color: var(--danger); }
-
-/* ── 键盘焦点：全应用统一画在这一条里 ──────────────────────────────────────
-   以前每处 :focus 只把描边染成 --primary，**不新增任何像素**。那在 --input
-   从 #d9dce6 提到 3:1 之后就不成立了：聚焦前后两个描边自己的对比只剩
-   1.45（亮）/ 1.48（暗），低于 WCAG 2.2 SC 2.4.11 要的 3:1。
-   （提之前是 3.73 / 3.64，刚好够 —— 这是被「控件描边达标」那次改动连带踩坏的，
-   所以两件事必须一起改。）
-
-   现在改成画一圈**新增**的 2px --primary 外环：那些像素未聚焦时是底色、
-   聚焦时是 --primary，5.11（亮）/ 5.57（暗），远超 3:1，且不依赖底色是什么。
-   各处原来那句「聚焦时描边染成 --primary」保留不动 —— 环 + 变色叠加才是常见做法
-   （Material 3 的文本框、shadcn 的 :focus-visible 都是这样）。
-
-   用 :focus-visible 而不是 :focus：文本框在鼠标点入时也会命中它（浏览器自带判断），
-   按钮则只在键盘走到时命中 —— 鼠标点按钮不该闪一圈蓝。
-   放在文件最末，是为了压过各处零散的 `outline: none`（同特异度后写的赢）。 */
-input:focus-visible, select:focus-visible, textarea:focus-visible,
-button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
-/* 它自己就是 overflow:hidden 的容器，外环会被裁掉 —— 这几个改成画在里面。
-   画在里面落在 --panel 底上一样清楚（5.11:1），只是贴着边。
-   .ev-resize 也是同类：把手贴在 .tl-event 的上下沿上，外环整条被裁掉。 */
-.view-switch > *:focus-visible, .md-cell:focus-visible,
-.ev-resize:focus-visible { outline-offset: -2px; }
-
-/* 浮层容器（Detail 抽屉 / Sheet）自己是 tabIndex=-1 的落点，不是控件。
-   上面那条 [tabindex]:focus-visible 会给它描一圈 2px 的外环 —— 一圈顺着
-   整个抽屉轮廓跑，看着像界面坏了。Radix / shadcn 同样在容器上关掉它。 */
-.drawer:focus-visible,
-[role="dialog"]:focus-visible { outline: none; }
-
-/* ── 降低动态效果（WCAG 2.3.3）────────────────────────────────────────────
-   一套收官式的全站关闭：前庭功能障碍的用户开这个开关，是为了让画面**别动**。
-
-   为什么必须整站关，而不是挑几个「大动作」：这个应用里会动的地方有十几处
-   （抽屉 / 浮层的 .24s 位移、拖拽让位的 180ms、方块 hover 的位移、
-   各处 color / background 的过渡），挑漏一处就等于没关，而且日后再加一处
-   也不会有人记得回来补。所以走通配 + !important —— 它必须压过内联
-   style 和 Tailwind 层里的样式，这一条**不能用「反正差不多」的写法**。
-
-   唯一的例外是转圈的那个图标：它不是在「动效」，是在说「正在同步，别以为
-   卡死了」。停下来反而传达错意思，正好和用户开这个开关想避免的东西相反。
-   所以它保留 1s 一圈（原来也是 1s）—— 不是「动一下意思意思」，是真在转。 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;
@@ -1680,7 +1590,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-v
     transition-duration: .01ms !important;
     scroll-behavior: auto !important;
   }
-  /* 同步中的加载圈：例外，理由见上 */
+  /* 同步中的加载圈：例外，它不是动效，是在说「正在同步」 */
   .animate-spin {
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;

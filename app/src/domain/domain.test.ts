@@ -35,6 +35,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
   return {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
     habits: {},
+    projects: {},
     cals: [],
     invites: [],
     cursor: 0,
@@ -541,6 +542,52 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
     '空数组是用户把垃圾箱拖出底部后的合法状态，不能又塞回去',
   );
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
+});
+
+test('外观三轴：auto 是合法值，不是「没选」', () => {
+  // 写成 `theme !== 'dark' ? 'light'` 的话，用户选的「跟随系统」每次刷新被打回常亮，
+  // 而且是静默的 —— 这一条就是把它钉住
+  assert.equal(normalizeUi({ theme: 'auto' }).theme, 'auto');
+  assert.equal(normalizeUi({ theme: 'dark' }).theme, 'dark');
+  assert.equal(normalizeUi({ theme: 'light' }).theme, 'light');
+  assert.equal(normalizeUi({ theme: 'sepia' as never }).theme, 'light', '认不出的值兜回常亮');
+});
+
+test('外观三轴：缺省与认不出的值', () => {
+  const d = normalizeUi(undefined);
+  assert.equal(d.accent, 'jade');
+  assert.equal(d.style, 'soft', 'soft 是空块 = 与旧版逐像素相同，所以它必须是默认');
+
+  assert.equal(normalizeUi({ accent: 'clay' }).accent, 'clay');
+  assert.equal(normalizeUi({ style: 'notion' }).style, 'notion');
+  assert.equal(normalizeUi({ accent: 'chartreuse' as never }).accent, 'jade');
+  assert.equal(normalizeUi({ style: 'brutalist' as never }).style, 'soft');
+});
+
+test('底栏 tabs：子集 + 顺序跟 navOrder 走 + 空了就回落', () => {
+  // 缺省
+  assert.deepEqual(normalizeUi(undefined).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 只收 CUSTOMIZABLE 里的键 —— 设置不进底栏（它在「更多」里固定有一格）
+  const mixed = normalizeUi({ tabs: ['habits', 'settings', 'inbox'] as string[] });
+  assert.deepEqual(mixed.tabs, ['inbox', 'habits'], '认不出的键被滤掉');
+  assert.ok(!mixed.tabs.includes('settings'), '设置不进底栏');
+
+  // 顺序取自 navOrder，不保留盘上自己的顺序
+  const reordered = normalizeUi({
+    navOrder: ['done', 'inbox', 'today'],
+    tabs: ['inbox', 'done'],
+  });
+  assert.deepEqual(reordered.tabs, ['done', 'inbox'], '按 navOrder 排');
+
+  // 一次操作里过滤后为空 → 回落默认。这里空栏没有合法解释，与 navBottom 不同
+  assert.deepEqual(normalizeUi({ tabs: [] }).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+  assert.deepEqual(normalizeUi({ tabs: ['nope'] as string[] }).tabs,
+    ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 超过上限的砍掉 —— UI 挡不住手改 localStorage
+  const many = normalizeUi({ tabs: ['inbox', 'today', 'overdue', 'calendar', 'habits'] });
+  assert.deepEqual(many.tabs, ['inbox', 'today', 'overdue', 'calendar']);
 });
 
 /* ============================== 迁移 ============================== */

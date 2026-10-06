@@ -10,20 +10,23 @@
  *      `@media (max-width: 900px)` 是同一根线，改一处必须改另一处。
  *   3. **浮层 z-index 必须 > 标签栏的 45**，否则抽屉被标签栏压住一截。
  *
- * 侧栏顺序可拖动：`ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
+ * 导航顺序读 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
  * `navBottom` 不能用「空则给默认值」的写法 —— 那会把用户主动拖出底部的
  * 垃圾箱又塞回去。必须区分 undefined（从未设置）与 []（有意为之）。
+ *
+ * ⚠️ 这两个字段**当前只读不写** —— 写入方（设置页里的排序）还没接上，
+ *    见项目 CLAUDE.md 四、23。别以为「拖过一次就记住了」。
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
-  Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
-  Search, Sun, Trash2, Upload, X, Download, Clock,
+  Flame, FolderKanban, Inbox, Layers, Loader2, LogOut, MailPlus, Moon,
+  MoreHorizontal, Plus, Search, Settings, Sun, Trash2, Upload, X, Download, Clock,
 } from 'lucide-react';
 import type { LocalState, PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { counts, liveTasks } from '../domain/model.ts';
+import { counts, liveTasks, CUSTOMIZABLE } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
@@ -47,15 +50,32 @@ export const NAV: NavDef[] = [
   { key: 'today', label: '今天', icon: <Sun size={16} />, count: 'today' },
   { key: 'overdue', label: '逾期', icon: <AlarmClock size={16} />, count: 'overdue', warn: true },
   { key: 'calendar', label: '日程', icon: <CalendarDays size={16} /> },
+  { key: 'projects', label: '项目', icon: <FolderKanban size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
   { key: 'done', label: '已完成', icon: <CheckCircle2 size={16} /> },
 ];
 
 export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Trash2 size={16} />, count: 'trash' };
-const ALL_NAV = [...NAV, TRASH_NAV];
-const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
 
-const DEFAULT_ORDER = ALL_NAV.map((n) => n.key);
+/**
+ * 设置**不在** `ui.navOrder` 里（见 domain/model.ts 的 CUSTOMIZABLE）：
+ * 它得能被打开，才谈得上改回来。所以它只进这张表，不参加排序。
+ */
+export const SETTINGS_NAV: NavDef = { key: 'settings', label: '设置', icon: <Settings size={16} /> };
+
+const ALL_NAV = [...NAV, TRASH_NAV, SETTINGS_NAV];
+
+/**
+ * 按 nav key 取定义。**导出给设置页用** —— 那边的「功能区」卡片要画同一套
+ * 图标与名字，在这儿另抄一份的下场是改了 label 忘了改那边。
+ *
+ * 认不出的 key 回落到垃圾箱：设置页只可能拿到 CUSTOMIZABLE 里的键，
+ * 但拖拽时 dataTransfer 里塞的是用户数据，宁可画错也不要白屏。
+ */
+export const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
+
+/** 没有 navOrder 时的兜底。取自 domain 的白名单，别在这里另抄一份 */
+const DEFAULT_ORDER: readonly string[] = CUSTOMIZABLE;
 
 /** `>99` 显示 `99+` —— 徽标再宽就挤垮布局了 */
 function badge(n: number): string | null {
@@ -98,11 +118,10 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites, onReorder }: {
+function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites }: {
   state: LocalState; onNav: (k: string) => void; onNew: () => void;
   onExport: () => void; onImport: (f: File) => void; onLogout: () => void;
   onManageCal: () => void; onInvites: () => void;
-  onReorder: (order: string[], bottom: string[]) => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
@@ -113,104 +132,25 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
   const main = order.filter((k) => !bottom.includes(k));
   const bottoms = bottom.map(navDef);
 
-  /* -------- 侧栏拖动排序 --------
-   *
-   * 两个容器（主区 `#nav` 与底部 `#navBottom`）之间**可以互拖**，垃圾箱也能
-   * 拖进主区。落点用一条 `.nav-ins` 细线表示 —— 比整块高亮更好判断落在哪一侧。
-   *
-   * 两个必须处理的地方：
-   *   1. **拖完浏览器会补一次 click。** 不吞掉的话，刚放好的那一项会顺带被
-   *      打开一遍。用 `justDragged` 拦一下，`setTimeout(…, 0)` 清掉
-   *      —— click 排在 dragend 之后，这个延迟刚好够。
-   *   2. **`bottom` 要重建，不能直接增删。** 「抖动 toilets」那一类 bug 的根源
-   *      是把 `navBottom` 当成累计集合；这里始终从**新的视觉顺序**里筛出来，
-   *      所以底部组内部的相对次序也跟着 move 一起更新了。
-   */
-  const dragKey = useRef<string | null>(null);
-  const justDragged = useRef(false);
-  const [dragK, setDragK] = useState<string | null>(null);
-  const [ins, setIns] = useState<{ k: string; pos: 'before' | 'after' } | null>(null);
-
-  const clearDrag = () => { dragKey.current = null; setDragK(null); setIns(null); };
-
-  const posOf = (el: HTMLElement, clientY: number): 'before' | 'after' => {
-    const r = el.getBoundingClientRect();
-    return clientY < r.top + r.height / 2 ? 'before' : 'after';
-  };
-
-  const settle = (target: string, pos: 'before' | 'after', toBottom: boolean) => {
-    const dragged = dragKey.current;
-    clearDrag();
-    justDragged.current = true;
-    setTimeout(() => { justDragged.current = false; }, 0);
-    if (!dragged || dragged === target) return;
-
-    // 视觉顺序 = 主区在前、底部组在后。`order` 只描述主区的前后，
-    // 底部组是单独一列，所以先摊平成一条总的视觉序列再重排
-    const visual: string[] = [];
-    main.forEach((k) => visual.push(k));
-    bottoms.forEach((d) => visual.push(d.key));
-
-    const list = visual.filter((k) => k !== dragged);
-    let at = list.indexOf(target);
-    if (at < 0) return;
-    if (pos === 'after') at += 1;
-    list.splice(at, 0, dragged);
-
-    const set = new Set(bottom);
-    if (toBottom) set.add(dragged); else set.delete(dragged);
-    onReorder(list, list.filter((k) => set.has(k)));
-  };
-
-  const item = (k: string, isBottom: boolean) => {
+  const item = (k: string) => {
     const def = navDef(k);
     const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
     const b = badge(n);
     return (
       <button
-        className={'nav-item' + (state.ui.nav === k ? ' active' : '') + (dragK === k ? ' nav-dragging' : '')}
+        className={'nav-item' + (state.ui.nav === k ? ' active' : '')}
         key={k}
         data-nav={k}
         /* 当前在哪一页：视觉上靠 .active 那点底色，读屏只认这个属性。
            侧栏和底部标签栏指同一件事（同一份 ui.nav），两处都写。 */
         aria-current={state.ui.nav === k ? 'page' : undefined}
-        draggable
-        onDragStart={(e) => {
-          dragKey.current = k;
-          setDragK(k);
-          e.dataTransfer.effectAllowed = 'move';
-          try { e.dataTransfer.setData('text/plain', k); } catch (_) { /* 老浏览器认不到就算了 */ }
-        }}
-        onDragOver={(e) => {
-          if (!dragKey.current) return;
-          e.preventDefault();
-          setIns({ k, pos: posOf(e.currentTarget, e.clientY) });
-          e.dataTransfer.dropEffect = 'move';
-        }}
-        onDrop={(e) => {
-          if (!dragKey.current) return;
-          e.preventDefault();
-          settle(k, posOf(e.currentTarget, e.clientY), isBottom);
-        }}
-        onDragEnd={clearDrag}
-        onClick={() => { if (justDragged.current) return; onNav(k); }}
+        onClick={() => onNav(k)}
       >
         <span className="ico">{def.icon}</span>
         <span className="label">{def.label}</span>
         {b && <span className={'count' + (def.warn ? ' warn' : '')}>{b}</span>}
       </button>
     );
-  };
-
-  /** 把插入线插到对应位置。用普通循环而不是 flatMap —— 少依赖一层 lib */
-  const group = (keys: string[], isBottom: boolean): ReactNode[] => {
-    const out: ReactNode[] = [];
-    keys.forEach((k) => {
-      if (ins && ins.k === k && ins.pos === 'before') out.push(<div className="nav-ins" key={k + '·b'} />);
-      out.push(item(k, isBottom));
-      if (ins && ins.k === k && ins.pos === 'after') out.push(<div className="nav-ins" key={k + '·a'} />);
-    });
-    return out;
   };
 
   return (
@@ -229,12 +169,16 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
           先选集再选页面，顺序跟用户脑子里的模型一致 */}
       <CalSwitcher state={state} onManage={onManageCal} onInvites={onInvites} />
 
-      <nav className="nav" id="nav">{group(main, false)}</nav>
-      <nav className="nav nav-bottom" id="navBottom">{group(bottoms.map((d) => d.key), true)}</nav>
+      <nav className="nav" id="nav">{main.map(item)}</nav>
+      <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
 
       <Pulse state={state} />
 
       <div className="sidebar-footer">
+        {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事） */}
+        <button className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
+          <Settings size={13} /> 设置
+        </button>
         <button className="ghost-btn" onClick={onExport}><Upload size={13} /> 导出备份</button>
         <button className="ghost-btn" onClick={() => fileRef.current?.click()}>
           <Download size={13} /> 导入备份
@@ -354,9 +298,11 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
+export function Topbar({ state, narrow, jump, setJump, theme, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
   state: LocalState; narrow: boolean;
   jump: boolean; setJump: (v: boolean) => void;
+  /** 实际生效的深浅档（auto 已解析）。图标按它渲染，不看 ui.theme */
+  theme: 'light' | 'dark';
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
@@ -381,6 +327,7 @@ export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday,
   else if (ui.nav === 'done') { title = '已完成'; range = ''; }
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
+  else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
     if (ui.view === 'day') {
       title = D.fmtMD(ui.cursor);
@@ -489,7 +436,7 @@ export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday,
         )}
 
         <IconBtn label="切换深浅色" onClick={onTheme}>
-          {ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </IconBtn>
 
         {/* 离线优先于「正在同步」——断网时那个转圈会一直转下去，
@@ -510,24 +457,20 @@ export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday,
 
 /* ============================ 底部标签栏 ============================ */
 
-const TABS = [
-  { key: 'today', label: '今天', icon: <Sun size={18} />, count: 'today' as const },
-  { key: 'calendar', label: '日程', icon: <CalendarDays size={18} /> },
-  { key: 'inbox', label: '待办', icon: <Inbox size={18} />, count: 'inbox' as const },
-  // 逾期必须留在底栏 —— 用户重视的功能，不能藏进「更多」
-  { key: 'overdue', label: '逾期', icon: <AlarmClock size={18} />, count: 'overdue' as const, warn: true },
-];
-
-/** 只能从「更多」抽屉进去的那几页 —— 底栏的「更多」标签据此点亮 */
-const MORE_KEYS = ['habits', 'done', 'trash'];
-
+/**
+ * 底栏成员读 `ui.tabs`，顺序也取自它（`normalizeUi` 保证它是 navOrder 的子集，
+ * 所以侧栏拖个序，底栏跟着变 —— 两个列表的顺序没必要让用户各记一套）。
+ *
+ * 「更多」恒占最后一格，所以总格数 ≤ 5。
+ */
 export function Tabbar({ state, onNav, onMore }: {
   state: LocalState; onNav: (k: string) => void; onMore: () => void;
 }) {
   const c = counts(state);
+  const tabs = state.ui.tabs.map(navDef);
   return (
     <nav className="tabbar">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const b = badge(t.count ? (c as unknown as Record<string, number>)[t.count] : 0);
         return (
           <button
@@ -543,8 +486,9 @@ export function Tabbar({ state, onNav, onMore }: {
         );
       })}
       {/* 「更多」在打卡 / 已完成 / 垃圾箱这几页要点亮 —— 那几页只能从这里进，
-          没高亮的话用户看不出自己当前在哪 */}
-      <button className={'tab' + (MORE_KEYS.includes(state.ui.nav) ? ' active' : '')} onClick={onMore}>
+          没高亮的话用户看不出自己当前在哪。判据是「当前 nav 不在 ui.tabs 里」，
+          与底栏成员读的是同一份数据，不另立一套常量。 */}
+      <button className={'tab' + (!state.ui.tabs.includes(state.ui.nav) ? ' active' : '')} onClick={onMore}>
         <span className="ti"><MoreHorizontal size={18} /></span>
         <span className="tn">更多</span>
       </button>
@@ -552,10 +496,15 @@ export function Tabbar({ state, onNav, onMore }: {
   );
 }
 
-/** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 / 退出 */
-export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
+/**
+ * 「更多」抽屉：底栏没放进去的功能项 + 日程集 / 邀请 / 主题 / 备份 / 设置。
+ *
+ * 前半截是**差集**（`navOrder` 减去 `ui.tabs`），不是写死哪几项 ——
+ * 底栏那 4 格是用户自己挑的，写死就会出现「底栏有、这里也有」的重复项。
+ */
+export function MoreSheet({ state, theme, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
   onManageCal, onInvites, user }: {
-  state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
+  state: LocalState; theme: 'light' | 'dark'; open: boolean; onClose: () => void; onNav: (k: string) => void;
   onTheme: () => void; onExport: () => void; onImport: (f: File) => void;
   onLogout: () => void; onManageCal: () => void; onInvites: () => void;
   user: PublicUser | null;
@@ -589,6 +538,28 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
   const cal = state.cals.find((x) => x.id === state.ui.cal) || null;
   const pending = state.invites.length;
 
+  /**
+   * 底栏没放进去的功能项，在这里补一份。
+   *
+   * 顺序跟着 navOrder 走 —— 与侧栏一致，用户扫一眼就知道在哪儿。
+   * 差集而不是「写死哪几项」：底栏那 4 格是用户自己挑的，写死就会
+   * 出现「底栏有、这里也有」的重复项。
+   */
+  const inTabs = new Set(state.ui.tabs);
+  const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
+  const rest = order.filter((k) => !inTabs.has(k)).map(navDef);
+
+  const navTile = (def: NavDef) => {
+    const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
+    const b = badge(n);
+    return (
+      <button className="ms-item" key={def.key} data-nav={def.key} onClick={() => goto(def.key)}>
+        <span className="mi">{def.icon}</span><span className="mt">{def.label}</span>
+        {b && <span className="mc">{b}</span>}
+      </button>
+    );
+  };
+
   return (
     <>
       <div className="sheet-mask" aria-hidden="true" onClick={onClose} />
@@ -602,17 +573,7 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
       >
         <div className="ms-grab" />
         <div className="ms-grid">
-          <button className="ms-item" onClick={() => goto('habits')}>
-            <span className="mi"><Flame size={20} /></span><span className="mt">打卡</span>
-            {badge(c.habits) && <span className="mc">{badge(c.habits)}</span>}
-          </button>
-          <button className="ms-item" onClick={() => goto('done')}>
-            <span className="mi"><CheckCircle2 size={20} /></span><span className="mt">已完成</span>
-          </button>
-          <button className="ms-item" onClick={() => goto('trash')}>
-            <span className="mi"><Trash2 size={20} /></span><span className="mt">垃圾箱</span>
-            {badge(c.trash) && <span className="mc">{badge(c.trash)}</span>}
-          </button>
+          {rest.map(navTile)}
           <button className="ms-item" onClick={() => { onManageCal(); onClose(); }}>
             <span className="mi"><Layers size={20} /></span>
             <span className="mt">{cal ? cal.name : '日程集'}</span>
@@ -624,14 +585,17 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
             </button>
           )}
           <button className="ms-item" onClick={onTheme}>
-            <span className="mi">{state.ui.theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
-            <span className="mt">{state.ui.theme === 'dark' ? '浅色' : '深色'}</span>
+            <span className="mi">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
+            <span className="mt">{theme === 'dark' ? '浅色' : '深色'}</span>
           </button>
           <button className="ms-item" onClick={onExport}>
             <span className="mi"><Upload size={20} /></span><span className="mt">导出</span>
           </button>
           <button className="ms-item" onClick={() => fileRef.current?.click()}>
             <span className="mi"><Download size={20} /></span><span className="mt">导入</span>
+          </button>
+          <button className="ms-item" data-nav="settings" onClick={() => goto('settings')}>
+            <span className="mi"><Settings size={20} /></span><span className="mt">设置</span>
           </button>
         </div>
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
@@ -714,7 +678,8 @@ export function QuickAdd({ state, onSubmit }: {
   }, []);
 
   return (
-    <div className="fast-add" hidden={state.ui.nav === 'trash'}>
+    // 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了
+    <div className="fast-add" hidden={state.ui.nav === 'trash' || state.ui.nav === 'settings'}>
       <span className="fast-plus"><Plus size={15} /></span>
       <input
         ref={inputRef}
@@ -771,10 +736,12 @@ export function QuickAdd({ state, onSubmit }: {
 /* ============================== 外壳 ============================== */
 
 export function Shell({
-  state, user, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
-  onManageCal, onInvites, onReorder, more, setMore, topbar, quickAdd, children,
+  state, user, theme, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
+  onManageCal, onInvites, more, setMore, topbar, quickAdd, children,
 }: {
   state: LocalState; user: PublicUser | null;
+  /** 实际生效的深浅档，透给窄屏那个「更多」抽屉里的深浅按钮 */
+  theme: 'light' | 'dark';
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
   onNew: () => void;
@@ -784,7 +751,6 @@ export function Shell({
   onTheme: () => void;
   onManageCal: () => void;
   onInvites: () => void;
-  onReorder: (order: string[], bottom: string[]) => void;
   /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
   more: boolean; setMore: (v: boolean) => void;
   topbar: ReactNode;
@@ -807,7 +773,6 @@ export function Shell({
           state={state} onNav={onNav} onNew={onNew}
           onExport={onExport} onImport={onImport} onLogout={onLogout}
           onManageCal={onManageCal} onInvites={onInvites}
-          onReorder={onReorder}
         />
       )}
 
@@ -819,7 +784,7 @@ export function Shell({
 
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}
       <MoreSheet
-        state={state} open={more && narrow} onClose={() => setMore(false)}
+        state={state} theme={theme} open={more && narrow} onClose={() => setMore(false)}
         user={user} onNav={onNav} onTheme={onTheme} onExport={onExport}
         onImport={onImport} onLogout={onLogout}
         onManageCal={onManageCal} onInvites={onInvites}

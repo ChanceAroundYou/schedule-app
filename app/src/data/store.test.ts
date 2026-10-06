@@ -434,3 +434,107 @@ test('被移出的集连同它的实体一起清掉，别的集不受影响', ()
   assert.ok(store.get().tasks[mine]);
   assert.equal(store.get().ui.cal, CAL, '选中的集失效时要自动落到还存在的那个');
 });
+
+/* ================================ 项目 ================================ */
+
+test('建项目落在当前选中的集里，并推一条带 calId 的 op', () => {
+  fresh();
+  const id = store.addProject('星星包');
+
+  const p = store.get().projects[id];
+  assert.ok(p, '项目要真的落地');
+  assert.equal(p.calId, CAL);
+  assert.equal(p.name, '星星包');
+  assert.equal(p.status, 'active', '新建默认是推进中');
+  assert.equal(p.progress, null, '默认按关联任务自动算，不是手填');
+
+  const last = store.get().outbox.at(-1)!;
+  assert.equal(last.entity, 'project', 'project 必须走同一条发件箱');
+  assert.equal(last.entityId, id);
+  assert.equal(last.calId, CAL, '没有 calId 服务器就没法判权限');
+});
+
+test('改项目的字段走 LWW，改不动的字段不会被顺手写进去', () => {
+  fresh();
+  const id = store.addProject('星星包');
+
+  store.patchProject(id, { next: '排期', progress: 40 });
+  assert.equal(store.get().projects[id].next, '排期');
+  assert.equal(store.get().projects[id].progress, 40);
+
+  // id / calId 是主键，不该跟着 patch 走 —— 传了也不能落到 op 里
+  store.patchProject(id, { id: '别的', calId: 'cal-9' } as never);
+  assert.equal(store.get().projects[id].id, id, 'id 不能被改写');
+  assert.equal(store.get().projects[id].calId, CAL, 'calId 是主键的一部分');
+});
+
+test('删项目会把挂在它上面的任务摘下来，不留悬空引用', () => {
+  fresh();
+  const pid = store.addProject('星星包');
+  // 归属**只走 setTaskProject**（addTask 的 draft 里没有这个字段 ——
+  // 归属是在详情里选的，不是新建时填的）
+  const a = add('写方案');
+  const b = add('不相关的');
+  store.setTaskProject(a, pid);
+  assert.equal(store.get().tasks[a].projectId, pid);
+
+  store.deleteProject(pid);
+
+  assert.equal(store.get().projects[pid].deleted, true, '是墓碑，不是物理删除');
+  assert.equal(store.get().tasks[a].projectId, null,
+    '留着悬空引用的话，详情里会显示一个已经不存在的项目名，用户改不回来');
+  assert.equal(store.get().tasks[b].projectId, undefined, '没挂上去的不动');
+});
+
+test('只读成员建项目也写不进去，且提示点名那个集', () => {
+  fresh();
+  store.setCals([{ id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'viewer' }]);
+  const before = store.get().outbox.length;
+
+  const id = store.addProject('写不进去的');
+
+  assert.equal(store.get().projects[id], undefined, '没有写权限就不该落地');
+  assert.equal(store.get().outbox.length, before, '也不该产生 op');
+  assert.equal(store.get().denied, 1, '被挡下必须计数');
+  assert.deepEqual(store.get().deniedCals, [CAL], '点名是哪个集');
+});
+
+test('泳道之间挪卡：done 那一列走 toggleTask，重复任务照样推进系列', () => {
+  fresh();
+  const root = add('早会', { time: '09:00', repeat: { unit: 'day' } });
+  const pid = store.addProject('星星包');
+
+  store.setTaskProject(root, pid);
+  assert.equal(store.get().tasks[root].projectId, pid);
+
+  store.setTaskDoing(root, true);
+  assert.equal(store.get().tasks[root].doing, true);
+  assert.equal(store.get().tasks[root].done, false);
+
+  // 拖到「已完成」列：不能直接写 done 字段，否则重复任务勾完就不见了
+  store.setTaskDoing(root, false);
+  store.toggleTask(root);
+  assert.equal(store.get().tasks[root].done, true);
+  const spawned = Object.values(store.get().tasks).filter((t) => t.seriesId === root && t.id !== root);
+  assert.equal(spawned.length, 1, '重复系列必须派出下一次');
+});
+
+test('快照摊平认得 project 桶，缺省时也不炸', () => {
+  const { flattenSnapshot } = store;
+
+  const withProjects = flattenSnapshot({
+    tasks: {}, habits: {},
+    projects: {
+      p1: { id: 'p1', calId: 'cal-9', name: '星星包', status: 'active', _ts: { name: 5 }, _dev: { name: 'devA' } } as never,
+    },
+  });
+  const row = withProjects.find((c) => c.entity === 'project' && c.field === 'name');
+  assert.ok(row, 'project 字段必须摊平出来');
+  assert.equal(row.value, '星星包');
+  assert.equal(row.ts, 5, 'ts / deviceId 要原样带出来给 LWW 比较');
+  assert.equal(row.calId, 'cal-9');
+
+  // 老服务端没有 projects 这个键 —— 不能抛
+  assert.doesNotThrow(() => flattenSnapshot({ tasks: {}, habits: {} }));
+  assert.equal(flattenSnapshot({ tasks: {}, habits: {} }).length, 0);
+});

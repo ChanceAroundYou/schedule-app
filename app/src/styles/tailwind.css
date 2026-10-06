@@ -93,3 +93,129 @@
 }
 .cb-x:hover { border-color: var(--input); color: var(--text); }
 
+
+/* ============================== 项目泳道看板 ==============================
+ *
+ * 新表面（Projects.tsx），legacy.css 里没有这些类名，所以这里写的规则
+ * Tailwind 压不过、也不跟 legacy 打架。**配色一律走 legacy 的变量** ——
+ * 写死颜色会让深色模式在这块失效（见 CLAUDE.md 四、27）。
+ *
+ * 拖拽那套是复用 `ui/dnd.ts` 的：卡片同时是 `.task-el`（拖得起来）和
+ * `data-card`（算一格），所以 `.drop-hole` / `.drag-muted` 的样式
+ * 直接用 legacy 里现成的，这里一个字都不用写。
+ */
+
+.pj-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.pj-top { display: flex; align-items: center; gap: 10px; }
+.pj-h { font-size: 15px; font-weight: 600; margin: 0; }
+
+.pj-lane {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.pj-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pj-toggle {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-3); border-radius: var(--r-sm);
+}
+.pj-toggle:hover { background: var(--panel-3); color: var(--text); }
+
+.pj-name { font-size: 13.5px; font-weight: 600; }
+/* 状态只是一个**色点级别**的暗示：泳道头是给人扫的，做成一整块底色
+   会把「名字」这个真正要看的东西压下去 */
+.pj-st-active  { color: var(--text); }
+.pj-st-waiting { color: var(--text-2); }
+.pj-st-paused  { color: var(--text-3); }
+.pj-st-done    { color: var(--text-3); text-decoration: line-through; }
+
+/*
+ * 停滞提醒。用 --warn 而不是 --danger：**这不是错误**，是「该看一眼了」。
+ * 只在项目页里出现，不主动弹 —— 用户裁决过。
+ */
+.pj-stale {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--r-pill);
+  padding: 2px 7px;
+}
+
+.pj-count { margin-left: auto; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.pj-bar {
+  flex: none; width: 64px; height: 4px;
+  background: var(--panel-3); border-radius: var(--r-pill); overflow: hidden;
+}
+.pj-bar > i { display: block; height: 100%; background: var(--primary); border-radius: var(--r-pill); }
+
+.pj-more {
+  flex: none; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: none; color: var(--text-2);
+  font-size: 11.5px; padding: 2px 8px; cursor: pointer;
+}
+.pj-more:hover { border-color: var(--input); color: var(--text); }
+
+/*
+ * 「下一步」——面板上最要紧的一行字。刻意做得像一句正文（无边框、比标题
+ * 弱一点点），悬停才显出输入框的样子：它九成时间是**读**的，不是填的。
+ */
+.pj-next { display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-bottom: 1px solid var(--border); }
+.pj-next-l { flex: none; font-size: 11.5px; color: var(--text-3); }
+.pj-next-i {
+  flex: 1; min-width: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text);
+  font-size: 12.5px; padding: 3px 6px; margin: -3px -6px;
+}
+.pj-next-i:hover { border-color: var(--border); }
+.pj-next-i:focus { border-color: var(--primary); outline: none; }
+
+.pj-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+.pj-col { background: var(--panel); min-height: 86px; display: flex; flex-direction: column; }
+
+.pj-col-h {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 9px; font-size: 11.5px; color: var(--text-3);
+}
+.pj-col-h b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.pj-col-b { flex: 1; padding: 0 7px 8px; display: flex; flex-direction: column; gap: 5px; }
+
+/*
+ * 卡片就是一行任务的缩略：标题 + 可选日期。**draggable 是真的**
+ * （`.task-el` 上的 HTML5 拖拽），所以给个抓手光标。
+ */
+.pj-card {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+  cursor: grab;
+  font-size: 12.5px;
+}
+.pj-card:active { cursor: grabbing; }
+.pj-card.done .pj-card-t { color: var(--text-3); text-decoration: line-through; }
+.pj-card-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-card-d { flex: none; font-size: 10.5px; color: var(--text-3); }
+
+/*
+ * 窄屏：三列并排会把每张卡压到读不出标题（526px 下每列约 150px）。
+ * 改成**上下堆叠**，列头横着排 —— 泳道在这个宽度下更像「一叠清单」，
+ * 而拖拽仍然可用（落点判定按几何推列数，堆叠后每行的格子数是 1）。
+ */
+@media (max-width: 900px) {
+  .pj-cols { grid-template-columns: 1fr; }
+  .pj-bar { display: none; }
+}

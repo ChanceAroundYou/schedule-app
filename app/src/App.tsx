@@ -12,32 +12,29 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PublicUser, Task } from './domain/types.ts';
+import type { Project, PublicUser, Task } from './domain/types.ts';
 import * as D from './domain/date.ts';
 import * as store from './data/store.ts';
 import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from './data/api.ts';
 import * as engine from './sync/engine.ts';
 import { readLegacy } from './data/legacy.ts';
 import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset, LONG_PRESS_MS } from './ui/hooks.ts';
+import * as T from './ui/theme.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
 import { HOUR_H, DAY_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
 import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
+import { ProjectSheet } from './ui/ProjectSheet.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
 import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
-
-/* ============================== 主题 ============================== */
-
-function applyTheme(theme: 'light' | 'dark'): void {
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
-}
+import { ProjectsView } from './views/Projects.tsx';
+import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
 
@@ -61,21 +58,36 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const [actId, setActId] = useState<string | null>(null);
   const [calOpen, setCalOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => store.get().ui.theme);
   /** 找日期面板与「更多」抽屉的开关放在这里 —— Esc 要按一个固定顺序逐层关 */
   const [jumpOpen, setJumpOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** 项目浮层：`'new'` = 新建，`{ id }` = 编辑那个项目，`null` = 关着。
+   *  用一个状态而不是两个布尔 —— 两开两关必然有一条路径忘了关另一个。 */
+  const [pjSheet, setPjSheet] = useState<'new' | { id: string } | null>(null);
+  /**
+   * **实际生效**的那一档（`auto` 已经解析过了），不是偏好 —— 顶栏那个图标
+   * 与「更多」里的文案要按它渲染，否则选了「跟随系统」会显示成常亮。
+   */
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => T.resolveTheme(store.get().ui.theme));
 
-  /* -------- 主题 -------- */
-  useEffect(() => { applyTheme(theme); }, [theme]);
+  /* -------- 外观三轴 -------- */
+  // 三轴任一变化都重写一遍：applyAppearance 幂等，写同样的值没副作用，
+  // 所以不需要在这里挑是哪一轴变了。
+  useEffect(() => { setTheme(T.applyAppearance(state.ui)); },
+    [state.ui.theme, state.ui.accent, state.ui.style]);
+
+  // 跟随系统：只在 auto 档订阅。切走时 effect 重跑 → 退订
   useEffect(() => {
-    if (state.ui.theme !== theme) setTheme(state.ui.theme);
-  }, [state.ui.theme, theme]);
+    if (state.ui.theme !== 'auto') return;
+    return T.watchSystemTheme(() => setTheme(T.applyAppearance(store.get().ui)));
+  }, [state.ui.theme]);
 
   const toggleTheme = useCallback(() => {
-    const next = store.get().ui.theme === 'dark' ? 'light' : 'dark';
+    // 顶栏这个是「现在就翻一个」的快捷方式，二元：按下即离开「跟随系统」。
+    // 三选一在设置页里。基准取 dataset 上那个已生效的值，不是偏好
+    // —— auto 档下 `ui.theme` 既不是 light 也不是 dark，拿它取反会翻错。
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     store.setUi({ theme: next });
-    setTheme(next);
   }, []);
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
@@ -489,10 +501,11 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const exportBackup = useCallback(() => {
     const s = store.get();
     const blob = new Blob([JSON.stringify({
-      version: 4,
+      version: 5,
       exportedAt: Date.now(),
       tasks: Object.values(s.tasks),
       habits: Object.values(s.habits),
+      projects: Object.values(s.projects),
       ui: s.ui,
     }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -505,7 +518,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   }, []);
 
   const importBackup = useCallback(async (file: File) => {
-    let data: { tasks?: Task[]; habits?: unknown[] };
+    // projects 可选：**旧备份（version 4）没有这个键**，缺了就是「没有项目」，
+    // 不该拒绝整个文件 —— 那会让用户以为备份坏了。
+    let data: { tasks?: Task[]; habits?: never[]; projects?: Project[] };
     try {
       data = JSON.parse(await file.text());
     } catch (_) { toast('这个文件不是有效的备份'); return; }
@@ -522,7 +537,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       confirmText: '导入',
     });
     if (!ok) return;
-    const added = store.loadMigrated(data.tasks, habits);
+    const added = store.loadMigrated(data.tasks, habits, data.projects || []);
     toast(`已导入 ${added} 条，正在同步`);
     void engine.syncNow();
   }, [confirm]);
@@ -555,7 +570,25 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 内容分发 -------- */
   let body: React.ReactNode;
-  if (!state.cals.length) {
+  if (state.ui.nav === 'settings') {
+    /**
+     * 设置**放在日程集那道门禁之前**。它里面有「清空本机副本」和账户卡，
+     * 而「一个集都没拿到」正是最需要点这两个的时候 —— 塞进 else 里就成了
+     * 一个修不了东西的死角。传全量 state：cals / invites / outbox 都是跨集的。
+     */
+    body = (
+      <SettingsView
+        state={state}
+        user={user}
+        theme={theme}
+        onExport={exportBackup}
+        onImport={importBackup}
+        onLogout={onLogout}
+        onManageCal={() => setCalOpen(true)}
+        onInvites={() => setInvOpen(true)}
+      />
+    );
+  } else if (!state.cals.length) {
     // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
     // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集
     body = (
@@ -573,6 +606,17 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       case 'trash': body = <TrashView state={state} />; break;
       // 按集：这几页只画当前选中的那个集
       case 'done': body = <DoneView state={scoped} />; break;
+      // 按集：跟日程 / 打卡 / 已完成一样，看的是当前选中的那个集
+      case 'projects':
+        body = (
+          <ProjectsView
+            state={scoped}
+            onNew={() => setPjSheet('new')}
+            onEdit={(id) => setPjSheet({ id })}
+            onNext={(id, v) => store.patchProject(id, { next: v })}
+          />
+        );
+        break;
       case 'habits':
         body = <HabitsView state={scoped} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />;
         break;
@@ -594,10 +638,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       onImport={importBackup}
       onLogout={onLogout}
       onTheme={toggleTheme}
+      theme={theme}
       onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
-      /* 侧栏顺序由 Shell 算好（它才看得见拖动时的视觉顺序），这里只负责落盘 */
-      onReorder={(order, bottom) => store.setUi({ navOrder: order, navBottom: bottom })}
       /* 「更多」抽屉 / 找日期面板的开关都在 App 这一层：Esc 要按
          actSheet > 抽屉 > 找日期 的顺序关，只有同时看得见这三者的地方才排得出顺序 */
       more={moreOpen}
@@ -620,6 +663,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
             }}
             onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
             onTheme={toggleTheme}
+            theme={theme}
             onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
           />
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
@@ -678,6 +722,13 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       {/* 两个浮层都传全量 state：它们要读 cals / invites，那是跨集的东西 */}
       <ManageSheet state={state} open={calOpen} onClose={() => setCalOpen(false)} />
       <InviteSheet state={state} open={invOpen} onClose={() => setInvOpen(false)} />
+      {pjSheet && (
+        <ProjectSheet
+          state={state}
+          id={pjSheet === 'new' ? null : pjSheet.id}
+          onClose={() => setPjSheet(null)}
+        />
+      )}
     </Shell>
   );
 }
@@ -714,7 +765,8 @@ export default function App() {
   // 启动：有 token 就先拉一次。401 说明失效了，退回登录页。
   useEffect(() => {
     store.load();
-    applyTheme(store.get().ui.theme);
+    // 首屏前先上一次色，别等 Workbench 那个 effect（它在这次 render 之后才跑）
+    T.applyAppearance(store.get().ui);
 
     let alive = true;
     (async () => {

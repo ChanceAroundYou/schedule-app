@@ -163,6 +163,48 @@ try {
   const demote = await patch(`/cals/${calA}/members/${a.body.user.id}`, { role: 'viewer' }, TA);
   ok(demote.status >= 400, '唯一的 owner 降级被拒（' + demote.status + '）');
 
+  console.log('\n八·二、项目也是同一个集里共享的：建、读、挂任务、删');
+  // 项目走的是和任务同一条同步通道（同一个 ENTITIES 集合、同一份 field_state），
+  // 所以「两个人共用一个集」这件事对它**不额外要求**任何东西 ——
+  // 这一节要证的正是「确实没有漏掉什么」。
+  //
+  // 放在这里而不是第四节后面，是为了不打断「降只读 → 移出」那条链；
+  // 代价是 B 此刻已经被移出 calA，得先请回来再往下测。
+  const reInv = await post(`/cals/${calA}/invites`, { name: '爸爸', role: 'editor' }, TA);
+  ok(reInv.status === 200, '把 B 重新请回 calA');
+  const reAcc = await post(`/invites/${(await get('/invites', TB)).body.invites[0].id}/accept`, {}, TB);
+  ok(reAcc.status === 200, 'B 重新接受');
+  const now = Date.now();
+  const projA = op(calA, 'proj-a', { name: 'A 的项目', status: 'active' }, now, 'devA', 'project');
+  const projB = op(calA, 'proj-b', { name: 'B 的项目', status: 'waiting' }, now + 1000, 'devB', 'project');
+  ok((await post('/sync', { cursor: 0, deviceId: 'devA', ops: [projA] }, TA)).body.applied.length === 1,
+    'A 在共享集里建了项目');
+  ok((await post('/sync', { cursor: 0, deviceId: 'devB', ops: [projB] }, TB)).body.applied.length === 1,
+    'B 也在同一个集里建了项目');
+
+  const snapB = await post('/sync', { cursor: 0, deviceId: 'devB', ops: [] }, TB);
+  const projectsB = snapB.body.snapshot?.projects || {};
+  ok(projectsB['proj-a']?.name === 'A 的项目', 'B 看得到 A 建的项目');
+  ok(projectsB['proj-a']?.status === 'active', '项目的 status 也是逐字段同步的');
+  ok(projectsB['proj-b']?.name === 'B 的项目', 'B 也看得到自己那个');
+
+  // B 往 A 的项目上挂一条任务 —— 归属是一个**可同步字段**，所以跨设备一样带得过去
+  const attach = op(calA, 'for-a-project', { title: '替 A 干的', projectId: 'proj-a' }, now + 2000, 'devB');
+  await post('/sync', { cursor: 0, deviceId: 'devB', ops: [attach] }, TB);
+  const snapA2 = await post('/sync', { cursor: 0, deviceId: 'devA', ops: [] }, TA);
+  ok(snapA2.body.snapshot?.tasks?.['for-a-project']?.projectId === 'proj-a',
+    'A 看得到「这条任务挂在 proj-a 上」');
+
+  // B 删掉自己那个项目，A 的项目不受影响 —— 墓碑也走同一条通道
+  await post('/sync', {
+    cursor: 0, deviceId: 'devB',
+    ops: [op(calA, 'proj-b', { deleted: true, deletedAt: now + 3000 }, now + 3000, 'devB', 'project')],
+  }, TB);
+  const snapA3 = await post('/sync', { cursor: 0, deviceId: 'devA', ops: [] }, TA);
+  const projectsA3 = snapA3.body.snapshot?.projects || {};
+  ok(!projectsA3['proj-b'], 'B 删掉之后，A 的快照里也没有它了（墓碑不进快照）');
+  ok(projectsA3['proj-a']?.name === 'A 的项目', 'A 自己那个一个字都没被动过');
+
   console.log('\n九、退出登录后 token 失效');
   await post('/auth/logout', {}, TB);
   ok((await get('/me', TB)).status === 401, '退出后 /me 返回 401');
