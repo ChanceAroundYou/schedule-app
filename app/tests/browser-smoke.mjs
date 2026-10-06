@@ -973,7 +973,7 @@ try {
   const diag = await evalJs(page, `return {
     cals: [...document.querySelectorAll('[data-cal]')].map((x) => x.textContent.trim()),
     activeCal: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cal,
-    cursor: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cursor,
+    uiCursor: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cursor,
     monthCells: document.querySelectorAll('.month-cell').length,
     collapsed: (document.body.innerText.match(/还有 \\d+ 项/g) || []),
   };`);

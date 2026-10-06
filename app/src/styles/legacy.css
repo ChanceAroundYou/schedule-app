@@ -1,3 +1,17 @@
+/* 三档灰（--text / --text-2 / --text-3）的取值是**算出来的**，不是挑出来的。
+   两个约束同时成立，改之前先读懂：
+
+   (a) 每一档对最难的那个底色（亮 --panel-3 #f3f5fa / 暗 --panel-3 #232833）
+       的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。--text-2 / --text-3 不是装饰色，
+       在 10.5–12px 的**有信息量**文字上用了 38 处（时间轴刻度 .tl-label、
+   .ev-time、.m-note、.wh-count、.cell-load、.od-date、.drawer-meta、.tip…）。
+       旧值 #949bab 只有 2.79:1，看着「淡雅」，实际读不清。
+
+   (b) 三档之间的 **L\* 感知档距按原比例**保留，只是整体压进达标区间。
+       必须按 L* 定档，**不能按对比度比值** —— 比值不是线性感知，拿比值去定
+       就会把三层挤成两层（#949bab 补到 4.5:1 正好落在 #636b80 上）。
+
+   只动 --text-2 / --text-3。--text 是正文，本来就有 16.78 / 14.47，不动。 */
 :root {
   --bg: #f5f6fa;
   --panel: #ffffff;
@@ -5,8 +19,8 @@
   --panel-3: #f3f5fa;
   --sidebar: #ffffff;
   --text: #1a1d29;
-  --text-2: #636b80;
-  --text-3: #949bab;
+  --text-2: #4b5160;
+  --text-3: #687084;
   --border: #e8eaf0;
   --border-2: #d9dce6;
   --primary: #4a6cf7;
@@ -39,8 +53,8 @@
   --panel-3: #232833;
   --sidebar: #14171d;
   --text: #e9ebf2;
-  --text-2: #9ea6b8;
-  --text-3: #6d768a;
+  --text-2: #aeb5c4;
+  --text-3: #878ea0;
   --border: #272c37;
   --border-2: #343b48;
   --primary: #6d8bff;
