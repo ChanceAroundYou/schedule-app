@@ -1026,7 +1026,13 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .tt-ico { font-size: 13px; }
 
 .clock-pop {
-  position: fixed; z-index: 70; width: 274px;
+  position: fixed; z-index: 70;
+  /* 278 不是随手挑的数：`* { box-sizing: border-box }`，所以这个宽里已经扣掉了
+     两条 1px 边框和左右各 15px 的内边距，剩下恰好 246 —— 正好等于 `.cp-face`
+     那个写死的 246px（C = 123 = 它的一半，见 ui/Clock.tsx）。
+     写成 274 时内容盒只有 242，表盘比它宽 4px，`margin: 0 auto` 塌成 0，
+     表盘就整体偏右 2px（探针第十七节量左右空隙，差超过 1px 就红）。 */
+  width: 278px;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 16px; box-shadow: var(--shadow-lg); padding: 15px;
 }

@@ -173,3 +173,87 @@ export function shortLoad(mins: number): string {
   if (!m) return h + '时';
   return h + '¾';
 }
+
+/* ============================ 「找日期」输入框 ============================ */
+
+/** 周几的中文写法 → 周几（weekStart 口径：周一 = 0） */
+const WD_OFF: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 };
+
+/**
+ * 把**一个**日期片段解析成 iso。给「找日期」那个输入框用，
+ * 不能直接拿 `parse()` 顶 —— 两处差异，第二处更要紧：
+ *
+ * 1. `parse()` 是给「明天下午3点 交周报」这种整句用的，要在一句话里同时分辨
+ *    日期 / 时间 / 时长 / 重复，所以认得不深（`1015`、`2026-10`、`上个月`
+ *    这些它一律不认）。而这个输入框里只有一个日期，用户的心理预期是「怎么写都行」。
+ * 2. **年份基准是 `baseIso`（面板当前所在的月份），不是今天。** 12 月翻到面板
+ *    显示次年 1 月时输入「1月5日」，用户要的是明年 1 月 5 号。
+ *
+ * `todayIso` 只影响相对说法（今天 / 明天 / 裸周几），默认取真实今天；
+ * 测试传固定值，否则用例会随日期漂移。
+ */
+export function parseDateText(raw: string, baseIso?: string, todayIso?: string): string | null {
+  const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, '');
+  if (!s) return null;
+  const today = todayIso || iso(new Date());
+  const base = parseISO(baseIso || today);
+  const y = base.getFullYear();
+  let m: RegExpMatchArray | null;
+
+  /** 拼日期。**超过当月天数要截到月末** —— 用户写 2月30日 不该给他报错 */
+  const mk = (yy: number, mo: number, dd: number): string | null => {
+    if (!(yy >= 1970 && yy <= 2999)) return null;
+    if (mo < 1 || mo > 12) return null;
+    if (dd < 1 || dd > 31) return null;
+    return iso(new Date(yy, mo - 1, Math.min(dd, lastDayOfMonth(yy, mo))));
+  };
+
+  /* ---- 相对说法 ---- */
+  if (/^(今天|今日|今|当天)$/.test(s)) return today;
+  if (/^(昨天|昨日)$/.test(s)) return addDays(today, -1);
+  if (/^前天$/.test(s)) return addDays(today, -2);
+  if (/^大前天$/.test(s)) return addDays(today, -3);
+  if (/^(明天|明日)$/.test(s)) return addDays(today, 1);
+  if (/^后天$/.test(s)) return addDays(today, 2);
+  if (/^(大后天)$/.test(s)) return addDays(today, 3);
+  if ((m = s.match(/^(\d+)天(后|後|前)$/))) {
+    return m[2] === '前' ? addDays(today, -(+m[1])) : addDays(today, +m[1]);
+  }
+
+  /* ---- 周几：下周三 / 本周五 / 周一 ---- */
+  if ((m = s.match(/^(下下|下|本|这)?(?:周|星期|礼拜)([一二三四五六日天1-7])?$/))) {
+    let off = WD_OFF[m[2] || '一'];
+    if (m[2] && /^[1-7]$/.test(m[2])) off = (+m[2]) - 1;
+    let ws = weekStart(today);
+    if (m[1] === '下') ws = addDays(ws, 7);
+    else if (m[1] === '下下') ws = addDays(ws, 14);
+    let d = addDays(ws, off);
+    // 裸周几取**下一个**：「周三」在周五输入，用户要的是下周三，不是两天前那个。
+    // parse.ts 里那条日期规则就是这么写的，两处口径必须一致 —— 不然同一句
+    // 「周三」在标题里和在找日期框里会跳到两个不同的日子。
+    if (!m[1] && d < today) d = addDays(d, 7);
+    return d;
+  }
+
+  /* ---- 月份偏移：下下个月 / 上个月 / 本月 ---- */
+  if (/^(下下个?月)$/.test(s)) return monthStart(addMonths(today, 2));
+  if (/^(下个?月|下月)$/.test(s)) return monthStart(addMonths(today, 1));
+  if (/^(这个?月|本月|当月)$/.test(s)) return monthStart(today);
+  if (/^(上个?月|上月)$/.test(s)) return monthStart(addMonths(today, -1));
+
+  /* ---- 完整日期 ---- */
+  // 2026-10-15 / 2026/10/15 / 2026.10.15 / 2026年10月15日
+  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(+m[1], +m[2], +m[3]);
+  if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return mk(+m[1], +m[2], +m[3]);   // 20261015
+  // 2026-10 / 2026年10月 / 202610 → 那个月的 1 号
+  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})月?$/))) return mk(+m[1], +m[2], 1);
+  if ((m = s.match(/^(\d{4})(\d{2})$/))) return mk(+m[1], +m[2], 1);
+
+  /* ---- 只给月日：年份沿用 `baseIso` 所在的年份 ---- */
+  if ((m = s.match(/^(\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(y, +m[1], +m[2]);
+  // 1015 → 10月15日。**月份必须合法**，否则 2026 这种纯年份会被它吃掉
+  if ((m = s.match(/^(\d{2})(\d{2})$/)) && +m[1] >= 1 && +m[1] <= 12) return mk(y, +m[1], +m[2]);
+  if ((m = s.match(/^(\d{1,2})月?$/))) return mk(y, +m[1], 1);                    // 10月 / 10
+  if ((m = s.match(/^(\d{4})$/))) return mk(+m[1], 1, 1);                          // 2026
+  return null;
+}

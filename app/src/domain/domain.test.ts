@@ -73,6 +73,76 @@ test('月视图矩阵是 42 天且以周一开头', () => {
   assert.equal(D.weekdayOf(m[0]), 1, '第一格必须是周一');
 });
 
+/* ======================= 「找日期」输入框的片段解析 ======================= */
+
+test('找日期：相对说法', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('今天'), T);
+  assert.equal(p('明天'), '2026-10-07');
+  assert.equal(p('后天'), '2026-10-08');
+  assert.equal(p('大后天'), '2026-10-09');
+  assert.equal(p('昨天'), '2026-10-05');
+  assert.equal(p('前天'), '2026-10-04');
+  assert.equal(p('大前天'), '2026-10-03');
+  assert.equal(p('3天后'), '2026-10-09');
+  assert.equal(p('5天前'), '2026-10-01');
+});
+
+test('找日期：裸周几取下一个，带「本 / 这」才允许落在过去', () => {
+  // T = 2026-10-06 是周二，本周一是 10-05（已过去）
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('周四'), '2026-10-08');
+  assert.equal(p('周一'), '2026-10-12', '裸「周一」必须推到下周，不是两天前');
+  assert.equal(p('周三'), '2026-10-07');
+  assert.equal(p('周二'), T, '就是今天，不该往后推一周');
+  assert.equal(p('周7'), '2026-10-11');   // 周日
+  assert.equal(p('周1'), '2026-10-12');   // 与普通数字归一
+  assert.equal(p('本周一'), '2026-10-05', '说了「本」就按本周算，哪怕是过去');
+  assert.equal(p('这周五'), '2026-10-09');
+  assert.equal(p('下周三'), '2026-10-14');
+  assert.equal(p('下下周 一'), '2026-10-19', '空格要被吃掉');
+
+  // 与 parse.ts 同一个口径：同一句「周三」不该在两个解析器里跳到两个日子
+  const r = parse('周三 开会', T);
+  assert.equal(r?.date, p('周三'));
+});
+
+test('找日期：月份偏移与完整日期', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('下个月'), '2026-11-01');
+  assert.equal(p('下下个月'), '2026-12-01');
+  assert.equal(p('本月'), '2026-10-01');
+  assert.equal(p('上个月'), '2026-09-01');
+
+  assert.equal(p('2026-10-15'), '2026-10-15');
+  assert.equal(p('2026/10/15'), '2026-10-15');
+  assert.equal(p('2026.10.15'), '2026-10-15');
+  assert.equal(p('2026年10月15日'), '2026-10-15');
+  assert.equal(p('20261015'), '2026-10-15');
+  assert.equal(p('2026-10'), '2026-10-01');
+  assert.equal(p('202610'), '2026-10-01');
+  assert.equal(p('2026'), '2026-01-01', '纯四位数是年份，不能被两位月日那条吃掉');
+});
+
+test('找日期：只给月日时年份沿用**面板所在的年份**，超月天数截到月末', () => {
+  // 12 月翻到面板显示次年 1 月，这时输入「1月5日」要的是明年
+  assert.equal(D.parseDateText('1月5日', '2027-01-15', T), '2027-01-05');
+  assert.equal(D.parseDateText('1月5日', '2026-10-15', T), '2026-01-05');
+  assert.equal(D.parseDateText('1015', '2026-10-15', T), '2026-10-15');
+  assert.equal(D.parseDateText('10', '2026-10-15', T), '2026-10-01');
+  assert.equal(D.parseDateText('2月30日', '2026-10-15', T), '2026-02-28', '不该给用户报错');
+});
+
+test('找日期：认不出就返回 null（不猜）', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p(''), null);
+  assert.equal(p('   '), null);
+  assert.equal(p('交周报'), null);
+  assert.equal(p('13月5日'), null);
+  assert.equal(p('0月'), null);
+  assert.equal(p('1969'), null, '1970 年之前不接受');
+});
+
 /* ============================== 解析 ============================== */
 
 test('解析：日期 + 时段 + 时长，剩下的才是标题', () => {

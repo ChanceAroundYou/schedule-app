@@ -259,79 +259,6 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
 
 /* ============================== 找日期 ============================== */
 
-/**
- * 找日期输入框**专门的一套写法**，不能直接拿 `parse()` 顶。
- *
- * `parse()` 是给「明天下午3点 交周报」这种整句用的：它要在一句话里同时分辨
- * 日期 / 时间 / 时长 / 重复，所以认得不深（`1015`、`2026-10`、`上个月` 这些
- * 它一律不认）。而这个输入框里只有一个日期，用户的心理预期是「怎么写都行」。
- *
- * 另一处**更要紧**的差异是年份基准：`parse()` 恒以今天为基准，而这里必须
- * 以**面板当前所在的月份**为基准。在 12 月翻到面板显示次年 1 月时输入
- * 「1月5日」，用户要的是明年 1 月 5 号，不是今年 1 月 5 号。
- */
-function parseJumpText(raw: string, baseIso: string): string | null {
-  const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, '');
-  if (!s) return null;
-  const today = D.today();
-  const base = D.parseISO(baseIso || today);
-  const y = base.getFullYear();
-  let m: RegExpMatchArray | null;
-
-  /** 拼日期。**超过当月天数要截到月末** —— 用户写 2月30日 不该给他报错 */
-  const mk = (yy: number, mo: number, dd: number): string | null => {
-    if (!(yy >= 1970 && yy <= 2999)) return null;
-    if (mo < 1 || mo > 12) return null;
-    if (dd < 1 || dd > 31) return null;
-    return D.iso(new Date(yy, mo - 1, Math.min(dd, D.lastDayOfMonth(yy, mo))));
-  };
-
-  /* ---- 相对说法 ---- */
-  if (/^(今天|今日|今|当天)$/.test(s)) return today;
-  if (/^(昨天|昨日)$/.test(s)) return D.addDays(today, -1);
-  if (/^前天$/.test(s)) return D.addDays(today, -2);
-  if (/^(大前天)$/.test(s)) return D.addDays(today, -3);
-  if (/^(明天|明日)$/.test(s)) return D.addDays(today, 1);
-  if (/^后天$/.test(s)) return D.addDays(today, 2);
-  if (/^(大后天)$/.test(s)) return D.addDays(today, 3);
-  if ((m = s.match(/^(\d+)天(后|後|前)$/))) {
-    return m[2] === '前' ? D.addDays(today, -(+m[1])) : D.addDays(today, +m[1]);
-  }
-
-  /* ---- 周几：下周三 / 本周五 / 周一 ---- */
-  if ((m = s.match(/^(下下|下|本|这)?(?:周|星期|礼拜)([一二三四五六日天1-7])?$/))) {
-    const map: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 };
-    let off = map[m[2] || '一'];
-    if (m[2] && /^[1-7]$/.test(m[2])) off = (+m[2]) - 1;
-    let ws = D.weekStart(today);
-    if (m[1] === '下') ws = D.addDays(ws, 7);
-    else if (m[1] === '下下') ws = D.addDays(ws, 14);
-    return D.addDays(ws, off);
-  }
-
-  /* ---- 月份偏移：下下个月 / 上个月 / 本月 ---- */
-  if (/^(下下个?月)$/.test(s)) return D.monthStart(D.addMonths(today, 2));
-  if (/^(下个?月|下月)$/.test(s)) return D.monthStart(D.addMonths(today, 1));
-  if (/^(这个?月|本月|当月)$/.test(s)) return D.monthStart(today);
-  if (/^(上个?月|上月)$/.test(s)) return D.monthStart(D.addMonths(today, -1));
-
-  /* ---- 完整日期 ---- */
-  // 2026-10-15 / 2026/10/15 / 2026.10.15 / 2026年10月15日
-  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(+m[1], +m[2], +m[3]);
-  if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return mk(+m[1], +m[2], +m[3]);   // 20261015
-  // 2026-10 / 2026年10月 / 202610 → 那个月的 1 号
-  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})月?$/))) return mk(+m[1], +m[2], 1);
-  if ((m = s.match(/^(\d{4})(\d{2})$/))) return mk(+m[1], +m[2], 1);
-
-  /* ---- 只给月日：年份沿用**面板当前所在的月份** ---- */
-  if ((m = s.match(/^(\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(y, +m[1], +m[2]);
-  // 1015 → 10月15日。**月份必须合法**，否则 2026 这种纯年份会被它吃掉
-  if ((m = s.match(/^(\d{2})(\d{2})$/)) && +m[1] >= 1 && +m[1] <= 12) return mk(y, +m[1], +m[2]);
-  if ((m = s.match(/^(\d{1,2})月?$/))) return mk(y, +m[1], 1);                    // 10月 / 10
-  if ((m = s.match(/^(\d{4})$/))) return mk(+m[1], 1, 1);                          // 2026
-  return null;
-}
-
 /** 某天**还没做完**的任务数 —— 面板用它表示「哪天忙」 */
 function jumpLoad(state: LocalState, isoDay: string): number {
   let n = 0;
@@ -361,8 +288,8 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
   const today = D.today();
 
   const go = (v: string) => {
-    // 基淮用**面板所在月份**，不是今天 —— 见 parseJumpText 上面的注释
-    const d = parseJumpText(v, month);
+    // 基准用**面板所在月份**，不是今天 —— 见 domain/date.ts 的 parseDateText
+    const d = D.parseDateText(v, month);
     if (d) { onPick(d); return; }
     setBad(true);
   };

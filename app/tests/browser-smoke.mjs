@@ -1365,6 +1365,211 @@ try {
   await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'false' ? 1 : null`,
     '找日期面板收起', 8000);
 
+  console.log('\n十七、找日期文本框 / 时间转盘 / 侧栏跨组拖拽');
+  /* 这三样此前**一条断言都没有**：找日期的文本输入（不是点格子）、快速添加里
+     那个 12 小时制转盘、侧栏跨组拖拽重排。
+     `parseDateText` 的判定逻辑在 domain.test.ts 里有单测，这里证的是**接线**：
+     输入框 → 解析 → 光标真挪过去 → 顶栏真跟着变。
+     转盘和侧栏拖拽全是 DOM 层面的东西，只能在这儿证。 */
+
+  /* ---- 1. 找日期：裸周几必须落在**下一个**，不能是刚刚过去那个 ---- */
+  // 先回到今天，光标位置才是确定的（不然「跳过去」可能压根没变化，等于没测）
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  await new Promise((r) => setTimeout(r, 150));
+
+  const setText = (sel, v) => evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return 'missing';
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(el, ${JSON.stringify(v)});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'ok';
+  `);
+
+  // 「六天后的星期几」= **这周刚刚过去的那一天**（周日转一圈回来）。
+  // 挑它而不是「两天后的」：后者修没修都对得上，等于没测。
+  // 有 bug 的那版返回 weekStart 里的昨天（ahead = -1），修了的返回下周同一日。
+  const dowNow = await evalJs(page, `return new Date().getDay();`);
+  const targetDow = (dowNow + 6) % 7;
+  const cnWord = ['日', '一', '二', '三', '四', '五', '六'][targetDow];
+
+  const cursor0 = await waitFor(page, `
+    (() => { const c = JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cursor; return c || null; })()
+  `, '读到当前光标', 8000);
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板打开', 8000);
+  ok(await setText('.jump-pop input', '周' + cnWord) === 'ok', '往找日期框里打字');
+  await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '点「跳转」后面板收起来', 8000);
+  // persist() 有防抖，落盘要等（CLAUDE.md 四、41）；判据写成「光标与刚才不同」
+  const jumped = await waitFor(page, `
+    (() => {
+      const u = JSON.parse(localStorage.getItem('schedule-app-v4')).ui;
+      if (!u.cursor || u.cursor === ${JSON.stringify(cursor0)}) return null;
+      const d = new Date(u.cursor + 'T00:00:00');
+      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      return { iso: u.cursor, dow: d.getDay(), ahead: Math.round((d - t0) / 86400000) };
+    })()
+  `, '光标跳到新日期', 8000);
+  ok(jumped && jumped.dow === targetDow,
+    '「周' + cnWord + '」解析到那一天，实际 ' + JSON.stringify(jumped));
+  ok(jumped && jumped.ahead >= 1 && jumped.ahead <= 7,
+    '裸周几落在**将来**的一周内（不是刚过去的那一天），实际 差 ' + (jumped && jumped.ahead) + ' 天');
+
+  /* ---- 2. 看不懂的写法要留在原地说一声，不能静默不理 ---- */
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板再打开', 8000);
+  await setText('.jump-pop input', '胡说八道');
+  await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
+  const badMsg = await waitFor(page, `
+    (() => {
+      const p = document.querySelector('.jump-pop');
+      if (!p) return null;
+      const b = p.querySelector('.jp-bad');
+      return b ? b.textContent.trim() : null;
+    })()
+  `, '看不懂的日期要给提示', 8000);
+  ok(/没看懂/.test(String(badMsg)), '认不出时面板不关、并给出提示，实际 ' + JSON.stringify(badMsg));
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '找日期面板收起', 8000);
+
+  /* ---- 3. 时间转盘 ---- */
+  // 换到待办箱：这一节最后要往箱子里加一条带时间的任务，得站在能看见它的页面上
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
+  await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切到待办箱', 8000);
+
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '时间转盘打开', 8000);
+  const dial = await evalJs(page, `
+    const pop = document.querySelector('.clock-pop');
+    const f = pop.querySelector('.cp-face').getBoundingClientRect();
+    const p = pop.getBoundingClientRect();
+    return {
+      left: +(f.left - p.left).toFixed(1),
+      right: +(p.right - f.right).toFixed(1),
+      pad: getComputedStyle(pop).paddingLeft,
+      nums: pop.querySelectorAll('.cp-num').length,
+      ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
+    };
+  `);
+  ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
+  ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
+  ok(Math.abs(dial.left - dial.right) < 1,
+    '表盘在弹层里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right + '（弹层内边距 ' + dial.pad + '）');
+
+  // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
+  const tip = await evalJs(page, `return document.querySelector('.cp-tip').textContent.trim();`);
+  ok(/分钟/.test(tip), '选完小时自动进分钟档，实际 ' + JSON.stringify(tip));
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
+  const shown = await evalJs(page, `return document.querySelector('.cp-display').textContent.trim();`);
+  ok(shown === '12:30', '表盘上写的是 12 小时制的 12:30，实际 ' + JSON.stringify(shown));
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
+  const pill = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
+  ok(pill === '00:30', '选完换算成 24 小时制的 00:30 显示在胶囊上，实际 ' + JSON.stringify(pill));
+
+  // 时间要真跟着任务落库 —— 只断言胶囊是「选中了但没带上」的假通过
+  const n0 = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
+  await setText('.fast-add input', '转盘定时');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  await waitFor(page, `document.querySelectorAll('[data-scope="inbox"] .task-el').length > ${n0}`, '带时间的任务出现', 8000);
+  const made = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '转盘定时');
+      return t ? { time: t.time } : null;
+    })()
+  `, '带时间的任务落盘', 8000);
+  ok(made && made.time === '00:30',
+    '转盘选的时间跟着任务一起落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made && made.time));
+
+  /* ---- 4. 侧栏跨组拖拽重排 ---- */
+  /* 拖的是「打卡」→ 底部组，证三件事：真跨了组、真落库、以及**松手那一下补的
+     click 要被吞掉**。第三件最容易回归：浏览器在 dragend 之后可能补一个 click，
+     不吞的话用户刚拖完就跳到那一页去了（CLAUDE.md 四、23）。
+     吞的窗口是 `setTimeout(…, 0)` 复位，所以要验它就得把 drop 和 click
+     放在**同一个同步块**里发 —— 分两次 evalJs 中间隔着一次往返，早就复位了。 */
+  const navBefore = await evalJs(page, `return JSON.parse(localStorage.getItem('schedule-app-v4')).ui.nav;`);
+  const bottomBefore = await evalJs(page, `return [...document.querySelectorAll('#navBottom .nav-item')].map((e) => e.dataset.nav);`);
+  const dragStartNav = await evalJs(page, `
+    const el = document.querySelector('.nav-item[data-nav="habits"]');
+    if (!el) return 'missing';
+    if (!window.__ndt) window.__ndt = new DataTransfer();
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new DragEvent('dragstart', {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      dataTransfer: window.__ndt,
+    }));
+    return 'ok';
+  `);
+  ok(dragStartNav === 'ok', '合成 dragstart 打在侧栏「打卡」上');
+  await evalJs(page, `
+    const to = document.querySelector('.nav-item[data-nav="trash"]');
+    if (!to) return 'missing';
+    if (!window.__ndt) window.__ndt = new DataTransfer();
+    const r = to.getBoundingClientRect();
+    to.dispatchEvent(new DragEvent('dragover', {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height * 0.8,   // 下半 → 插到它后面
+      dataTransfer: window.__ndt,
+    }));
+    return 1;
+  `);
+  // dragover 是连续事件，React 会批处理 —— 让位线要等一拍再读
+  const ins = await waitFor(page, `
+    (() => { const e = document.querySelector('#navBottom .nav-ins'); return e ? 'ins' : null; })()
+  `, '拖到底部组上方时插出让位线', 8000);
+  ok(ins === 'ins', 'dragover 时插了让位线（事件真进了处理器）');
+  const dropNav = await evalJs(page, `
+    const from = document.querySelector('.nav-item[data-nav="habits"]');
+    const to = document.querySelector('.nav-item[data-nav="trash"]');
+    if (!from || !to) return 'missing';
+    const r = to.getBoundingClientRect();
+    const mk = (t) => new DragEvent(t, {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height * 0.8,
+      dataTransfer: window.__ndt,
+    });
+    to.dispatchEvent(mk('drop'));
+    from.dispatchEvent(mk('dragend'));
+    // 浏览器松手之后可能补的那一下，必须在同一个同步块里发
+    from.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return 'ok';
+  `);
+  ok(dropNav === 'ok', '松手落到侧栏底部组上');
+  const navAfter = await evalJs(page, `return JSON.parse(localStorage.getItem('schedule-app-v4')).ui.nav;`);
+  ok(navAfter === navBefore, '松手那一下补的 click 被吞掉了，没有顺带跳页（' + navBefore + ' → ' + navAfter + '）');
+  const bottomAfter = await waitFor(page, `
+    (() => {
+      const b = [...document.querySelectorAll('#navBottom .nav-item')].map((e) => e.dataset.nav);
+      return b.length > ${bottomBefore.length} ? b : null;
+    })()
+  `, '「打卡」被放进底部组', 8000);
+  ok(bottomAfter.join(',') === 'trash,habits',
+    '「打卡」进到底部组、并且排在垃圾箱后面（从 ' + bottomBefore.join(',') + ' 变成 ' + bottomAfter.join(',') + '）');
+  const savedBottom = await waitFor(page, `
+    (() => {
+      const b = JSON.parse(localStorage.getItem('schedule-app-v4')).ui.navBottom;
+      return Array.isArray(b) && b.join(',') === ${JSON.stringify(bottomAfter.join(','))} ? b : null;
+    })()
+  `, '新的侧栏分组落库', 8000);
+  ok(savedBottom && savedBottom.join(',') === bottomAfter.join(','),
+    '新的分组落库了（垃圾箱和打卡都在底部组），实际 ' + JSON.stringify(savedBottom));
+
+  // 反过来证一下「吞」不是永久的：隔一会儿再点同一项，必须照常跳过去
+  await new Promise((r) => setTimeout(r, 120));
+  await clickEl(page, `document.querySelector('#navBottom .nav-item[data-nav="habits"]')`);
+  const navThen = await waitFor(page, `
+    (() => { const n = JSON.parse(localStorage.getItem('schedule-app-v4')).ui.nav; return n === 'habits' ? n : null; })()
+  `, '普通点击照常跳页', 8000);
+  ok(navThen === 'habits', '拖完之后正常点击仍然能跳页（不是把点击永久吞掉了）');
+
   page.close();
 } catch (e) {
   failures++;
