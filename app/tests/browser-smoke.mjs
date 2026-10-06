@@ -1510,12 +1510,18 @@ try {
   //
   // 这验的是「narrow 为真时底栏与「更多」抽屉有没有被接出来」这条**接线**，
   // 不是真实窄屏下的排版 —— 后者在无头里造不出来，只能手工在真机上看。
+  //
+  // 2026-10-07 起设置页的「功能区」卡片**按设备分屏**：窄屏只渲染底栏胶囊
+  // （data-tab），宽屏只渲染侧栏列表（data-nav-row）。所以这一节拆成两半 ——
+  // 前半伪窄屏测底栏、后半真宽屏测侧栏拖拽。开关放 sessionStorage 而不是内存：
+  // 注入的脚本每次导航都会重跑，内存开关会被重置。
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `
     (() => {
       const orig = window.matchMedia.bind(window);
       window.matchMedia = (q) => {
         const r = orig(q);
         if (!/max-width:\\s*900px/.test(String(q))) return r;
+        if (sessionStorage.getItem('__forceNarrow') === '0') return r;
         return new Proxy(r, {
           get(t, k) {
             if (k === 'matches') return true;
@@ -1526,8 +1532,13 @@ try {
       };
     })();
   ` });
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
-  await waitFor(page, `!!document.querySelector('.tabbar')`, '窄屏模式下底栏渲染出来了', 15000);
+  /** 伪窄屏 ↔ 真宽屏之间切换，靠 sessionStorage 开关 + 重新导航 */
+  const reloadAs = async (forceNarrow, what) => {
+    await evalJs(page, `sessionStorage.${forceNarrow ? "removeItem('__forceNarrow')" : "setItem('__forceNarrow', '0')"}; return 1;`);
+    await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+    await waitFor(page, `!!document.querySelector('${forceNarrow ? '.tabbar' : '.sidebar'}')`, what, 15000);
+  };
+  await reloadAs(true, '窄屏模式下底栏渲染出来了');
 
   const tabsNow = () => evalJs(page, `
     return [...document.querySelectorAll('.tabbar .tab')].map((x) => x.textContent.replace(/\\d+/g, '').trim());
@@ -1536,6 +1547,7 @@ try {
   /** 等防抖落盘：persist() 是 250ms 防抖，改完立刻读会读到上一版 */
   const waitForUi = (what, expr) => waitFor(page, expr, what, 8000);
 
+  /* ---------- 半段一：窄屏只显示底栏设置 ---------- */
   ok((await tabsNow()).length === 5, '底栏是 4 项 + 「更多」，实际 ' + JSON.stringify(await tabsNow()));
   ok((await tabsNow())[4] === '更多', '「更多」恒占最后一格');
 
@@ -1543,7 +1555,10 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
   await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
   await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
-  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的功能区卡片');
+  await waitFor(page, `!!document.querySelector('[data-tab]')`, '设置页的底栏胶囊');
+  // 分屏：窄屏设置页**不**渲染侧栏那列 —— 侧栏在窄屏根本不存在，摆出来只会让人困惑
+  ok(await evalJs(page, `return !document.querySelector('[data-nav-row]');`),
+    '窄屏设置页不显示侧栏列表（按设备分屏）');
 
   const tabSel = (k) => `document.querySelector('[data-tab="${k}"]')`;
   ok(await clickEl(page, tabSel('inbox')) !== 'missing', '设置页里点得动底栏那排胶囊');
@@ -1561,6 +1576,19 @@ try {
   await clickEl(page, tabSel('done'));
   await new Promise((r) => setTimeout(r, 300));
   ok((await tabsNow()).length === 5, '满 4 项后再点一个开不动，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 刷新之后还在 —— 这两条字段曾经是死数据，「记得住」是这次真正要证的
+  await reloadAs(true, '刷新后底栏还在');
+  await new Promise((r) => setTimeout(r, 800));
+  ok((await uiNow()).tabs.length === 4, '刷新后底栏还是 4 项');
+  ok((await tabsNow()).length === 5, '刷新后底栏画出来还是 5 格');
+
+  /* ---------- 半段二：宽屏只显示侧栏设置 ---------- */
+  await reloadAs(false, '宽屏侧栏渲染出来了');
+  await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
+  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的侧栏列表');
+  ok(await evalJs(page, `return !document.querySelector('[data-tab]');`),
+    '宽屏设置页不显示底栏胶囊（按设备分屏）');
 
   // 设置页调序：dragstart / dragover / drop 必须**分开的 tick** ——
   // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的 dragKey 仍是 null
@@ -1596,14 +1624,12 @@ try {
   ok((await uiNow()).navOrder.indexOf('trash') === 1,
     '设置页调序真的落库了（trash 挪到了第 2 位），实际 ' + JSON.stringify((await uiNow()).navOrder));
 
-  // 刷新之后还在 —— 这两条字段曾经是死数据，「记得住」是这次真正要证的
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
-  await waitFor(page, `!!document.querySelector('.tabbar')`, '刷新后底栏还在');
+  await reloadAs(false, '刷新后宽屏还在');
   await new Promise((r) => setTimeout(r, 800));
-  const afterReloadUi = await uiNow();
-  ok(afterReloadUi.navOrder.indexOf('trash') === 1, '刷新后顺序还在');
-  ok(afterReloadUi.tabs.length === 4, '刷新后底栏还是 4 项');
-  ok((await tabsNow()).length === 5, '刷新后底栏画出来还是 5 格');
+  ok((await uiNow()).navOrder.indexOf('trash') === 1, '刷新后顺序还在');
+
+  // 恢复伪窄屏给后面几节（十九、二十都在窄屏下跑）
+  await reloadAs(true, '恢复窄屏模式');
 
   console.log('\n十九、项目泳道：建项目 → 挂任务 → 拖卡片换列 → 刷新还在');
 
@@ -1741,7 +1767,9 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
   await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
   await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
-  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页挂上');
+  // 用「关于」卡当设置页挂上的判据，别再用 [data-nav-row] —— 功能区卡片按设备
+  // 分屏之后，窄屏下那列根本不渲染（见第十八节）。关于卡两档都在。
+  await waitFor(page, `!!document.querySelector('[data-about="version"]')`, '设置页挂上');
   await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改密码')`);
   await waitFor(page, `!!document.querySelector('input[type="password"]')`, '改口令浮层打开');
   ok((await evalJs(page, `return document.querySelectorAll('input[type="password"]').length;`)) === 3,

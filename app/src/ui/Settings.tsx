@@ -26,7 +26,7 @@ import * as T from './theme.ts';
 import { Btn, Sheet, useConfirm, toast } from './kit.tsx';
 import { api } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
-import { useOnline } from './hooks.ts';
+import { useIsNarrow, useOnline } from './hooks.ts';
 import { cx } from './cx.ts';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
@@ -106,6 +106,11 @@ function Chips<K extends string>({ value, options, onPick, render }: {
 /**
  * 功能区自定义：底栏挑哪几项 + 侧栏怎么排。
  *
+ * **按设备分屏**：窄屏（≤900px）只显示底栏那一组，宽屏只显示侧栏那一组。
+ * 两段交叉着显示对谁都没用 —— 手机上永远看不到侧栏，电脑上永远看不到底栏，
+ * 摆在一起只是让人多读一段与自己无关的设置。断点走 `useIsNarrow()`，
+ * 与 Shell 的侧栏 / 底栏显隐是同一根线（hooks.ts 的 `(max-width: 900px)`）。
+ *
  * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的
  * （`ROW_SEL`、`data-untimed`、`rawLayout` 量原始布局、`shiftCells` 让位），
  * 套到一个 7 行的静态列表上属于杀鸡用牛刀 —— 而且它那套「按几何推列数」
@@ -120,6 +125,7 @@ function NavCard({ state }: { state: LocalState }) {
   const order = ui.navOrder;
   const tabs = new Set(ui.tabs);
   const bottom = new Set(ui.navBottom);
+  const narrow = useIsNarrow();
 
   const [rows, setRows] = useState<string[]>(order);
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -171,12 +177,14 @@ function NavCard({ state }: { state: LocalState }) {
 
   return (
     <Card icon={<PanelTop size={14} />} title="功能区"
-      hint={'底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。'
-        + '侧栏那列可以直接拖，也可以在这儿拖 —— 两边改的是同一份顺序。'}>
-      <div className="flex flex-col gap-4">
+      hint={narrow
+        ? '底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。'
+        : '侧栏那列可以直接拖，也可以在这儿拖 —— 两边改的是同一份顺序。'}>
+      {narrow ? (
+        /* 手机：只显示底栏设置。侧栏在窄屏根本不渲染，摆出来只会让人困惑 */
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">
-            <span className="text-[11.5px] text-[var(--text-3)]">底栏（手机上）</span>
+            <span className="text-[11.5px] text-[var(--text-3)]">底栏</span>
             <span className="text-[11.5px] text-[var(--text-3)]">{tabs.size}/{TAB_MAX}</span>
           </div>
           {/*
@@ -208,10 +216,11 @@ function NavCard({ state }: { state: LocalState }) {
             })}
           </div>
         </div>
-
+      ) : (
+        /* 电脑：只显示侧栏设置。底栏在宽屏根本不渲染 */
         <div>
           <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
-            侧栏（电脑上）· 拖拽排序
+            侧栏 · 拖拽排序
           </div>
           <ul className="flex flex-col gap-1">
             {rows.map((k) => (
@@ -255,7 +264,7 @@ function NavCard({ state }: { state: LocalState }) {
             ))}
           </ul>
         </div>
-      </div>
+      )}
     </Card>
   );
 }
