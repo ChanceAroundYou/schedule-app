@@ -21,7 +21,7 @@ import { readLegacy } from './data/legacy.ts';
 import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset, LONG_PRESS_MS } from './ui/hooks.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
-import { HOUR_H } from './domain/layout.ts';
+import { HOUR_H, DAY_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
 import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
@@ -62,6 +62,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const [calOpen, setCalOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => store.get().ui.theme);
+  /** 找日期面板与「更多」抽屉的开关放在这里 —— Esc 要按一个固定顺序逐层关 */
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   /* -------- 主题 -------- */
   useEffect(() => { applyTheme(theme); }, [theme]);
@@ -101,7 +104,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     const cursor = step
       ? D.addDays(ui.cursor, step * (ui.view === 'week' ? 7 : 1))
       : D.addMonths(ui.cursor, n);
-    store.setUi({ cursor, nav: 'calendar' });
+    // **只挪光标，不改当前在哪一页。** 写 `nav: 'calendar'` 的话，在待办箱 /
+    // 已完成 / 打卡这几页按方向键会被强行拽到日历页 —— 方向键没有「换页」的意思
+    store.setUi({ cursor });
   }, []);
 
   /* -------- 任务操作 -------- */
@@ -135,16 +140,19 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /** 侧栏上下移一位（触屏长按层的「上移 / 下移」） */
   const moveInList = useCallback((id: string, dir: -1 | 1) => {
-    const ui = store.get().ui;
-    const scope = scopeFor(store.get(), id);
-    if (!scope.length) return;
+    const st = store.get();
+    // 每一处放弃都要说一句为什么。静默失败是最糟的一类反馈 ——
+    // 用户点了没反应，只会以为程序卡了
+    if (st.tasks[id] && !st.tasks[id].date) { toast('先给它定个日期'); return; }
+    const scope = scopeFor(st, id);
+    if (scope.length < 2) { toast(scope.length ? '这里只有它一个' : '这一屏没法排序'); return; }
     const idx = scope.indexOf(id);
     const next = idx + dir;
-    if (next < 0 || next >= scope.length) return;
+    if (next < 0) { toast('已经是第一个了'); return; }
+    if (next >= scope.length) { toast('已经是最后一个了'); return; }
     const rest = scope.slice();
     rest.splice(idx, 1);
     rest.splice(next, 0, id);
-    void ui;
     store.reorder('task', rest);
   }, []);
 
@@ -171,6 +179,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     clearLp();
     lp.current.timer = setTimeout(() => {
       lp.current.fired = true;
+      // 震一下：手指贴上屏幕时视线确实在那儿，但「抓住了」这件事需要一个
+      // 不必盯着屏幕也能确认的信号。桌面浏览器没有 vibrate，不支持就算了
+      if (typeof navigator.vibrate === 'function') navigator.vibrate(12);
       // 「提起」= 进入拖拽待命态；接下来要么拖走，要么原地松手弹操作层
       // （由 dnd 的 onTapHold 回调决定，见那边文件头）
       if (!drag.beginTouch(el, id, lp.current.x, lp.current.y)) setActId(id);
@@ -190,9 +201,20 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       e.stopPropagation();
       const id = act.dataset.id || '';
       switch (act.dataset.act) {
-        case 'toggle':
+        case 'toggle': {
+          const task = store.get().tasks[id];
+          const completing = !!(task && !task.done);
           store.toggleTask(id);
+          // 勾完之后这一行会从列表里让位（位子让给还没做的事）。不说一句，
+          // 用户看到的就是「它凭空消失了」
+          if (completing) {
+            act.closest<HTMLElement>('.task-el')?.classList.add('popping');
+            toast(task.date === D.today()
+              ? '已完成 · 收进「今天 › 今天已完成」'
+              : '已完成，收进「已完成」');
+          }
           return;
+        }
         case 'habit':
           store.toggleHabit(id);
           return;
@@ -245,17 +267,46 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     // 2) 跳转 / 找日期 / 打卡管理
     const jump = el.closest<HTMLElement>('[data-jump]');
     if (jump?.dataset.jump) {
-      store.setUi({ nav: 'calendar', view: 'day', cursor: jump.dataset.jump });
+      // 跳转顺带清空搜索：不然跳过去只看得见过滤剩下的几条，像是那天没内容
+      store.setUi({ nav: 'calendar', view: 'day', cursor: jump.dataset.jump, search: '' });
       return;
     }
     const navBtn = el.closest<HTMLElement>('[data-nav]');
     if (navBtn?.dataset.nav) { nav(navBtn.dataset.nav); return; }
     if (el.closest('[data-jump-habits]')) { nav('habits'); return; }
 
-    // 3) 点行 = 开抽屉。放在最后，前面任何一个命中都不该再开抽屉
+    // 3) 点行 = 开抽屉。放在这一层，前面任何一个命中都不该再开抽屉
     const row = el.closest<HTMLElement>('.task-el');
-    if (row?.dataset.id && !row.classList.contains('habit-row')) setOpenId(row.dataset.id);
+    if (row?.dataset.id && !row.classList.contains('habit-row')) { setOpenId(row.dataset.id); return; }
     // 打卡条上的条目点标题不做任何事（点勾是打卡，长按改期）
+
+    /* 4) 点日历空白 = 新建一条并直接打开抽屉。
+     *
+     * **必须排在「点行」之后**：任务方块本身就长在落点区域里，顺序反了会把
+     * 「点开某条任务」变成「新建一条空任务」—— 而且这条空任务还排在它前面。
+     *
+     * 四种区域含义不同，不能统一处理：时间轴与周视图按光标纵坐标换算 15 分钟档
+     * 的时间（跟拖拽、拉伸同一档）；全天区与月视图格子只给日期不给时间。
+     */
+    const zone = el.closest<HTMLElement>('[data-drop]');
+    if (zone) {
+      const kind = zone.dataset.drop;
+      const date = zone.dataset.date || store.get().ui.cursor;
+      if (kind === 'day' || kind === 'allday') {
+        setOpenId(store.addTask({ title: '', date, time: null }));
+        return;
+      }
+      if (kind === 'timeline' || kind === 'week') {
+        const r = zone.getBoundingClientRect();
+        const min = Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15;
+        setOpenId(store.addTask({
+          title: '',
+          date,
+          time: D.minToTime(Math.max(0, Math.min(1425, min))),
+        }));
+        return;
+      }
+    }
   }, [confirm, nav]);
 
   /* -------- 「改到…」：离屏 input + showPicker ---------- */
@@ -348,7 +399,11 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       const tag = (e.target as HTMLElement | null)?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === 'Escape') {
+        // 逐层关闭，一次只关一层：操作层 → 更多抽屉 → 找日期面板 → 抽屉。
+        // 顺序跟旧版一致。一次全关会让用户不知道自己刚关掉了什么
         if (actId) setActId(null);
+        else if (moreOpen) setMoreOpen(false);
+        else if (jumpOpen) setJumpOpen(false);
         else if (openId) setOpenId(null);
         return;
       }
@@ -369,19 +424,32 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         }
         return;
       }
-      if (e.key === 'ArrowLeft') { e.preventDefault(); shift(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); shift(1); }
-      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); nav('calendar'); }
-      else if (e.key === 't' || e.key === 'T') { e.preventDefault(); nav('today'); }
-      // 1/2/3 切日 / 周 / 月 —— 旧版就有，README 里也写着，别丢
-      else if (e.key === '1' || e.key === '2' || e.key === '3') {
+      // 方向键只在 calendars / today 有意义（这两页才有「翻到哪天」这回事），
+      // 而且**不换页** —— shift() 也跟着改了，不再往回塞 nav: 'calendar'
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const navNow = store.get().ui.nav;
+        if (navNow !== 'calendar' && navNow !== 'today') return;
         e.preventDefault();
-        store.setUi({ view: (['day', 'week', 'month'] as const)[+e.key - 1] });
+        shift(e.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
+      if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        nav('calendar');
+        setJumpOpen(true);   // 快捷方式的作用就该是「直接打开」，不是「切过去让你再点一下」
+        return;
+      }
+      if (e.key === 't' || e.key === 'T') { e.preventDefault(); nav('today'); return; }
+      // 1/2/3 切日 / 周 / 月 —— **要连带切到日程页**，否则在今天 / 待办箱这些
+      // 页面上按了毫无反应（视图切了，但那些页面根本不渲染视图切换按钮）
+      if (e.key === '1' || e.key === '2' || e.key === '3') {
+        e.preventDefault();
+        store.setUi({ nav: 'calendar', view: (['day', 'week', 'month'] as const)[+e.key - 1] });
       }
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);
-  }, [shift, nav, actId, openId]);
+  }, [shift, nav, actId, openId, moreOpen, jumpOpen]);
 
   /* -------- 导出 / 导入 -------- */
   const exportBackup = useCallback(() => {
@@ -403,20 +471,24 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   }, []);
 
   const importBackup = useCallback(async (file: File) => {
-    let data: { tasks?: Task[]; habits?: never[] };
+    let data: { tasks?: Task[]; habits?: unknown[] };
     try {
       data = JSON.parse(await file.text());
     } catch (_) { toast('这个文件不是有效的备份'); return; }
     if (!Array.isArray(data?.tasks)) { toast('备份里没有任务数据'); return; }
 
-    const n = data.tasks.length;
+    // 打卡也要导进来。**导出时是写了 habits 的，这里曾经写死传空数组** ——
+    // 于是导出的备份丢光了所有打卡项，而且界面上完全看不出少了什么
+    const habits = Array.isArray(data.habits) ? data.habits as never[] : [];
+    const n = data.tasks.length + habits.length;
     const ok = await confirm({
-      title: `导入 ${n} 条任务？`,
-      body: '备份里的任务会和现有数据合并（同 id 覆盖，其余保留），不会先清空。',
+      title: `导入 ${n} 条？`,
+      body: `其中任务 ${data.tasks.length} 条、打卡 ${habits.length} 条。` +
+        '会和现有数据合并（同 id 覆盖，其余保留），不会先清空。',
       confirmText: '导入',
     });
     if (!ok) return;
-    const added = store.loadMigrated(data.tasks, []);
+    const added = store.loadMigrated(data.tasks, habits);
     toast(`已导入 ${added} 条，正在同步`);
     void engine.syncNow();
   }, [confirm]);

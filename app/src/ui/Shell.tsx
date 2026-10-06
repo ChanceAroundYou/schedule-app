@@ -29,6 +29,7 @@ import { repeatLabel } from '../domain/repeat.ts';
 import { useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { IconBtn } from './kit.tsx';
 import { CalSwitcher } from './Calendars.tsx';
+import { ClockPop } from './Clock.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -97,10 +98,11 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites }: {
+function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites, onReorder }: {
   state: LocalState; onNav: (k: string) => void; onNew: () => void;
   onExport: () => void; onImport: (f: File) => void; onLogout: () => void;
   onManageCal: () => void; onInvites: () => void;
+  onReorder: (order: string[], bottom: string[]) => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
@@ -111,22 +113,101 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
   const main = order.filter((k) => !bottom.includes(k));
   const bottoms = bottom.map(navDef);
 
-  const item = (k: string) => {
+  /* -------- 侧栏拖动排序 --------
+   *
+   * 两个容器（主区 `#nav` 与底部 `#navBottom`）之间**可以互拖**，垃圾箱也能
+   * 拖进主区。落点用一条 `.nav-ins` 细线表示 —— 比整块高亮更好判断落在哪一侧。
+   *
+   * 两个必须处理的地方：
+   *   1. **拖完浏览器会补一次 click。** 不吞掉的话，刚放好的那一项会顺带被
+   *      打开一遍。用 `justDragged` 拦一下，`setTimeout(…, 0)` 清掉
+   *      —— click 排在 dragend 之后，这个延迟刚好够。
+   *   2. **`bottom` 要重建，不能直接增删。** 「抖动 toilets」那一类 bug 的根源
+   *      是把 `navBottom` 当成累计集合；这里始终从**新的视觉顺序**里筛出来，
+   *      所以底部组内部的相对次序也跟着 move 一起更新了。
+   */
+  const dragKey = useRef<string | null>(null);
+  const justDragged = useRef(false);
+  const [dragK, setDragK] = useState<string | null>(null);
+  const [ins, setIns] = useState<{ k: string; pos: 'before' | 'after' } | null>(null);
+
+  const clearDrag = () => { dragKey.current = null; setDragK(null); setIns(null); };
+
+  const posOf = (el: HTMLElement, clientY: number): 'before' | 'after' => {
+    const r = el.getBoundingClientRect();
+    return clientY < r.top + r.height / 2 ? 'before' : 'after';
+  };
+
+  const settle = (target: string, pos: 'before' | 'after', toBottom: boolean) => {
+    const dragged = dragKey.current;
+    clearDrag();
+    justDragged.current = true;
+    setTimeout(() => { justDragged.current = false; }, 0);
+    if (!dragged || dragged === target) return;
+
+    // 视觉顺序 = 主区在前、底部组在后。`order` 只描述主区的前后，
+    // 底部组是单独一列，所以先摊平成一条总的视觉序列再重排
+    const visual: string[] = [];
+    main.forEach((k) => visual.push(k));
+    bottoms.forEach((d) => visual.push(d.key));
+
+    const list = visual.filter((k) => k !== dragged);
+    let at = list.indexOf(target);
+    if (at < 0) return;
+    if (pos === 'after') at += 1;
+    list.splice(at, 0, dragged);
+
+    const set = new Set(bottom);
+    if (toBottom) set.add(dragged); else set.delete(dragged);
+    onReorder(list, list.filter((k) => set.has(k)));
+  };
+
+  const item = (k: string, isBottom: boolean) => {
     const def = navDef(k);
     const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
     const b = badge(n);
     return (
       <button
-        className={'nav-item' + (state.ui.nav === k ? ' active' : '')}
+        className={'nav-item' + (state.ui.nav === k ? ' active' : '') + (dragK === k ? ' nav-dragging' : '')}
         key={k}
         data-nav={k}
-        onClick={() => onNav(k)}
+        draggable
+        onDragStart={(e) => {
+          dragKey.current = k;
+          setDragK(k);
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', k); } catch (_) { /* 老浏览器认不到就算了 */ }
+        }}
+        onDragOver={(e) => {
+          if (!dragKey.current) return;
+          e.preventDefault();
+          setIns({ k, pos: posOf(e.currentTarget, e.clientY) });
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(e) => {
+          if (!dragKey.current) return;
+          e.preventDefault();
+          settle(k, posOf(e.currentTarget, e.clientY), isBottom);
+        }}
+        onDragEnd={clearDrag}
+        onClick={() => { if (justDragged.current) return; onNav(k); }}
       >
         <span className="ico">{def.icon}</span>
         <span className="label">{def.label}</span>
         {b && <span className={'count' + (def.warn ? ' warn' : '')}>{b}</span>}
       </button>
     );
+  };
+
+  /** 把插入线插到对应位置。用普通循环而不是 flatMap —— 少依赖一层 lib */
+  const group = (keys: string[], isBottom: boolean): ReactNode[] => {
+    const out: ReactNode[] = [];
+    keys.forEach((k) => {
+      if (ins && ins.k === k && ins.pos === 'before') out.push(<div className="nav-ins" key={k + '·b'} />);
+      out.push(item(k, isBottom));
+      if (ins && ins.k === k && ins.pos === 'after') out.push(<div className="nav-ins" key={k + '·a'} />);
+    });
+    return out;
   };
 
   return (
@@ -145,8 +226,8 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
           先选集再选页面，顺序跟用户脑子里的模型一致 */}
       <CalSwitcher state={state} onManage={onManageCal} onInvites={onInvites} />
 
-      <nav className="nav" id="nav">{main.map(item)}</nav>
-      <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
+      <nav className="nav" id="nav">{group(main, false)}</nav>
+      <nav className="nav nav-bottom" id="navBottom">{group(bottoms.map((d) => d.key), true)}</nav>
 
       <Pulse state={state} />
 
@@ -175,8 +256,92 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
 
 /* ============================== 找日期 ============================== */
 
-function JumpPop({ open, cursor, onPick, onClose }: {
-  open: boolean; cursor: string; onPick: (iso: string) => void; onClose: () => void;
+/**
+ * 找日期输入框**专门的一套写法**，不能直接拿 `parse()` 顶。
+ *
+ * `parse()` 是给「明天下午3点 交周报」这种整句用的：它要在一句话里同时分辨
+ * 日期 / 时间 / 时长 / 重复，所以认得不深（`1015`、`2026-10`、`上个月` 这些
+ * 它一律不认）。而这个输入框里只有一个日期，用户的心理预期是「怎么写都行」。
+ *
+ * 另一处**更要紧**的差异是年份基准：`parse()` 恒以今天为基准，而这里必须
+ * 以**面板当前所在的月份**为基准。在 12 月翻到面板显示次年 1 月时输入
+ * 「1月5日」，用户要的是明年 1 月 5 号，不是今年 1 月 5 号。
+ */
+function parseJumpText(raw: string, baseIso: string): string | null {
+  const s = String(raw == null ? '' : raw).trim().replace(/\s+/g, '');
+  if (!s) return null;
+  const today = D.today();
+  const base = D.parseISO(baseIso || today);
+  const y = base.getFullYear();
+  let m: RegExpMatchArray | null;
+
+  /** 拼日期。**超过当月天数要截到月末** —— 用户写 2月30日 不该给他报错 */
+  const mk = (yy: number, mo: number, dd: number): string | null => {
+    if (!(yy >= 1970 && yy <= 2999)) return null;
+    if (mo < 1 || mo > 12) return null;
+    if (dd < 1 || dd > 31) return null;
+    return D.iso(new Date(yy, mo - 1, Math.min(dd, D.lastDayOfMonth(yy, mo))));
+  };
+
+  /* ---- 相对说法 ---- */
+  if (/^(今天|今日|今|当天)$/.test(s)) return today;
+  if (/^(昨天|昨日)$/.test(s)) return D.addDays(today, -1);
+  if (/^前天$/.test(s)) return D.addDays(today, -2);
+  if (/^(大前天)$/.test(s)) return D.addDays(today, -3);
+  if (/^(明天|明日)$/.test(s)) return D.addDays(today, 1);
+  if (/^后天$/.test(s)) return D.addDays(today, 2);
+  if (/^(大后天)$/.test(s)) return D.addDays(today, 3);
+  if ((m = s.match(/^(\d+)天(后|後|前)$/))) {
+    return m[2] === '前' ? D.addDays(today, -(+m[1])) : D.addDays(today, +m[1]);
+  }
+
+  /* ---- 周几：下周三 / 本周五 / 周一 ---- */
+  if ((m = s.match(/^(下下|下|本|这)?(?:周|星期|礼拜)([一二三四五六日天1-7])?$/))) {
+    const map: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 };
+    let off = map[m[2] || '一'];
+    if (m[2] && /^[1-7]$/.test(m[2])) off = (+m[2]) - 1;
+    let ws = D.weekStart(today);
+    if (m[1] === '下') ws = D.addDays(ws, 7);
+    else if (m[1] === '下下') ws = D.addDays(ws, 14);
+    return D.addDays(ws, off);
+  }
+
+  /* ---- 月份偏移：下下个月 / 上个月 / 本月 ---- */
+  if (/^(下下个?月)$/.test(s)) return D.monthStart(D.addMonths(today, 2));
+  if (/^(下个?月|下月)$/.test(s)) return D.monthStart(D.addMonths(today, 1));
+  if (/^(这个?月|本月|当月)$/.test(s)) return D.monthStart(today);
+  if (/^(上个?月|上月)$/.test(s)) return D.monthStart(D.addMonths(today, -1));
+
+  /* ---- 完整日期 ---- */
+  // 2026-10-15 / 2026/10/15 / 2026.10.15 / 2026年10月15日
+  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(+m[1], +m[2], +m[3]);
+  if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return mk(+m[1], +m[2], +m[3]);   // 20261015
+  // 2026-10 / 2026年10月 / 202610 → 那个月的 1 号
+  if ((m = s.match(/^(\d{4})[-/.年](\d{1,2})月?$/))) return mk(+m[1], +m[2], 1);
+  if ((m = s.match(/^(\d{4})(\d{2})$/))) return mk(+m[1], +m[2], 1);
+
+  /* ---- 只给月日：年份沿用**面板当前所在的月份** ---- */
+  if ((m = s.match(/^(\d{1,2})[-/.月](\d{1,2})日?$/))) return mk(y, +m[1], +m[2]);
+  // 1015 → 10月15日。**月份必须合法**，否则 2026 这种纯年份会被它吃掉
+  if ((m = s.match(/^(\d{2})(\d{2})$/)) && +m[1] >= 1 && +m[1] <= 12) return mk(y, +m[1], +m[2]);
+  if ((m = s.match(/^(\d{1,2})月?$/))) return mk(y, +m[1], 1);                    // 10月 / 10
+  if ((m = s.match(/^(\d{4})$/))) return mk(+m[1], 1, 1);                          // 2026
+  return null;
+}
+
+/** 某天**还没做完**的任务数 —— 面板用它表示「哪天忙」 */
+function jumpLoad(state: LocalState, isoDay: string): number {
+  let n = 0;
+  for (const k in state.tasks) {
+    const t = state.tasks[k];
+    if (t.date === isoDay && !t.deleted && !t.done) n++;
+  }
+  return n;
+}
+
+function JumpPop({ open, cursor, state, onPick, onClose }: {
+  open: boolean; cursor: string; state: LocalState;
+  onPick: (iso: string) => void; onClose: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [month, setMonth] = useState(() => D.monthStart(cursor));
@@ -193,8 +358,9 @@ function JumpPop({ open, cursor, onPick, onClose }: {
   const today = D.today();
 
   const go = (v: string) => {
-    const p = parse(v);
-    if (p && p.date) { onPick(p.date); return; }
+    // 基淮用**面板所在月份**，不是今天 —— 见 parseJumpText 上面的注释
+    const d = parseJumpText(v, month);
+    if (d) { onPick(d); return; }
     setBad(true);
   };
 
@@ -233,14 +399,18 @@ function JumpPop({ open, cursor, onPick, onClose }: {
       <div className="jp-grid">
         {days.map((d) => {
           const out = D.parseISO(d).getMonth() !== curMonth;
+          const n = jumpLoad(state, d);
+          // 类名对不上等于没写：CSS 里是 `.jp-cell`，不是 `.jp-day`
           return (
             <button
-              // 日期密度用**淡底 + 底部短横**，不用 4px 圆点 ——
-              // 圆点在 1x 屏上几乎看不见（实测截图确认过）
-              className={'jp-day' + (out ? ' out' : '') + (d === today ? ' today' : '')
-                + (d === cursor ? ' sel' : '')}
+              // 日期密度用**淡底 + 底部短横**，不用圆点 —— 圆点在 1x 屏上几乎看不见
+              className={'jp-cell' + (out ? ' out' : '')
+                + (d === today ? ' today' : '')
+                + (d === cursor ? ' cur' : '')
+                + (n ? ' has' + (n >= 6 ? ' lv3' : n >= 3 ? ' lv2' : '') : '')}
               key={d}
               data-jump={d}
+              title={D.fmtFull(d) + ' · ' + (n ? n + ' 项待办' : '空闲')}
               onClick={() => onPick(d)}
             >{D.parseISO(d).getDate()}</button>
           );
@@ -254,8 +424,9 @@ function JumpPop({ open, cursor, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
+export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
   state: LocalState; narrow: boolean;
+  jump: boolean; setJump: (v: boolean) => void;
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
@@ -265,12 +436,14 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
 }) {
   const ui = state.ui;
   const online = useOnline();
-  const [jump, setJump] = useState(false);
   const [kw, setKw] = useState(ui.search);
   const debounced = useDebounced(kw, 180);
 
   useEffect(() => { onSearch(debounced); }, [debounced, onSearch]);
 
+  // 标题写**具体日期 / 年月**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
+  // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
+  // 月视图的 range 是「第 N 周」—— 满屏六行时，知道自己在第几周比知道月份有用
   let title = '今天';
   let range = D.fmtFull(D.today());
   if (ui.nav === 'inbox') { title = '待办箱'; range = '没有日期的事先放这儿'; }
@@ -279,13 +452,37 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'calendar') {
-    title = ui.view === 'day' ? '日' : ui.view === 'week' ? '周' : '月';
-    if (ui.view === 'day') range = D.fmtFull(ui.cursor);
-    else if (ui.view === 'week') range = D.fmtMD(D.weekStart(ui.cursor)) + ' – ' + D.fmtMD(D.addDays(D.weekStart(ui.cursor), 6));
-    else range = D.parseISO(ui.cursor).getFullYear() + ' 年 ' + (D.parseISO(ui.cursor).getMonth() + 1) + ' 月';
+    if (ui.view === 'day') {
+      title = D.fmtMD(ui.cursor);
+      range = D.fmtFull(ui.cursor);
+    } else if (ui.view === 'week') {
+      const s = D.weekStart(ui.cursor);
+      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+      range = D.fmtMD(s) + ' – ' + D.fmtMD(D.addDays(s, 6));
+    } else {
+      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+      range = '第 ' + D.weekOfMonth(ui.cursor) + ' 周';
+    }
   }
 
-  const isCal = ui.nav === 'calendar' || ui.nav === 'today';
+  /**
+   * **只有日程页**才显示日期导航。
+   *
+   * 这里踩过一次：重构时写成了 `calendar || today`，于是「今天」页左上角凭空
+   * 多出 ‹ › 和一个多余的「今天」按钮 —— 那个页面本来就只能看今天，给它一组
+   * 「翻到下一天」的控件是没有意义的。
+   */
+  const isCal = ui.nav === 'calendar';
+
+  /* 「今天」按钮跟着光标走：在今天 / 本周 / 本月时只是一个安静的灰字标签，
+     离开之后才亮起来变成「回到今天」—— 免得「已经挪到周五了，按钮还写着今天」 */
+  const t0 = D.today();
+  let atToday = ui.cursor === t0;
+  if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
+  else if (ui.view === 'month') {
+    const a = D.parseISO(ui.cursor), b = D.parseISO(t0);
+    atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  }
 
   return (
     // 顶栏**不加** position / z-index / sticky，见文件头注释
@@ -301,19 +498,28 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
               <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
                 <ChevronRight size={15} />
               </button>
-              <button className="text-btn today-btn" title="回到今天" onClick={onToday}>今天</button>
+              <button
+                className={'text-btn today-btn' + (atToday ? '' : ' away')}
+                title={atToday ? '当前就在今天' : '跳回今天'}
+                onClick={onToday}
+              >{atToday ? '今天' : '回到今天'}</button>
             </>
           )}
           <span className="date-range">{range}</span>
           {ui.nav === 'calendar' && (
             <div className="jump-wrap">
-              <button className="text-btn jump-btn" title="跳到指定日期（快捷键 D）" onClick={() => setJump((v) => !v)}>
+              <button
+                className={'text-btn jump-btn' + (jump ? ' on' : '')}
+                title="跳到指定日期（快捷键 D）"
+                onClick={() => setJump(!jump)}
+              >
                 <span className="jb-ico"><CalendarDays size={13} /></span>
                 <span className="jb-txt">找日期</span>
               </button>
               <JumpPop
                 open={jump}
                 cursor={ui.cursor}
+                state={state}
                 onPick={(d) => { onCursor(d); setJump(false); }}
                 onClose={() => setJump(false)}
               />
@@ -380,6 +586,9 @@ const TABS = [
   { key: 'overdue', label: '逾期', icon: <AlarmClock size={18} />, count: 'overdue' as const, warn: true },
 ];
 
+/** 只能从「更多」抽屉进去的那几页 —— 底栏的「更多」标签据此点亮 */
+const MORE_KEYS = ['habits', 'done', 'trash'];
+
 export function Tabbar({ state, onNav, onMore }: {
   state: LocalState; onNav: (k: string) => void; onMore: () => void;
 }) {
@@ -396,7 +605,9 @@ export function Tabbar({ state, onNav, onMore }: {
           </button>
         );
       })}
-      <button className="tab" onClick={onMore}>
+      {/* 「更多」在打卡 / 已完成 / 垃圾箱这几页要点亮 —— 那几页只能从这里进，
+          没高亮的话用户看不出自己当前在哪 */}
+      <button className={'tab' + (MORE_KEYS.includes(state.ui.nav) ? ' active' : '')} onClick={onMore}>
         <span className="ti"><MoreHorizontal size={18} /></span>
         <span className="tn">更多</span>
       </button>
@@ -499,6 +710,8 @@ export function QuickAdd({ state, onSubmit }: {
   const [text, setText] = useState('');
   const [pendingTime, setPendingTime] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  const [clockOpen, setClockOpen] = useState(false);
+  const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const parsed: ParseOut | null = text.trim() ? parse(text) : null;
@@ -556,15 +769,27 @@ export function QuickAdd({ state, onSubmit }: {
         }}
       />
       <button
+        ref={clockBtn}
         className={'fast-clock' + (pendingTime ? ' on' : '')}
         type="button"
         title="选择时间"
-        onClick={() => setPendingTime((t) => (t ? null : D.minToTime(9 * 60)))}
+        onClick={() => setClockOpen((v) => !v)}
       >
         <Clock size={15} />
         {pendingTime && <span className="fc-time">{pendingTime}</span>}
       </button>
-      <span className="fast-hint">Ctrl + Enter 打开详细设置</span>
+      <ClockPop
+        open={clockOpen}
+        anchor={clockBtn.current}
+        value={pendingTime}
+        onChange={(v) => { setPendingTime(v); setClockOpen(false); }}
+        onClose={() => setClockOpen(false)}
+      />
+      {/* 选了时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上 15:00」，
+          不然只有那个小胶囊显示，很容易漏看 */}
+      <span className="fast-hint">
+        {pendingTime ? `时间 ${pendingTime} · 再点时钟图标可改` : 'Ctrl + Enter 打开详细设置'}
+      </span>
 
       <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
         {!!chips.length && (
@@ -583,7 +808,7 @@ export function QuickAdd({ state, onSubmit }: {
 
 export function Shell({
   state, user, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
-  onManageCal, onInvites, topbar, quickAdd, children,
+  onManageCal, onInvites, onReorder, more, setMore, topbar, quickAdd, children,
 }: {
   state: LocalState; user: PublicUser | null;
   contentRef: React.RefObject<HTMLDivElement>;
@@ -595,12 +820,21 @@ export function Shell({
   onTheme: () => void;
   onManageCal: () => void;
   onInvites: () => void;
+  onReorder: (order: string[], bottom: string[]) => void;
+  /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
+  more: boolean; setMore: (v: boolean) => void;
   topbar: ReactNode;
   quickAdd: ReactNode;
   children: ReactNode;
 }) {
   const narrow = useIsNarrow();
-  const [more, setMore] = useState(false);
+
+  // 抽屉开着时给 body 一个标记：窄屏下 `.tab:active` 要压住，别在抽屉后面乱闪。
+  // 旧版就有这个约定，重构时漏了，连带那条 CSS 规则一起成了死代码
+  useEffect(() => {
+    document.body.classList.toggle('sheet-open', more);
+    return () => document.body.classList.remove('sheet-open');
+  }, [more]);
 
   return (
     <div className="app">
@@ -609,6 +843,7 @@ export function Shell({
           state={state} onNav={onNav} onNew={onNew}
           onExport={onExport} onImport={onImport} onLogout={onLogout}
           onManageCal={onManageCal} onInvites={onInvites}
+          onReorder={onReorder}
         />
       )}
 

@@ -180,9 +180,47 @@ export function useOutsideClose(
   }, [ref, open]);
 }
 
+/**
+ * 把 Tab 圈在一个浮层里。
+ *
+ * **为什么必须有**：`aria-modal="true"` 是对读屏的一句承诺 ——「外面那些是
+ * 惰性的，别念」。没有这道圈，Tab 一路走到背后的列表上，读屏就把外面念出来了，
+ * 那句承诺当场变成假话。所以凡是标了 aria-modal 的浮层都要挂这个。
+ *
+ * **它不抢焦点**：开浮层时焦点放哪由调用方决定（见 Drawer / Sheet 里那句
+ * `panel.focus()`）。这一条是隐私性做不到的 —— 只圈住 Tab，不替谁聚焦。
+ *
+ * 过滤掉看不见的控件：导入备份那个 `<input type=file>` 常年藏起来，
+ * 把它算进首尾会让 Tab 卡在一个没有焦点环的元素上。
+ */
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),'
+  + 'select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+export function useFocusTrap(ref: React.RefObject<HTMLElement | null>, active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const root = ref.current;
+      if (!root) return;
+      const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)]
+        .filter((el) => el.getClientRects().length);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const cur = document.activeElement;
+      const inside = cur instanceof HTMLElement && root.contains(cur);
+      // 焦点本来就在圈外（比如刚打开、还没送进去）：Tab 往回拉，别让它顺着走
+      if (e.shiftKey && (!inside || cur === first)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (!inside || cur === last)) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', on);
+    return () => document.removeEventListener('keydown', on);
+  }, [ref, active]);
+}
+
 /** 长按（触屏没有 hover，排序 / 改期靠它）。只对非鼠标指针启用 */
 export const LONG_PRESS_MS = 480;
-
 export function useLongPress(onFire: (target: HTMLElement) => void, enabled = true) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fired = useRef(false);
