@@ -14,7 +14,7 @@ import type {
   Cal, Invite, Member, Op, PublicUser, Role, SyncResponse,
 } from '../domain/types.ts';
 import type {
-  AiChatMessage, AiSessionMeta, AiSettings, AiSettingsPatch,
+  AiChatMessage, AiConfirmed, AiSessionMeta, AiSettings, AiSettingsPatch,
 } from '../domain/ai.ts';
 
 const TOKEN_KEY = 'schedule-app-token';
@@ -190,6 +190,18 @@ export const api = {
   aiSession: (id: string) =>
     req<{ session: AiSessionMeta; messages: AiChatMessage[] }>(
       'GET', `ai/sessions/${encodeURIComponent(id)}`, undefined,
+    ),
+
+  /**
+   * 确认一批提案 —— 这才是 AI 真正改数据的那一步。
+   *
+   * **只回传 id，不回传要改什么。** 服务端按 id 从库里把当时存的提案读回来，
+   * 再查一遍权限。故意这么设计：参数从浏览器回传的话，前端能改的东西
+   * 别人也能改，权限判断就落到了浏览器手里。
+   */
+  aiConfirm: (ids: string[]) =>
+    req<{ done: AiConfirmed[]; failed: { id: string; reason: string }[] }>(
+      'POST', 'ai/confirm', { ids },
     ),
 
   aiDeleteSession: (id: string) =>

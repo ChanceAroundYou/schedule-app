@@ -24,13 +24,26 @@ export interface AiUsage {
   totalTokens: number;
 }
 
+/**
+ * 一张待确认的改动卡片。
+ *
+ * **`fields` 是最终要落进 op 的字段，不是「意图」。** 确认那一步（`POST /api/ai/confirm`）
+ * 只认 id，它按 id 从库里把这份东西读回来、重查一遍权限、套上 deviceId='ai' 发出去。
+ * 所以界面这边也只需要读 `fields` 就能把「打算改什么」说清楚，不用去猜 kind 的语义。
+ *
+ * **不要在界面上拿它去算最终结果**（比如自己推一个改完之后的日期）：
+ * 真正落库的可能被权限挡下、也可能被 LWW 判给另一边。卡片只描述意图。
+ */
 export interface AiProposal {
   id: string;
+  /** create | update | complete | uncomplete | reschedule | delete */
   kind: string;
   calId: string;
   calName?: string;
-  entityId?: string;
-  args: Record<string, unknown>;
+  entity: string;
+  entityId: string;
+  title: string;
+  fields: Record<string, unknown>;
 }
 
 export type AiEvent =
@@ -44,7 +57,17 @@ export type AiEvent =
   | { type: 'error'; message: string; code?: string }
   | { type: 'done'; sessionId?: string; usage?: AiUsage | null };
 
-/** 服务器已经落库的一条消息（GET /api/ai/sessions/:id 的形状） */
+/** `POST /api/ai/confirm` 里确认成功的那几条 —— 只在 toast 里用来报数 */
+export interface AiConfirmed {
+  id: string;
+  kind: string;
+  calId: string;
+  entityId: string;
+  title: string;
+}
+
+/**
+ * 服务器已经落库的一条消息（GET /api/ai/sessions/:id 的形状） */
 export interface AiChatMessage {
   id: string;
   role: string;
@@ -168,8 +191,95 @@ export function actionText(name: string, args?: Record<string, unknown>): string
       const r = fmtRange(a.from, a.to);
       return r ? `找 ${r} 的空档` : '找空档';
     }
+
+    // 写入类的。它们的 args 是模型想改的东西，措辞用「建 / 改 / 挪」这些
+    // 还没发生的动词 —— 说成「建好了」会让人以为点不点确认都一样
+    case 'create_task':
+      return typeof a.title === 'string' && a.title ? `建「${a.title}」` : '建一条任务';
+    case 'update_task':
+      return '改一条任务';
+    case 'complete_task':
+      return a.done ? '标完成' : '改回没做';
+    case 'reschedule_task':
+      return '改期';
+    case 'delete_task':
+      return '删一条任务';
+
     default:
       return name;
+  }
+}
+
+/* =========================== 提案 → 人话 =========================== */
+
+/** 字段名的中文。只列界面上画得出来的那几个 */
+const FIELD_CN: Record<string, string> = {
+  title: '标题',
+  note: '备注',
+  date: '日期',
+  time: '时间',
+  duration: '时长',
+};
+
+/**
+ * 这些字段是实现细节，卡片上不显示。
+ *
+ * `order` 会被顺手清掉（换日期时），`trashFrom` 是垃圾箱那行的来源说明 ——
+ * 把它们印出来只会让用户看见「位次 → 空」「来源 → AI」这种看不懂的行。
+ */
+const HIDDEN = new Set(['order', 'trashFrom', 'doneAt', 'createdAt', 'source', 'done']);
+
+/** 「10月8日 14:00」/「10月8日（不定时）」/「14:00」/ '' */
+function describeWhen(date: unknown, time: unknown): string {
+  const d = typeof date === 'string' && date ? D.fmtMD(date) : '';
+  const t = typeof time === 'string' && time ? time : '';
+  if (d && t) return `${d} ${t}`;
+  if (d) return `${d}（不定时）`;
+  if (t) return t;
+  return '';
+}
+
+/** `update` 那种部分改动的「改了什么」列表 */
+function changeList(f: Record<string, unknown>): string {
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(f)) {
+    if (HIDDEN.has(k) || !FIELD_CN[k]) continue;
+    if (k === 'date') out.push(`日期 → ${v ? D.fmtMD(String(v)) : '待办箱'}`);
+    else if (k === 'time') out.push(`时间 → ${v ? String(v) : '不定时'}`);
+    else if (k === 'duration') out.push(`时长 → ${D.fmtDuration(Number(v))}`);
+    else out.push(`${FIELD_CN[k]} → ${String(v).slice(0, 40)}`);
+  }
+  return out.length ? ' · ' + out.join('，') : '';
+}
+
+/**
+ * 卡片标题：这次打算改什么。
+ *
+ * 说成**还没发生**的事（「新建」「改期」「删掉」），因为确认之前它确实没发生 ——
+ * 文案写成「已建好」而用户没点确认，他会以为任务已经在了。
+ */
+export function proposalText(p: AiProposal): string {
+  const f = p.fields || {};
+  const title = p.title || '这条任务';
+  switch (p.kind) {
+    case 'create': {
+      const when = describeWhen(f.date, f.time);
+      return `新建「${title}」${when ? ' · ' + when : ''}`;
+    }
+    case 'update':
+      return `改「${title}」${changeList(f)}`;
+    case 'complete':
+      return `把「${title}」标成做完`;
+    case 'uncomplete':
+      return `把「${title}」改回没做`;
+    case 'reschedule': {
+      const when = describeWhen(f.date, f.time);
+      return `「${title}」改期${when ? '到 ' + when : ''}`;
+    }
+    case 'delete':
+      return `删掉「${title}」（会进垃圾箱）`;
+    default:
+      return title;
   }
 }
 
@@ -207,11 +317,13 @@ export interface LiveAssistant {
   text: string;
   /** 这一轮调过的工具，动作条用 */
   actions: { name: string; label: string; done: boolean; error?: boolean }[];
+  /** 这一轮产生的待确认改动，卡片用。顺序就是模型想改的顺序 */
+  proposals: AiProposal[];
   error?: string;
 }
 
 export function newLiveAssistant(id: string): LiveAssistant {
-  return { id, text: '', actions: [] };
+  return { id, text: '', actions: [], proposals: [] };
 }
 
 /** 把一个流事件并进当前这条助手气泡。返回新的对象（React 要新引用才重渲染） */
@@ -219,6 +331,14 @@ export function applyEvent(live: LiveAssistant, ev: AiEvent): LiveAssistant {
   switch (ev.type) {
     case 'text':
       return { ...live, text: live.text + ev.delta };
+
+    case 'proposal': {
+      // 按 id 去重。正常一轮里每条只会来一次，但流被重放 / 重连时不该冒出两张
+      // 一样的卡片 —— 那样用户会以为有两处改动、确认两遍
+      if (live.proposals.some((p) => p.id === ev.proposal.id)) return live;
+      return { ...live, proposals: [...live.proposals, ev.proposal] };
+    }
+
     case 'tool': {
       const label = actionText(ev.name, ev.args);
       if (ev.phase === 'start') {

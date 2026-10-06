@@ -8,7 +8,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { sseFeed, actionText, buildContext, applyEvent, newLiveAssistant } from './ai.ts';
+import {
+  sseFeed, actionText, buildContext, applyEvent, newLiveAssistant, proposalText,
+} from './ai.ts';
 import type { LocalState, Cal } from './types.ts';
 
 /* ------------------------------------------------------------ SSE 切分 */
@@ -144,4 +146,74 @@ test('error 事件落在气泡上，session / done 不改变气泡', () => {
   // session / done 是会话级的东西，不该混进这条气泡的内容里
   assert.equal(applyEvent(live, { type: 'session', sessionId: 's1' }), live);
   assert.equal(applyEvent(live, { type: 'done' }), live);
+});
+
+/* ------------------------------------------------ 提案：卡片上那句话 */
+
+test('写入工具名翻成「还没发生」的动词', () => {
+  assert.equal(actionText('create_task', { title: '给奶奶买降压药' }), '建「给奶奶买降压药」');
+  assert.equal(actionText('create_task', {}), '建一条任务');
+  assert.equal(actionText('update_task', {}), '改一条任务');
+  assert.equal(actionText('complete_task', { done: true }), '标完成');
+  assert.equal(actionText('complete_task', { done: false }), '改回没做');
+  assert.equal(actionText('reschedule_task', {}), '改期');
+  assert.equal(actionText('delete_task', {}), '删一条任务');
+});
+
+test('提案翻成人话，说的是「打算」而不是「已经」', () => {
+  const base = { id: 'c1', kind: 'create', calId: 'cal', entity: 'task', entityId: 't1', title: '给奶奶买降压药' };
+
+  assert.equal(
+    proposalText({ ...base, fields: { title: '给奶奶买降压药', date: '2026-10-08', time: '14:00' } }),
+    '新建「给奶奶买降压药」 · 10月8日 14:00',
+  );
+  // 没定日期 = 待办箱，得说出来，不能只写个「新建」
+  assert.equal(
+    proposalText({ ...base, title: '买菜', fields: { title: '买菜', date: null } }),
+    '新建「买菜」',
+  );
+  assert.equal(
+    proposalText({ ...base, title: '买菜', fields: { title: '买菜', date: '2026-10-08' } }),
+    '新建「买菜」 · 10月8日（不定时）',
+  );
+
+  assert.equal(
+    proposalText({ ...base, kind: 'reschedule', fields: { date: '2026-10-09', time: '15:00' } }),
+    '「给奶奶买降压药」改期到 10月9日 15:00',
+  );
+  assert.equal(
+    proposalText({ ...base, kind: 'complete', fields: { done: true, doneAt: 1 } }),
+    '把「给奶奶买降压药」标成做完',
+  );
+  assert.equal(
+    proposalText({ ...base, kind: 'uncomplete', fields: { done: false, doneAt: null } }),
+    '把「给奶奶买降压药」改回没做',
+  );
+  assert.equal(
+    proposalText({ ...base, kind: 'delete', fields: { deleted: true, trashFrom: 'AI' } }),
+    '删掉「给奶奶买降压药」（会进垃圾箱）',
+  );
+});
+
+test('update 的提案只列真改了的字段，实现细节不印出来', () => {
+  const p = {
+    id: 'c2', kind: 'update', calId: 'cal', entity: 'task', entityId: 't2', title: '交房租',
+    fields: { title: '交房租（转账）', date: '2026-10-09', order: null, trashFrom: 'AI', doneAt: 1 },
+  };
+  const s = proposalText(p);
+  assert.match(s, /改「交房租」/);
+  assert.match(s, /标题 → 交房租（转账）/);
+  assert.match(s, /日期 → 10月9日/);
+  // order / trashFrom / doneAt 是实现细节，印出来用户只会看到看不懂的行
+  assert.ok(!s.includes('order'), '把 order 印出来了');
+  assert.ok(!s.includes('trashFrom'), '把 trashFrom 印出来了');
+  assert.ok(!s.includes('doneAt'), '把 doneAt 印出来了');
+});
+
+test('提案按 id 去重，重复的流事件不冒第二张卡片', () => {
+  const live = newLiveAssistant('m1');
+  const p = { id: 'c1', kind: 'create', calId: 'cal', entity: 'task', entityId: 't1', title: 'x', fields: {} };
+  const once = applyEvent(live, { type: 'proposal', proposal: p });
+  assert.equal(once.proposals.length, 1);
+  assert.equal(applyEvent(once, { type: 'proposal', proposal: p }), once, '同一条提案来了两次');
 });

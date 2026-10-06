@@ -53,6 +53,9 @@ function toBubble(m: AiChatMessage): Bubble {
       label: actionText(t.name, (t.args || {}) as Record<string, unknown>),
       done: true,
     })),
+    // 还没确认的提案会跟着消息一起回来 —— 刷新之后卡片要还在，
+    // 否则用户看着模型说「点下面确认」却找不到那张卡片
+    proposals: m.proposals || [],
   };
 }
 
@@ -125,7 +128,7 @@ export function AiPanel({ state }: { state: LocalState }) {
     const uid = 'user' + seq.current;
     setBubbles((prev) => [
       ...prev,
-      { id: uid, role: 'user', text: q, actions: [] },
+      { id: uid, role: 'user', text: q, actions: [], proposals: [] },
       { ...newLiveAssistant(id), role: 'assistant', streaming: true },
     ]);
 

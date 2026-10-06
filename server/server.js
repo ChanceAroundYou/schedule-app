@@ -29,6 +29,7 @@ const invites = require('./lib/invites');
 const rl = require('./lib/ratelimit');
 const aiSettings = require('./lib/ai/settings');
 const aiSessions = require('./lib/ai/sessions');
+const aiConfirm = require('./lib/ai/confirm');
 const ai = require('./lib/ai');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
@@ -383,6 +384,23 @@ const handlers = {
       endStream(ctx.res);
     }
     return { raw: true };
+  },
+
+  /**
+   * 确认若干条提案 —— **AI 唯一真正写数据的地方**。
+   *
+   * 请求体只有 `{ ids }`，**没有一个可写字段**：要写什么按 id 从库里读回来，
+   * 权限也在这里重查一遍（提案生成到确认之间用户可能已经被降级 / 被移出）。
+   * 这两条的理由写在 lib/ai/confirm.js 的文件头。
+   *
+   * 限流放在写之前。确认本身不烧额度，但它一次能改几十条任务，
+   * 值得和 /chat 一个级别的保护。
+   */
+  'POST /api/ai/confirm': (ctx, me) => {
+    const userId = me.user.id;
+    const limited = rl.hitBoth([`ai-confirm:${userId}`], 60, 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+    return aiConfirm.confirm(userId, (ctx.body || {}).ids);
   },
 
   'GET /api/ai/sessions': (ctx, me) => aiSessions.list(me.user.id),

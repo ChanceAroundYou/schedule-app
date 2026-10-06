@@ -304,3 +304,242 @@ test('search_tasks 在标题和备注里找，且看不见的集搜不到', asyn
   const leak = await t.execute('c3', { query: '邻居家的秘密' });
   assert.strictEqual(leak.details.total, 0, '搜到了别人集里的任务 —— 权限过滤漏了');
 });
+
+/* ------------------------------------------------------- 写工具 / 提案闸门 */
+
+const confirmLib = require('../lib/ai/confirm');
+
+/**
+ * 用假模型跑一轮，逼出模型提的那张提案。
+ *
+ * 不直接调 `writeTools` 是因为要的是**端到端**：模型调工具 → 工具记提案 →
+ * SSE 推出来 → 落库挂在消息上。中间少了哪一段，真跑起来都会是空的。
+ */
+async function pendingProposal(args) {
+  const pi = await loadPi();
+  const { streamFn } = await scripted([
+    pi.fauxAssistantMessage([pi.fauxToolCall(args.tool, args.at)], { stopReason: 'toolUse' }),
+    pi.fauxAssistantMessage('先这样，确认一下。'),
+  ]);
+  const c = collector();
+  await ai.load().then((m) => m.runChat({
+    userId: USER,
+    text: args.q,
+    sessionId: args.sid,
+    emit: c.emit,
+    streamFn,
+  }));
+  const p = c.events.find((e) => e.type === 'proposal');
+  assert.ok(p, `模型没提提案：${JSON.stringify(c.types())}`);
+  assert.strictEqual(c.types().at(-1), 'done');
+  return { proposal: p.proposal, sessionId: c.events.find((e) => e.type === 'session').sessionId };
+}
+
+test('写工具只造提案：模型调完，库里一行都没变', async () => {
+  const before = Object.keys(sync.snapshot(USER).tasks).length;
+  const { proposal, sessionId } = await pendingProposal({
+    tool: 'create_task',
+    at: { title: '给爷爷打电话', date: day(2), time: '10:00', calId: CAL },
+    q: '明天上午给爷爷打个电话',
+  });
+
+  assert.strictEqual(proposal.kind, 'create');
+  assert.strictEqual(proposal.title, '给爷爷打电话');
+  assert.strictEqual(proposal.fields.time, '10:00');
+  assert.strictEqual(proposal.calId, CAL);
+
+  const tasks = sync.snapshot(USER).tasks;
+  assert.strictEqual(Object.keys(tasks).length, before, '提案阶段就把任务建到库里了 —— 模型说了不算');
+  assert.ok(!tasks[proposal.entityId], '提案 entityId 在库里查得到');
+
+  // 提案要挂在那条 assistant 消息上，否则刷新之后卡片画不出来
+  const msg = db.listAiMessages(sessionId, USER).find((m) => m.proposals);
+  assert.ok(msg, '消息上没挂提案');
+  const stored = JSON.parse(msg.proposals);
+  assert.strictEqual(stored[0].id, proposal.id);
+  assert.strictEqual(stored[0].entityId, proposal.entityId);
+});
+
+test('确认之后才真的写，而且写出来的是 deviceId=ai', async () => {
+  const { proposal } = await pendingProposal({
+    tool: 'create_task',
+    at: { title: '交物业费', date: day(3), time: '09:00', calId: CAL },
+    q: '后天早上交物业费',
+  });
+  assert.strictEqual(sync.snapshot(USER).tasks[proposal.entityId], undefined, '确认前不该有这条');
+
+  const r = confirmLib.confirm(USER, [proposal.id]);
+  assert.deepStrictEqual(r.body.failed, [], `确认被拒：${JSON.stringify(r.body.failed)}`);
+  assert.strictEqual(r.body.done.length, 1);
+
+  const t = sync.snapshot(USER).tasks[proposal.entityId];
+  assert.ok(t, '确认完库里还是没有这条');
+  assert.strictEqual(t.title, '交物业费');
+  assert.strictEqual(t.source, 'ai', '来源没标成 AI');
+  // AI 是「另一台设备」，所以它写的东西要带 _dev === 'ai' ——
+  // 客户端据此显示「另一台设备也改过」，不能被特判掉
+  assert.strictEqual(t._dev.title, 'ai', 'deviceId 没落到 _dev 上');
+
+  // 确认掉的卡片要从消息里划掉，否则刷新一次它又回来
+  const row = db.get('SELECT proposals FROM ai_messages WHERE proposals LIKE ? ORDER BY seq DESC LIMIT 1', `%${proposal.id}%`);
+  const left = row && row.proposals ? JSON.parse(row.proposals) : [];
+  assert.ok(!left.some((x) => x && x.id === proposal.id), '确认完了卡片还挂在消息上');
+
+  // 再确认一次要被认出来，而不是当成新的改动
+  const again = confirmLib.confirm(USER, [proposal.id]);
+  assert.strictEqual(again.body.done.length, 0);
+  assert.ok(again.body.failed[0].reason.length, '重复确认没给理由');
+});
+
+test('提案生成之后被降级，确认会被挡下（这一步的再校验不能省）', async () => {
+  const { proposal } = await pendingProposal({
+    tool: 'create_task',
+    at: { title: '不该出现的那条', date: day(4), calId: CAL },
+    q: '把明天的一条任务记上',
+  });
+  assert.strictEqual(sync.snapshot(USER).tasks[proposal.entityId], undefined);
+
+  db.upsertMember(CAL, USER, 'viewer');   // 提案生成到确认之间，被降成了只读
+  try {
+    const r = confirmLib.confirm(USER, [proposal.id]);
+    assert.strictEqual(r.body.done.length, 0, '只读了还能写进去 —— 再校验漏了');
+    assert.match(r.body.failed[0].reason, /没有修改权限/);
+    assert.strictEqual(
+      sync.snapshot(USER).tasks[proposal.entityId], undefined,
+      '权限挡住了却还是写进去了',
+    );
+  } finally {
+    db.upsertMember(CAL, USER, 'owner');   // 还原，别污染后面的用例
+  }
+});
+
+test('确认只认 id，参数回传不了、提案也改不动', async () => {
+  const { proposal } = await pendingProposal({
+    tool: 'create_task',
+    at: { title: '原封不动', date: day(5), time: '14:00', calId: CAL },
+    q: '周四下午记一条',
+  });
+
+  // 客户端塞了「要改什么」进来 —— 整条都不是字符串，当场被当成空的
+  const sneaky = confirmLib.confirm(USER, [{
+    id: proposal.id,
+    fields: { title: '被改过' },
+    calId: 'cal-别人的',
+  }]);
+  assert.strictEqual(sneaky.status, 400);
+  assert.ok(sync.snapshot(USER).tasks[proposal.entityId] === undefined, '被塞了参数还写进去了');
+
+  // 存下来的那份提案原封不动。按 rowid 取最后一条 —— seq 是**会话内**的序号，
+  // 跨会话比大小会拿到别的对话的消息
+  const row = db.get(
+    'SELECT proposals FROM ai_messages WHERE proposals IS NOT NULL ORDER BY rowid DESC LIMIT 1',
+  );
+  const mine = JSON.parse(row.proposals).find((x) => x && x.id === proposal.id);
+  assert.strictEqual(mine.fields.title, '原封不动', '提案里的参数被人改过');
+
+  const r = confirmLib.confirm(USER, [proposal.id]);
+  assert.strictEqual(r.body.done.length, 1);
+  assert.strictEqual(sync.snapshot(USER).tasks[proposal.entityId].title, '原封不动');
+});
+
+test('别人的提案确认不了（user_id 那道条件不能省）', async () => {
+  // u-other 是上面那个用例里已经建好的「妈妈」—— 名字在 users 表里是 UNIQUE 的，
+  // 再插一个同名会直接撞约束
+  const { proposal } = await pendingProposal({
+    tool: 'create_task',
+    at: { title: '只属于爸爸', date: day(6), calId: CAL },
+    q: '周六记一条',
+  });
+
+  const r = confirmLib.confirm('u-other', [proposal.id]);
+  assert.strictEqual(r.body.done.length, 0, '确认了别人的提案');
+  assert.ok(!sync.snapshot('u-other').tasks[proposal.entityId], '还写进了别人的集');
+  assert.strictEqual(sync.snapshot(USER).tasks[proposal.entityId], undefined);
+});
+
+test('删是软删除，垃圾箱那行写着「从 AI 删的」', async () => {
+  seed('t-del', { title: '旧收据', date: day(7) });
+  const { proposal } = await pendingProposal({
+    tool: 'delete_task',
+    at: { id: 't-del', calId: CAL },
+    q: '把那条旧收据删了',
+  });
+  assert.ok(sync.snapshot(USER).tasks['t-del'], '提案阶段就删掉了');
+
+  const r = confirmLib.confirm(USER, [proposal.id]);
+  assert.deepStrictEqual(r.body.failed, []);
+  assert.strictEqual(sync.snapshot(USER).tasks['t-del'], undefined, '墓碑没生效');
+
+  const field = db.allFields([CAL]).find(
+    (f) => f.entity_id === 't-del' && f.field === 'trashFrom',
+  );
+  assert.ok(field, '垃圾箱里看不到是从哪删的');
+  assert.strictEqual(JSON.parse(field.value), 'AI');
+});
+
+test('update 只动传了的字段，没传的原样留着', async () => {
+  seed('t-up', { title: '交房租', date: day(8), time: '10:00', duration: 30, note: '月初' });
+  const { proposal } = await pendingProposal({
+    tool: 'update_task',
+    at: { id: 't-up', calId: CAL, title: '交房租（转账）' },
+    q: '把交房租改一下标题',
+  });
+  // 只改标题，别的字段一个都不该动 —— 包括 order（它只在换日期时才清）
+  assert.deepStrictEqual(Object.keys(proposal.fields), ['title']);
+
+  const r = confirmLib.confirm(USER, [proposal.id]);
+  assert.deepStrictEqual(r.body.failed, []);
+  const t = sync.snapshot(USER).tasks['t-up'];
+  assert.strictEqual(t.title, '交房租（转账）');
+  assert.strictEqual(t.note, '月初', '没让改的备注被动了');
+  assert.strictEqual(t.date, day(8), '没让改的日期被动了');
+  assert.strictEqual(t.duration, 30, '没让改的时长被动了');
+});
+
+test('换日期会顺手清掉旧位次，否则未定时的排序会不稳', async () => {
+  seed('t-ord', { title: '取快递', date: day(9), order: 7 });
+  const { proposal } = await pendingProposal({
+    tool: 'reschedule_task',
+    at: { id: 't-ord', date: day(10), calId: CAL },
+    q: '把取快递挪到明天',
+  });
+  assert.strictEqual(proposal.fields.order, null, '没清旧位次');
+  assert.strictEqual(proposal.fields.date, day(10));
+
+  assert.deepStrictEqual(confirmLib.confirm(USER, [proposal.id]).body.failed, []);
+  const t = sync.snapshot(USER).tasks['t-ord'];
+  assert.strictEqual(t.date, day(10));
+  assert.strictEqual(t.order, null);
+});
+
+test('重复任务不能标完成 —— 那套推算在客户端里', async () => {
+  seed('t-rep', {
+    title: '每天跑步', date: day(1),
+    repeat: { unit: 'day', n: 1, weekdays: [], monthday: 1, end: null },
+  });
+  const toolsMod = await import('../lib/ai/tools.mjs');
+  const proposals = new Map();
+  const t = toolsMod.writeTools({ userId: USER, proposals })
+    .find((x) => x.name === 'complete_task');
+  const res = await t.execute('tc-rep', { id: 't-rep', done: true });
+  assert.strictEqual(res.isError, true);
+  assert.match(res.content[0].text, /重复任务/);
+  assert.strictEqual(proposals.size, 0, '被拒了却还是记了一张提案');
+});
+
+test('多条一起确认，同一毫秒里时间戳也要严格递增', async () => {
+  // 两条 op 如果拿到同一个 (ts, deviceId)，LWW 判不出先后，后一条会白写 ——
+  // 而「白写」的表现是「只有一条任务进来了」，查起来非常费劲
+  const a = await pendingProposal({
+    tool: 'create_task', at: { title: '第一条', date: day(11), calId: CAL }, q: '记两条',
+  });
+  const b = await pendingProposal({
+    tool: 'create_task', at: { title: '第二条', date: day(11), calId: CAL }, q: '再记一条',
+  });
+
+  const r = confirmLib.confirm(USER, [a.proposal.id, b.proposal.id]);
+  assert.deepStrictEqual(r.body.failed, [], JSON.stringify(r.body.failed));
+  const tasks = sync.snapshot(USER).tasks;
+  assert.ok(tasks[a.proposal.entityId], '第一条没落库');
+  assert.ok(tasks[b.proposal.entityId], '第二条没落库 —— 时间戳撞了，被 LWW 判掉了');
+});

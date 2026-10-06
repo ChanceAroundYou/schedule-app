@@ -681,6 +681,29 @@ function setAiMessageProposals(messageId, userId, proposals) {
     proposals == null ? null : String(proposals), String(messageId), String(userId));
 }
 
+/**
+ * 按提案 id 找出它挂在哪条消息上，连同提案本身，以及那条消息的**全部**提案。
+ *
+ * `proposals` 是一列 JSON 数组，所以用 `json_each` 摊开再比 id —— 别在 JS 里
+ * 把全部消息读出来遍历：那等于每次确认都把整台机器上的对话拉进内存。
+ *
+ * 连 `message_proposals` 一起回，是因为确认之后要把它从那一列里删掉：
+ * 再查一次那条消息是多余的，而两次查之间那条消息还可能被别的请求改过。
+ *
+ * `user_id` 条件是**必须的**：确认接口拿到的 id 来自客户端，少了它，
+ * 猜到一个提案 id 就能改别人的数据。
+ */
+function findAiProposal(userId, proposalId) {
+  return get(`
+    SELECT m.id AS message_id, m.session_id,
+           p.value AS proposal, m.proposals AS message_proposals
+    FROM ai_messages m, json_each(m.proposals) p
+    WHERE m.user_id = ? AND m.proposals IS NOT NULL
+      AND json_extract(p.value, '$.id') = ?
+    LIMIT 1
+  `, String(userId), String(proposalId));
+}
+
 /* ------------------------------------------------------------------ 杂项 */
 
 function file() { return _file; }
@@ -703,5 +726,6 @@ module.exports = {
   getAiSettings, putAiSettings,
   insertAiSession, listAiSessions, findAiSession, touchAiSession, deleteAiSession,
   nextAiMessageSeq, appendAiMessage, listAiMessages, setAiMessageProposals,
+  findAiProposal,
   file, close,
 };

@@ -24,7 +24,7 @@ import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions';
 
 import db from '../db.js';
 import aiSettings from './settings.js';
-import { readTools } from './tools.mjs';
+import { allTools } from './tools.mjs';
 import { systemPrompt } from './prompt.mjs';
 
 /** 单条消息存进库的上限，防一条巨型 toolResult 把库撑起来 */
@@ -92,6 +92,21 @@ function realStreamFn(cfg) {
 }
 
 /* ------------------------------------------------------------------ 落库 */
+
+/**
+ * 这条 assistant 消息里带的提案。
+ *
+ * 按 **toolCallId** 关联（工具 `execute` 的第一个参数就是它），**不按执行顺序**：
+ * pi 默认并行跑同一轮里的多个工具，`tool_execution_end` 回来的顺序和消息里
+ * toolCall 块的顺序可以不一样。按顺序配就会把提案挂到别的工具调用上。
+ */
+function proposalsIn(m, map) {
+  if (!map.size || !m || !Array.isArray(m.content)) return null;
+  const hits = m.content
+    .filter((c) => c && c.type === 'toolCall' && map.has(c.id))
+    .map((c) => map.get(c.id));
+  return hits.length ? hits : null;
+}
 
 const textOf = (msg) => {
   if (!msg || !Array.isArray(msg.content)) return '';
@@ -176,11 +191,15 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
     } catch (_) { /* 坏行跳过，别让一条脏数据把整个会话变成砖 */ }
   }
 
-  const tools = readTools({ userId });
-
-  // **提案的收集点**。阶段 3 的 beforeToolCall 往这里塞，这一版恒为空。
-  // 留着这条通路是为了让 SSE 事件表和落库结构一次定死，加写路径时不用回头改。
+  /**
+   * 这一轮的提案收集器：toolCallId → 提案。
+   *
+   * 写入工具**只往这里塞，不落库**（见 tools.mjs 里那段）。落库分两步：
+   * 现在挂到 assistant 消息上（下面 `saveMessages` 的 proposalsOf），
+   * 真的写数据要等用户点确认走 `POST /api/ai/confirm`。
+   */
   const proposals = new Map();
+  const tools = allTools({ userId, proposals });
 
   const agent = new Agent({
     streamFn: streamFn || realStreamFn(cfg),
@@ -207,7 +226,11 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
       case 'tool_execution_start':
         emit({ type: 'tool', phase: 'start', name: ev.toolName, args: ev.args });
         break;
-      case 'tool_execution_end':
+      case 'tool_execution_end': {
+        // 写工具跑完 = 产出了一张待确认卡片。前端据此把它画出来，
+        // 用户点确认才会走 /api/ai/confirm
+        const proposal = ev.result && ev.result.details && ev.result.details.proposal;
+        if (proposal) emit({ type: 'proposal', proposal });
         emit({
           type: 'tool',
           phase: 'end',
@@ -216,6 +239,7 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
           summary: summaryOf(ev.result),
         });
         break;
+      }
       default:
         break;
     }
@@ -237,7 +261,7 @@ export async function runChat({ userId, sessionId, text, context, emit, signal, 
 
   const fresh = agent.state.messages.slice(before);
   try {
-    saveMessages(sid, userId, fresh, (m) => proposals.get(m.id));
+    saveMessages(sid, userId, fresh, (m) => proposalsIn(m, proposals));
     // 标题在建会话时就定死了（取第一句话），这里只把 updated_at 推上去 ——
     // 会话列表按它排序，不推的话新消息不会让这个会话浮到最上面
     db.touchAiSession(sid, userId, null, Date.now());
