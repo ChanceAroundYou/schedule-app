@@ -1524,6 +1524,95 @@ body.sheet-open .tab:active { background: none; }
   .wh-load { width: 34px; }
 }
 
+/* ══ 重构时漏掉的那批类名 ═══════════════════════════════════════════════════
+   下面这几组在 React 版里**只写了类名、没有对应规则**，于是渲染出来是一片
+   没有样式的裸元素：找日期面板是 42 个裸按钮，冲突提示是一堆挤在一起的
+   纯文本，重复面板的星期按钮没有选中态。
+
+   两种修法里选了「补 CSS」而不是「改类名」：
+     · 视图切换按钮新代码用的是 `on`，而这里原本写的是 `.active`。
+       改类名更干净，但 `tests/browser-smoke.mjs` 里有一句
+       `[data-view="month"].on` 在等它 —— 探针依赖类名，那就让 CSS 去迁就代码，
+       而不是让一条跑不起来的测试去承担风险。
+     · 其余几组（.cb-* / .sync-dot / .ms-user / .fc-time / .rp-day）旧版压根
+       没有对照物，是新写的表面，直接按同一套变量补上即可。
+
+   配色一律走变量 —— 写死颜色会让深色模式在这些新表面上失效。 */
+
+/* 视图切换：新代码出的是 .on，和原本的 .active 一并认 */
+.view-switch button.on {
+  background: var(--primary); color: var(--on-primary);
+}
+/* 快速添加栏的时钟按钮：同上，.set 是旧名，.on 是新名 */
+.fast-clock.on {
+  background: var(--primary-soft); border-color: var(--primary); color: var(--primary);
+}
+/* 选中时间后贴着图标显示的那个时间文字 */
+.fast-clock .fc-time {
+  margin-left: 3px; font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+
+/* 重复面板：星期那七个按钮 */
+.rp-row.rp-wd { gap: 4px; }
+.rp-wd .rp-day {
+  width: 28px; height: 26px; padding: 0;
+  border: 1px solid var(--input); border-radius: 8px;
+  background: var(--panel); color: var(--text-2); font-size: 11.5px;
+  transition: background .14s, color .14s, border-color .14s;
+}
+.rp-wd .rp-day:hover { border-color: var(--primary); color: var(--primary); }
+.rp-wd .rp-day.on {
+  background: var(--primary); border-color: var(--primary);
+  color: var(--on-primary); font-weight: 600;
+}
+
+/* 「另一台设备也改过这个任务」那条提示。
+   **不用报错红**：数据是好的，LWW 已经判完了，只是有一边的改动不在了。
+   走 --warn（琥珀色），跟危险动作区分开 */
+.conflict-box {
+  margin-bottom: 12px; padding: 10px 12px;
+  border: 1px solid var(--warn); border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 9%, var(--panel));
+}
+.conflict-box .cb-head {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 7px;
+}
+.conflict-box .cb-row {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 5px 0; border-top: 1px dashed color-mix(in srgb, var(--warn) 35%, transparent);
+  font-size: 12px; line-height: 1.55; color: var(--text-2);
+}
+.conflict-box .cb-row:first-of-type { border-top: none; padding-top: 0; }
+.conflict-box .cb-text { flex: 1; min-width: 0; }
+.conflict-box .cb-x {
+  flex: 0 0 auto; padding: 2px 9px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--text-2); font-size: 11.5px;
+}
+.conflict-box .cb-x:hover { border-color: var(--primary); color: var(--primary); }
+
+/* 顶栏右侧的同步状态小标：离线 ☁︎ / 同步中转圈 */
+.sync-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  color: var(--text-3);
+}
+
+/* 「更多」抽屉底部那行：当前账户 + 退出 */
+.ms-user {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 12px; padding-top: 11px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-2);
+}
+.ms-user .ms-logout {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text-2); font-size: 12px;
+}
+.ms-user .ms-logout:hover { border-color: var(--danger); color: var(--danger); }
+
 /* ── 键盘焦点：全应用统一画在这一条里 ──────────────────────────────────────
    以前每处 :focus 只把描边染成 --primary，**不新增任何像素**。那在 --input
    从 #d9dce6 提到 3:1 之后就不成立了：聚焦前后两个描边自己的对比只剩

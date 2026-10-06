@@ -11,7 +11,6 @@
  * 这些组件**不接回调**，只写 `data-act` / `data-id` —— 点击由 App 统一委托。
  */
 
-import { useState } from 'react';
 import { Boxes, CalendarCheck, CheckCircle2, ListChecks } from 'lucide-react';
 import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -50,7 +49,10 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
   const doneToday = todayDoneTasks(state);
   const over = overdueCount(state);
   const habits = liveHabits(state);
-  const [doneOpen, setDoneOpen] = useState(state.ui.tdoneOpen);
+  // 展开状态**读 store 里的 ui.tdoneOpen**，不是组件自己的 useState。
+  // 用本地状态的话，离开这一页再回来（以及刷新）都会复位 —— 用户刚展开的
+  // 「今天已完成」莫名其妙又收起来了。开关走事件委托，见 App 的 toggle-tdone
+  const doneOpen = state.ui.tdoneOpen;
 
   if (!list.length && !habits.length && !doneToday.length) {
     return (
@@ -81,7 +83,8 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
       {/* 今天已完成的收口：日程页不再显示它们，这里随时能回看、也能反悔取消 */}
       {!!doneToday.length && (
         <div className={'today-done' + (doneOpen ? ' open' : '')} id="todayDone">
-          <button className="td-head" data-toggle-tdone="1" onClick={() => setDoneOpen((v) => !v)}>
+          {/* 不挂 onClick：views/ 是纯展示，开关交给 App 的点击委托去写 store */}
+          <button className="td-head" data-act="toggle-tdone">
             <Caret open={doneOpen} />
             <span className="td-title">今天已完成</span>
             <span className="td-count">{doneToday.length}</span>
