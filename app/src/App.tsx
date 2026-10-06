@@ -180,8 +180,16 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     lp.current.timer = setTimeout(() => {
       lp.current.fired = true;
       // 震一下：手指贴上屏幕时视线确实在那儿，但「抓住了」这件事需要一个
-      // 不必盯着屏幕也能确认的信号。桌面浏览器没有 vibrate，不支持就算了
-      if (typeof navigator.vibrate === 'function') navigator.vibrate(12);
+      // 不必盯着屏幕也能确认的信号。桌面浏览器没有 vibrate，不支持就算了。
+      //
+      // 先问一句 userActivation：**没有用户交互过就别调**。调到的话 Chrome 会
+      // 直接拦下来，还往控制台打一条 error（「user hasn't tapped on the frame」）——
+      // 探针里合成出来的触摸事件没有 user activation，于是每跑一次就在
+      // 「离线时不许有别的报错」那条上挂一次，指向的却是个不存在的故障。
+      // 真手指按下去 pointerdown 本来就算交互，这个判断不会把功能关掉；
+      // 认不出 userActivation 的老浏览器（`!ua`）维持原样。
+      const ua = navigator.userActivation;
+      if ((!ua || ua.hasBeenActive) && typeof navigator.vibrate === 'function') navigator.vibrate(12);
       // 「提起」= 进入拖拽待命态；接下来要么拖走，要么原地松手弹操作层
       // （由 dnd 的 onTapHold 回调决定，见那边文件头）
       if (!drag.beginTouch(el, id, lp.current.x, lp.current.y)) setActId(id);
@@ -562,11 +570,19 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       onTheme={toggleTheme}
       onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
+      /* 侧栏顺序由 Shell 算好（它才看得见拖动时的视觉顺序），这里只负责落盘 */
+      onReorder={(order, bottom) => store.setUi({ navOrder: order, navBottom: bottom })}
+      /* 「更多」抽屉 / 找日期面板的开关都在 App 这一层：Esc 要按
+         actSheet > 抽屉 > 找日期 的顺序关，只有同时看得见这三者的地方才排得出顺序 */
+      more={moreOpen}
+      setMore={setMoreOpen}
       topbar={
         <>
           <Topbar
             state={state}
             narrow={narrow}
+            jump={jumpOpen}
+            setJump={setJumpOpen}
             onView={(v) => store.setUi({ view: v })}
             onShift={shift}
             onToday={() => store.setUi({ cursor: D.today(), nav: 'calendar' })}
