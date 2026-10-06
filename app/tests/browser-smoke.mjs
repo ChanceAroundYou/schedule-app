@@ -236,8 +236,10 @@ try {
 
   track(spawn(process.execPath, [path.join(ROOT, 'server/server.js')], {
     env: { ...process.env, PORT: String(API_PORT), SCHEDULE_DATA_DIR: dataDir },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
   }));
+  procs[procs.length - 1].stderr.on('data', (d) => process.stderr.write('[be] ' + d));
+  procs[procs.length - 1].stdout.on('data', (d) => process.stderr.write('[bo] ' + d));
   web = await serveDist();
   procs.push({ kill: () => { if (web && web.listening) web.close(); } });
 
@@ -798,6 +800,12 @@ try {
   ok(other.length === 0, '离线这一段除了接口连不上，没有别的 console 报错'
     + (other.length ? '：\n      ' + fmt(other) : ''));
 
+  // 静态服务关了之后必须重开 —— 后面几节（尤其十六的改密码）要走 /api/ 代理。
+  // 不重开的话它们会以另一种方式失败：fetch 直接「连不上服务器」，
+  // 看着像网络问题，其实是代理没了。
+  web = await serveDist();
+  procs.push({ kill: () => { if (web && web.listening) web.close(); } });
+
   // 放在最后、且刻意在「关掉静态服务」之后：这一节全是纯 DOM 查询，
   // 不需要网络，而断网那一节已经把服务器关了 —— 插在它前面会被它的
   // closeAllConnections 打乱状态，插在后面则完全不动已有状态。
@@ -981,6 +989,308 @@ try {
     + '　诊断：' + JSON.stringify(diag));
   ok(month.bad.length === 0, '月视图格子里的勾选圈也是真按钮'
     + (month.bad.length ? '：\n      ' + month.bad.join('\n      ') : ''));
+
+  console.log('\n十四、功能区自定义：底栏挑哪几项、侧栏拖序都记得住');
+
+  // 这一节守的是两条**曾经是死数据**的字段（见 CLAUDE.md 四、23）：
+  // `ui.navOrder` / `ui.navBottom` 被 Shell 读着、却一度没有任何写入方，
+  // 「拖过一次顺序就记住了」在那一版是假的。功能区自定义补回了写入方。
+  //
+  // 底栏（`.tabbar`）只在窄屏渲染，而无头 Chrome 的**真实**窗口宽度压不到
+  // 那个断点（CLAUDE.md 四、34）。所以这里在 React 挂载之前把
+  // `matchMedia('(max-width: 900px)')` 那一路改成 `matches: true`。
+  // 用 Proxy 而不是 Object.assign：后者会把 MediaQueryList 压成普通对象，
+  // 丢掉原型上的 addEventListener —— hooks.ts 里那一句会当场抛异常。
+  //
+  // 这验的是「narrow 为真时底栏与「更多」抽屉有没有被接出来」这条**接线**，
+  // 不是真实窄屏下的排版 —— 后者在无头里造不出来，只能手工在真机上看。
+  await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    (() => {
+      const orig = window.matchMedia.bind(window);
+      window.matchMedia = (q) => {
+        const r = orig(q);
+        if (!/max-width:\\s*900px/.test(String(q))) return r;
+        return new Proxy(r, {
+          get(t, k) {
+            if (k === 'matches') return true;
+            const v = t[k];
+            return typeof v === 'function' ? v.bind(t) : v;
+          },
+        });
+      };
+    })();
+  ` });
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.tabbar')`, '窄屏模式下底栏渲染出来了', 15000);
+
+  const tabsNow = () => evalJs(page, `
+    return [...document.querySelectorAll('.tabbar .tab')].map((x) => x.textContent.replace(/\\d+/g, '').trim());
+  `);
+  const uiNow = () => evalJs(page, `return JSON.parse(localStorage.getItem('schedule-app-v4')).ui;`);
+  /** 等防抖落盘：persist() 是 250ms 防抖，改完立刻读会读到上一版 */
+  const waitForUi = (what, expr) => waitFor(page, expr, what, 8000);
+
+  ok((await tabsNow()).length === 5, '底栏是 4 项 + 「更多」，实际 ' + JSON.stringify(await tabsNow()));
+  ok((await tabsNow())[4] === '更多', '「更多」恒占最后一格');
+
+  // 进设置页：窄屏下侧栏是收起的，入口在「更多」抽屉里
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
+  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的功能区卡片');
+
+  const tabSel = (k) => `document.querySelector('[data-tab="${k}"]')`;
+  ok(await clickEl(page, tabSel('inbox')) !== 'missing', '设置页里点得动底栏那排胶囊');
+
+  // 关掉一项 → 底栏少一格
+  await waitForUi('关掉待办箱之后落盘', `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.tabs.length === 3 ? 1 : null`);
+  ok((await tabsNow()).length === 4, '关掉一项后底栏是 3 项 + 更多，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 再开一项
+  await clickEl(page, tabSel('habits'));
+  await waitForUi('开回打卡之后落盘', `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.tabs.length === 4 ? 1 : null`);
+  ok((await tabsNow()).length === 5, '开满 4 项后底栏又回到 5 格，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 满 4 格之后第 5 个开不动 —— UI 挡一道，normalizeUi 再钳一道
+  await clickEl(page, tabSel('done'));
+  await new Promise((r) => setTimeout(r, 300));
+  ok((await tabsNow()).length === 5, '满 4 项后再点一个开不动，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 侧栏拖序：dragstart / dragover / drop 必须**分开的 tick** ——
+  // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的 dragKey 仍是 null
+  // （加探针时踩过，症状是「拖了但完全没反应」，看着像产品坏了）
+  const navRow = (k) => `[...document.querySelectorAll('[data-nav-row]')].find((x) => x.dataset.navRow === ${JSON.stringify(k)})`;
+  await evalJs(page, `
+    return (() => {
+      const el = ${navRow('trash')};
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const el = ${navRow('today')};
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const dst = ${navRow('today')};
+      const src = ${navRow('trash')};
+      dst.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
+      src.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await waitForUi('侧栏拖序落盘',
+    `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.navOrder.indexOf('trash') === 1 ? 1 : null`);
+  ok((await uiNow()).navOrder.indexOf('trash') === 1,
+    '侧栏拖序真的落库了（trash 挪到了第 2 位），实际 ' + JSON.stringify((await uiNow()).navOrder));
+
+  // 刷新之后还在 —— 这两条字段曾经是死数据，「记得住」是这次真正要证的
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.tabbar')`, '刷新后底栏还在');
+  await new Promise((r) => setTimeout(r, 800));
+  const afterReloadUi = await uiNow();
+  ok(afterReloadUi.navOrder.indexOf('trash') === 1, '刷新后侧栏顺序还在');
+  ok(afterReloadUi.tabs.length === 4, '刷新后底栏还是 4 项');
+  ok((await tabsNow()).length === 5, '刷新后底栏画出来还是 5 格');
+
+  console.log('\n十五、项目泳道：建项目 → 挂任务 → 拖卡片换列 → 刷新还在');
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('.pj-wrap')`, '项目页挂上');
+  ok(await evalJs(page, `return document.querySelector('#content').textContent.includes('还没有项目');`),
+    '空态说话，不是一片白');
+
+  await clickEl(page, `document.querySelector('.pj-top .text-btn')`);
+  await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
+  const setField = (sel, val) => evalJs(page, `
+    return (() => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!el) return 'missing';
+      const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(val)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  ok(await setField('.field input', '星星包') === 'ok', '填项目名字');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '创建')`);
+  await waitFor(page, `!!document.querySelector('[data-lane]')`, '泳道出现');
+  ok((await evalJs(page, `return [...document.querySelectorAll('[data-lane] .pj-col-h')].map((x) => x.textContent.replace(/\\d/g, '').trim());`)).join() === '待办,进行中,已完成',
+    '三列：待办 / 进行中 / 已完成');
+
+  // 加一条任务，并在详情抽屉里挂到项目上。
+  // 走**底栏**而不是「更多」抽屉：上一节把「今天」留在了底栏里，而抽屉只画
+  // 差集（底栏没有的那些）—— 从抽屉里找 today 找不到，clickEl 只会返回
+  // 'missing' 不报错，症状是「任务出现」等不到、看着像快速添加坏了。
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.replace(/\\d+/g, '').trim() === '今天')`);
+  await waitFor(page, `!!document.querySelector('.fast-add input')`, '今天页挂上');
+  await setField('.fast-add input', '写方案');
+  await evalJs(page, `
+    return (() => {
+      const i = document.querySelector('.fast-add input');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
+  await clickEl(page, `[...document.querySelectorAll('.task-el')].find((x) => x.textContent.includes('写方案'))`);
+  await waitFor(page, `!!document.querySelector('select[id$="-proj"]')`, '抽屉里的项目下拉');
+  const optVal = await evalJs(page, `
+    return (() => {
+      const s = document.querySelector('select[id$="-proj"]');
+      const o = [...s.options].find((x) => x.textContent.trim() === '星星包');
+      return o ? o.value : null;
+    })();
+  `);
+  ok(!!optVal, '项目下拉里列得到这个项目');
+  await evalJs(page, `
+    return (() => {
+      const s = document.querySelector('select[id$="-proj"]');
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+      set.call(s, ${JSON.stringify(optVal)});
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 250));
+  await clickEl(page, `document.querySelector('.drawer-foot button:last-child')`);
+  await new Promise((r) => setTimeout(r, 300));
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('.pj-card')`, '卡片出现在泳道里');
+  ok((await evalJs(page, `return document.querySelectorAll('.pj-col[data-scope$=":todo"] .pj-card').length;`)) === 1,
+    '任务落在「待办」列');
+
+  // 拖卡片换列：同样是分开的 tick（见上一节的说明）
+  await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('.pj-col[data-scope$=":todo"] .pj-card');
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b');
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b')
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 250));
+  // 按标题找**这一条**，不能拿 `Object.values(tasks)[0]` —— 前面几节
+  // （十～十三）也加了任务，[0] 是它们中的某一条，doing 当然是 undefined
+  await waitForUi('doing 落库',
+    `(() => { const s = JSON.parse(localStorage.getItem('schedule-app-v4'));
+      const t = Object.values(s.tasks).find((x) => x.title === '写方案');
+      return t && t.doing === true ? 1 : null; })()`);
+  const projCols = await evalJs(page, `
+    return [...document.querySelectorAll('[data-lane] .pj-col')].map((c) => c.querySelectorAll('.pj-card').length);
+  `);
+  ok(JSON.stringify(projCols) === JSON.stringify([0, 1, 0]),
+    '卡片挪到了「进行中」列，实际 ' + JSON.stringify(projCols));
+  ok(await evalJs(page, `return !document.querySelector('.pj-col[data-scope$=":doing"] .pj-card.done');`),
+    'done 没被顺手改掉 —— 做/没做和做没做完是两回事');
+
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.tabbar')`, '刷新后底栏还在');
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('[data-lane]')`, '刷新后泳道还在');
+  ok((await evalJs(page, `return document.querySelector('[data-lane] .pj-name').textContent.trim();`)) === '星星包',
+    '刷新后项目还在');
+  ok((await evalJs(page, `return document.querySelector('[data-lane] .pj-col[data-scope$=":doing"] .pj-card') ? 1 : null;`)) === 1,
+    '刷新后卡片还在「进行中」列');
+
+  console.log('\n十六、修改密码：改完还登录着，别的设备被踢出去');
+
+  // 先确认后端还活着 —— 后端 stdio 是 ignore，死了会静默，
+  // 症状是「连不上服务器」，看着像网络问题其实是进程没了
+  let health = 'node-side fetch failed';
+  try {
+    const hr = await fetch(`http://127.0.0.1:${API_PORT}/api/health`);
+    health = String(hr.status);
+  } catch (e) { health = 'node fetch failed: ' + e.message; }
+  ok(health === '200', '后端还活着（node health=' + health + '）');
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
+  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页挂上');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改密码')`);
+  await waitFor(page, `!!document.querySelector('input[type="password"]')`, '改口令浮层打开');
+  ok((await evalJs(page, `return document.querySelectorAll('input[type="password"]').length;`)) === 3,
+    '三个框：当前 / 新 / 再输一遍 —— 没有「找回口令」这回事，手一抖打错就没了');
+
+  const setPw = (sel, v) => evalJs(page, `
+    return (() => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!el) return 'missing';
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(v)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+
+  // 先喂一个错的当前密码 —— 提示要说人话，而且**不能把人踢出去**
+  await setPw('input[id$="-c"]', 'not-the-real-password');
+  await setPw('input[id$="-n"]', 'brand-new-99');
+  await setPw('input[id$="-a"]', 'brand-new-99');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改')`);
+  await waitFor(page, `!!document.querySelector('[role="alert"]')`, '报错出现');
+  const alertText = await evalJs(page, `return document.querySelector('[role="alert"]').textContent;`);
+  ok(alertText.includes('当前密码'), '提示说「当前密码不对」，实际：' + alertText);
+  ok(await evalJs(page, `return !!document.querySelector('input[type="password"]');`),
+    '报错之后浮层还开着 —— 关掉了等于什么也没说');
+
+  // 再喂对的（第二节注册时用的就是 pw123456）。
+  // 先把当前那只 token 存下来 —— 等下要证它**被作废了**。
+  const oldTok = await evalJs(page, `return localStorage.getItem('schedule-app-token');`);
+  await setPw('input[id$="-c"]', 'pw123456');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改')`);
+  await waitFor(page, `document.querySelector('input[type="password"]') ? null : 1`, '浮层关掉了', 8000);
+  await new Promise((r) => setTimeout(r, 400));
+
+  // **最要紧那一条**：改完还登录着。服务器会作废掉改动之前签的那只票
+  //（含请求里用的那只），所以客户端必须换上响应里带回的那只 ——
+  // 换了之后刷新还在，用户感知不到。
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('#nav') || !!document.querySelector('.tabbar')`, '刷新后主界面挂上');
+  await new Promise((r) => setTimeout(r, 1500));
+  // 窄屏下侧栏不渲染（`{!narrow && <Sidebar/>}`），`.brand-name` 不存在 ——
+  // 用 `.tabbar` 代替，它在两种模式下都在
+  ok(await evalJs(page, `return !document.querySelector('[data-act="login"]') && !!document.querySelector('.tabbar');`),
+    '改完密码刷新后**还登录着**（没有被自己踢出去）');
+  const newTok = await evalJs(page, `return localStorage.getItem('schedule-app-token');`);
+  ok(newTok && newTok !== oldTok, '本机存的 token 已经换成了新的那只');
+
+  // 服务器上真换了，而且改动之前签的那只确实被作废了
+  const pwCheck = await evalJs(page, `
+    const me = await fetch('./api/me', { headers: { authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } });
+    const old = await fetch('./api/me', { headers: { authorization: 'Bearer ' + ${JSON.stringify(oldTok)} } });
+    return { me: me.status, old: old.status };
+  `);
+  ok(pwCheck.me === 200, '换上的那只 token 在服务器上是好的，实际 ' + JSON.stringify(pwCheck));
+  ok(pwCheck.old === 401, '改动之前签的那只被作废了（别人手里的旧票失效），实际 ' + JSON.stringify(pwCheck));
 
   page.close();
 } catch (e) {
