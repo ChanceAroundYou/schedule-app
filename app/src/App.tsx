@@ -18,7 +18,7 @@ import * as store from './data/store.ts';
 import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from './data/api.ts';
 import * as engine from './sync/engine.ts';
 import { readLegacy } from './data/legacy.ts';
-import { useStoreState, useScopedState, useIsNarrow, LONG_PRESS_MS } from './ui/hooks.ts';
+import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset, LONG_PRESS_MS } from './ui/hooks.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
 import { HOUR_H } from './domain/layout.ts';
@@ -52,6 +52,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const state = useStoreState();
   const scoped = useScopedState();
   const narrow = useIsNarrow();
+  // 手机软键盘的高度写进 --kb，给抽屉 / Sheet 避让（见 hooks.ts 里那段注释）
+  useKeyboardInset();
   const confirm = useConfirm();
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -351,6 +353,22 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         return;
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      // 时间轴上下沿的把手：方向键微调一档 15 分钟。
+      // 只认「焦点在把手上」这一种情况 —— 把手是页面上仅有的两个不可点、
+      // 只能拖的控件（其余 data-act 全是真 button，Tab 就能到）。
+      // dir 跟着时间轴方向：往下 = +1，往上 = -1（上沿往上拖是变长，别写反）。
+      const handle = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-act="resize"],[data-act="resize-top"]');
+      if (handle && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        const t = store.get().tasks[handle.dataset.id || ''];
+        if (t) {
+          store.patchTask(t.id, D.nudgeEdge(
+            t.time, t.duration, handle.dataset.act === 'resize-top' ? 'top' : 'bottom',
+            e.key === 'ArrowDown' ? 1 : -1,
+          ));
+        }
+        return;
+      }
       if (e.key === 'ArrowLeft') { e.preventDefault(); shift(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); shift(1); }
       else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); nav('calendar'); }

@@ -92,7 +92,10 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
+    // 手机软键盘弹出时把整块顶上去：--kb 是 hooks.ts 量的键盘高度。
+    // 里面那层 max-h 用 min(86dvh, 100%) —— 没键盘时还是原来的 86dvh，
+    // 有键盘时 100% 就是「键盘上沿以上」那点空间，不会把按钮顶出屏幕。
+    <div className="fixed inset-0 z-[70] flex items-end justify-center pb-[var(--kb,0px)] sm:items-center">
       <div className="absolute inset-0 bg-black/40" />
       <div
         ref={panel}
@@ -100,7 +103,7 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
         aria-modal="true"
         className={cx(
           'relative z-10 w-full max-w-md bg-[var(--panel)] text-[var(--text)]',
-          'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[86dvh] flex flex-col',
+          'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[min(86dvh,100%)] flex flex-col',
         )}
       >
         {title !== undefined && (

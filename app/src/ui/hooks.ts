@@ -75,6 +75,40 @@ export function useOnline(): boolean {
   return online;
 }
 
+/**
+ * 手机软键盘遮住了多少 —— 写进 `--kb`，给**定位固定**的那几个面用。
+ *
+ * 为什么要 JS：软键盘只压小**可视视口**（visualViewport），布局视口不动 ——
+ * 所以 `100dvh` 还是满屏高，`position: fixed; bottom: 0` 的那几个面板
+ * （详情抽屉、Sheet、登录页）下半截正好压在键盘底下，而且固定定位的元素
+ * 浏览器没法替我们滚上来。页内正常滚动的输入框不用管，浏览器自己会滚。
+ *
+ * 两个数字都要减：`offsetTop` 是可视视口自己的偏移，iOS 上键盘弹出时它会跑，
+ * 不减的话算出来的高度偏大、面板会被顶过头。
+ *
+ * 有的浏览器（viewport 里写了 `interactive-widget=resizes-content`）会连布局
+ * 视口一起缩，那时 `innerHeight` 也跟着小，这里自然算出 0 —— 而那种模式下
+ * `bottom: 0` 本来就贴着键盘上沿了，不用再动。两种情况都对。
+ */
+export function useKeyboardInset(): void {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;   // 老浏览器：退回「浏览器自己滚」，不报错也不做事
+    const apply = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb', Math.round(kb) + 'px');
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      document.documentElement.style.removeProperty('--kb');
+    };
+  }, []);
+}
+
 /** 窗口宽度是否落在窄屏（与 styles.css 的 @media 断点必须一致） */
 const NARROW = '(max-width: 900px)';
 

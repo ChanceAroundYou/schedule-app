@@ -54,11 +54,18 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg)] p-6">
+    // 可滚 + `my-auto` 居中，而**不是** items-center：手机上键盘一弹出，
+    // 可视高度只剩一半，居中布局的卡片底部（尤其是提交按钮）正好压在键盘底下。
+    // 固定定位的元素浏览器不会替我们滚，所以自己开滚动条；
+    // 用 auto 外边距而不是 justify/items-center —— 后者在内容比容器高时
+    // 会把顶部裁掉且滚不上去，正是这里最怕的那种情况。
+    // pb 里的 --kb 是 ui/hooks.ts 量的键盘高度（见那里的注释）。
+    <div className="fixed inset-0 flex flex-col overflow-y-auto bg-[var(--bg)]
+                    p-6 pb-[calc(1.5rem+var(--kb,0px))]">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl bg-[var(--panel)] p-7 shadow-lg
-                   text-[var(--text)]"
+        className="mx-auto my-auto w-full max-w-sm rounded-2xl bg-[var(--panel)]
+                   p-7 shadow-lg text-[var(--text)]"
       >
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl

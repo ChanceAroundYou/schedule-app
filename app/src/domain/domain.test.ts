@@ -373,6 +373,24 @@ test('时间段文案，跨零点标次日', () => {
   assert.equal(timeRange(23 * 60 + 30, 60), '23:30 – 次日 00:30');
 });
 
+test('方向键微调上下沿：底边只改时长，上沿固定底边', () => {
+  // 底边往下 = 变长
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'bottom', 1), { duration: 75 });
+  // 时长下限 15，再往下按不动
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'bottom', -1), { duration: 15 });
+
+  // 上沿往上 = 开始提前、总长变长，**底边 10:00 不动**
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', -1), { time: '08:45', duration: 75 });
+  // 上沿往下 = 开始推迟、总长变短
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', 1), { time: '09:15', duration: 45 });
+  // 上沿不能越过底边（最少留 15 分钟），也不能早于 0:00
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'top', 1), { time: '09:00', duration: 15 });
+  assert.deepEqual(D.nudgeEdge('00:05', 60, 'top', -1), { time: '00:00', duration: 65 });
+
+  // 跨过整点也要对
+  assert.deepEqual(D.nudgeEdge('09:50', 60, 'top', 1), { time: '10:05', duration: 45 });
+});
+
 /* ============================== 查询口径 ============================== */
 
 test('逾期与今天互不重叠，同一个任务不会被数两次', () => {

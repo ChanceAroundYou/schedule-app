@@ -428,6 +428,16 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 只在「冲突记到本地」那一步中断。
 > 写这一节时踩到 `persist()` 防抖（见「四、41」）和 waitFor 只吃表达式（「四、42」）。
 
+> 第「十四」节（2026-10-06）专测**时间轴上下沿的键盘通路**：
+> `Tab` 能不能够到那两个把手、方向键有没有按 `data-act` 接到对的那一端。
+> 用 CDP 的 `Input.dispatchKeyEvent` 按**真实焦点**派发（见「四、44」），
+> 不是自己在页面里造一个 target。算式本身（15 分钟一档、上沿固定底边）
+> 在 `domain.test.ts` 的 `nudgeEdge` 用例里，这一节只管接线。
+>
+> 第「十五」节专测**软键盘避让的管道**：`useKeyboardInset` 有没有写 `--kb`、
+> 固定浮层有没有读它。真软键盘无头里造不出来，所以只验这两端（同触屏那条的限度）。
+> 写这两节时连踩了三个**伪装成产品 bug 的探针坑**，见「四、43」。
+
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
 
@@ -1094,6 +1104,42 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 > 只打 `exceptionDetails.text` 的话每个异常都长成一句「Uncaught」，等于没说
 > （这条也踩过）。
 
+**43. 写探针时踩到的三个（都会伪装成「应用坏了」）**
+
+2026-10-06 加「方向键微调时间轴上下沿」那一节时，连着假失败三轮，
+每一轮**指向的都是产品代码，实际全是探针自己的错**：
+
+- **在待办箱里快速添加「9:00 开会」得到的是「有时间、没日期」的任务。**
+  `defaultDate()` 对 `nav==='inbox'` 返回 `null`，而时间轴按 `date` 挑 → 这条
+  任何日视图都不画方块，探针在「等方块」上超时，看着像时间轴渲染坏了。
+  要造一条有时间轴方块的任务，就得在**日程页**（那边 `defaultDate` 是
+  `ui.cursor`）加，或者写字面日期。
+- **`.ev-resize` 会先命中上沿**（上沿的 class 是 `ev-resize ev-resize-top`，
+  DOM 里排在前面）。断言名写着「下沿」、实际查的是上沿 —— 两者形状一样，
+  于是照样绿。要下沿就用 `.ev-resize:not(.ev-resize-top)`。
+- **基准值不能刚保存就读 localStorage**（四、41 的翻版）。新建的任务在
+  `persist()` 防抖落盘之前读不到，`undefined + 15` 是 `NaN`，
+  于是「按了键没反应」。这次是靠失败信息里那句 `目标时长 undefined` 定位的 ——
+  **诊断行要带原始值，不要只写「等不到」**。
+
+> 共同点：**症状全都指向产品，根因全在探针**。上一节（四、40）那段
+> 「先怀疑探针」在这里又应验了三次。加断言时顺手把关键中间量打进失败信息里，
+> 能省掉一整轮 4 分钟的复跑。
+
+**44. 合成方向键要用 CDP 的 `Input.dispatchKeyEvent`**
+
+`el.dispatchEvent(new KeyboardEvent('keydown', …))` 也能让处理器跑起来，
+但那样 `target` 是**我们自己摆上去的**：控件要是压根拿不到焦点（比如漏了
+`tabIndex`），断言照样通过。走 CDP 的 `Input.dispatchKeyEvent` 则按**真实焦点**
+派发 —— 验过它有牙：把下沿那句 `tabIndex={0}` 摘掉重跑，焦点落到 `BODY`，
+「把手真能拿到焦点」当场失败。
+
+```js
+await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 });
+```
+
+`keyDown` 和 `rawKeyDown` 都进得来（实测同效），`keyUp` 要跟着发一个。
+
 ---
 
 ## 五、界面约定
@@ -1322,6 +1368,47 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 失败信息指错地方（这个探针里栽过一次，见四、40）。
 
 验过它有牙：把 `<CheckBtn>` 换回 `<span>`、或者拿掉一个 `aria-label`，对应那条立刻红。
+
+### 键盘：一档微调，不做全套（2026-10-06 用户裁决）
+
+> 「不需要过分考虑键盘操作，只要最简单的方向键能微调即可，其他的地方也是。」
+
+**时间轴两个把手（`.ev-resize` / `.ev-resize-top`）是页面上仅有的两个
+不可点、只能拖的控件** —— 其余每一个 `data-act` 都是真 `<button>`，Tab 就能到。
+所以键盘支持只需要补这一处：两个 `<span>` 给上 `tabIndex={0}` + `aria-label`
+（`views/Calendar.tsx`），方向键那一段在 `App.tsx` 的键盘委托里，
+算法走 `domain/date.ts` 的 `nudgeEdge()` —— **和鼠标拖拽共用同一份算式**。
+
+- 键位只有 ↑ / ↓。**方向跟着时间轴走**（往下 = `+1`），不是「变长 / 变短」：
+  上沿往上拖是**变长**，跟着时间轴才不会在两边写出相反的符号。
+- 一次一档 **15 分钟**，和拖拽的步进一致。
+- 焦点在把手上时**只有方向键**被截走（`Return` 提前返回），
+  `1/2/3` 切视图、`d/t` 跳页那些不受影响。
+- **别再加别的键位** —— 用户明确说了不要。「其他地方也是」指的是
+  「有没有第二个这样的控件」，查下来没有。
+
+### 移动端软键盘避让：`--kb`（2026-10-06）
+
+`dvh` 跟的是**布局视口**，而软键盘只压小**可视视口** —— 所以 `100dvh` /
+`88dvh` 一个像素都不会躲。**固定定位的那几个面**（详情抽屉、`Sheet`、登录页）
+浏览器也不会替我们滚上来的。所以：
+
+- `ui/hooks.ts` 的 `useKeyboardInset()` 用 `window.visualViewport` 量出
+  被遮的高度，写进 `document.documentElement` 的 **`--kb`**；
+- 消费点三处：`kit.tsx` 的 `Sheet`（`pb-[var(--kb,0px)]`，无条件）、
+  `legacy.css` 里 ≤900px 的 `.drawer`（`padding-bottom`，宽屏是侧栏面板、
+  键盘盖不到）、`ui/Auth.tsx` 的登录卡（`pb-[calc(1.5rem+var(--kb,0px))]`）。
+- 登录卡还额外改成 **可滚 + `my-auto` 居中**，不用 `items-center`：
+  内容比容器高时居中会把顶裁掉且滚不上去。
+
+> **页内正常滚动的输入框不用管** —— 那些浏览器自己会滚。
+> 改了需要避让的固定面板，记得接上 `--kb`，别写死一个 padding。
+
+**锁在哪**：`browser-smoke.mjs` **第十五节**。它只验**管道**（有人写 `--kb`、
+有人读 `--kb`），**验不了**「visualViewport 变化 → 算出多少像素」那一步 ——
+无头里造不出真软键盘（和触屏那条同理，真机手感只能人看）。
+验过它有牙：把 Sheet 那句 `pb-[var(--kb,0px)]` 摘掉重跑，
+「容器读到了 --kb」当场变成 `0px`。
 
 ---
 

@@ -115,8 +115,17 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
                     <span className="ev-title">{t.title}</span>
                   </div>
                   {roomy && <span className="ev-time">{timeRange(e.start, e.end - e.start)}</span>}
-                  <span className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id} />
-                  <span className="ev-resize" data-act="resize" data-id={t.id} />
+                  {/* 两个把手平时是 opacity:0，靠 :hover 才显形。键盘也要够得着，
+                      所以给 tabIndex，方向键那一段在 App.tsx 的键盘委托里
+                      （views/ 一律零回调，见 CLAUDE.md 一）。 */}
+                  <span
+                    className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
+                    tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
+                  />
+                  <span
+                    className="ev-resize" data-act="resize" data-id={t.id}
+                    tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
+                  />
                 </div>
               );
             })}

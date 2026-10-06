@@ -96,6 +96,7 @@ const NONTEXT = [
 const RUNTIME_SET = {
   '--cols': 'views/Calendar.tsx 按格子数内联设',
   '--week-head-h': 'views/Calendar.tsx 量的表头实高',
+  '--kb': 'ui/hooks.ts 量的软键盘高度，写在 documentElement 上',
 };
 
 export function undefinedVars() {
@@ -128,6 +129,9 @@ export function fallbackVars() {
   const out = [];
   for (const f of walk(SRC).filter((f) => /\.tsx?$/.test(f))) {
     for (const m of readFileSync(f, 'utf8').matchAll(/var\((--[\w-]+)\s*,[^)]*\)/g)) {
+      // RUNTIME_SET 里的那几个和 CSS 里的兜底值是同一回事：**那个兜底就是真默认值**
+      // （没软键盘时 --kb 本来就该是 0），不是「变量名写错了在静默降级」。
+      if (RUNTIME_SET[m[1]]) continue;
       out.push({ name: m[1], files: [f.slice(SRC.length + 1)], snippet: m[0] });
     }
   }

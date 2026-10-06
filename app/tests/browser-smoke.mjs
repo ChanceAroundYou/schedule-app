@@ -193,6 +193,20 @@ async function touch(page, type, at) {
   });
 }
 
+/**
+ * 合成一次按键。走 CDP 的 Input.dispatchKeyEvent —— 事件按**真实焦点**
+ * 派发，不是我们自己在页面里指定 target，所以能连带证明「焦点真在它身上」。
+ *
+ * 在页面里 `el.dispatchEvent(new KeyboardEvent('keydown', …))` 也能让
+ * 处理器跑起来，但那样 target 是我们摆上去的：把手要是压根拿不到焦点
+ * （比如忘了 tabIndex），它照样「通过」。这里不行。
+ */
+async function key(page, k, code, vk) {
+  const base = { key: k, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+
 /** 用顶栏的快速输入框加一条任务（走真实 UI，不直接改 store） */
 async function quickAdd(page, text) {
   const n = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
@@ -1008,6 +1022,191 @@ try {
     + '　诊断：' + JSON.stringify(diag));
   ok(month.bad.length === 0, '月视图格子里的勾选圈也是真按钮'
     + (month.bad.length ? '：\n      ' + month.bad.join('\n      ') : ''));
+
+  console.log('\n十四、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
+  //
+  // 上下沿那两个把手是**页面上仅有的两个不可点、只能拖的控件**（其余 data-act
+  // 全是真 button）。鼠标那条路本来就通，但键盘进来的话它们原先既拿不到焦点、
+  // 也没有名字 —— 这一节守的就是「Tab 能到 + 方向键能微调」这两条。
+  //
+  // 为什么必须用 CDP 的 Input.dispatchKeyEvent 而不是在页面里 dispatchEvent：
+  // 后者 target 是我们自己摆上去的，把手就算没有 tabIndex 也照样"通过"。
+  //
+  // 这里只验**接线**（哪一端改 time、哪一端只改 duration），不含算法 ——
+  // 15 分钟一档、上沿固定底边那些在 domain.test.ts 的 nudgeEdge 用例里锁着。
+
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  // 从**日程页**快速添加，不走 quickAdd 那个 helper：它的等条件是
+  // 「[data-scope="inbox"] 里多出一行」，而这一条**有日期**、根本不在待办箱。
+  // 而日期这一项必须由页面自己给：待办箱的 defaultDate 是 null，加出来的是
+  // 「有时间、没日期」的任务，哪个日视图都不会把它画上时间轴（下方就会一直
+  // 等不到方块）。日程页的 defaultDate 是 ui.cursor，正好是今天。
+  await evalJs(page, `
+    const inp = document.querySelector('.fast-add input');
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(inp, '9:00 微调试试');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  `);
+  const block = await waitFor(page, `
+    (() => {
+      const e = [...document.querySelectorAll('.tl-event')].find((x) => x.textContent.includes('微调试试'));
+      if (!e) return null;
+      // 上沿的 class 是 "ev-resize ev-resize-top"，所以 '.ev-resize' 会**先命中上沿**
+      // （DOM 里它在前面）—— 想拿的是下沿就必须排掉它。
+      // 不排的话断言名写着「下沿」，实际查的是上沿，两条形状一样、于是照样"通过"。
+      const h = e.querySelector('.ev-resize:not(.ev-resize-top)');
+      const th = e.querySelector('.ev-resize-top');
+      return h && th ? {
+        id: h.dataset.id, tab: h.tabIndex, name: h.getAttribute('aria-label'),
+        topTab: th.tabIndex, topName: th.getAttribute('aria-label'),
+      } : null;
+    })()
+  `, '时间轴方块和它的上下两个把手', 8000);
+  ok(block.tab === 0 && block.topTab === 0,
+    '两个把手都能被 Tab 够到（下沿 tabIndex=' + block.tab + '，上沿 ' + block.topTab + '）');
+  ok(!!block.name && !!block.topName && block.name !== block.topName,
+    '两个把手各有名字，且分得清上下：' + JSON.stringify(block.name) + ' / ' + JSON.stringify(block.topName));
+
+  const sel = (act) => `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
+  const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;
+
+  // 真拿焦点（不是造一个 target），并**顺手挂一个按键记录器** ——
+  // 这一条失败的原因无非两种：键没进页面，或者进了但没被接住。记录器
+  // 一次就能分开：`!prevented` 表示 App 那段处理器**跑到了**（它会 preventDefault），
+  // 空数组表示键压根没到。没有它就只能看到一个 null。
+  const focused = await evalJs(page, `
+    window.__keys = [];
+    document.addEventListener('keydown', (e) => {
+      if (window.__keys.length < 5) {
+        window.__keys.push(e.key + '@' + (e.target.className || e.target.tagName)
+          + (e.defaultPrevented ? '!被接住了' : ''));
+      }
+    });
+    const h = ${sel('resize')};
+    if (!h) return 'missing';
+    h.focus();
+    return document.activeElement === h ? 'ok' : ('焦点跑到了 ' + document.activeElement.tagName);
+  `);
+  ok(focused === 'ok', '把手真能拿到焦点，实际 ' + focused);
+
+  // 先把这条任务等**落盘**再读基准值。store.persist() 是防抖的，刚快速添加完
+  // localStorage 里还没有它 —— 直接读会得到 undefined，`undefined + 15` 是 NaN，
+  // 下面那条断言就永远等不到（本节的第一次失败正是这个：按键其实全对，
+  // 诊断里 `目标时长 undefined` 才是真线索）。
+  const t0 = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t ? { duration: t.duration, time: t.time } : null; })()
+  `, '新任务落盘', 8000);
+  const before = t0.duration;
+  ok(before > 0 && t0.time === '09:00', '新任务落盘：09:00 起、' + before + ' 分钟');
+  await key(page, 'ArrowDown', 'ArrowDown', 40);
+  const kdiag = await evalJs(page, `return {
+    keys: window.__keys,
+    active: document.activeElement && (document.activeElement.className || document.activeElement.tagName),
+    dur: (${taskOf} || {}).duration,
+    time: (${taskOf} || {}).time,
+  };`);
+  console.log('    诊断：目标时长 ' + before + ' → ' + JSON.stringify(kdiag)
+    + '（keys 为空 = 按键没进页面；有条目但没有「!被接住了」 = 进了但没被接住）');
+  // 等**落盘**再读：store.persist() 是防抖的，改完立刻读拿到的是上一版（四、41）
+  const nudged = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.duration === ${before} + 15 ? t.duration : null; })()
+  `, '下沿按 ↓ 把时长加了一档', 8000);
+  ok(nudged === before + 15, '下沿按 ↓：时长 ' + before + ' → ' + nudged + '（+15 分钟）');
+
+  // 下沿**不该动 time** —— 这是「哪一端接哪一边」的核心断言
+  ok(await evalJs(page, `return (${taskOf} || {}).time === '09:00';`),
+    '下沿只改时长，开始时间仍是 09:00');
+
+  await key(page, 'ArrowUp', 'ArrowUp', 38);
+  const back = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.duration === ${before} ? t.duration : null; })()
+  `, '↑ 又把它调回来', 8000);
+  ok(back === before, '再按 ↑ 回到 ' + back + '（同一档来回，不会漂）');
+
+  // 换到上沿：固定底边 ⇒ time 变早、duration 变长
+  const topFocused = await evalJs(page, `
+    const h = ${sel('resize-top')};
+    if (!h) return 'missing';
+    h.focus();
+    return document.activeElement === h ? 'ok' : 'no';
+  `);
+  ok(topFocused === 'ok', '上沿把手也能拿到焦点');
+  await key(page, 'ArrowUp', 'ArrowUp', 38);
+  const top = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.time === '08:45' ? { time: t.time, duration: t.duration } : null; })()
+  `, '上沿按 ↑ 把开始时间提前 15 分钟', 8000);
+  ok(top.duration === before + 15, '上沿按 ↑ 时底边固定：开始 09:00 → ' + top.time + '，时长 ' + before + ' → ' + top.duration);
+
+  // 收尾：把这条恢复原样，别给后面的断言留个挪过位置的方块
+  await evalJs(page, `
+    const h = ${sel('resize')};
+    h && h.focus();
+    return true;
+  `);
+  await key(page, 'ArrowDown', 'ArrowDown', 40);
+
+  console.log('\n十五、软键盘避让：--kb 有人写、固定的浮层有人读');
+  //
+  // 无头里造不出真软键盘（真实键盘是 OS 层的，CDP 没有这个开关），
+  // 所以这一节只验**管道**，分两半：
+  //   ① 有没有人在写 --kb（useKeyboardInset 挂上了没有）
+  //   ② 写了之后固定浮层有没有真的让开（消费端接上了没有）
+  // 中间那一步「visualViewport 变化 → 算出多少像素」只能靠真机，和触屏那条一样。
+  //
+  // 为什么值得单列一条：`dvh` 跟的是**布局视口**，软键盘只压小**可视视口** ——
+  // 所以 `100dvh` / `88dvh` 一个字都不会躲，必须靠 visualViewport 算。
+  // 这正是「输入框被键盘挡住」的根因，光看 CSS 是看不出来的。
+
+  const kbVar = await evalJs(page, `return document.documentElement.style.getPropertyValue('--kb').trim();`);
+  // 桌面无头没有软键盘，所以写出来是 0px —— 这里证的是「有人在写」，不是那个 0
+  ok(/^\d+px$/.test(kbVar), 'useKeyboardInset 写上了 --kb，实际 ' + JSON.stringify(kbVar));
+
+  // 打开一个固定定位的浮层，量它的底边。用抽屉里那条删除确认（Sheet），
+  // 它是 `pb-[var(--kb,0px)]` 唯一的无条件消费点。
+  // 抽屉自己那条 --kb 只在 ≤900px 生效（宽屏是侧栏面板，键盘盖不到），
+  // 而这一节跑在桌面视口下 —— 所以这里测的是 Sheet 这条路径。
+  await clickEl(page, `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}]')`);
+  await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.drawer.open button')].find((b) => b.textContent.includes('删除任务'))`);
+  await waitFor(page, `!!document.querySelector('[role="dialog"]')`, '确认浮层打开', 8000);
+
+  // 探针自己把 --kb 顶到 200px（无头里造不出键盘，只能直接写这个变量），
+  // 然后量浮层有没有整体抬上去。**写完立刻量** —— getBoundingClientRect 会
+  // 强制一次样式与布局，同一个同步块里就能读到新值。
+  const avoid = await evalJs(page, `
+    const root = document.documentElement;
+    const prev = root.style.getPropertyValue('--kb');
+    root.style.setProperty('--kb', '200px');
+    const dlg = [...document.querySelectorAll('[role="dialog"]')]
+      .find((d) => d.textContent.includes('删除这个任务'));
+    if (!dlg) { root.style.setProperty('--kb', prev); return { err: '确认浮层没找到' }; }
+    const r = dlg.getBoundingClientRect();
+    const out = {
+      bottom: Math.round(r.bottom), vh: window.innerHeight,
+      pad: getComputedStyle(dlg.parentElement).paddingBottom,
+    };
+    root.style.setProperty('--kb', prev);
+    return out;
+  `);
+  ok(!avoid.err && avoid.pad === '200px',
+    '确认浮层的容器读到了 --kb（padding-bottom = ' + avoid.pad + '）' + (avoid.err ? '：' + avoid.err : ''));
+  // 上面那条是这一节**唯一有牙**的断言：把 Sheet 外层那句 pb-[var(--kb,0px)]
+  // 摘掉重跑，它当场变成 0px。下面这条是几何自检 —— 在桌面宽度下
+  // （sm 断点起 items-end 换成 items-center）浮层本来就在上半屏，
+  // 摘掉 padding 它照样通过，所以别把它当守卫。
+  // 「贴着键盘上沿」这个位置关系只在 ≤640px 的 items-end 下成立，
+  // 而窄屏无头测不了（四、34），那半截只能靠真机。
+  ok(avoid.bottom <= avoid.vh - 199,
+    '浮层整个在「键盘」之上：底边 ' + avoid.bottom + ' ≤ 视口高 ' + avoid.vh + ' − 200');
+
+  // 取消掉，别真删 —— 这条任务前面几节还要用
+  await clickEl(page, `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.trim() === '取消')`);
+  await waitFor(page, `document.querySelector('[role="dialog"]') ? null : 1`, '确认浮层关掉', 8000);
 
   page.close();
 } catch (e) {

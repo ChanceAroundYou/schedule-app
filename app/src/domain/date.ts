@@ -68,6 +68,20 @@ export function lastDayOfMonth(year: number, month1: number): number {
   return new Date(year, month1, 0).getDate();
 }
 
+/**
+ * 这一天是当月的第几周（1 起算）。月视图顶栏那行 range 用。
+ *
+ * 按「当月 1 号所在的那一周算第 1 周」往前补全周数 —— 不是简单地
+ * `ceil(day / 7)`：那样 1 号落在周六时会把整个月算成 6 周。
+ */
+export function weekOfMonth(isoStr: string): number {
+  const d = parseISO(isoStr);
+  const first = parseISO(monthStart(isoStr));
+  // 周一为一周之始，跟 weekStart 同一套约定
+  const lead = (first.getDay() + 6) % 7;
+  return Math.floor((d.getDate() + lead - 1) / 7) + 1;
+}
+
 export function fmtMD(isoStr: string): string {
   const d = parseISO(isoStr);
   return d.getMonth() + 1 + '月' + d.getDate() + '日';
@@ -107,6 +121,27 @@ export function timeToMin(t: string | null | undefined): number | null {
 export function minToTime(m: number): string {
   const v = Math.max(0, Math.min(1439, Math.round(m)));
   return pad(Math.floor(v / 60)) + ':' + pad(v % 60);
+}
+
+/**
+ * 时间轴上下沿的「微调」：把一次拖拽换成一档 15 分钟。
+ *
+ * 键盘走这里（方向键），鼠标走 App.tsx 里那段拖拽 —— **两处的算法必须一致**，
+ * 所以算式只写在这一份：底边只改时长，上沿固定底边（同时改 time 和 duration）。
+ * `dir` 是「沿时间轴往下（+1）/ 往上（-1）」，不是「变长 / 变短」——
+ * 上沿往上拖是**变长**，跟着时间轴方向走才不会在两边写出相反的符号。
+ *
+ * 边界和拖拽一样：时长最少 15 分钟，上沿不早于 0:00。
+ */
+export function nudgeEdge(
+  time: string | null | undefined, duration: number, edge: 'top' | 'bottom', dir: 1 | -1,
+): { time?: string; duration: number } {
+  const STEP = 15;
+  const start = timeToMin(time) || 0;
+  const end = start + (duration || 60);
+  if (edge === 'bottom') return { duration: Math.max(STEP, (duration || 60) + dir * STEP) };
+  const ns = Math.max(0, Math.min(end - STEP, start + dir * STEP));
+  return { time: minToTime(ns), duration: end - ns };
 }
 
 export function fmtDuration(min: number | null | undefined): string {
