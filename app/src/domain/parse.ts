@@ -7,10 +7,15 @@
  * ⚠️ rulesOf() 返回的**数组顺序是有意义的**，不能重排：
  *   · 「重复」整组必须在「日期」整组之前 —— 否则「每周一」会被后面的日期规则
  *     当成「周一」解析成一个具体日期
- *   · 「大后天」必须排在「后天」前面
+ *   · 「大后天」必须排在「后天」前面，「大前天」必须排在「前天」前面
  *   · 「下下周一」必须排在「下周一」前面
  *   · 完整日期（2026年10月5日）必须排在「N号/N日」之前，否则 15 被单独吃掉
  * 这套顺序是踩出来的，改动前先读 legacy 分支的历史。
+ *
+ * ⚠️ **带明确星期/日号的重复规则必须自己写 o.date**（firstWeekday / firstMonthday）。
+ * 只设 o.repeat 不设 o.date 的话，QuickAdd 的 `p?.date ?? defaultDate(state)`
+ * 会回落到今天 —— 于是「每周一」在周二建就落在周二，「每月31号」落在 6 号。
+ * 「每天 / 每周 / 每月 / 每年」这四条不带具体日子，首次就是今天，不需要写。
  */
 
 import * as D from './date.ts';
@@ -82,6 +87,33 @@ function nthWeekday(todayIso: string, weeks: number, wd: number): string {
   return D.addDays(base, want - 1);
 }
 
+/**
+ * 「每周X / 工作日」的**首次**发生日：从今天起找到第一个落在 wds 里的日子。
+ * wds 用 getDay() 口径（0=周日），含今天。
+ *
+ * ⚠️ 重复规则必须自己把首次日期写进 o.date。不写的话 QuickAdd 会回落到
+ * `defaultDate()` = 今天 —— 那正是「每周一」落在周二、「每月31号」落在 6 号的原因。
+ */
+function firstWeekday(todayIso: string, wds: number[]): string {
+  for (let i = 0; i < 7; i++) {
+    const d = D.addDays(todayIso, i);
+    if (wds.includes(D.weekdayOf(d))) return d;
+  }
+  return todayIso;
+}
+
+/** 「每月N号」的首次发生日：从今天起找到第一个 N 号（短月截到月末），含今天。 */
+function firstMonthday(todayIso: string, dd: number): string {
+  const d0 = D.parseISO(todayIso);
+  const y = d0.getFullYear();
+  const mo = d0.getMonth() + 1;
+  /** 与 mkDate 同一套截断：31 号在 2 月落到 28/29 号 */
+  const at = (yy: number, mm: number) => yy + '-' + pad(mm) + '-' + pad(Math.min(dd, D.lastDayOfMonth(yy, mm)));
+  const thisMonth = at(y, mo);
+  if (thisMonth >= todayIso) return thisMonth;
+  return mo === 12 ? at(y + 1, 1) : at(y, mo + 1);
+}
+
 function rulesOf(todayIso: string): Rule[] {
   const curMonth = D.parseISO(todayIso).getMonth() + 1;
   const curYear = D.parseISO(todayIso).getFullYear();
@@ -105,14 +137,18 @@ function rulesOf(todayIso: string): Rule[] {
     {
       re: /工作日/g,
       fn: (o) => {
-        o.repeat = rep('week', [1, 2, 3, 4, 5], 1);
+        const wds = [1, 2, 3, 4, 5];
+        o.repeat = rep('week', wds, 1);
+        o.date = firstWeekday(todayIso, wds);
         return '工作日重复';
       },
     },
     {
       re: /(?:每个?|每)\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/g,
       fn: (o, m) => {
-        o.repeat = rep('week', [WD[m[1]]], 1);
+        const wds = [WD[m[1]]];
+        o.repeat = rep('week', wds, 1);
+        o.date = firstWeekday(todayIso, wds);
         return '每周' + m[1];
       },
     },
@@ -128,6 +164,7 @@ function rulesOf(todayIso: string): Rule[] {
       fn: (o, m) => {
         const d = cn(m[1]) || 1;
         o.repeat = rep('month', [], d);
+        o.date = firstMonthday(todayIso, d);
         return '每月' + d + '号';
       },
     },
@@ -156,6 +193,9 @@ function rulesOf(todayIso: string): Rule[] {
     { re: /(?:明天|明日)/g, fn: (o) => { o.date = D.addDays(todayIso, 1); return '明天'; } },
     { re: /大后天/g, fn: (o) => { o.date = D.addDays(todayIso, 3); return '大后天'; } },
     { re: /后天/g, fn: (o) => { o.date = D.addDays(todayIso, 2); return '后天'; } },
+    { re: /大前天/g, fn: (o) => { o.date = D.addDays(todayIso, -3); return '大前天'; } },
+    { re: /前天/g, fn: (o) => { o.date = D.addDays(todayIso, -2); return '前天'; } },
+    { re: /昨天|昨日/g, fn: (o) => { o.date = D.addDays(todayIso, -1); return '昨天'; } },
 
     {
       re: /下下\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/g,

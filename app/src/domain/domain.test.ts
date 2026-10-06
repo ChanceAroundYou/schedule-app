@@ -83,13 +83,45 @@ test('解析：日期 + 时段 + 时长，剩下的才是标题', () => {
   assert.equal(r?.title, '交周报');
 });
 
-test('解析：重复必须在日期之前被吃掉', () => {
+test('解析：重复必须在日期之前被吃掉，且首次落点要自己算', () => {
   // 「每周一」如果不先被重复规则吃掉，会被后面的日期规则当成「周一」→ 一个具体日期
   const r = parse('每周一 团队早会', T);
   assert.equal(r?.repeat?.unit, 'week');
   assert.deepEqual(r?.repeat?.weekdays, [1]);
-  assert.equal(r?.date, null, '不该被解析成某个具体日期');
+  // T = 2026-10-06 是**周二**：首次必须落在下一个周一，不能是今天。
+  // （不写 o.date 的话 QuickAdd 会回落到 defaultDate() = 今天）
+  assert.equal(r?.date, '2026-10-12');
   assert.equal(r?.title, '团队早会');
+});
+
+test('解析：重复的首次落点不能是「今天」，除非规则真的命中今天', () => {
+  // 周二说的「每周二」——今天就是周二，首次就是今天
+  assert.equal(parse('每周二 例会', T)?.date, '2026-10-06');
+  assert.equal(parse('每周日 例会', T)?.date, '2026-10-11');
+
+  // 「工作日」：周二 → 今天；周六 → 下一个周一
+  assert.equal(parse('工作日 站会', T)?.date, '2026-10-06');
+  assert.equal(parse('工作日 站会', '2026-10-10')?.date, '2026-10-12');
+
+  // 「每月31号」：10/6 → 10/31；10/31 当天 → 就是今天；已过则顺延
+  assert.equal(parse('每月31号 交房租', T)?.date, '2026-10-31');
+  assert.equal(parse('每月31号 交房租', '2026-10-31')?.date, '2026-10-31');
+  assert.equal(parse('每月5号 交房租', '2026-10-20')?.date, '2026-11-05');
+  // 短月截到月末
+  assert.equal(parse('每月31号 交房租', '2026-02-10')?.date, '2026-02-28');
+  // monthday 保持 31，不被 date 的截断带偏
+  assert.equal(parse('每月31号 交房租', '2026-02-10')?.repeat?.monthday, 31);
+});
+
+test('解析：昨天 / 前天 / 大前天', () => {
+  assert.equal(parse('昨天 交电费', T)?.date, '2026-10-05');
+  assert.equal(parse('前天 取快递', T)?.date, '2026-10-04');
+  assert.equal(parse('大前天 取快递', T)?.date, '2026-10-03');
+  // 不能只摘掉「前天」、把「大」留在标题里
+  assert.equal(parse('大前天 取快递', T)?.title, '取快递');
+  assert.equal(parse('前天 取快递', T)?.title, '取快递');
+  // 与「N天后」那条规则不打架
+  assert.equal(parse('3天后 交材料', T)?.date, '2026-10-09');
 });
 
 test('解析：「大后天」优先于「后天」，「下下周一」优先于「下周一」', () => {
