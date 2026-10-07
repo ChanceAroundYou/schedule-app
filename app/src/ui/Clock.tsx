@@ -126,6 +126,9 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
     const n = D.nowMin();
     const h = Math.floor(n / 60), mi = n % 60;
     setHour(h); setMinute(mi); emit(h, mi);
+    // 「现在」也是一次选完 —— 快速添加那层面板照样收起（和分钟落定走同一条
+    // onMinutePick）。抽屉里那个浮层不传这个回调，不受影响。
+    onMinutePick?.();
   };
 
   return (
@@ -253,7 +256,7 @@ export function ClockPop({ open, anchor, value, onChange, onClose }: ClockPopPro
       <ClockBody value={value} onChange={setDraft} />
 
       <div className="cp-foot">
-        <Btn variant="chip" size="sm" onClick={() => { onChange(null); onClose(); }}>清除</Btn>
+        <Btn variant="normal" size="sm" onClick={() => { onChange(null); onClose(); }}>清除</Btn>
         <span className="grow" />
         <Btn variant="ghost" onClick={onClose}>取消</Btn>
         <Btn variant="primary" onClick={() => { onChange(draft); onClose(); }}>确定</Btn>

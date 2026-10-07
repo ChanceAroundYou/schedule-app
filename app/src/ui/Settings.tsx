@@ -545,7 +545,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                            focus:border-[var(--primary)] disabled:opacity-60"
               />
               {manage && (
-                <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
+                <Btn variant="normal" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
                   保存
                 </Btn>
               )}
@@ -674,7 +674,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
 
           {/* 邀请入口 */}
           <div>
-            <Btn variant="chip" size="sm" onClick={onInvites}>
+            <Btn variant="normal" size="sm" onClick={onInvites}>
               <MailPlus size={13} /> 邀请{invites.length ? `（${invites.length}）` : ''}
             </Btn>
           </div>
@@ -842,7 +842,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
         <Card icon={<UserRound size={14} />} title="安全">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
-            <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
+            <Btn variant="normal" size="sm" onClick={() => setPwOpen(true)}>
               <KeyRound size={13} /> 修改密码
             </Btn>
             <Btn variant="ghost" size="sm" onClick={onLogout}>
@@ -855,10 +855,10 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               <Database size={13} /> 同步与备份
             </div>
             <div className="flex flex-wrap gap-2">
-              <Btn variant="chip" size="sm" onClick={onExport}>
+              <Btn variant="normal" size="sm" onClick={onExport}>
                 <Upload size={13} /> 导出备份
               </Btn>
-              <Btn variant="chip" size="sm" onClick={() => fileRef.current?.click()}>
+              <Btn variant="normal" size="sm" onClick={() => fileRef.current?.click()}>
                 <Download size={13} /> 导入备份
               </Btn>
               <Btn variant="ghost" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>

@@ -24,15 +24,14 @@ import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
-/* 五种固定 variant，覆盖全应用所有按钮场景：
+/* 四种固定 variant，覆盖全应用所有按钮场景：
    primary  主操作（保存、确认、跳转）
     normal  普通操作（导航、切换、取消）
     ghost   极轻操作（关闭、清空）
     danger  危险操作（删除、退出）
-    chip    标签式操作（筛选、选择）
    新增 variant 必须先在这里加，再在 legacy.css 里加对应样式 —— 别在
    .tsx 里写死颜色，那等于把设计令牌绕过去。 */
-type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
+type Variant = 'primary' | 'normal' | 'ghost' | 'danger';
 
 /* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
    兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
@@ -47,13 +46,12 @@ const VARIANT: Record<Variant, string> = {
   normal: 'border-[var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
   danger: 'border-[var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
-  chip: 'border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
 };
 
 type Size = 'sm' | 'md' | 'lg';
 
 const SIZE: Record<Size, string> = {
-  sm: 'h-7 px-2.5 text-[13px]',
+  sm: 'h-[30px] px-2.5 text-[12.5px]',
   md: 'h-9 px-3.5 text-sm',
   lg: 'h-11 px-5 text-[15px]',
 };

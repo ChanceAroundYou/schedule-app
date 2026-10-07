@@ -250,7 +250,7 @@ export function ManageSheet({ state, open, onClose }: {
                        focus:border-[var(--primary)] disabled:opacity-60"
           />
           {manage && (
-            <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
+            <Btn variant="normal" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
               保存
             </Btn>
           )}
@@ -460,7 +460,7 @@ export function InviteSheet({ state, open, onClose }: {
               <Btn variant="primary" size="sm" disabled={!!busy} onClick={() => void act(i, true)}>
                 <Check size={14} /> 接受
               </Btn>
-              <Btn variant="chip" size="sm" disabled={!!busy} onClick={() => void act(i, false)}>
+              <Btn variant="normal" size="sm" disabled={!!busy} onClick={() => void act(i, false)}>
                 谢绝
               </Btn>
             </div>

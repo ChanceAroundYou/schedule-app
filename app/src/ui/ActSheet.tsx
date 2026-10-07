@@ -107,7 +107,7 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
         <div className="as-grid">
           {list.map((a) => (
             <Btn
-              variant="chip"
+              variant="normal"
               size="sm"
               className={'as-btn' + (a.danger ? ' danger' : '') + (a.on ? ' on' : '')}
               key={a.value}

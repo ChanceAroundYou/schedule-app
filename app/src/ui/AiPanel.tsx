@@ -428,7 +428,7 @@ export function AiPanel({ state, onConfirmed }: {
           disabled={busy}
         />
         {busy ? (
-          <Btn variant="chip" onClick={stop}><Square size={14} /> 停止</Btn>
+          <Btn variant="normal" onClick={stop}><Square size={14} /> 停止</Btn>
         ) : (
           <Btn variant="primary" onClick={() => void send()} disabled={!text.trim()}>
             <Send size={14} /> 发送

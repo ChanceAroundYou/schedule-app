@@ -326,31 +326,31 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
   return (
     <div className="cal-subhead">
       <div className="date-nav">
-        <Btn variant="normal" className="round-btn" title="上一个" onClick={() => onShift(-1)}>
+        <Btn variant="normal" size="sm" className="w-[30px]" title="上一个" onClick={() => onShift(-1)}>
           <ChevronLeft size={15} />
         </Btn>
-        <Btn variant="normal" className="round-btn" title="下一个" onClick={() => onShift(1)}>
+        <Btn variant="normal" size="sm" className="w-[30px]" title="下一个" onClick={() => onShift(1)}>
           <ChevronRight size={15} />
         </Btn>
-        {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `.on` 那一档配色
-            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 .today-btn。
-            **就在今天才亮**（需求 6）：和日 / 周 / 月三个视图档同一个语义。
-            `.text-btn` 那 30px 高度属于「副header 四个控件必须同高」那条约定，
-            组件库的 sm / md 两档都对不上，所以走 className 覆盖 —— kit 的注释
-            就是这么规定的（特殊尺寸用 className，不往组件里加 variant）。 */}
+        {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `aria-pressed` 那一档配色
+            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 legacy.css
+            里 `.date-nav [aria-pressed="true"]`。
+            **就在今天才亮**（需求 6）：和日 / 周 / 月三个视图档同一个语义。 */}
         <Btn
-          variant="ghost"
-          className={'text-btn today-btn' + (atToday ? ' on' : '')}
+          variant="normal"
+          size="sm"
+          aria-pressed={atToday}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
         >今</Btn>
         <div className="jump-wrap">
           <Btn
-            variant="ghost"
-            className={'text-btn jump-btn' + (jump ? ' on' : '')}
+            variant="normal"
+            size="sm"
+            className="jump-btn"
+            aria-expanded={jump}
             title="跳到指定日期（快捷键 D）"
             aria-haspopup="dialog"
-            aria-expanded={jump}
             onClick={() => setJump(!jump)}
           >
             <span className="jb-ico"><CalendarDays size={13} /></span>
@@ -687,6 +687,10 @@ export function QuickAdd({ state, onSubmit }: {
       duration: p?.duration ?? undefined,
       repeat: p?.repeat ?? undefined,
     }, openDetail);
+    // 交完就收起（窄屏）：任务已经落盘，横条还开着只是占地方。
+    // **宽屏不收** —— 那边没有圆钮，横条是常驻的，收起来就点不回来
+    // （「N」在宽屏只聚焦、不展开，见上面那个 keydown）。
+    if (narrow) closeBar();
   };
 
   // 「N」聚焦输入框，跟旧版一致。窄屏下先展开再聚焦
@@ -813,6 +817,9 @@ export function QuickAdd({ state, onSubmit }: {
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setText(e.target.value)}
+              /* 点输入框 = 不选日期时间了，面板收掉。不收的话，面板钉在输入框
+                 右边，打字时它一直挡在那儿（用户 2026-10-08 要求）。 */
+              onClick={() => setWhenOpen(false)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

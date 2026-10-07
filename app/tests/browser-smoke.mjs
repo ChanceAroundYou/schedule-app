@@ -1723,8 +1723,21 @@ try {
   // 需求 5：点「现在」→ 拨到的就是此刻 → 这个键亮起（选中态）。
   // 和上午 / 下午那对 `.cp-ap.on` 同一套语义：它是「选中了什么」的状态。
   await clickEl(page, `document.querySelector('.when-pop .cp-now')`);
-  ok(await evalJs(page, `return document.querySelector('.when-pop .cp-now').classList.contains('on');`),
-    '点「现在」之后这个键变成选中态（需求 5）');
+  // 「现在」也是一次选完 → 面板**自己收起**（和分钟落定走同一条 onMinutePick）。
+  // 所以「这个键变成选中态」不再断得出来 —— 键跟着面板一起卸载了，
+  // 改成断「收掉了、且按钮上写的就是此刻」。
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「现在」面板自动收起', 8000);
+  const nowShown = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
+  const nowMin = await evalJs(page, `
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  `);
+  const shownMin = nowShown ? (+nowShown.slice(0, 2)) * 60 + (+nowShown.slice(3)) : -1;
+  // 差 1 分钟是给「点下去那一刻」到「断言这一刻」之间跨了整点留的余量
+  ok(Math.abs(shownMin - nowMin) <= 1,
+    '点「现在」之后按钮上就是此刻，实际 ' + JSON.stringify(nowShown) + '，此刻 ' + JSON.stringify(nowMin));
+  // 面板被「现在」收掉了，后面几节还要用 —— 重开（时间层）
+  await openLayer('time');
   ok(Math.abs(dial.apmOff) < 1,
     '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
   ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
@@ -2553,13 +2566,15 @@ try {
     '规矩 2：横条开着，点顶栏搜索键也能打开搜索框', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
     '规矩 2：顶栏当例外 —— 这一下既没被吞（搜索框开了），也没把横条收掉');
+  // 搜索框的 autoFocus 会把页面滚下去，顶栏按钮就跑到视口外了 ——
+  // 先滚回顶部再点，否则这一下落在 <html> 上，会被当成「点空白」把横条收掉
+  await evalJs(page, `window.scrollTo(0, 0); return 1;`);
   await realClick(await centerOf('.topbar .search-toggle'));
   await waitFor(page, `document.querySelector('.topbar .search-pop') ? null : 1`, '收起搜索框', 8000);
 
   // 规矩 3：面板开着时，顶栏也不再是例外
   await clickEl(page, `document.querySelector('.fast-clock')`);
   await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开时间面板（规矩 3）', 8000);
-  await evalJs(page, `window.__c = []; return 1;`);
   await realClick(await centerOf('.topbar .search-toggle'));
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '规矩 3：点顶栏先把面板收掉', 8000);
   const r3 = await evalJs(page, `return {
@@ -2572,6 +2587,21 @@ try {
   ok(r3.open === true, '规矩 3：只收面板，横条留着');
 
   // 收干净：横条回到收起态，接下面那串动画断言
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '收尾：横条收起', 8000);
+
+  /* ---- 点输入框 = 不选日期时间了，面板收掉 ---- */
+  // 面板钉在输入框右边，打字时它一直挡在那儿 —— 点一下输入框就该收。
+  // 只收面板、**不收横条**：用户是要打字，不是要收起输入框。
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '展开横条（点输入框收面板）', 8000);
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开日期时间面板', 8000);
+  await clickEl(page, `document.querySelector('.fast-add textarea')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点输入框收起面板', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
+    '面板收了，横条还开着（点输入框不该把输入框也收掉）');
+  // 收干净
   await clickEl(page, `document.querySelector('.fast-fab')`);
   await waitFor(page, `!document.querySelector('.fast-add.open')`, '收尾：横条收起', 8000);
 
@@ -2683,8 +2713,16 @@ try {
     })();
   `);
   await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
+  // 交完就收起（窄屏）：任务已经落盘，横条还开着只是占地方。
+  // 宽屏不收 —— 那边没有圆钮，横条是常驻的，收起来就点不回来。
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '回车交完之后横条自动收起', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
+    '收起之后圆钮变回 +');
 
   /* ---- 「保存」是个 ✓，和日期按钮上下叠放（需求 4） ---- */
+  // 上一节交完把横条收掉了，重新展开再测保存键
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '重新展开（测保存键）', 8000);
   // 时间在上，保存在下，固定位置。这一条证的是按钮在、位置对、高度和日期按钮齐平、
   // 点了真能交、空着的时候禁用。
   const saveBtn = await evalJs(page, `

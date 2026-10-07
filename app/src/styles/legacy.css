@@ -371,47 +371,26 @@ b, strong { font-variant-numeric: tabular-nums; }
 .view-title { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.2px; }
 .date-nav { display: flex; align-items: center; gap: 4px; }
 /* 顶栏空间不够时，别把按钮里的字挤成竖排 —— 宁可先藏日期文字 */
-.date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
+.date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 /* 副header 那排控件（上一/下一个 · 今 · 找日期 · 日周月）**必须同高、同字号、
    同圆角、同描边**。它们并排站在一行里，任何一个高一点或字大一点，
    整行看着就是歪的。
 
-   高度写死 30px，不用 padding 推：12.5px 的 `line-height: normal` 各浏览器
-   差 1~2px，光靠 padding 永远对不齐。里面只有一个图标，所以用 flex 居中 ——
-   靠 `line-height: 1` 加内联 SVG 的对齐会偏 1~2px，看着就是「没居中」。 */
-.round-btn {
-  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-  border: var(--border-w) solid var(--input); background: none;
-  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
-  transition: background .14s, color .14s, border-color .14s;
+   高度由 Btn 组件的 sm size（30px）统一控制，这里只管选中态的配色。 */
+/* 「今」按钮选中（就在今天）时亮起，和日 / 周 / 月那三个视图档的 `.on` 是同一套语义 */
+.date-nav [aria-pressed="true"] {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-pale);
+  font-weight: 600;
 }
-.round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
-.text-btn {
-  height: 30px; padding: 0 10px; display: inline-flex; align-items: center;
-  border: var(--border-w) solid var(--input); background: none;
-  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
-  transition: background .14s, color .14s, border-color .14s;
-}
-.text-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
-/* 「今天」按钮：**选中就是今天时亮起**（需求 6）。
-   默认（不在今天）压暗 —— 它此刻没有指向任何东西；
-   就在今天时亮起来，表示「你现在看的就是今天」，和日 / 周 / 月那三个
-   视图档的 `.on` 是同一套语义。 */
-.today-btn { margin-left: 4px; color: var(--text-3); border-color: transparent; }
-.today-btn.on {
-  color: var(--primary); border-color: var(--primary);
-  background: var(--primary-pale); font-weight: 600;
-}
-.today-btn.on:hover { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+.date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
 
 /* ================= 顶栏「找日期」跳转面板 ================= */
 
 .jump-wrap { position: relative; display: flex; margin-left: 4px; }
-.jump-btn { display: flex; align-items: center; gap: 5px; }
 .jb-ico { font-size: 12px; line-height: 1; }
-.jump-btn:hover { color: var(--primary); border-color: var(--primary); }
-.jump-btn.on { background: var(--primary-pale); color: var(--primary); border-color: var(--primary); }
 
 .jump-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
@@ -1534,7 +1513,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 /* 去掉移动端点击时的灰色高亮方块 */
 * { -webkit-tap-highlight-color: transparent; }
 /* 禁掉双击缩放与双击滚动等待，让点击更跟手 */
-button, .nav-item, .tab, .ms-item, .jp-cell, .round-btn, .text-btn {
+button, .nav-item, .tab, .ms-item, .jp-cell {
   touch-action: manipulation;
 }
 /* 数字输入在 iOS 上默认有放大行为，16px 以下会强制放大页面 */
@@ -1550,21 +1529,19 @@ input, select, textarea { font-size: max(14px, 16px); }
   .tl-event:hover .ev-resize { opacity: .8; }
   .task-row::after { opacity: .4; }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
-  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--input); color: var(--text-2); }
   .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
   .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
   .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
-  .sidebar-footer .ghost-btn:hover, .today-btn.on:hover { background: none; color: inherit; }
+  .sidebar-footer .ghost-btn:hover { background: none; color: inherit; }
   .quick-add:hover { background: var(--primary); color: var(--on-primary); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
   .primary-btn:hover { transform: none; }
-  .today-btn.on:hover { background: var(--primary-pale); }
   .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
   .search-box:hover { border-color: var(--input); background: var(--panel-2); }
   .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
@@ -1722,8 +1699,8 @@ body.sheet-open .tab:active { background: none; }
 
   /* 触控目标太小，点不准。**一排控件一起放到 34px**（原先 36 / 34 / 34 三档），
      只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架 */
-  .round-btn { width: 34px; height: 34px; }
-  .text-btn, .view-switch button { height: 34px; }
+  .cal-subhead .date-nav .btn { height: 34px; }
+  .view-switch button { height: 34px; }
 
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
@@ -1829,7 +1806,6 @@ body.sheet-open .tab:active { background: none; }
   .view-title { font-size: 16px; }
   /* 日期组和视图切换可能还是挤，允许换行 */
   .cal-subhead .date-nav { flex-wrap: wrap; }
-  .today-btn { margin-left: 2px; }
   .list-group { margin-bottom: 15px; }
   .group-title { padding-bottom: 7px; }
   .row-meta { font-size: 11.5px; }
@@ -1909,7 +1885,6 @@ body.sheet-open .tab:active { background: none; }
   .topbar-right { gap: 8px; }
   /* 顶栏挤不下时先舍掉日期长文本，保住按钮本身 */
   .date-nav .date-range { display: none; }
-  .jump-btn { padding: 6px 9px; }
 }
 @media (max-width: 1000px) and (min-width: 901px) {
   .sidebar { width: 208px; flex-basis: 208px; }

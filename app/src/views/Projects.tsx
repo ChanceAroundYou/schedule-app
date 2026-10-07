@@ -172,7 +172,7 @@ export function ProjectsView({ state, onNew, onEdit, onNext }: {
     <div className="pj-wrap">
       <div className="pj-top">
         <h2 className="pj-h">项目</h2>
-        <Btn variant="ghost" className="text-btn" type="button" onClick={onNew}>＋ 新建项目</Btn>
+        <Btn variant="normal" size="sm" type="button" onClick={onNew}>＋ 新建项目</Btn>
       </div>
 
       {!list.length && (

@@ -67,7 +67,7 @@ export function TrashView({ state }: { state: LocalState }) {
                   </div>
                 </div>
                 <span className="row-actions">
-                  <Btn variant="chip" size="sm" data-act="restore" data-kind={it.kind} data-id={it.id}>还原</Btn>
+                  <Btn variant="normal" size="sm" data-act="restore" data-kind={it.kind} data-id={it.id}>还原</Btn>
                   <Btn
                     variant="danger"
                     size="sm"
