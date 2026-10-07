@@ -141,10 +141,6 @@ export function AiSettingsSheet({ open, onClose, onSaved }: {
               onChange={(e) => setKey(e.target.value)}
               placeholder={hasKey ? '已保存在服务器上（留空 = 不改）' : '不用 key 的服务留空即可'}
             />
-            <span className="ai-field-tip">
-              key 存在服务器上，跟你这个账号走，换设备不用重填。
-              <b> 它不会回显到浏览器</b>，所以这个框每次打开都是空的。
-            </span>
           </label>
 
           {err && <div className="ai-set-err">{err}</div>}

@@ -789,8 +789,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           {/* 功能区放在最前面 —— 它改的是导航本身，比配色更「结构性」 */}
           <NavCard state={state} />
 
-          <Card icon={<Palette size={14} />} title="外观"
-            hint="深浅那一档选「跟随系统」时会随系统的日夜切换自动变，不用手动改。">
+          <Card icon={<Palette size={14} />} title="外观">
             <div className="flex flex-col gap-3">
               <div>
                 <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">色板</div>
@@ -840,8 +839,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
       )}
 
       {tab === 'security' && (
-        <Card icon={<UserRound size={14} />} title="安全"
-          hint="备份是**合并**，不是覆盖：同 id 的会被覆盖，其余原样留着。">
+        <Card icon={<UserRound size={14} />} title="安全">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
             <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
@@ -850,10 +848,6 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
             <Btn variant="ghost" size="sm" onClick={onLogout}>
               <LogOut size={13} /> 退出登录
             </Btn>
-          </div>
-          <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
-            这个应用没有找回口令的路子（没有邮箱、没有手机、没有管理员），
-            改密码前请记得当前密码。退出登录后其他设备也需要重新登录。
           </div>
 
           <div className="mt-4 border-t border-[var(--border)] pt-3">

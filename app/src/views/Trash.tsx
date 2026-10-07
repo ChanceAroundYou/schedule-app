@@ -43,7 +43,6 @@ export function TrashView({ state }: { state: LocalState }) {
   return (
     <div className="list-view">
       <div className="trash-head">
-        <div className="trash-tip">删除的任务都在这里，随时可以还原。</div>
         <button className="danger-btn" data-act="empty-trash" data-count={items.length}>
           <Trash2 size={14} /> 清空垃圾箱
         </button>
