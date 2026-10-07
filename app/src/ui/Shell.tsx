@@ -14,15 +14,16 @@
  * `navBottom` 不能用「空则给默认值」的写法 —— 那会把用户主动拖出底部的
  * 垃圾箱又塞回去。必须区分 undefined（从未设置）与 []（有意为之）。
  *
- * ⚠️ 这两个字段**当前只读不写** —— 写入方（设置页里的排序）还没接上，
- *    见项目 CLAUDE.md 四、23。别以为「拖过一次就记住了」。
+ * 写入方在**设置页的「功能区」卡片**（ui/Settings.tsx）：底栏挑哪几项、
+ * 侧栏怎么排。这里只读。2026-10-06 重写时那两个字段一度变成死数据，
+ * 后来在设置页补回 —— 见项目 CLAUDE.md 四、23。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
-  MoreHorizontal, Plus, Search, Settings, Sun, Trash2, X, Clock,
+  MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock,
 } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -52,6 +53,7 @@ export const NAV: NavDef[] = [
   { key: 'projects', label: '项目', icon: <FolderKanban size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
   { key: 'done', label: '已完成', icon: <CheckCircle2 size={16} /> },
+  { key: 'ai', label: 'AI', icon: <Sparkles size={16} /> },
 ];
 
 export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Trash2 size={16} />, count: 'trash' };
@@ -384,7 +386,10 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'done') { title = '已完成'; range = ''; }
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
-  else if (ui.nav === 'settings') { title = '设置'; range = ''; }
+  else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
+  // 设置页的 tab 栏就是那一页的 header，顶栏不再写「设置」——
+  // 两行都写「设置」看起来像两个 header（用户报过）。
+  else if (ui.nav === 'settings') { title = ''; range = ''; }
   else if (ui.nav === 'calendar') {
     // 日期长文本归顶栏（就在这一行）—— 副header 只放控件，别把同一天写两遍
     const ws = D.weekStart(ui.cursor);
@@ -400,7 +405,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
     // 顶栏**不加** position / z-index / sticky，见文件头注释
     <header className="topbar">
       <div className="topbar-left">
-        <h1 className="view-title">{title}</h1>
+        {title && <h1 className="view-title">{title}</h1>}
         {!narrow && !!range && <span className="date-range">{range}</span>}
       </div>
 

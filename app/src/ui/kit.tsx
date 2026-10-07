@@ -50,7 +50,7 @@ export function Btn({ variant = 'ghost', size = 'md', className, ...rest }: BtnP
       type="button"
       {...rest}
       className={cx(
-        'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition',
+        'inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
         'disabled:cursor-not-allowed disabled:opacity-50',
         size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-9 px-3.5 text-sm',
         VARIANT[variant],
@@ -290,7 +290,7 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
       title={label}
       {...rest}
       className={cx(
-        'inline-flex h-8 w-8 items-center justify-center rounded-full transition',
+        'inline-flex h-8 w-8 items-center justify-center rounded-[var(--r-pill)] transition',
         'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
         'disabled:cursor-not-allowed disabled:opacity-40',
         className,

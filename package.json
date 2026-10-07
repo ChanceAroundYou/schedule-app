@@ -1,0 +1,13 @@
+{
+  "name": "schedule",
+  "private": true,
+  "version": "2.0.0",
+  "description": "日程清单后端。只在这里声明 AI 那一组依赖 —— 其余一律用 Node 标准库，见 CLAUDE.md 六、1。",
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test server/tests/api.test.js server/tests/migration.test.js server/tests/ai.test.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4"
+  }
+}

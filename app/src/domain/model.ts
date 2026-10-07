@@ -491,8 +491,12 @@ export function sortProjects(s: LocalState, list: Project[]): Project[] {
 
 /* --------------------------------------------------------------- 界面偏好 */
 
+// 加页面时这里必须一起加：normalizeUi 会把不在表里的 nav 兜回 'today'
+// （旧版的 nav === 'notes' 就是这么处理的），漏了的话「刷新一下跳到别的页」。
+// 另外 navOrder 也是照着这张表补全的，老用户本地存的那份顺序里没有新页 ——
+// 补在这里，他们不用清 localStorage 就能看见它。
 const NAV_ALL = [
-  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'done', 'trash', 'settings',
+  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'done', 'ai', 'trash', 'settings',
 ];
 
 /**

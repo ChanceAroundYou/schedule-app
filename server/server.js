@@ -27,11 +27,21 @@ const sync = require('./lib/sync');
 const calendars = require('./lib/calendars');
 const invites = require('./lib/invites');
 const rl = require('./lib/ratelimit');
+const aiSettings = require('./lib/ai/settings');
+const aiSessions = require('./lib/ai/sessions');
+const aiConfirm = require('./lib/ai/confirm');
+const aiMemory = require('./lib/ai/memory');
+const aiHistory = require('./lib/ai/history');
+const aiAuthorizations = require('./lib/ai/authorizations');
+const ai = require('./lib/ai');
 
 const DATA_DIR = process.env.SCHEDULE_DATA_DIR || path.join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 25692);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 16 * 1024 * 1024;   // 首次导入历史数据可能一次推几千条 op
+
+/** 一次问 AI 的字数上限。够写一大段话了，再长基本是粘错了东西 */
+const TEXT_MAX = 4000;
 
 /** 自助注册是开放的，给个上限，免得被刷成垃圾账户库。家庭场景用不到 200 */
 const MAX_USERS = Number(process.env.MAX_USERS || 200);
@@ -375,6 +385,114 @@ const handlers = {
       },
     };
   },
+
+  /* ---------------------------------------------------------------- AI */
+
+  /**
+   * 模型配置。**只回 hasKey，绝不回显 key** —— 见 lib/ai/settings.js。
+   * 读接口不限流：它既不烧额度、也不回答「这个密码对不对」。
+   */
+  'GET /api/ai/settings': (ctx, me) => aiSettings.read(me.user.id),
+
+  'PUT /api/ai/settings': (ctx, me) => aiSettings.update(me.user.id, ctx.body || {}),
+
+  /**
+   * 发一轮对话。**这个处理器自己写响应**（流式），所以返回 `{ raw: true }`
+   * 让路由层别再去 send()。见 lib/ai/sse.mjs 里的说明。
+   *
+   * 限流放在开流之前：开了流再报 429 的话，前端拿到的是一个 200 的流里
+   * 夹着一条错误，比直接 429 难处理得多。它烧的是用户的额度，必须限。
+   */
+  'POST /api/ai/chat': async (ctx, me) => {
+    const userId = me.user.id;
+    const limited = rl.hitBoth([`ai-chat:${userId}`], 30, 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
+    const text = String((ctx.body || {}).text || '').trim();
+    if (!text) return { status: 400, body: { error: '说点什么' } };
+    if (text.length > TEXT_MAX) return { status: 400, body: { error: `一次最多 ${TEXT_MAX} 字` } };
+
+    let mod;
+    try {
+      mod = await ai.load();
+    } catch (e) {
+      return { status: 503, body: { error: e.message } };
+    }
+    const { runChat, openStream, sendEvent, endStream, abortOnClose } = mod;
+
+    openStream(ctx.res);
+    // 用户关掉页面 / 点取消 → 把上游那一次请求也掐掉，别让它在后台继续烧
+    const ac = new AbortController();
+    abortOnClose(ctx.res, () => ac.abort());
+
+    try {
+      await runChat({
+        userId,
+        sessionId: ctx.body.sessionId,
+        text,
+        context: ctx.body.context,
+        emit: (e) => sendEvent(ctx.res, e),
+        signal: ac.signal,
+      });
+    } catch (e) {
+      // runChat 自己会兜住上游错误并 emit error 事件，走到这里说明是更外层的意外
+      console.error('[ai/chat]', e && e.stack ? e.stack : e);
+      sendEvent(ctx.res, { type: 'error', message: '服务器内部错误', code: 'server' });
+    } finally {
+      endStream(ctx.res);
+    }
+    return { raw: true };
+  },
+
+  /**
+   * 确认若干条提案 —— **AI 唯一真正写数据的地方**。
+   *
+   * 请求体只有 `{ ids }`，**没有一个可写字段**：要写什么按 id 从库里读回来，
+   * 权限也在这里重查一遍（提案生成到确认之间用户可能已经被降级 / 被移出）。
+   * 这两条的理由写在 lib/ai/confirm.js 的文件头。
+   *
+   * 限流放在写之前。确认本身不烧额度，但它一次能改几十条任务，
+   * 值得和 /chat 一个级别的保护。
+   */
+  'POST /api/ai/confirm': (ctx, me) => {
+    const userId = me.user.id;
+    const limited = rl.hitBoth([`ai-confirm:${userId}`], 60, 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+    return aiConfirm.confirm(userId, (ctx.body || {}).ids);
+  },
+
+  'GET /api/ai/sessions': (ctx, me) => aiSessions.list(me.user.id),
+
+  'GET /api/ai/sessions/:sessionId': (ctx, me) =>
+    aiSessions.one(me.user.id, ctx.params.sessionId),
+
+  'DELETE /api/ai/sessions/:sessionId': (ctx, me) =>
+    aiSessions.remove(me.user.id, ctx.params.sessionId),
+
+  /* ---- 记忆 ---- */
+
+  'GET /api/ai/memory': (ctx, me) => aiMemory.list(me.user.id),
+
+  'PUT /api/ai/memory/:id': (ctx, me) =>
+    aiMemory.update(me.user.id, ctx.params.id, ctx.body || {}),
+
+  'DELETE /api/ai/memory/:id': (ctx, me) =>
+    aiMemory.remove(me.user.id, ctx.params.id),
+
+  /* ---- 操作历史 ---- */
+
+  'GET /api/ai/history': (ctx, me) =>
+    aiHistory.list(me.user.id, {
+      aiOnly: ctx.query.aiOnly === '1' || ctx.query.aiOnly === 'true',
+      limit: ctx.query.limit,
+    }),
+
+  /* ---- 授权 ---- */
+
+  'GET /api/ai/authorizations': (ctx, me) => aiAuthorizations.read(me.user.id),
+
+  'PUT /api/ai/authorizations': (ctx, me) =>
+    aiAuthorizations.update(me.user.id, ctx.body || {}),
 };
 
 /* ---------------------------------------------------------------- 路由 */
@@ -467,11 +585,25 @@ function createServer() {
     }
 
     try {
-      const out = handlers[route.key]({ req, res, body, params: route.params }, me);
+      // await 是必须的：AI 那条对话路径是 async（它要 await 动态 import 的
+      // .mjs）。同步处理器 await 一个非 Promise 值没有代价。
+      const out = await handlers[route.key]({ req, res, body, params: route.params }, me);
+      // `{ raw: true }` = 处理器自己把响应写完了（SSE 那条路）。
+      // 这里必须**立刻返回**，再去 send() 就是写第二遍头，Node 会抛
+      // ERR_HTTP_HEADERS_SENT，而那时流已经发出去了，用户只看到对话断在半截。
+      if (out && out.raw) return undefined;
       return send(res, out.status, out.body);
     } catch (e) {
       // 不外泄堆栈：它可能带着库文件路径
       console.error(`[${route.key}]`, e && e.message ? e.message : e);
+      // 同上：SSE 已经开了流的话不能再 send()，只能在流里补一条错误
+      if (res.headersSent) {
+        try {
+          res.write(`data: ${JSON.stringify({ type: 'error', message: '服务器内部错误', code: 'server' })}\n\n`);
+          res.end();
+        } catch (_) { /* 连接已经没了 */ }
+        return undefined;
+      }
       return send(res, 500, { error: '服务器内部错误' });
     }
   });
@@ -487,6 +619,55 @@ function main() {
     try { db.pruneRevoked(); } catch (_) { /* 下次再说 */ }
   }, 6 * 3600 * 1000);
   timer.unref();
+
+  // 晚间汇报：每分钟检查一次，到点了就生成。
+  // 只在服务器上跑，不阻塞任何请求。
+  const reportTimer = setInterval(() => {
+    try {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const cur = `${hh}:${mm}`;
+
+      // 遍历所有开了晚间汇报的用户
+      const users = db.all('SELECT id FROM users');
+      for (const u of users) {
+        const auth = db.getAuthorizations(u.id);
+        if (!auth.eveningReportEnabled) continue;
+        if (auth.eveningReportTime !== cur) continue;
+
+        // 检查今天有没有用过应用
+        const calIds = db.calendarIdsFor(u.id);
+        if (!calIds.length) continue;
+        const placeholders = calIds.map(() => '?').join(',');
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const changes = db.get(
+          `SELECT COUNT(*) AS n FROM changes WHERE cal_id IN (${placeholders}) AND ts > ?`,
+          ...calIds, startOfToday.getTime(),
+        );
+        if (!changes || !Number(changes.n)) continue;
+
+        // 检查今天有没有已经生成过汇报
+        const sessions = db.listAiSessions(u.id, 50);
+        const reportSession = sessions.find((s) => s.title === '每日汇报');
+        if (reportSession) {
+          const updated = new Date(Number(reportSession.updated_at));
+          if (updated.toISOString().slice(0, 10) === now.toISOString().slice(0, 10)) continue;
+        }
+
+        // 生成汇报（在后台跑，不阻塞）
+        ai.load().then((mod) => {
+          mod.runEveningReport(u.id).catch((e) => {
+            console.error('[ai] 晚间汇报失败', e && e.message ? e.message : e);
+          });
+        }).catch(() => { /* 依赖没装，跳过 */ });
+      }
+    } catch (e) {
+      console.error('[ai] 晚间汇报检查失败', e && e.message ? e.message : e);
+    }
+  }, 60 * 1000);
+  reportTimer.unref();
 
   const server = createServer();
   server.listen(PORT, HOST, () => {

@@ -52,7 +52,7 @@ function Card({ icon, title, children, hint }: {
   icon: React.ReactNode; title: string; children: React.ReactNode; hint?: React.ReactNode;
 }) {
   return (
-    <section className={'mb-4 rounded-xl border p-4 ' + LINE}>
+    <section className={'mb-4 rounded-[var(--r-lg)] border p-4 ' + LINE}>
       <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold">
         <span className="text-[var(--text-3)]">{icon}</span> {title}
       </h2>
@@ -87,7 +87,7 @@ function Chips<K extends string>({ value, options, onPick, render }: {
             aria-pressed={on}
             onClick={() => onPick(k)}
             className={cx(
-              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition',
+              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
               on
                 ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
                 : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
@@ -107,22 +107,19 @@ function Chips<K extends string>({ value, options, onPick, render }: {
 /* ============================ 功能区自定义 ============================ */
 
 /**
- * 功能区自定义：底栏挑哪几项 + 侧栏怎么排。
+ * 功能区自定义：一个可拖拽 + 可打勾的胶囊列表。
  *
- * **移动端和桌面端都能拖拽**。窄屏（≤900px）显示底栏设置 + 可拖拽列表，
- * 宽屏显示侧栏设置 + 可拖拽列表。两段交叉着显示对谁都没用 —— 手机上永远
- * 看不到侧栏，电脑上永远看不到底栏，摆在一起只是让人多读一段与自己无关的
- * 设置。断点走 `useIsNarrow()`，与 Shell 的侧栏 / 底栏显隐是同一根线
- * （hooks.ts 的 `(max-width: 900px)`）。
+ * 每个胶囊一行：左边抓手、中间名字、右边打勾。**点一下打勾**（选中/取消），
+ * **拖一下排序**。选择和排序是同一件事的两面 —— 用户要的就是「这几项按这个
+ * 顺序排」，拆成两段反而要来回切。
  *
- * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的
- * （`ROW_SEL`、`data-untimed`、`rawLayout` 量原始布局、`shiftCells` 让位），
- * 套到一个 7 行的静态列表上属于杀鸡用牛刀 —— 而且它那套「按几何推列数」
- * 的假设在这里根本不成立。这里只要「拖到谁就跟谁换」，一个局部 HTML5
- * 拖拽就够。
+ * 拖拽两条路，按输入方式分开：
+ *  - 桌面端 HTML5 drag（`draggable` + onDragStart/Over/Drop/End）
+ *  - 移动端 pointer 通路，**只挂在抓手上**（`touch-none`）—— 抓手之外的区域
+ *    仍能正常滚动页面，不会「想滚页却拖动了顺序」。
  *
- * 拖拽期间改的是**本地 rows**，drop 时才写一次 `setUi` —— 每帧写盘的话
- * `persist()` 的防抖会被拖成一条长尾，而且中途松手会留下半个顺序。
+ * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的，
+ * 套到一个 7 行的静态列表上属于杀鸡用牛刀。
  */
 function NavCard({ state }: { state: LocalState }) {
   const ui = state.ui;
@@ -134,32 +131,31 @@ function NavCard({ state }: { state: LocalState }) {
   const [rows, setRows] = useState<string[]>(order);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
-  // 别处改了 navOrder（比如另一台设备同步来一份）就跟着变，别让用户
-  // 拖到一半发现列表自己重置了
   useEffect(() => setRows(order), [order]);
 
   const label = (k: string) => navDef(k).label;
 
-  const toggleTab = (k: string) => {
-    if (tabs.has(k)) {
-      // 底栏至少留 1 格 —— 空栏等于没有导航，用户会以为应用坏了
-      if (tabs.size <= 1) return;
-      store.setUi({ tabs: ui.tabs.filter((x) => x !== k) });
+  /** 选中口径跟着设备走：窄屏是底栏那几项，宽屏是侧栏下半区那几项 */
+  const isOn = (k: string) => (narrow ? tabs.has(k) : bottom.has(k));
+
+  const toggle = (k: string) => {
+    if (narrow) {
+      if (tabs.has(k)) {
+        if (tabs.size <= 1) return;
+        store.setUi({ tabs: ui.tabs.filter((x) => x !== k) });
+      } else {
+        if (tabs.size >= TAB_MAX) return;
+        store.setUi({ tabs: order.filter((x) => tabs.has(x) || x === k) });
+      }
     } else {
-      if (tabs.size >= TAB_MAX) return;
-      // 加进去时按 navOrder 排，不让它永远挂在末尾
-      store.setUi({ tabs: order.filter((x) => tabs.has(x) || x === k) });
+      const next = bottom.has(k)
+        ? ui.navBottom.filter((x) => x !== k)
+        : [...ui.navBottom, k];
+      store.setUi({ navBottom: next });
     }
   };
 
-  const toggleBottom = (k: string) => {
-    const next = bottom.has(k)
-      ? ui.navBottom.filter((x) => x !== k)
-      : [...ui.navBottom, k];
-    store.setUi({ navBottom: next });
-  };
-
-  /** 拖到 `k` 上：跟它换一格。换完被拖元素就在 k 的位置，继续拖下一个还会再换 */
+  /** 桌面端：拖到 `k` 上跟它换一格 */
   const onDragOver = (k: string) => (e: React.DragEvent) => {
     e.preventDefault();
     if (!dragKey || dragKey === k) return;
@@ -179,97 +175,96 @@ function NavCard({ state }: { state: LocalState }) {
     setOverKey(null);
   };
 
+  /* ---- 移动端：抓手上的 pointer 拖拽 ---- */
+  const touch = useRef<{ startY: number; from: number; moved: boolean } | null>(null);
+
+  const gripDown = (e: React.PointerEvent, idx: number) => {
+    if (e.pointerType === 'mouse') return;   // 鼠标走 HTML5 那条
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    touch.current = { startY: e.clientY, from: idx, moved: false };
+  };
+  const gripMove = (e: React.PointerEvent) => {
+    const t = touch.current;
+    if (!t) return;
+    if (!t.moved && Math.abs(e.clientY - t.startY) > 8) {
+      t.moved = true;
+      setDragKey(rows[t.from]);
+    }
+    if (!t.moved) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nav-row]');
+    const k = el?.getAttribute('data-nav-row');
+    if (!k) return;
+    const j = rows.indexOf(k);
+    if (j < 0 || j === t.from) return;
+    const next = rows.slice();
+    const [moved] = next.splice(t.from, 1);
+    next.splice(j, 0, moved);
+    setRows(next);
+    t.from = j;
+    setOverKey(k);
+  };
+  const gripUp = () => {
+    const t = touch.current;
+    touch.current = null;
+    if (t?.moved) endDrag();
+  };
+
   return (
     <Card icon={<PanelTop size={14} />} title="功能区"
       hint={narrow
-        ? '底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。下面可以拖拽排序。'
+        ? '底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。点一下打勾，拖抓手排序。'
         : '侧栏那列可以直接拖，也可以在这儿拖 —— 两边改的是同一份顺序。'}>
-      {narrow && (
-        /* 手机：显示底栏设置。侧栏在窄屏根本不渲染，摆出来只会让人困惑 */
-        <div className="mb-4">
-          <div className="mb-1.5 flex items-baseline justify-between">
-            <span className="text-[11.5px] text-[var(--text-3)]">底栏</span>
-            <span className="text-[11.5px] text-[var(--text-3)]">{tabs.size}/{TAB_MAX}</span>
-          </div>
-          {/*
-            按 navOrder 排，与侧栏一致 —— 用户在这儿挑的顺序就是他眼睛里
-            侧栏的顺序。用 Chips 那个组件不合适：它是单选（aria-pressed
-            恒为 false），这里是多选开关。
-          */}
-          <div className="flex flex-wrap gap-1.5">
-            {order.map((k) => {
-              const on = tabs.has(k);
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  data-tab={k}
-                  aria-pressed={on}
-                  onClick={() => toggleTab(k)}
-                  className={cx(
-                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition',
-                    on
-                      ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                      : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
-                  )}
-                >
-                  {on && <Check size={12} />}
-                  {label(k)}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {/* 拖拽排序列表：移动端和桌面端都显示 */}
-      <div>
-        <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
-          {narrow ? '顺序 · 拖拽排序' : '侧栏 · 拖拽排序'}
-        </div>
-        <ul className="flex flex-col gap-1">
-          {rows.map((k) => (
+      <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
+        {narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {rows.map((k, idx) => {
+          const on = isOn(k);
+          return (
             <li
               key={k}
               data-nav-row={k}
+              data-tab={narrow ? k : undefined}
+              role="button"
+              tabIndex={0}
+              aria-pressed={on}
               draggable
               onDragStart={(e) => {
                 setDragKey(k);
-                // Firefox 不给 dataTransfer 就完全不发起拖拽，必须塞点东西
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', k);
               }}
               onDragOver={onDragOver(k)}
               onDrop={(e) => { e.preventDefault(); endDrag(); }}
               onDragEnd={endDrag}
+              onClick={() => toggle(k)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(k); } }}
               className={cx(
-                'flex cursor-grab items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12.5px] active:cursor-grabbing',
+                'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-1.5 text-[12.5px] transition',
+                dragKey === k && 'opacity-40',
                 overKey === k && dragKey !== k
                   ? 'border-[var(--primary)] ' + LINE
-                  : 'text-[var(--text-2)] ' + LINE,
+                  : on
+                    ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+                    : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
               )}
             >
-              <GripVertical size={13} />
+              <span
+                className="shrink-0 cursor-grab touch-none text-[var(--text-3)]"
+                onPointerDown={(e) => gripDown(e, idx)}
+                onPointerMove={gripMove}
+                onPointerUp={gripUp}
+                onPointerCancel={gripUp}
+              >
+                <GripVertical size={13} />
+              </span>
               <span className="min-w-0 flex-1 truncate">{label(k)}</span>
-              {!narrow && (
-                <button
-                  type="button"
-                  data-bottom={k}
-                  aria-pressed={bottom.has(k)}
-                  onClick={() => toggleBottom(k)}
-                  className={cx(
-                    'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition',
-                    bottom.has(k)
-                      ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                      : 'text-[var(--text-3)] ' + HOVER + ' ' + LINE,
-                  )}
-                >
-                  底部
-                </button>
-              )}
+              {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
             </li>
-          ))}
-        </ul>
-      </div>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
@@ -481,7 +476,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
               data-cal={c.id}
               onClick={() => store.setActiveCal(c.id)}
               className={cx(
-                'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition',
+                'flex items-center gap-2 rounded-[var(--r-md)] px-3 py-2 text-left text-[13px] transition',
                 c.id === active
                   ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
                   : 'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
@@ -499,7 +494,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
         <button
           type="button"
           onClick={create}
-          className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed border-[var(--border)]
+          className="mt-2 flex items-center gap-1.5 rounded-[var(--r-md)] border border-dashed border-[var(--border)]
                      px-3 py-2 text-[12.5px] text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]"
         >
           <Plus size={13} /> 新建日程集
@@ -519,7 +514,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
               data-cal-name="1"
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-              className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
+              className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                          bg-transparent px-3 py-1.5 text-sm outline-none
                          focus:border-[var(--primary)] disabled:opacity-60"
             />
@@ -543,7 +538,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
           </div>
           <div className="flex flex-col gap-1.5">
             {members.map((m) => (
-              <div key={m.id} className="flex items-center gap-2 rounded-lg bg-[var(--panel-3)] px-2.5 py-1.5">
+              <div key={m.id} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] px-2.5 py-1.5">
                 <span className="shrink-0">
                   {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
                     : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
@@ -560,7 +555,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
                         await api.setRole(calId, m.id, e.target.value as Role);
                         toast('权限已更新');
                       })}
-                      className="rounded-md border border-[var(--input)] bg-transparent
+                      className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
                                  px-1.5 py-1 text-[12px] outline-none"
                     >
                       {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -607,14 +602,14 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
                 spellCheck={false}
                 onChange={(e) => setInviteName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-                className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
+                className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                            bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
               />
               <select
                 value={inviteRole}
                 aria-label="邀请的权限"
                 onChange={(e) => setInviteRole(e.target.value as Role)}
-                className="rounded-lg border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
+                className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
               >
                 {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
               </select>
@@ -665,7 +660,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
               type="button"
               disabled={isDefault}
               onClick={() => void remove()}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px]
+              className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
                          text-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:opacity-40"
             >
               <Trash2 size={13} /> 删除日程集
@@ -674,7 +669,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
             <button
               type="button"
               onClick={() => void leave()}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px]
+              className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
                          text-[var(--danger)] hover:bg-[var(--danger-soft)]"
             >
               <LogOut size={13} /> 退出日程集
@@ -695,13 +690,12 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
 
 /* ================================ 页面 ================================ */
 
-type SettingsTab = 'appearance' | 'account' | 'sync' | 'cals' | 'about';
+type SettingsTab = 'appearance' | 'security' | 'cals' | 'about';
 
 const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'appearance', label: '外观' },
-  { key: 'account', label: '账户安全' },
-  { key: 'sync', label: '同步备份' },
-  { key: 'cals', label: '日程集' },
+  { key: 'security', label: '安全' },
+  { key: 'cals', label: '日程' },
   { key: 'about', label: '关于' },
 ];
 
@@ -739,10 +733,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
 
   return (
     <div className="mx-auto w-full max-w-[620px] pb-6">
-      {/* 大 header + 小 tab */}
+      {/* tab 栏作为唯一 header */}
       <header className="mb-4">
-        <h1 className="mb-3 text-[18px] font-semibold">设置</h1>
-        <div className="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--panel-3)] p-1">
+        <div className="flex gap-1 rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--panel-3)] p-1">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -751,7 +744,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               aria-current={tab === t.key ? 'page' : undefined}
               onClick={() => setTab(t.key)}
               className={cx(
-                'flex-1 rounded-lg px-3 py-1.5 text-[13px] transition',
+                'flex-1 rounded-[var(--r-sm)] px-3 py-1.5 text-[13px] transition',
                 tab === t.key
                   ? 'bg-[var(--primary)] text-[var(--on-primary)] font-medium'
                   : 'text-[var(--text-2)] hover:bg-[var(--panel)]',
@@ -765,6 +758,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
 
       {tab === 'appearance' && (
         <>
+          {/* 功能区放在最前面 —— 它改的是导航本身，比配色更「结构性」 */}
+          <NavCard state={state} />
+
           <Card icon={<Palette size={14} />} title="外观"
             hint="深浅那一档选「跟随系统」时会随系统的日夜切换自动变，不用手动改。">
             <div className="flex flex-col gap-3">
@@ -812,58 +808,54 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               </div>
             </div>
           </Card>
-
-          {/* 功能区：底栏挑哪几项 + 侧栏怎么排。放在外观之后 —— 它改的是
-              导航本身，比配色更「结构性」，试完配色接着试它最自然 */}
-          <NavCard state={state} />
         </>
       )}
 
-      {tab === 'account' && (
-        <Card icon={<UserRound size={14} />} title="账户安全">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
-            <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
-              <KeyRound size={13} /> 修改密码
-            </Btn>
-            <Btn variant="ghost" size="sm" onClick={onLogout}>
-              <LogOut size={13} /> 退出登录
-            </Btn>
-          </div>
-          <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
-            这个应用没有找回口令的路子（没有邮箱、没有手机、没有管理员），
-            改密码前请记得当前密码。退出登录后其他设备也需要重新登录。
-          </div>
-        </Card>
-      )}
+      {tab === 'security' && (
+        <>
+          <Card icon={<UserRound size={14} />} title="账户">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
+              <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
+                <KeyRound size={13} /> 修改密码
+              </Btn>
+              <Btn variant="ghost" size="sm" onClick={onLogout}>
+                <LogOut size={13} /> 退出登录
+              </Btn>
+            </div>
+            <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
+              这个应用没有找回口令的路子（没有邮箱、没有手机、没有管理员），
+              改密码前请记得当前密码。退出登录后其他设备也需要重新登录。
+            </div>
+          </Card>
 
-      {tab === 'sync' && (
-        <Card icon={<Database size={14} />} title="同步与备份"
-          hint="备份是**合并**，不是覆盖：同 id 的会被覆盖，其余原样留着。">
-          <div className="flex flex-wrap gap-2">
-            <Btn variant="chip" size="sm" onClick={onExport}>
-              <Upload size={13} /> 导出备份
-            </Btn>
-            <Btn variant="chip" size="sm" onClick={() => fileRef.current?.click()}>
-              <Download size={13} /> 导入备份
-            </Btn>
-            <Btn variant="ghost" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>
-              <Trash2 size={13} /> 清空本机副本
-            </Btn>
-            <input
-              ref={fileRef} type="file" accept="application/json" hidden
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
-            />
-          </div>
-          <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12.5px]">
-            <dt className="text-[var(--text-3)]">网络</dt>
-            <dd>{online ? '在线' : '离线，改动先存在本机'}</dd>
-            <dt className="text-[var(--text-3)]">待上传</dt>
-            <dd>{state.outbox.length ? `${state.outbox.length} 条` : '没有待上传的改动'}</dd>
-            <dt className="text-[var(--text-3)]">已拉到</dt>
-            <dd>#{state.cursor}</dd>
-          </div>
-        </Card>
+          <Card icon={<Database size={14} />} title="同步与备份"
+            hint="备份是**合并**，不是覆盖：同 id 的会被覆盖，其余原样留着。">
+            <div className="flex flex-wrap gap-2">
+              <Btn variant="chip" size="sm" onClick={onExport}>
+                <Upload size={13} /> 导出备份
+              </Btn>
+              <Btn variant="chip" size="sm" onClick={() => fileRef.current?.click()}>
+                <Download size={13} /> 导入备份
+              </Btn>
+              <Btn variant="ghost" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>
+                <Trash2 size={13} /> 清空本机副本
+              </Btn>
+              <input
+                ref={fileRef} type="file" accept="application/json" hidden
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12.5px]">
+              <dt className="text-[var(--text-3)]">网络</dt>
+              <dd>{online ? '在线' : '离线，改动先存在本机'}</dd>
+              <dt className="text-[var(--text-3)]">待上传</dt>
+              <dd>{state.outbox.length ? `${state.outbox.length} 条` : '没有待上传的改动'}</dd>
+              <dt className="text-[var(--text-3)]">已拉到</dt>
+              <dd>#{state.cursor}</dd>
+            </div>
+          </Card>
+        </>
       )}
 
       {tab === 'cals' && <CalsTab state={state} onInvites={onInvites} />}
@@ -873,21 +865,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12.5px]">
             <dt className="text-[var(--text-3)]">版本</dt>
             <dd data-about="version">{VERSION}</dd>
-            <dt className="text-[var(--text-3)]">网络</dt>
-            <dd data-about="net">{online ? '在线' : '离线，改动先存在本机'}</dd>
-            <dt className="text-[var(--text-3)]">同步</dt>
-            <dd data-about="sync">
-              {state.outbox.length ? `待上传 ${state.outbox.length} 条` : '没有待上传的改动'}
-              <span className="text-[var(--text-3)]"> · 已拉到 #{state.cursor}</span>
-            </dd>
+            <dt className="text-[var(--text-3)]">技术栈</dt>
+            <dd>React + Node + SQLite</dd>
           </dl>
-          {/*
-            设置页不显示「管理员」三个字 —— 这个应用没有管理员（见 CLAUDE.md 五）。
-            下面这句说的是**日程集里的创建者**，那是另一回事。
-          */}
-          <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
-            数据在上面的服务器上，本机留一份离线副本，两边自动对齐。
-          </div>
         </Card>
       )}
 

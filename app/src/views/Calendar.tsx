@@ -156,23 +156,17 @@ function WeekView({ state, iso }: { state: LocalState; iso: string }) {
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
         <div className="week-head-cols">
-          {days.map((d, i) => {
-            const load = dayLoad(state, d);
-            const lv = loadLevel(load.mins);
-            return (
-              <button
-                className={'week-head-cell' + (d === today ? ' today' : '') + (i >= 5 ? ' weekend' : '')}
-                key={d}
-                data-jump={d}
-                title={'跳到 ' + D.fmtMD(d)}
-              >
-                <span className="wh-week">周{D.weekdayShort(d)}</span>
-                <span className="wh-day">{D.parseISO(d).getDate()}</span>
-                <span className={'wh-load lv' + lv}><i style={{ width: `${Math.min(100, load.mins / 480 * 100)}%` }} /></span>
-                <span className="wh-count">{tasksOn(state, d).length}</span>
-              </button>
-            );
-          })}
+          {days.map((d, i) => (
+            <button
+              className={'week-head-cell' + (d === today ? ' today' : '') + (i >= 5 ? ' weekend' : '')}
+              key={d}
+              data-jump={d}
+              title={'跳到 ' + D.fmtMD(d)}
+            >
+              <span className="wh-week">周{D.weekdayShort(d)}</span>
+              <span className="wh-day">{D.parseISO(d).getDate()}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -309,6 +303,27 @@ function availHeight(el: HTMLElement): number {
 }
 
 /**
+ * 窄屏下周视图 7 列要横滑，把「今天 / 选中的那天」摆到可视区中间 ——
+ * 一屏只看得见 3 天，不定位的话用户根本不知道左右还有。
+ *
+ * 周一和周日**居中不了**（一边没有列），算出来的 scrollLeft 会越界，
+ * clamp 之后自然贴边，所以不需要特判。
+ */
+function centerWeekDay(g: HTMLElement, iso: string) {
+  const cols = g.querySelector<HTMLElement>('.week-cols');
+  if (!cols || !cols.children.length) return;
+  const first = cols.children[0] as HTMLElement;
+  const colW = first.getBoundingClientRect().width;
+  if (!colW) return;
+  // 第一列左缘到滚动内容左缘的距离 = 左侧刻度列宽。刻度列是 sticky 的，
+  // 它的视觉位置就是内容位置，所以直接减两个 rect 的 left 即可
+  const gutter = first.getBoundingClientRect().left - g.getBoundingClientRect().left;
+  const idx = (Number(D.parseISO(iso).getDay()) + 6) % 7;   // 周一 = 0
+  const want = gutter + idx * colW - (g.clientWidth - colW) / 2;
+  g.scrollLeft = Math.max(0, Math.min(want, g.scrollWidth - g.clientWidth));
+}
+
+/**
  * 视图尺寸 + 滚动位置。
  *
  * 滚动位置必须在**渲染阶段**读：React 是先跑完整棵树的 render、再统一改 DOM，
@@ -320,6 +335,7 @@ export function useViewLayout(
   key: string,
   nav: string,
   view: string,
+  cursor: string,
 ): void {
   const saved = useRef({ scroll: 0, week: 0, key: '' });
   const el = contentRef.current;
@@ -378,15 +394,16 @@ export function useViewLayout(
     } else if (nav === 'calendar' && view === 'week') {
       host.scrollTop = 0;
       const g = host.querySelector<HTMLElement>('.week-view');
+      if (!g) return;
       // 早上别一上来就是半夜：9 点前先定位到 7:00
-      if (g) {
-        const anchor = D.nowMin() < 7 * 60 ? 7 * 60 : D.nowMin();
-        g.scrollTop = Math.max(0, anchor / 1440 * DAY_H - 40);
-      }
+      const anchor = D.nowMin() < 7 * 60 ? 7 * 60 : D.nowMin();
+      g.scrollTop = Math.max(0, anchor / 1440 * DAY_H - 40);
+      // 窄屏 7 列要横滑：把用户关心那天放在中间（只在真能横滑时才做）
+      if (g.scrollWidth > g.clientWidth + 1) centerWeekDay(g, cursor);
     } else {
       host.scrollTop = 0;
     }
-  }, [contentRef, key, nav, view]);
+  }, [contentRef, key, nav, view, cursor]);
 }
 
 /* ============================== 分发 ============================== */

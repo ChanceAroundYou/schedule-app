@@ -44,7 +44,7 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 
 | | 前端 | 后端 |
 |---|---|---|
-| 是什么 | Vite 构建产物 | Node 22 + node:sqlite，零 npm 依赖 |
+| 是什么 | Vite 构建产物 | Node 22 + node:sqlite，**只引 AI 那一组依赖**（见 1.3） |
 | 谁在伺服 | nginx（容器） | systemd user 服务 |
 | 端口 | 无（nginx 直读文件） | 127.0.0.1:25692 |
 | 改完怎么生效 | `npm run build`，刷新即生效 | `systemctl --user restart schedule-backend` |
@@ -79,10 +79,51 @@ systemctl --user start schedule-backend
 |---|---|
 | `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码 + `dist/`（本项目仓库） |
 | `/home/xiaokubao/.local/share/schedule` | **运行时数据：SQLite 库 + 密钥** |
+| `/home/xiaokubao/.local/share/schedule-deps` | **后端依赖（112 MB）**，见 1.3 |
 | `/home/xiaokubao/docker/nginx` | nginx 的 compose + `conf.d/` + `certs/` |
 
 > `/home/xiaokubao/family` 是指向 `/mnt/fnos/family` 的软链，同一份文件，
 > 两个路径都能开。compose 与 systemd 单元里用的都是软链那条。
+
+### 1.3 后端依赖装在本机磁盘（2026-10-06 起）
+
+**后端不再是零依赖了。** AI 那一组（`@earendil-works/pi-agent-core` +
+`@earendil-works/pi-ai`）是唯一允许的例外 —— 用户明确推翻了原来的「零依赖」约束，
+理由是与其手搓 agent 的工具循环，不如接生态里现成的框架。完整的边界写在
+`CLAUDE.md` 六、1：**只许引 AI 这一组，加别的仍然要先问。**
+
+依赖**不落在工程目录里**，因为那是 CIFS/SMB（理由同 1.2：NAS 上成千上万个小文件
+正是丢文件的高风险场景）。装到本机磁盘，工程根目录放一个软链接指过去：
+
+```bash
+# 首次安装（或换机器）
+mkdir -p ~/.local/share/schedule-deps
+npm install --prefix ~/.local/share/schedule-deps \
+    @earendil-works/pi-agent-core@1.0.4 @earendil-works/pi-ai@1.0.4
+ln -s ~/.local/share/schedule-deps/node_modules <工程根>/node_modules
+
+# 核对：应当打印出 pi-ai 子路径 ✓
+#（别去 resolve package.json —— pi-ai 的 exports 没导出它，会报
+#  ERR_PACKAGE_PATH_NOT_EXPORTED，那个报错不代表依赖没装好）
+node --input-type=module -e "import('@earendil-works/pi-ai/api/openai-completions').then(() => console.log('pi-ai 子路径 ✓'))"
+```
+
+> **要重启后端**才会用上新装的依赖：`systemctl --user restart schedule-backend`。
+
+> **`node_modules` 在 `.gitignore` 里，软链不进版本库** ——
+> 每份新 checkout（包括 `.worktree/` 下的）都要自己补一次这个链接。
+> 没补的话服务**照样起得来**（`lib/ai/index.js` 是惰性 import），
+> 只是 AI 页会报「依赖没装好」；
+> 而**确认提案那条路不受影响** —— `lib/ai/confirm.js` 是 CJS 直接 require、
+> 一条都不碰 pi（见 `CLAUDE.md` 二、AI）。
+
+> 为什么是软链而不是 `NODE_PATH`：两者都能让 `require` 找到依赖，软链的好处是
+> 不用改 systemd 单元、也不挑进程从哪个目录起。
+
+| 依赖锁 | 值 | 为什么 |
+|---|---|---|
+| 版本写法 | 精确版本（`1.0.4`），**不用 `^`** | 两个包都还没到 1.x 的稳定期，API 会动 |
+| 调用点 | 只在 `server/lib/ai/chat.mjs` | 升版时只改这一个文件 |
 
 ---
 
@@ -103,9 +144,29 @@ npm run build          # 产物直接写进 ../dist/
 ```bash
 cd /mnt/fnos/family/星星包/coding/日程管理
 node server/tests/api.test.js          # 先跑测试
+node server/tests/migration.test.js    # 动过 db.js 就一定跑这个
 systemctl --user restart schedule-backend
 journalctl --user -u schedule-backend -f   # 看有没有起来
 ```
+
+> **依赖变了要另外做**（新增/升级 `package.json` 里那组），见 1.3 ——
+> 装完不用重装服务，`restart` 一次就够。
+
+> ⚠️ **库结构升版时先备份。** `server/lib/db.js` 的 `user_version` 对不上时：
+> 空库 → 推倒重建；**有账户的库 → 逐版执行 `MIGRATIONS`**（只 CREATE / ALTER，
+> 绝不 DROP、绝不改已有数据）。所以从旧版升上来的第一次启动会**自动改库**：
+>
+> ```bash
+> systemctl --user stop schedule-backend
+> cp -a ~/.local/share/schedule ~/schedule-backup-$(date +%Y%m%d)   # 见 1.2
+> systemctl --user start schedule-backend
+> journalctl --user -u schedule-backend -n 30     # 迁移失败会 throw，服务起不来
+> ```
+>
+> `user_version` 对不上**又没有对应迁移**时会直接 `throw` 拒绝启动（保留的这层
+> 保护是刻意的）。真遇上就先别动，别去手改库里的版本号。
+> 迁移测试在 `server/tests/migration.test.js` —— 那是全项目唯一「跑错会吃掉
+> 用户数据」的代码，值得比别的测试更啰嗦。
 
 > **非交互式 shell 里 `systemctl --user` 会报「Failed to connect to user scope bus」。**
 > 因为它找不到会话总线。加上这两行就行：
@@ -282,6 +343,7 @@ location ^~ /schedule/ {                                  # 应用本体
 | `/schedule/assets/*` | **`expires 1y` + `immutable`** | Vite 产物带内容哈希（`index-B9em1qd9.js`），内容一变文件名就变 |
 | `/schedule/index.html` | **`no-cache`** | 文件名固定，必须每次回源校验，否则用户被钉在旧版本上 |
 | `/schedule/api/*` | **`no-store`** | 带 `Authorization` 的响应被中间层存下来就是事故 |
+| `/schedule/api/ai/chat` | `no-store` **+ 关 buffering** | 单独一块，见 4.4 |
 
 > 旧版（纯静态那一代）**整套**都得 `no-cache`，因为那时候 `app.js` /
 > `styles.css` 的文件名固定、没有哈希。现在只有 `index.html` 需要了 ——
@@ -289,6 +351,42 @@ location ^~ /schedule/ {                                  # 应用本体
 
 > `no-cache` 不是「不缓存」。它仍然缓存，只是每次用前必须回源校验。
 > `no-store` 才是完全不存。
+
+### 4.4 AI 对话那条单独开一块（SSE）
+
+`/schedule/api/ai/chat` 走 SSE 流式返回。父块 `^~ /schedule/api/` 的两个默认值
+会**把流掐死**，所以必须另起一块（`deploy/schedule.conf` 里紧跟在父块后面）：
+
+```nginx
+location ^~ /schedule/api/ai/chat {
+    proxy_pass http://127.0.0.1:25692/api/ai/chat;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    proxy_set_header Connection "";
+    add_header Cache-Control "no-store" always;
+}
+```
+
+| 那一条 | 不写会怎样 |
+|---|---|
+| `proxy_read_timeout 300s` | **实测过**：父块的 30s 会让上游静默超过 30 秒的那一轮直接 **504**（造了个静默 35 秒的上游，走父块配置 30.03s 就 504；改 300s 后 35.04s 正常拿到数据）。一轮带工具调用的问答很常见这种静默 |
+| `add_header …` | **实测过**：**不写就没有 `no-store`**。`add_header` 只在「同一层没写过」时才继承上一层的 —— `^~ /schedule/api/ai/chat` 和 `^~ /schedule/api/` 是**同层的两个 location**，不是父子，所以父块那条根本传不过来 |
+| `proxy_http_version 1.1` + `Connection ""` | keep-alive 会让 nginx 攒着等下一段，头几段迟迟不出去。**没用独立用例量过**，是 SSE 的标准写法 |
+| `proxy_buffering off` | **这条要老实说**：在本机 nginx 1.29.8 上，开着和关着**量不出差别**（4 条事件隔 1 秒，两种配置都是逐块在 1 秒上下到达）。所以它不是「不写就完全没流式」。留着是因为它在 payload 变大、或链路里开了 gzip 时会咬人 —— 属于标准写法的预防，不是本机验出来的必要项 |
+
+> 验的时候是这么做的：在 nginx 容器里**另起一个测试实例**（`nginx -c` 指一份
+> `/tmp` 下的完整配置，独立 `pid` 文件），把 `^~ /schedule/api/ai/chat` 和
+> `^~ /schedule/api/` 两块的前缀原样抄过去、`proxy_pass` 指向两个不同的回声端口，
+> 看到 `/schedule/api/health` 打到 25901、`/schedule/api/ai/chat` 打到 25902 ——
+> **最长前缀胜出这条是证过的**，不是照抄文档。全程没碰线上那份 conf。
+>
+> 前缀更长所以这块赢，两块都是 `^~`，先后顺序无所谓。
+> 改完照 2.3 走：`cp` → `docker exec nginx nginx -t` → `nginx -s reload`。
 
 ### 4.2 `/schedule` 无尾斜杠必须显式 301
 

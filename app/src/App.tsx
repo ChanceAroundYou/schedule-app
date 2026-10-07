@@ -29,6 +29,7 @@ import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
 import { ProjectSheet } from './ui/ProjectSheet.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
+import { AiPanel } from './ui/AiPanel.tsx';
 import { CalendarView, useViewLayout } from './views/Calendar.tsx';
 import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
@@ -86,7 +87,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
   const key = `${state.ui.nav}|${state.ui.view}|${state.ui.cursor}`;
-  useViewLayout(contentRef, key, state.ui.nav, state.ui.view);
+  useViewLayout(contentRef, key, state.ui.nav, state.ui.view, state.ui.cursor);
 
   /* -------- 拖放 -------- */
   // 触屏「提起后原地松手」= 长按本来的意思，弹操作层。打卡行没有操作层，忽略
@@ -614,6 +615,13 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       case 'habits':
         body = <HabitsView state={scoped} onAdd={(t) => { store.addHabit(t); toast('已添加打卡项：' + t); }} />;
         break;
+      // AI 是跨集的，跟今天 / 逾期 / 待办箱一组：问的是「我这周排得怎么样」，
+      // 按集切开的话它只看得见当前那个集，答出来的「空」是假的空。
+      // 它自己按 `sync.snapshot(userId)` 读，权限仍然是服务器那一关说了算。
+      //
+      // onConfirmed 是「用户点了确认」之后要做的：把 AI 写进来的 op 拉回来。
+      // 不传的话卡片照样能点，只是界面要等下一次轮询才看见新任务。
+      case 'ai': body = <AiPanel state={state} onConfirmed={() => void engine.syncNow()} />; break;
       default: body = <CalendarView state={scoped} />;
     }
   }
@@ -735,7 +743,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 function navLabel(nav: string): string {
   const m: Record<string, string> = {
     inbox: '待办箱', today: '今天', overdue: '逾期',
-    calendar: '日程', habits: '打卡', done: '已完成', trash: '垃圾箱',
+    calendar: '日程', habits: '打卡', done: '已完成', trash: '垃圾箱', ai: 'AI',
   };
   return m[nav] || '任务列表';
 }

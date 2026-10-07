@@ -1,4 +1,14 @@
-# 日程清单后端 —— Node 22 + node:sqlite，零 npm 依赖，监听 127.0.0.1:25692。
+# 日程清单后端 —— Node 22 + node:sqlite，监听 127.0.0.1:25692。
+#
+# ⚠️ **不再是零依赖。** AI 那一组（@earendil-works/pi-*）是唯一允许的例外，
+#    见 CLAUDE.md 六、1。依赖装在**本机磁盘**上，靠工程根目录一个软链接指过去：
+#
+#      node_modules -> /home/xiaokubao/.local/share/schedule-deps/node_modules
+#
+#    所以这份 checkout 必须先补上那个链接，服务才 import 得到 pi。
+#    没补的话服务**照样起得来**（ai/index.js 是惰性 import）—— 只是 AI 页会报
+#    「依赖没装好」。确认提案那条路走 CJS 直接 require、不碰 pi，不受影响。
+#    `node_modules` 在 .gitignore 里，链接不进版本库，**每份 checkout 都要自己补**。
 #
 # 部署到：~/.config/systemd/user/schedule-backend.service
 #   cp deploy/schedule-backend.service ~/.config/systemd/user/

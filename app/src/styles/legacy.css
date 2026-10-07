@@ -3,7 +3,7 @@
 
    (a) 每一档对**每一种底色**的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。
        --text-2 / --text-3 不是装饰色，在 10.5–12px 的**有信息量**文字上用了
-       38 处（时间轴刻度 .tl-label、.ev-time、.m-note、.wh-count、.cell-load、
+       38 处（时间轴刻度 .tl-label、.ev-time、.m-note、.cell-load、
        .od-date、.drawer-meta、.tip…）。旧值 #949bab 只有 2.79:1，看着「淡雅」，
        实际读不清。
 
@@ -373,17 +373,23 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* 顶栏空间不够时，别把按钮里的字挤成竖排 —— 宁可先藏日期文字 */
 .date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
-/* 30px 见方，跟旁边的 .text-btn 同高。里面只有一个图标，所以用 flex 居中 ——
+/* 副header 那排控件（上一/下一个 · 今 · 找日期 · 日周月）**必须同高、同字号、
+   同圆角、同描边**。它们并排站在一行里，任何一个高一点或字大一点，
+   整行看着就是歪的。
+
+   高度写死 30px，不用 padding 推：12.5px 的 `line-height: normal` 各浏览器
+   差 1~2px，光靠 padding 永远对不齐。里面只有一个图标，所以用 flex 居中 ——
    靠 `line-height: 1` 加内联 SVG 的对齐会偏 1~2px，看着就是「没居中」。 */
 .round-btn {
   width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
   border: var(--border-w) solid var(--input); background: none;
-  border-radius: var(--r-md); color: var(--text-2);
+  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s, border-color .14s;
 }
 .round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
 .text-btn {
-  padding: 6px 12px; border: var(--border-w) solid var(--input); background: none;
+  height: 30px; padding: 0 10px; display: inline-flex; align-items: center;
+  border: var(--border-w) solid var(--input); background: none;
   border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s, border-color .14s;
 }
@@ -472,11 +478,16 @@ b, strong { font-variant-numeric: tabular-nums; }
 .search-ico { font-size: 12px; opacity: .6; }
 .clear-search { border: none; background: none; color: var(--text-3); font-size: 12px; }
 
+/* 日周月是**分段控件**（一个圆角框里三格），跟旁边三个独立描边按钮不是同一种
+   东西，但高度 / 字号 / 圆角 / 字色必须一致 —— 否则并排看着就是两套。
+   描边由容器提供，所以格子自己不带 border，改用右边框分段。 */
 .view-switch { display: flex; border: var(--border-w) solid var(--input); border-radius: var(--r-md); overflow: hidden; }
 .view-switch button {
-  padding: 6px 14px; border: none; background: none; color: var(--text-2); font-size: 12.5px;
+  height: 30px; padding: 0 12px; border: none; background: none; color: var(--text-2);
+  font-size: 12.5px; display: inline-flex; align-items: center;
   transition: background .14s, color .14s;
 }
+.view-switch button + button { border-left: var(--border-w) solid var(--input); }
 .view-switch button:hover { background: var(--panel-3); }
 .view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
@@ -630,16 +641,10 @@ b, strong { font-variant-numeric: tabular-nums; }
   font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.2;
   min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
 }
-.week-head-cell.today .wh-day {
-  background: var(--primary); color: var(--on-primary); border-radius: 50%;
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .3);
-}
-.wh-load { display: block; width: 46px; max-width: 60%; height: 3px; background: var(--border); border-radius: var(--r-xs); overflow: hidden; }
-.wh-load i { display: block; height: 100%; background: var(--primary); border-radius: var(--r-xs); transition: width .3s ease; }
-.wh-load.lv2 i { background: var(--warn); }
-.wh-load.lv3 i { background: var(--danger); }
-.wh-count { font-size: 10.5px; color: var(--text-3); line-height: 1; }
+/* 今天**只把数字染成主色**，不要加圆形底色：那一格会凭空高出 9px，
+   同一行里其他日期的数字看着就是没对齐。「今天是哪天」由下面
+   .week-col.today 的 --primary-pale 整列淡底负责，表头不重复做。 */
+.week-head-cell.today .wh-day { color: var(--primary); }
 
 /* 时间网格本体：左刻度 + 右 7 列，和表头、未定时行共用外层滚动容器 */
 .week-grid {
@@ -678,10 +683,14 @@ b, strong { font-variant-numeric: tabular-nums; }
 .week-col.today { background-color: var(--primary-pale); }
 
 /* 未定时任务：独立一行，跟表头一起吸顶，
-   横向列宽和下面的时间网格完全共用一条基线 */
+   横向列宽和下面的时间网格完全共用一条基线。
+   **上下都要有分割线**：只有下面那条时，这一行和上面的周几表头融成一体，
+   看不出「未定时」是独立的一块。 */
 .week-un-row {
   flex: 0 0 auto; display: grid; grid-template-columns: 46px minmax(0, 1fr);
-  background: var(--panel); border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   position: sticky; top: var(--week-head-h, 79px); z-index: 5;
   box-shadow: var(--shadow-sticky);
 }
@@ -1665,10 +1674,10 @@ body.sheet-open .tab:active { background: none; }
   }
   .cal-subhead .view-switch { flex: 0 0 auto; }
 
-  /* 触控目标太小，点不准 */
-  .round-btn { width: 36px; height: 36px; }
-  .text-btn { padding: 8px 12px; }
-  .view-switch button { padding: 8px 15px; }
+  /* 触控目标太小，点不准。**一排控件一起放到 34px**（原先 36 / 34 / 34 三档），
+     只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架 */
+  .round-btn { width: 34px; height: 34px; }
+  .text-btn, .view-switch button { height: 34px; }
 
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
@@ -1755,7 +1764,6 @@ body.sheet-open .tab:active { background: none; }
 /* 640px 以下：手机常见的窄屏，进一步收 */
 @media (max-width: 640px) {
   .view-title { font-size: 16px; }
-  .cal-subhead .view-switch button { padding: 8px 12px; }
   /* 日期组和视图切换可能还是挤，允许换行 */
   .cal-subhead .date-nav { flex-wrap: wrap; }
   .today-btn { margin-left: 2px; }
@@ -1780,6 +1788,11 @@ body.sheet-open .tab:active { background: none; }
     overscroll-behavior-x: contain;
   }
   .week-head, .week-un-row, .week-grid { min-width: 0; }
+  /* 表头与未定时行是**吸顶**的，它们的不透明背景必须盖住整条滚动宽度。
+     可作为 flex 项时它们只有容器那么宽（≈一屏），右边三四列的头部会透出
+     下面时间网格的刻度线 —— 看着就是「表头只画了一半」。
+     `max-content` 让背景跟着内容走（列宽有 min-width 兜底，不会缩没）。 */
+  .week-head, .week-un-row { width: max-content; }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
     grid-template-columns: 44px minmax(0, 1fr);
@@ -1797,7 +1810,6 @@ body.sheet-open .tab:active { background: none; }
   .wk-hour span { left: 2px; text-align: left; width: 40px; }
   .week-head-cell { padding: 7px 2px 5px; }
   .wh-day { font-size: 15px; min-width: 24px; }
-  .week-head-cell.today .wh-day { width: 24px; height: 24px; }
   .wk-event { padding: 3px 5px; }
   .wk-title { font-size: 11.5px; }
   .wk-time { font-size: 10px; }
@@ -1839,7 +1851,6 @@ body.sheet-open .tab:active { background: none; }
 @media (max-width: 1000px) and (min-width: 901px) {
   .sidebar { width: 208px; flex-basis: 208px; }
   .week-head-cell, .month-head-cell { font-size: 11px; }
-  .wh-load { width: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1855,3 +1866,25 @@ body.sheet-open .tab:active { background: none; }
     animation-iteration-count: infinite !important;
   }
 }
+/* ================= 焦点环 =================
+   一条统一定义，**不要再散着写**。
+
+   为什么必须和 --input 一起改：以前每处 `:focus` 只把描边染成 --primary，
+   **不新增任何像素** —— 那时前后对比是 3.73 / 3.64，刚好过 WCAG 2.2 SC 2.4.11
+   要的 3:1。但 --input 一提到 3:1，这个对比就掉到 1.45 / 1.48。
+   **两件事是耦合的，只改一件会把另一件踩烂。**
+
+   现在改成画一圈**新增**的 2px --primary 外环：那些像素未聚焦时是底色、
+   聚焦时是 --primary，5.11（亮）/ 5.57（暗），且不依赖底色是什么。
+   各处原来那句「聚焦时描边染成 --primary」保留不动 —— 环 + 变色叠加才是
+   常见做法（Material 3 的文本框、shadcn 的 :focus-visible 都是这样）。
+
+   用 :focus-visible 而不是 :focus：文本框在鼠标点入时也会命中它（浏览器自带
+   的判断），按钮则只在键盘走到时命中 —— 鼠标点按钮不该闪一圈蓝。
+   放在文件最末是为了压过各处零散的 `outline: none`（同特异度后写的赢）。 */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* 这个容器自己是 overflow: hidden，外环会被裁掉，所以改成画在里面 */
+.view-switch > *:focus-visible { outline-offset: -2px; }
