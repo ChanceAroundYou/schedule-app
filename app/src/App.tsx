@@ -490,7 +490,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);
-  }, [shift, nav, actId, openId, moreOpen, jumpOpen]);
+  }, [shift, nav, actId, openId, moreOpen, jumpOpen, searchOpen]);
 
   /* -------- 导出 / 导入 -------- */
   const exportBackup = useCallback(() => {
@@ -619,6 +619,12 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     }
   }
 
+  // 搜索词只有一个写入方（顶栏那个框 / 浮条）。用 useCallback 定住身份，
+  // 否则 useSearchValue 里那个 effect 会每渲染跑一遍（它的依赖里有 onSearch）。
+  const onSearch = useCallback((kw: string) => {
+    if (kw !== store.get().ui.search) store.setUi({ search: kw });
+  }, []);
+
   return (
     <Shell
       state={state}
@@ -641,7 +647,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
             narrow={narrow}
             searchOpen={searchOpen}
             setSearchOpen={setSearchOpen}
-            onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
+            onSearch={onSearch}
           />
           {state.ui.nav === 'calendar' && (
             <CalSubheader

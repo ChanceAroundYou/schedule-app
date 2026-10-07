@@ -319,6 +319,16 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
     atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
   }
 
+  // 日期长文本（原先在顶栏，随副header一起搬过来）。粒度跟着视图走：
+  // 日 = 具体某天；周 = 这一周的起止；月 = 第几周（满屏六行时比「哪个月」有用）
+  let range = D.fmtFull(ui.cursor);
+  if (ui.view === 'week') {
+    const s = D.weekStart(ui.cursor);
+    range = D.fmtMD(s) + ' – ' + D.fmtMD(D.addDays(s, 6));
+  } else if (ui.view === 'month') {
+    range = '第 ' + D.weekOfMonth(ui.cursor) + ' 周';
+  }
+
   return (
     <div className="cal-subhead">
       <div className="date-nav">
@@ -333,7 +343,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
         >{atToday ? '今天' : '回到今天'}</button>
-        <span className="date-range">{D.fmtFull(ui.cursor)}</span>
+        <span className="date-range">{range}</span>
         <div className="jump-wrap">
           <button
             className={'text-btn jump-btn' + (jump ? ' on' : '')}
@@ -374,7 +384,8 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
 
   // 标题写**具体日期 / 年月**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
   // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
-  // 月视图的 range 是「第 N 周」—— 满屏六行时，知道自己在第几周比知道月份有用
+  // 日程页的日期长文本（日 = 某天 / 周 = 起止 / 月 = 第 N 周）在副header里，
+  // 它就在下面一行 —— 顶栏别再写一遍，那是「两行都在报同一个日期」。
   let title = '今天';
   let range = D.fmtFull(D.today());
   if (ui.nav === 'inbox') { title = '待办箱'; range = '没有日期的事先放这儿'; }
@@ -384,17 +395,11 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
-    if (ui.view === 'day') {
-      title = D.fmtMD(ui.cursor);
-      range = D.fmtFull(ui.cursor);
-    } else if (ui.view === 'week') {
-      const s = D.weekStart(ui.cursor);
-      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
-      range = D.fmtMD(s) + ' – ' + D.fmtMD(D.addDays(s, 6));
-    } else {
-      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
-      range = '第 ' + D.weekOfMonth(ui.cursor) + ' 周';
-    }
+    // 日期长文本归副header（就在下面一行）—— 顶栏只留标题，别把同一天写两遍
+    title = ui.view === 'day'
+      ? D.fmtMD(ui.cursor)
+      : D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+    range = '';
   }
 
   return (
@@ -402,7 +407,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
     <header className="topbar">
       <div className="topbar-left">
         <h1 className="view-title">{title}</h1>
-        {!narrow && <span className="date-range">{range}</span>}
+        {!narrow && !!range && <span className="date-range">{range}</span>}
       </div>
 
       <div className="topbar-right">

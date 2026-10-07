@@ -1311,6 +1311,45 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 >
 > 这两条都在 `legacy.css` 里各留了就地注释，别当成漏改。
 
+### 顶栏一行 + 日程副header（2026-10-07）
+
+用户报的是「移动端 header 挤成好几行、暗色按钮多余、搜索框到处都是」，
+日程页还要「整体重新设计简化」。落成了三件事：
+
+**1. 顶栏（`.topbar`）在所有端都是一行** —— 标题 + 搜索 + 同步状态。
+窄屏原先被 `legacy.css` 改成 `flex-direction: column`，而第二行里的
+`date-nav` 自己还会 `flex-wrap`，实际是**三行**。现在统一 `row`。
+顶栏**照旧不许加 `position` / `z-index` / `sticky`**（见四、13）。
+
+**2. 日程页的控件搬进副header**（`ui/Shell.tsx` 的 `CalSubheader`）：
+`‹ › / 今天 / 日期长文本 / 找日期` + `日|周|月`，只在 `nav === 'calendar'`
+时渲染，紧贴顶栏下面一行（`.cal-subhead`）。
+
+> **日期长文本只在副header 出现一次。** 顶栏原先也写一遍，于是桌面日程页
+> 「2026年10月7日 周三」在相邻两行各报一次。粒度跟着视图走：
+> 日 = 某天 · 周 = 这一周的起止 · 月 = 第 N 周。
+> `browser-smoke.mjs` 第十七节数着 `.date-range` 的个数（宽屏日程页应当 == 1）。
+
+**3. 搜索框窄屏收成一个图标 + 点开的浮条**（`SearchPop`），宽屏仍是常驻输入框。
+两者共用 `SearchInput` 与 `useSearchValue`（180ms 防抖）；浮条照抄 `JumpPop`
+的 `position: relative` 包裹 + `useOutsideClose` 那一套，不引新机制。
+**主题按钮不在顶栏**，入口只有设置页的外观卡（`.topbar` 里连 `onTheme` 都没有）。
+
+两条接线上的坑，都锁在 `browser-smoke.mjs` 第十七节：
+
+- **`onSearch` 必须是 `useCallback`。** `useSearchValue` 的 effect 依赖里有它，
+  传内联箭头（每次渲染换一个身份）会让那个 effect 每渲染跑一遍。
+- **Esc 那个键盘 effect 的依赖数组别漏项。** `searchOpen` 漏过一次，症状是
+  「浮条开着按 Esc 关不掉」—— 闭包里读到的值永远停在挂载那一刻，而开浮条
+  不会改动数组里其余任何一项，effect 根本不重跑。探针验过它有牙：
+  把 `searchOpen` 摘掉重跑，会**中断在「Esc 关掉了搜索浮条」那一步**。
+
+> **「视图切换选中态没有提示」是个真 bug，不是没设计。** 按钮的类名是 `.on`
+> （`Shell.tsx`），CSS 规则却写的是 `.view-switch button.active` —— 两者不匹配，
+> 选中态样式**从未生效过**。现在 `legacy.css` 两处都改成了 `.on`
+> （`:hover` 那条也要跟着改，否则按下时高亮会消失）。
+> 这是「类名与选择器对不上」的典型：**改类名时全仓搜一遍**，别只改写的那一处。
+
 ### 快速添加：窄屏一个浮动 `+`，日期 / 时间分两层（2026-10-07）
 
 **窄屏（≤900px）默认收起成右下角一个浮动 `+`，点开才展开横条、再点收起（图标变 `×`）。**

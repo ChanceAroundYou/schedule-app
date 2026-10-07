@@ -1610,6 +1610,19 @@ try {
   };
   await reloadAs(true, '窄屏模式下底栏渲染出来了');
 
+  // 窄屏顶栏是「标题 + 搜索图标 + 状态」，搜索框收成点开的小浮条（2026-10-07
+  // 顶栏重构）。这一小节顺带锁住 Esc 那一层 —— `searchOpen` 原先漏在键盘
+  // effect 的依赖数组之外，于是闭包里读到的永远是 false：浮条开着按 Esc 关不掉。
+  // 它必须**靠 CDP 派发**，因为要的就是「按真实焦点送一个 Escape 进 document」。
+  ok(await evalJs(page, `return !document.querySelector('.topbar .search-box');`),
+    '窄屏顶栏不摆常驻搜索框，只留图标');
+  ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
+    '窄屏顶栏有搜索图标');
+  await waitFor(page, `!!document.querySelector('.search-pop input')`, '搜索浮条弹出来了');
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await waitFor(page, `document.querySelector('.search-pop') ? null : 1`, 'Esc 关掉了搜索浮条');
+
   const tabsNow = () => evalJs(page, `
     return [...document.querySelectorAll('.tabbar .tab')].map((x) => x.textContent.replace(/\\d+/g, '').trim());
   `);
@@ -1655,6 +1668,15 @@ try {
 
   /* ---------- 半段二：宽屏只显示侧栏设置 ---------- */
   await reloadAs(false, '宽屏侧栏渲染出来了');
+  ok(await evalJs(page, `return !!document.querySelector('.topbar .search-box input');`),
+    '宽屏顶栏仍是常驻搜索框（只有窄屏才收成图标）');
+  // 日程页的日期长文本只该出现一次 —— 在副header 里。顶栏原来也写一遍，
+  // 于是「10月7日」在相邻两行各出现一次（这次重构顺手去掉的那份重复）
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('.cal-subhead')`, '宽屏日程副header渲染出来');
+  ok(await evalJs(page, `return document.querySelectorAll('.date-range').length;`) === 1,
+    '日程页的日期长文本只出现一次，实际 '
+    + await evalJs(page, `return document.querySelectorAll('.date-range').length;`));
   await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
   await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的侧栏列表');
   ok(await evalJs(page, `return !document.querySelector('[data-tab]');`),
