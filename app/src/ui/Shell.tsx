@@ -712,39 +712,57 @@ export function QuickAdd({ state, onSubmit }: {
     }
   }, [expanded]);
 
-  /* 点空白收起（需求 7 / 8）—— **两级，而且必须在同一个 handler 里**：
+  /* 点外面收起 —— **两级，而且必须在同一个 handler 里**：
      面板开着就先收面板、横条留着；面板没开才收横条。
      分成两处挂会打架：两个都是 document 上的 capture 监听，谁先跑只看注册
      顺序，而面板又是横条的 DOM 子节点，「点在面板里」在两边都成立，
      必然有一边误判（先收横条的话，用户点空白想收面板却把整个输入框也收了）。
      横条与 + / × 里面的点击一律放行，交给各自的 onClick。
 
-     需求 2：点击外部关闭**选择框**后，阻止 click 冒泡到 #content，
-     否则会触发日视图空白处的「新建任务」。用 justClosed 标记，
-     click handler 里检查并 stopPropagation。
+     收的时候**顺手把这记 click 吞掉**（justClosed + capture 阶段的
+     stopPropagation）—— 不吞的话，点日视图空白会先收起横条、再顺手新建
+     一条空任务（App 的委托挂在 #content 上，而 click 是从 document 往下
+     走的，所以这里挡得住）。三条规矩：
+
+     1. 输入框开着、点空白 → 关上，**不触发空白处的事件**；
+     2. 顶栏 / 底栏是例外 —— 跟横条内部一样处理：**不收、也不吞**，点击照常
+        落到内容上（「可以直接被点到内容」）。当「空白」处理的话，点一下搜索键
+        会顺手把正在打字的横条收掉，那不是用户要的；
+     3. 时间面板开着 → **点哪儿都只关面板**，顶栏 / 底栏也不例外
+        （所以第 2 条那个例外只在前面的分支之后才轮到）。
+
      **只在真实 mousedown（e.isTrusted）时设置 justClosed** —— 合成事件
      （测试的 closeWhen()）只关面板，不该阻止后续 click。 */
   useEffect(() => {
     if (!expanded) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (barRef.current?.contains(t)) return;
-      if (whenOpen) {
+      if (barRef.current?.contains(t)) return;   // 横条 / 圆钮 / 面板内部
+      if (whenOpen) {                            // 规矩 3
         setWhenOpen(false);
         if (e.isTrusted) justClosed.current = true;
         return;
       }
       // 宽屏没有 FAB，横条是常驻的，点空白只该收面板，不该把输入框收掉
-      if (narrow) closeBar();
+      if (!narrow) return;
+      // 规矩 2：顶栏 / 底栏不算「空白」—— 跟横条内部一样，不收、也不吞
+      if ((t as HTMLElement).closest?.('.topbar, .tabbar')) return;
+      closeBar();
+      if (e.isTrusted) justClosed.current = true;   // 规矩 1
     };
     const onClick = (e: MouseEvent) => {
       if (!justClosed.current) return;
       justClosed.current = false;
       e.stopPropagation();
     };
+    // 上一手势若没配上 click（比如在窗口外松手），标记会留在 true 上，
+    // 下一记 click 就被白吞一次。pointerdown 一律先复位 —— 它总在 mousedown 前。
+    const onPointerDown = () => { justClosed.current = false; };
+    document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('mousedown', onDown, true);
     document.addEventListener('click', onClick, true);
     return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('mousedown', onDown, true);
       document.removeEventListener('click', onClick, true);
     };

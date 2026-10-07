@@ -2485,6 +2485,96 @@ try {
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
     '横条收起之后圆钮又变回 +');
 
+  /* ---- 点外面收起时，这记 click 要**吞掉**；顶栏 / 底栏例外（需求 9）----
+
+     三条规矩：
+       1. 输入框开着、点空白 → 关上，且空白处自己的事件**不触发**。
+          不吞的话，点日视图空白会顺手新建一条空任务 —— 而 App 的委托挂在
+          `#content` 上，click 是从 document 往下走的，capture 阶段拦得住。
+       2. 顶栏 / 底栏是例外：上面的按钮要能**直接点到**（这记 click 放行）。
+       3. 时间面板开着 → **点哪儿都只关面板**，顶栏 / 底栏也不例外。
+
+     这三条只有**真实**事件才走得到（`justClosed` 只在 `e.isTrusted` 时设），
+     所以这里不用 `clickEl`（它派发的是合成 click），改走 CDP 的
+     `Input.dispatchMouseEvent` —— 和真手点走同一条路。 */
+  const centerOf = (sel) => evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  `);
+  const realClick = async (at) => {
+    const base = { x: at.x, y: at.y, button: 'left', clickCount: 1 };
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...base });
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+  };
+  // 在 #content 里找一个**真的空白**落点：不在任务行、横条、按钮上
+  const blankPoint = () => evalJs(page, `
+    const zone = document.querySelector('#content');
+    if (!zone) return null;
+    const r = zone.getBoundingClientRect();
+    for (let iy = 0; iy < 12; iy++) {
+      for (let ix = 0; ix < 5; ix++) {
+        const x = Math.round(r.left + r.width * (0.1 + ix * 0.2));
+        const y = Math.round(r.top + r.height * (0.05 + iy * 0.08));
+        if (x < 2 || y < 2 || x > innerWidth - 2 || y > innerHeight - 2) continue;
+        const el = document.elementFromPoint(x, y);
+        if (!el || !zone.contains(el)) continue;
+        if (el.closest('.task-el, .habit-row, .fast-add, button, a, input, textarea, label, svg')) continue;
+        return { x, y };
+      }
+    }
+    return null;
+  `);
+  // #content 上的 capture 探针：委托那层到底有没有收到这记 click
+  await evalJs(page, `
+    window.__c = [];
+    document.querySelector('#content').addEventListener('click', () => window.__c.push(1), true);
+    return true;
+  `);
+
+  // 规矩 1
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '展开横条（规矩 1）', 8000);
+  const pt1 = await blankPoint();
+  ok(!!pt1, '今天页找得到一个真空白落点（不在任务行 / 横条 / 控件上），实际 ' + JSON.stringify(pt1));
+  await evalJs(page, `window.__c = []; return 1;`);
+  await realClick(pt1);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '点空白收起横条（规矩 1）', 8000);
+  ok((await evalJs(page, `return window.__c.length;`)) === 0,
+    '规矩 1：这记 click 被吞掉了，没走到 #content 的委托 —— 否则日视图空白处会新建一条空任务');
+
+  // 规矩 2：横条开着，顶栏的搜索键照样能**直接**点开，而且横条不收
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '再展开横条（规矩 2）', 8000);
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.topbar .search-pop') ? 1 : null`,
+    '规矩 2：横条开着，点顶栏搜索键也能打开搜索框', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
+    '规矩 2：顶栏当例外 —— 这一下既没被吞（搜索框开了），也没把横条收掉');
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.topbar .search-pop') ? null : 1`, '收起搜索框', 8000);
+
+  // 规矩 3：面板开着时，顶栏也不再是例外
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开时间面板（规矩 3）', 8000);
+  await evalJs(page, `window.__c = []; return 1;`);
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '规矩 3：点顶栏先把面板收掉', 8000);
+  const r3 = await evalJs(page, `return {
+    c: window.__c.length,
+    pop: !!document.querySelector('.topbar .search-pop'),
+    open: !!document.querySelector('.fast-add.open'),
+  };`);
+  ok(r3.pop === false, '规矩 3：顶栏的搜索**没有**被点开 —— 面板开着时它也在例外之外');
+  ok(r3.c === 0, '规矩 3：这记 click 同样被吞掉（没走到 #content 的委托），实际 ' + r3.c);
+  ok(r3.open === true, '规矩 3：只收面板，横条留着');
+
+  // 收干净：横条回到收起态，接下面那串动画断言
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '收尾：横条收起', 8000);
+
   // 需求 3：关闭动画 —— 点击 FAB 后 `.closing` class 立即出现，
   // `fastPopOut` 动画播放 180ms，期间内容还可见（不压扁），
   // 动画结束后 `.open` 才移除、内容 display:none。
