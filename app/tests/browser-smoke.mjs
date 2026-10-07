@@ -211,9 +211,8 @@ async function key(page, k, code, vk) {
 async function quickAdd(page, text) {
   const n = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
   await evalJs(page, `
-    const inp = document.querySelector('.fast-add input');
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    set.call(inp, ${JSON.stringify(text)});
+    const inp = document.querySelector('.fast-add textarea');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(inp, ${JSON.stringify(text)});
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return true;
@@ -634,7 +633,7 @@ try {
      顺序上放在拖拽两节之后：这一节要往待办箱里加一条自己的任务，
      放到第八节前面会把它那句「三条任务按添加顺序排」污染掉。 */
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
-  await waitFor(page, `!!document.querySelector('.fast-add input')`, '待办箱能快速添加');
+  await waitFor(page, `!!document.querySelector('.fast-add textarea')`, '待办箱能快速添加');
   // 现在还写得进去（是 editor），先在**共享的那个集**里留下一条，
   // 后面降成只读才有一条现成的可以点
   await quickAdd(page, '共享的事');
@@ -699,7 +698,7 @@ try {
   `, '切回自己的日程集（共享那个现在改不动）', 8000);
 
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
-  await waitFor(page, `!!document.querySelector('.fast-add input')`, '待办箱能快速添加');
+  await waitFor(page, `!!document.querySelector('.fast-add textarea')`, '待办箱能快速添加');
   const MINE = '会撞车的任务';
   await quickAdd(page, MINE);
   /* **不能加完就立刻读 localStorage**：persist 有防抖，这一瞬间落盘的还是上一版
@@ -1058,8 +1057,8 @@ try {
   // 「有时间、没日期」的任务，哪个日视图都不会把它画上时间轴（下方就会一直
   // 等不到方块）。日程页的 defaultDate 是 ui.cursor，正好是今天。
   await evalJs(page, `
-    const inp = document.querySelector('.fast-add input');
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const inp = document.querySelector('.fast-add textarea');
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
     set.call(inp, '9:00 微调试试');
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -1247,7 +1246,7 @@ try {
   // 先把光标放到一个真输入框里当「原来那个元素」。合成的 pointerdown 不会移
   // 焦点（浏览器只对受信任的 mousedown 做默认聚焦），所以点抽屉之前它还在 ——
   // 正好用来验「关掉之后还回原处」。
-  const RESTORE = '.fast-add input';
+  const RESTORE = '.fast-add textarea';
   ok(await evalJs(page, `
     const el = document.querySelector(${JSON.stringify(RESTORE)});
     if (!el) return 'missing';
@@ -1386,12 +1385,21 @@ try {
   await clickEl(page, `document.querySelector('.today-btn')`);
   await new Promise((r) => setTimeout(r, 150));
 
+  /* 快速添加那个框现在是 `<textarea>`（需求 2：默认一行、多了自己撑开），
+     所以 value 的 setter 得从 HTMLTextAreaElement 上取 ——
+     拿 HTMLInputElement 那个调 textarea 会 "Illegal invocation"。
+     下面几处共用这一段，别再各自写死 HTMLInputElement。 */
+  const SETTER = `(el, v) => {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
+      : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }`;
+
   const setText = (sel, v) => evalJs(page, `
     const el = document.querySelector(${JSON.stringify(sel)});
     if (!el) return 'missing';
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    set.call(el, ${JSON.stringify(v)});
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    (${SETTER})(el, ${JSON.stringify(v)});
     return 'ok';
   `);
 
@@ -1512,11 +1520,27 @@ try {
       name + ' 层打开', 8000);
   };
 
+  /* 面板里**没有出口按钮**了（需求 7）：点面板外面就收。
+     注意这条只在**宽屏**下是「点空白 = 收面板」；窄屏是两级
+     （先收面板、再收横条），那一节单独测。 */
+  const closeWhen = async () => {
+    await evalJs(page, `
+      const t = document.querySelector('#content') || document.body;
+      t.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      return 1;
+    `);
+    await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点空白收起面板', 8000);
+  };
+
   // 表盘：比抽屉里那个小一号（198 而不是 246），且在面板里居中
   const dial = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
     const f = pop.querySelector('.cp-face').getBoundingClientRect();
     const w = pop.querySelector('.wp-clock').getBoundingClientRect();
+    const ampm = pop.querySelector('.cp-ampm').getBoundingClientRect();
+    const apm = pop.querySelector('.cp-apm').getBoundingClientRect();
+    const now = pop.querySelector('.cp-now').getBoundingClientRect();
+    const pm = [...pop.querySelectorAll('.cp-ap')].find((b) => b.textContent.trim() === '下午').getBoundingClientRect();
     return {
       size: Math.round(f.width),
       left: +(f.left - w.left).toFixed(1),
@@ -1525,16 +1549,29 @@ try {
       ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
       nowParent: pop.querySelector('.cp-now').parentElement.className,
       nowText: pop.querySelector('.cp-now').textContent.trim(),
+      // 大号时间显示**整块没了**（需求 4）
+      hasDisplay: !!pop.querySelector('.cp-display'),
+      // 上午 / 下午那一组的中心 vs 整行的中心：居中就该是 0（需求 5）
+      apmOff: +((((apm.left + apm.right) / 2) - ((ampm.left + ampm.right) / 2))).toFixed(1),
+      // 「现在」在下午右边多少（需求 5）
+      nowGap: +(now.left - pm.right).toFixed(1),
+      dot: pop.querySelector('.cp-dot') ? pop.querySelector('.cp-dot').textContent.trim() : null,
     };
   `);
   ok(dial.size === 198, '面板里的表盘比抽屉里那个小一号，实际 ' + dial.size + 'px');
   ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
   ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
-  // 「现在」摆在时间显示行里（需求 4）：它拨的就是左边那两个数，
-  // 离得近才像同一个控件。原先它孤零零挂在表盘下面，和「清除时间」并排 ——
-  // 两个都长得像出口，但一个改值、一个清值，完全不是一类东西
-  ok(dial.nowParent === 'cp-display', '「现在」在时间显示行里、不在表盘下面，实际 ' + JSON.stringify(dial.nowParent));
+  // 大号时间显示去掉了（需求 4）：生效时间已经写在横条那个按钮上，
+  // 这个面板只有 234px 宽、表盘占掉 198，再摆两个 27px 的数字纯属占地方
+  ok(!dial.hasDisplay, '面板里那个大号的时间显示整块去掉了');
+  // 「现在」挪到下午的**右侧**（需求 5），但不能把上午 / 下午那一组挤偏 ——
+  // 写成三个 flex 子元素就会一起居中、整组左移，所以它走的是绝对定位
+  ok(dial.nowParent === 'cp-ampm', '「现在」在上午 / 下午那一行里，实际 ' + JSON.stringify(dial.nowParent));
   ok(dial.nowText === '现在', '「现在」两个字还在，实际 ' + JSON.stringify(dial.nowText));
+  ok(dial.nowGap > 0, '「现在」在下午的右边，实际间距 ' + dial.nowGap);
+  ok(Math.abs(dial.apmOff) < 1,
+    '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
+  ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
   ok(Math.abs(dial.left - dial.right) < 1,
     '表盘在面板里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right);
 
@@ -1548,9 +1585,10 @@ try {
   ok(await evalJs(page, `return !document.querySelector('.when-pop .cp-tip');`),
     '表盘下面没有「选小时（12 在顶部）」这类提示文字');
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
-  // 选完小时自动进分钟档 —— 提示文字没了，改看显示行上哪个数是 active
-  const mode = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-display .cp-cell')].map((c) => c.classList.contains('active') ? 'active' : '-').join(',');`);
-  ok(mode === '-,active', '选完小时自动进分钟档（分钟那个数变成 active），实际 ' + JSON.stringify(mode));
+  // 选完小时自动进分钟档 —— 提示文字没了，改看表盘正中心写的是「时」还是「分」
+  //（那个点同时是切换键，见需求 4：显示行删了之后总得有个地方切圈）
+  const mode = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
+  ok(mode === '分', '选完小时自动进分钟档（中心那个点变成「分」），实际 ' + JSON.stringify(mode));
   const minNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
   ok(minNums === '60,5,10,15,20,25,30,35,40,45,50,55',
     '分钟那圈写 60,5,…,55（顶端 60 就是 0 分），实际 ' + minNums);
@@ -1562,11 +1600,20 @@ try {
 
   // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格。
   // 面板刚自己收起了，先重新打开（openLayer 会连时间层一起打开）。
-  // 注意还要点一下表盘上的**小时格**切回小时档 —— 刚才选完 15 已经自动跳到分钟档了，
-  // 分钟那圈里根本没有「12」这一格（标签是 60,5,…,55）
+  // **面板关掉时 ClockBody 是卸载的**，所以重开之后表盘回到小时圈
+  //（`mode` 的初值是 'h'）—— 不用再像以前那样点一下「切回小时档」。
   await openLayer('time');
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
-  await clickEl(page, `document.querySelector('.when-pop .cp-display .cp-cell')`);
+  const fresh = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
+  ok(fresh === '时', '面板重开之后表盘回到小时圈，实际 ' + JSON.stringify(fresh));
+  // 中心那个点真的能切圈 —— 大号时间显示删掉之后（需求 4）它是**唯一**的切换入口，
+  // 所以这一条得自己走一遍，不能靠「反正重开就是小时圈」蒙过去
+  await clickEl(page, `document.querySelector('.when-pop .cp-dot')`);
+  ok(await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`) === '分',
+    '点表盘正中心能切到分钟圈');
+  await clickEl(page, `document.querySelector('.when-pop .cp-dot')`);
+  const backToHour = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
+  ok(backToHour === '时', '再点一下切回小时圈，实际 ' + JSON.stringify(backToHour));
   const amNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
   ok(amNums === '12,1,2,3,4,5,6,7,8,9,10,11',
     '上午那圈还是 12,1,…,11（和下午那圈正好对照），实际 ' + amNums);
@@ -1592,14 +1639,13 @@ try {
   ok(live.d === null && live.t === '00:30',
     '待办箱没有日期 → 按钮上只有第二行 00:30，实际 ' + JSON.stringify(live));
 
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '收起')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「收起」收起面板', 8000);
+  await closeWhen();
 
   // 时间要真跟着任务落库 —— 只断言按钮是「选中了但没带上」的假通过
   const n0 = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
-  await setText('.fast-add input', '转盘定时');
+  await setText('.fast-add textarea', '转盘定时');
   await evalJs(page, `
-    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.querySelector('.fast-add textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return 1;
   `);
   await waitFor(page, `document.querySelectorAll('[data-scope="inbox"] .task-el').length > ${n0}`, '带时间的任务出现', 8000);
@@ -1713,9 +1759,9 @@ try {
     '按钮上日期那行和时间那行字体完全一样，实际 ' + JSON.stringify(twoLines));
 
   const n1 = await evalJs(page, `return document.querySelectorAll('[data-scope^="day:"] .task-el').length;`);
-  await setText('.fast-add input', '两层一起');
+  await setText('.fast-add textarea', '两层一起');
   await evalJs(page, `
-    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.querySelector('.fast-add textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return 1;
   `);
   await waitFor(page, `document.querySelectorAll('[data-scope^="day:"] .task-el').length > ${n1}`, '带日期时间的任务出现', 8000);
@@ -1737,15 +1783,26 @@ try {
   // 「不设置」现在拆成两个、贴着各自标题行右边，文案跟着状态走。
   await openWhen();
   const acts = await evalJs(page, `
-    return [...document.querySelectorAll('.when-pop .wp-row')].map((r) => ({
-      layer: r.querySelector('.wp-head').dataset.layer,
-      act: r.querySelector('.wp-act').textContent.trim(),
-    }));
+    return [...document.querySelectorAll('.when-pop .wp-row')].map((r) => {
+      const act = r.querySelector('.wp-act').getBoundingClientRect();
+      const cv = r.querySelector('.wp-cv').getBoundingClientRect();
+      return {
+        layer: r.querySelector('.wp-head').dataset.layer,
+        act: r.querySelector('.wp-act').textContent.trim(),
+        // 「清空 / 跳过」在箭头**左边**（需求 6）：动作排在开合前面
+        actLeftOfArrow: act.right <= cv.left + 0.5,
+      };
+    });
   `);
   // 日期是「今天」页的**默认值** —— 它也算「有值」，所以那行写「清空」；
   // 时间没值，那行写「跳过」
   ok(acts.map((a) => a.act).join(',') === '清空,跳过',
     '有值那行写「清空」、没值那行写「跳过」（tab 默认的日期也算有值），实际 ' + JSON.stringify(acts));
+  ok(acts.every((a) => a.actLeftOfArrow),
+    '「清空 / 跳过」在开合箭头**左边**（需求 6），实际 ' + JSON.stringify(acts.map((a) => a.actLeftOfArrow)));
+  // 面板里没有出口按钮了（需求 7）：点外面就收
+  ok(await evalJs(page, `return !document.querySelector('.when-pop .wp-foot');`),
+    '面板底部那个「收起」整块去掉了（需求 7）');
 
   // 「跳过」不是死按钮：时间行没值，点它 = 没什么可跳的了 → 收起面板
   await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-row')].find((r) => r.querySelector('.wp-head').dataset.layer === 'time').querySelector('.wp-act')`);
@@ -1763,12 +1820,11 @@ try {
   `);
   ok(actAfter === '跳过,跳过', '清空之后那行改写成「跳过」，实际 ' + JSON.stringify(actAfter));
   // 「清空」刻意**不关**面板（多半是想重选），这里手动收起，免得它挡住下面
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '收起')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「收起」收起面板', 8000);
+  await closeWhen();
 
-  await setText('.fast-add input', '不设置那条');
+  await setText('.fast-add textarea', '不设置那条');
   await evalJs(page, `
-    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.querySelector('.fast-add textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return 1;
   `);
   const made3 = await waitFor(page, `
@@ -1782,10 +1838,10 @@ try {
     '「不设置」压过了「今天」页的默认日期，日期与时间都空，实际 ' + JSON.stringify(made3));
 
   /* ---- 5. 占位符不随 tab 变（需求 1B） ---- */
-  const phToday = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  const phToday = await evalJs(page, `return document.querySelector('.fast-add textarea').placeholder;`);
   await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
   await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切回待办箱', 8000);
-  const phInbox = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  const phInbox = await evalJs(page, `return document.querySelector('.fast-add textarea').placeholder;`);
   ok(phToday === phInbox,
     '占位符不随 tab 变，实际 今天=' + JSON.stringify(phToday) + ' 待办箱=' + JSON.stringify(phInbox));
 
@@ -1796,9 +1852,9 @@ try {
   //
   // 先建一条**干净的任务**（无时间）再开它的抽屉 —— 直接拿现成的任务，
   // 万一它已经正好是 15:00，「确定之后变成 15:00」就成了假通过。
-  await setText('.fast-add input', '抽屉转盘');
+  await setText('.fast-add textarea', '抽屉转盘');
   await evalJs(page, `
-    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.querySelector('.fast-add textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return 1;
   `);
   await waitFor(page, `
@@ -2095,9 +2151,7 @@ try {
     return (() => {
       const el = document.querySelector(${JSON.stringify(sel)});
       if (!el) return 'missing';
-      const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(val)});
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      (${SETTER})(el, ${JSON.stringify(val)});
       return 'ok';
     })();
   `);
@@ -2113,80 +2167,163 @@ try {
   // 'missing' 不报错，症状是「任务出现」等不到、看着像快速添加坏了。
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.replace(/\\d+/g, '').trim() === '今天')`);
 
-  /* ---- 窄屏的浮动 + 号（需求 1A / 3C） ---- */
-  // 窄屏默认收起成 FAB、点一下展开。切 tab 文本不丢由 React 状态保证
-  // （QuickAdd 不随 tab 切换卸载，横条只是 display:none），这里证的是收起 / 展开这条接线。
+  /* ---- 窄屏那个 + / ×（需求 1、2、8） ---- */
+  // 收起时是 +、展开时**原地变成 ×** —— 不再是横条里那个收起键。
+  // 输入框是从这个圆里弹出去的，所以它一直在（横条收起时它也不能消失）。
   //
   // ⚠️ `evalJs` 把表达式包成 `(async () => { <表达式> })()` —— **必须自己写 `return`**，
   // 光写一个表达式会得到 undefined，断言就永远是假（这几条第一次就是这么假红的）。
   // `waitFor` 会替我们补 `return`，所以它那几行不用写。
+  //
+  // lucide-react 给每个图标带 `lucide-<名字>` 这个类，所以 `+` / `×` 认的是
+  // `.lucide-plus` / `.lucide-x`，比数 svg 的 path 稳。
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`), '窄屏下右下角有浮动 + 号');
   ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display === 'none';`),
     '窄屏下横条默认收起');
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
+    '收起时那个圆里是 +');
+
   await clickEl(page, `document.querySelector('.fast-fab')`);
   await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display !== 'none'`, '点 + 号展开横条', 8000);
-  // 展开之后 FAB **整个消失**，收起键搬进横条里（需求 1）：
-  // 那个 48px 的圆比横条还高，贴在横条右端时上下各探出约 6px，
-  // 看着就是「× 掉出了输入框」。横条里的按钮就该是横条的一部分。
-  ok(await evalJs(page, `return !document.querySelector('.fast-fab');`),
-    '展开后浮动 + 号消失（不再和横条抢位置）');
-  ok(await evalJs(page, `return !!document.querySelector('.fast-add .fast-collapse');`),
-    '横条里出现收起键');
-  // 收起键**在横条里面**，不探出横条的上下边 —— 这是需求 1 真正要守的那件事。
-  // （右边那条在 1280 下会读出 90 多像素的空隙，那是探针自己的毛病：
-  //   JS 被 matchMedia 的 Proxy 判成窄屏、CSS 仍按 1280 排版，于是 `.fast-hint`
-  //   也挤在这一行里。真机上 CSS 和 JS 都是窄屏，那个空隙不存在。）
-  const inBar = await evalJs(page, `
-    const bar = document.querySelector('.fast-add').getBoundingClientRect();
-    const x = document.querySelector('.fast-collapse').getBoundingClientRect();
-    const c = document.querySelector('.fast-clock').getBoundingClientRect();
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-x');`),
+    '展开后 + 号**原地**变成 ×（需求 1）');
+  // 上一版那个「× 超过输入框边缘」的横条内收起键（需求 1 明确要改回去）
+  ok(await evalJs(page, `return !document.querySelector('.fast-add .fast-collapse');`),
+    '横条里不再有那个会顶到输入框边缘的 ×（需求 1）');
+
+  /* 圆钮和横条竖直居中（需求 2）—— **不能当场量一次就断言**。
+     横条的高度还会被**字体替换 / 换行**这类不经过 React 的变化改掉，
+     那一帧里 ResizeObserver 还没回调，当场量会读到上一个高度（实测偶发假红：
+     横条已经 97.3px，而按钮还按 54px 摆）。这里等它**稳定**下来再判 ——
+     真机上那一帧的偏差看不出来，断言要守的是最终状态。
+     不用 waitFor：它超时是**抛异常**，会把后面几十条断言全带走。 */
+  const settleCenter = async () => {
+    let last = null;
+    for (let i = 0; i < 40; i++) {
+      last = await evalJs(page, `
+        const b = document.querySelector('.fast-add').getBoundingClientRect();
+        const f = document.querySelector('.fast-fab').getBoundingClientRect();
+        return +((((b.top + b.bottom) / 2) - ((f.top + f.bottom) / 2))).toFixed(1);
+      `);
+      if (Math.abs(last) < 2) return last;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return last;
+  };
+
+  // 横条是从圆钮里「弹出来」的：定位是 fixed、右端给圆钮让位、
+  // 缩放原点钉在圆钮那一侧（`transform-origin` 的 x 是 100%）
+  const barBox = await evalJs(page, `
+    const bar = document.querySelector('.fast-add');
+    const fab = document.querySelector('.fast-fab');
+    const b = bar.getBoundingClientRect(), f = fab.getBoundingClientRect();
+    const s = getComputedStyle(bar);
     return {
-      top: +(x.top - bar.top).toFixed(1),
-      bottom: +(bar.bottom - x.bottom).toFixed(1),
-      right: +(bar.right - x.right).toFixed(1),
-      sameRowAsClock: Math.abs(x.top - c.top) < 6,
+      pos: s.position,
+      // transform-origin 在 Chrome 的 computed style 里是**解析成 px 的**，
+      // 所以 100% 读出来就是「横条自己的宽度」。拿宽度比，别去比字符串。
+      //（这段注释里**不能写反引号** —— 它自己就在一个模板字符串里面。）
+      originX: +parseFloat(s.transformOrigin).toFixed(1),
+      width: +b.width.toFixed(1),
+      gap: +(f.left - b.right).toFixed(1),
+      // 出问题时用得上的原始数
+      dbg: { n: document.querySelectorAll('.fast-add').length,
+        barH: +b.height.toFixed(1), barBottom: +(window.innerHeight - b.bottom).toFixed(1),
+        fabBottom: +(window.innerHeight - f.bottom).toFixed(1), fabH: +f.height.toFixed(1),
+        fabBottomCss: getComputedStyle(fab).bottom,
+        kids: [...bar.children].map((c) => c.className + ':' + Math.round(c.getBoundingClientRect().height)) },
     };
   `);
-  ok(inBar.top >= 0 && inBar.bottom >= 0,
-    '收起键不探出横条的上 / 下边，实际 上 ' + inBar.top + ' / 下 ' + inBar.bottom);
-  ok(inBar.right >= 0, '收起键也不探出横条的右边，实际 ' + inBar.right);
-  ok(inBar.sameRowAsClock,
-    '收起键和时钟按钮在同一行（不是被挤到第二行），实际 上 ' + inBar.sameRowAsClock);
-  // 点它收起
-  await clickEl(page, `document.querySelector('.fast-add .fast-collapse')`);
-  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '点收起键收起横条', 8000);
-  ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`),
-    '收起之后浮动 + 号回来了');
+  ok(barBox.pos === 'fixed',
+    '窄屏的横条是 fixed 定位（贴着圆钮、不占正文流），实际 ' + barBox.pos);
+  ok(barBox.gap >= 0 && barBox.gap < 24,
+    '横条右端给圆钮让出了位置（两个不相压），实际间距 ' + barBox.gap);
+  ok(Math.abs(barBox.originX - barBox.width) < 2,
+    '横条的缩放原点钉在**右端**（= 圆钮的左边缘，看着就是从那个圆里长出来的），实际 '
+      + barBox.originX + ' / 宽 ' + barBox.width);
+  const centerOff = await settleCenter();
+  ok(Math.abs(centerOff) < 2,
+    '圆钮和横条竖直居中（需求 2），实际偏 ' + centerOff + 'px');
+
+  // 输入框默认一行、内容多了自己撑开（需求 2）
+  const h1 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
+  ok(h1 > 0 && h1 < 40, '输入框默认就一行高，实际 ' + h1 + 'px');
+  await setField('.fast-add textarea', '第一行\n第二行\n第三行');
+  const h3 = await waitFor(page,
+    `(() => { const h = Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);
+      return h > ${h1} ? h : null; })()`, '输入框跟着多行撑开');
+  ok(h3 > h1, '内容变成三行时输入框自己撑开（' + h1 + 'px → ' + h3 + 'px）');
+  // 撑开之后圆钮跟着往下走，仍然和横条竖直居中（需求 2）
+  const center2 = await settleCenter();
+  ok(Math.abs(center2) < 2, '横条撑成多行之后圆钮仍然竖直居中，实际偏 ' + center2 + 'px');
+  await setField('.fast-add textarea', '');
+
+  /* ---- 点空白收起，**两级**（需求 8）---- */
+  // 面板开着时：第一次点空白只收面板、横条留着；再点一次才收横条。
+  // 两条如果各挂一个 document 上的监听就会打架（谁先跑只看注册顺序），
+  // 所以它们在一个 handler 里，这里证的正是那个先后。
+  const blank = () => evalJs(page, `
+    (document.querySelector('#content') || document.body)
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    return 1;
+  `);
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '窄屏下打开日期时间面板', 8000);
+  await blank();
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '第一次点空白：收起面板', 8000);
+  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display !== 'none';`),
+    '第一次点空白只收面板，横条还开着（需求 8：先收面板再收输入框）');
+  await blank();
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '第二次点空白：收起横条', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
+    '横条收起之后圆钮又变回 +');
+
   // 重新展开，继续后面几节
   await clickEl(page, `document.querySelector('.fast-fab')`);
-  await waitFor(page, `!!document.querySelector('.fast-add input')`, '重新展开');
+  await waitFor(page, `!!document.querySelector('.fast-add textarea')`, '重新展开');
 
-  await setField('.fast-add input', '写方案');
+  await setField('.fast-add textarea', '写方案');
   await evalJs(page, `
     return (() => {
-      const i = document.querySelector('.fast-add input');
+      const i = document.querySelector('.fast-add textarea');
       i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       return 'ok';
     })();
   `);
   await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
 
-  /* ---- 「保存」按钮：不用回车也能交（需求 6） ---- */
+  /* ---- 「保存」是个 ✓，摆在日期按钮前面（需求 3） ---- */
   // 回车键还在，但不能再是**唯一**的路 —— 手机上「回车」是软键盘上那个小箭头，
-  // 找不着的人就只能干瞪眼。这一条证的是按钮在、点了真能交、空着的时候禁用。
+  // 找不着的人就只能干瞪眼。这一条证的是按钮在、位置对、高度和日期按钮齐平、
+  // 点了真能交、空着的时候禁用。
   const saveBtn = await evalJs(page, `
     const b = document.querySelector('.fast-add .fast-save');
     if (!b) return null;
     const s = getComputedStyle(b);
-    return { disabled: b.disabled, text: b.textContent.trim(), display: s.display };
+    const c = document.querySelector('.fast-add .fast-clock').getBoundingClientRect();
+    const r = b.getBoundingClientRect();
+    return {
+      disabled: b.disabled,
+      text: b.textContent.trim(),
+      hasCheck: !!b.querySelector('.lucide-check'),
+      display: s.display,
+      // 「在日期按钮前」= 它的右边缘不越过日期按钮的左边缘
+      beforeClock: r.right <= c.left + 0.5,
+      // 日期按钮的高度不能变，✓ 要一样高（需求 3）
+      h: Math.round(r.height), clockH: Math.round(c.height),
+    };
   `);
-  ok(saveBtn && saveBtn.text === '保存', '横条上有「保存」按钮，实际 ' + JSON.stringify(saveBtn));
+  ok(saveBtn && saveBtn.hasCheck, '横条上那个保存键是个 ✓ 图标，实际 ' + JSON.stringify(saveBtn));
+  ok(saveBtn && saveBtn.text === '', '它只有图标，没有「保存」两个字（一行里三个文字按钮太吵）');
   ok(saveBtn && saveBtn.display !== 'none', '「保存」按钮看得见（不是 display:none）');
+  ok(saveBtn && saveBtn.beforeClock, '✓ 摆在日期按钮**前面**（需求 3）');
+  ok(saveBtn && saveBtn.h === saveBtn.clockH,
+    '✓ 和日期按钮一样高（需求 3：那个按钮要摆两行小字，高度不能变），实际 ' + JSON.stringify([saveBtn && saveBtn.h, saveBtn && saveBtn.clockH]));
   // 空着的时候禁用：一个点下去没反应的按钮，比没有按钮更让人犯嘀咕
-  await setField('.fast-add input', '');
+  await setField('.fast-add textarea', '');
   ok(await evalJs(page, `return document.querySelector('.fast-add .fast-save').disabled;`),
     '没写字的时候「保存」是禁用的');
-  await setField('.fast-add input', '点保存交的');
+  await setField('.fast-add textarea', '点保存交的');
   ok(await evalJs(page, `return !document.querySelector('.fast-add .fast-save').disabled;`),
     '写了字之后「保存」就能点了');
   const nBefore = await evalJs(page, `return document.querySelectorAll('.task-el').length;`);
@@ -2201,7 +2338,7 @@ try {
   `, '点「保存」的任务落盘', 8000);
   ok(savedByBtn === '点保存交的', '「保存」真的把任务交出去了（不是只清输入框），实际 ' + JSON.stringify(savedByBtn));
   // 交完之后输入框清空、按钮回到禁用态
-  ok(await evalJs(page, `return document.querySelector('.fast-add input').value === '';`),
+  ok(await evalJs(page, `return document.querySelector('.fast-add textarea').value === '';`),
     '交完之后输入框清空');
   ok(await evalJs(page, `return document.querySelector('.fast-add .fast-save').disabled;`),
     '交完之后「保存」又回到禁用态');

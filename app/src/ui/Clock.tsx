@@ -32,9 +32,12 @@
  * 3. **分钟只给 12 格（每 5 分钟）**，不做逐分钟：这个应用的时间轴最小步进是
  *    15 分钟（拖拽、拉伸都按这个档），给到 1 分钟的精度没有意义，
  *    只会让用户在上面戳半天。
- * 4. **表盘下面不写说明文字。** 原先有一行 `.cp-tip`，内容是「选小时（12 在顶部）」
+ * 4. **面板里没有大号的时间显示。** 原先表盘上面摆着两个 27px 的数字，
+ *    可生效时间早就写在横条那个按钮上了（`.fast-clock .fc-t`）—— 面板里
+ *    再重复一遍纯属占地方，而这个面板只有 234px 宽，表盘已经占掉 198。
+ *    时 / 分圈的切换改由表盘正中心那个点承担（点一下切圈）。
+ * 5. **表盘下面不写说明文字。** 原先有一行 `.cp-tip`，内容是「选小时（12 在顶部）」
  *    这类话 —— 表盘自己就画着 12 在顶部，用户看得见；写出来只是把人当不会看。
- *    现在那行的位置留空，靠 `.cp-cell` 的 `active` 态表达「现在在拨小时还是分钟」。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -120,27 +123,34 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
 
   return (
     <>
+      {/* 上午 / 下午**仍然居中**（需求 5）：「现在」挂在组的右边，但走绝对定位，
+          不是当第三个 flex 子元素 —— 那样整组会被挤偏，而这两个键的居中
+          是这个面板的视觉基准线。 */}
       <div className="cp-ampm">
-        <button className={'cp-ap' + (isAm ? ' on' : '')} onClick={() => setAmPm(true)}>上午</button>
-        <button className={'cp-ap' + (!isAm ? ' on' : '')} onClick={() => setAmPm(false)}>下午</button>
-      </div>
-
-      <div className="cp-display">
-        <button className={'cp-cell' + (isHour ? ' active' : '')} onClick={() => setMode('h')}>
-          {D.pad(hour)}
-        </button>
-        <span className="cp-colon">:</span>
-        <button className={'cp-cell' + (!isHour ? ' active' : '')} onClick={() => setMode('m')}>
-          {D.pad(minute)}
-        </button>
-        {/* 「现在」挪到时间旁边：它拨的就是上面这两个数，离得近才像同一个控件。
-            原先它孤零零挂在表盘下面，和「清除时间」并排，两个都像出口。 */}
+        <span className="cp-apm">
+          <button className={'cp-ap' + (isAm ? ' on' : '')} onClick={() => setAmPm(true)}>上午</button>
+          <button className={'cp-ap' + (!isAm ? ' on' : '')} onClick={() => setAmPm(false)}>下午</button>
+        </span>
         <button className="cp-now" onClick={now}>现在</button>
       </div>
 
+      {/* 大号的时间显示**没有**（需求 4）：生效时间已经写在横条那个按钮上
+          （`.fast-clock .fc-t`），面板里再摆两个 27px 的数字纯属占地方 ——
+          这个面板只有 234px 宽，表盘已经占掉 198。 */}
       <div className="cp-face" style={{ width: face + 'px', height: face + 'px' }}>
         <i className="cp-hand" style={{ width: R + 'px', transform: `rotate(${ang}deg)` }} />
-        <span className="cp-dot" />
+        {/* 点正中心 = 在时圈 / 分圈之间切。原先这个切换是显示行上那两个大数字
+            （点「小时」那个数切回小时档），显示行删了之后总得有个地方切，
+            而中心那个点本来就在指针轴上，点它最自然。
+            上面写「时」还是「分」是**状态**，不是提示 —— 不写的话，同一个
+            位置上那 12 个数是 12 点还是 12 分，只能靠数数猜。 */}
+        <button
+          type="button"
+          className={'cp-dot' + (isHour ? ' h' : ' m')}
+          title={isHour ? '切到分钟' : '切到小时'}
+          aria-label={isHour ? '切到分钟' : '切到小时'}
+          onClick={() => setMode(isHour ? 'm' : 'h')}
+        >{isHour ? '时' : '分'}</button>
         {Array.from({ length: 12 }, (_, k) => {
           const a = ((k / 12) * 360 - 90) * Math.PI / 180;
           return (

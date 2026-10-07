@@ -16,7 +16,12 @@
  *      就是为这个加的：选小时只是半截，选到分钟才算选完。
  *   5. **「不设置」拆成两个，贴着各自的标题行**（需求 3）：日期、时间各点各的。
  *      文案跟着状态走 —— 有值写「清空」、没值写「跳过」，见 `actOf`。
- *      底部因此不再有那个共用的出口，只剩一个「收起」。
+ *      两个都放在**开合箭头左边**（需求 6）：动作排在开合前面。
+ *   6. **面板没有底部出口**（需求 7）。原先那个「收起」是面板里唯一的出口，
+ *      现在点面板外面就收 —— 出口不该只长在底部。这也顺带把 `.wp-foot` 整块删了。
+ *      面板的 DOM 父节点是横条，所以「点外面」和横条自己的「点空白收起」
+ *      是同一件事的两级（先收面板、再收横条），见需求 8。
+ *      处理集中在 `Shell.tsx` 的 QuickAdd，这里只留 Esc。
  *
  * **不做「最近用过的日期」快捷推荐**：这个面板里再塞一行 chips 就放不下了，
  * 而且这是个日程管理软件 —— 日期是**选出来**的，不是**猜出来**的。
@@ -161,29 +166,25 @@ export function WhenPop({
     setPos({ top, left });
   }, [open, anchor, layer, month]);
 
-  /* 点外面关掉 / Esc 关掉。Esc 要 stopImmediatePropagation ——
-     否则 App 那层的 Esc 会跟着再关一次抽屉 */
+  /* Esc 关掉面板。要 stopImmediatePropagation —— 否则 App 那层的 Esc
+     会跟着再关一次抽屉。
+
+     **点外面那件事不在这儿管**（需求 7 / 8）：面板是横条的 DOM 子节点，
+     而横条自己也要「点空白收起」，两级还得有先后（先收面板、再收横条）。
+     两处各挂一个 document 上的 capture 监听必然打架 —— 谁先跑取决于注册
+     顺序，而两边都以为对方该让路。所以整件事收在 `Shell.tsx` 的 QuickAdd
+     里，一个 handler 同时看得见「面板开没开」和「横条开没开」。 */
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (box.current?.contains(t)) return;
-      if (anchor?.contains(t)) return;   // 点按钮本身由按钮自己 toggle
-      onClose();
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
       e.stopImmediatePropagation();
       onClose();
     };
-    document.addEventListener('mousedown', onDown, true);
     document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open, anchor, onClose]);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -215,22 +216,33 @@ export function WhenPop({
 
   const row = (key: 'date' | 'time', label: string, value: string | null, text: string) => {
     const act = actOf(key);
+    const open = layer === key;
+    const toggle = () => setLayer((v) => (v === key ? null : key));
     return (
-      <div className={'wp-row' + (layer === key ? ' open' : '')}>
-        {/* 开合键和「清空 / 跳过」必须是**两个** button —— 嵌套 button 是非法
-            HTML，浏览器会把里层那个甩到外面去，点起来完全不是看到的样子 */}
+      <div className={'wp-row' + (open ? ' open' : '')}>
+        {/* 三个**平级**的 button，不能嵌套 —— 嵌套 button 是非法 HTML，
+            浏览器会把里层那个甩到外面去，点起来完全不是看到的样子；
+            换成 button 里塞 `role="button"` 的 span 也一样是嵌套交互元素，
+            读屏会当成两个控件来回问。 */}
         <button
           className="wp-head"
           type="button"
-          aria-expanded={layer === key}
+          aria-expanded={open}
           data-layer={key}
-          onClick={() => setLayer((v) => (v === key ? null : key))}
+          onClick={toggle}
         >
           <span className="wp-k">{label}</span>
           <span className={'wp-v' + (value ? '' : ' none')}>{value ? text : '未设置'}</span>
-          <ChevronDown size={14} className="wp-cv" />
         </button>
+        {/* 「清空 / 跳过」在**箭头左边**（需求 6）：动作排在开合前面 */}
         <button className="wp-act" type="button" onClick={act.run}>{act.label}</button>
+        <button
+          className="wp-cv"
+          type="button"
+          aria-expanded={open}
+          aria-label={label + (open ? '：收起' : '：展开')}
+          onClick={toggle}
+        ><ChevronDown size={14} /></button>
       </div>
     );
   };
@@ -279,11 +291,6 @@ export function WhenPop({
           />
         </div>
       )}
-
-      <div className="wp-foot">
-        <span className="grow" />
-        <button className="ghost-btn" onClick={onClose}>收起</button>
-      </div>
     </div>
   );
 }

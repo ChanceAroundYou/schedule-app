@@ -1104,13 +1104,26 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .fast-add:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
 .fast-plus { color: var(--primary); font-size: 17px; }
-.fast-add input { flex: 1; min-width: 140px; border: none; outline: none; background: none; font-size: 14.5px; }
+/* 输入框是 textarea：默认一行、内容多了由 JS 撑开（需求 2）。
+   resize:none 是必须的 —— 浏览器默认给 textarea 一个右下角的拖拽角，
+   在这个横条里拖它只会把布局拖坏；overflow:hidden 配合 JS 算出来的高度，
+   不然撑高之后还会留一条自己的滚动条。 */
+.fast-add textarea {
+  flex: 1; min-width: 140px; border: none; outline: none; background: none;
+  font: inherit; font-size: 14.5px; line-height: 1.35;
+  padding: 0; margin: 0; resize: none; overflow: hidden; height: auto;
+}
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
+/* 日期按钮和 ✓ 都定成 30px 高（需求 3）。日期按钮里要摆**两行 10px 的小字**，
+   两行加行距约 22px，再算上内边距就是这个高度 —— 高度不能跟着内容变，
+   不然「只有日期」和「日期 + 时间」两种状态下横条会跳一下。
+   ✓ 跟着同高，一行里才齐平。 */
 .fast-clock {
   display: flex; align-items: center; gap: 6px;
+  height: 30px;
   border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
-  border-radius: var(--r-md); padding: 4px 9px; font-size: 13px; line-height: 1;
+  border-radius: var(--r-md); padding: 0 9px; font-size: 13px; line-height: 1;
   transition: border-color .14s, color .14s, background .14s;
 }
 .fast-clock:hover { border-color: var(--primary); color: var(--primary); }
@@ -1120,27 +1133,20 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
    按钮上那两行字的颜色就靠它 —— 见下面 .fc-when 那段。 */
 .fast-clock.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 
-/* 「保存」：快速添加的提交键（需求 6）。回车键还在，但不能再是**唯一**的路 ——
-   手机上「回车」是软键盘上那个小箭头，找不着的人就只能干瞪眼。
+/* 「保存」是个 ✓ 图标，摆在日期按钮**前面**（需求 3）。回车键还在，
+   但不能再是**唯一**的路 —— 手机上「回车」是软键盘上那个小箭头，
+   找不着的人就只能干瞪眼。和 `.fast-clock` 同高，一行里才齐平。
    禁用态要看得懂：不是淡一点点，而是连底色带描边一起退回去 */
 .fast-save {
+  display: flex; align-items: center; justify-content: center;
+  height: 30px; padding: 0 10px;
   border: var(--border-w) solid var(--primary); background: var(--primary);
   color: var(--on-primary); border-radius: var(--r-md);
-  padding: 5px 12px; font-size: 13px; line-height: 1; font-weight: 600;
+  line-height: 1; font-weight: 600;
   transition: filter .14s, background .14s, border-color .14s, color .14s;
 }
 .fast-save:hover:not(:disabled) { filter: brightness(1.06); }
 .fast-save:disabled { background: var(--panel-2); border-color: var(--border); color: var(--text-3); }
-
-/* 窄屏展开后的收起键：**就摆在横条里**，不是浮在右下角那个圆钮（需求 1）。
-   尺寸和 `.fast-clock` 对齐，看着像同一组控件里的东西 */
-.fast-collapse {
-  display: flex; align-items: center; justify-content: center;
-  border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
-  border-radius: var(--r-md); padding: 5px 7px; line-height: 1;
-  transition: border-color .14s, color .14s;
-}
-.fast-collapse:hover { border-color: var(--primary); color: var(--primary); }
 
 /* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
    字号压到 10px —— 它是**按钮上的状态**，不是正文；两行加起来 23px，
@@ -1162,6 +1168,13 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .fast-parse.show { display: flex; animation: fadeUp .16s ease; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+/* 窄屏横条的「从 + 号里弹出来」（需求 1）。起点往右偏、略微缩一点，
+   配合 Shell.tsx 设的 `transform-origin: 100% 50%`（= 圆钮的左边缘），
+   看起来就是从那个圆里长出来、往左铺开。 */
+@keyframes fastPop {
+  from { opacity: 0; transform: translateX(28px) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
 .fp-chip { padding: 2px 9px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
 .fp-chip.k-title { background: var(--panel-3); color: var(--text-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-chip.k-date { background: var(--chip-date-bg); color: var(--chip-date-fg); }
@@ -1177,10 +1190,11 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
    抽屉打开时 FAB 该被罩住，而不是浮在遮罩上还能点。
    它和标签栏（45）不重叠：bottom 已经抬到 56px 的标签栏之上。
 
-   **只在横条收起时存在**（`Shell.tsx` 里是 `narrow && !expanded`）。
-   展开之后收起键搬进横条里那个 `.fast-collapse` —— 这个 48px 的圆比横条还高，
-   贴在横条右端时上下各探出约 6px，看着就是「× 掉出了输入框」（需求 1）。
-   原先靠 `.fast-add { padding-right: 62px }` 给它让位，那个补丁也一起删了。 */
+   **它一直在**（需求 1）：收起时是 +，展开时原地变成 ×。输入框就是从这个
+   圆里弹出去的 —— 横条的 `transform-origin` 钉在右中，也就是这个圆的左边缘，
+   所以横条看起来是从它这儿长出来、往左铺开（见上面 `.fast-add` 的窄屏定位）。
+   横条展开后它仍然在，所以它不是「只在收起时存在」的那个旧版圆钮了；
+   原先 `.fast-fab.open` 那条死规则（展开时根本不渲染）也就彻底没用了。 */
 .fast-fab {
   position: fixed; right: 16px; bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px);
   z-index: 39;
@@ -1192,8 +1206,10 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .fast-fab:hover { filter: brightness(1.06); }
 .fast-fab:active { transform: scale(.94); }
-/* `.fast-fab.open` 那条已经删了 —— 展开时这个按钮根本不渲染，
-   留着就是一条永远匹配不上的死规则 */
+/* 展开态：同一个圆、同一个位置，只是图标换成 ×（需求 1）。
+   底色压暗一档，免得那个 × 看着还像个「加」的召唤 */
+.fast-fab.open { background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); }
+.fast-fab.open:hover { filter: none; border: var(--border-w) solid var(--primary); color: var(--primary); }
 
 /* ================= 快速添加的「日期 + 时间」面板 ================= */
 
@@ -1209,10 +1225,11 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   animation: fadeUp .14s ease;
 }
 
-/* 一层标题 = 一个 `.wp-row`（div）里装着**两个** button：
-   `.wp-head`（点它开合，箭头在它里面）+ `.wp-act`（「清空 / 跳过」）。
-   之所以不是一个 button 全包下来：动作键必须**贴着**开合箭头放（需求 3），
-   而 button 里套 button 是非法 HTML —— 浏览器会把里层那个甩到外面去。 */
+/* 一层标题 = 一个 `.wp-row`（div）里装着**三个**平级 button：
+   `.wp-head`（点它开合）+ `.wp-act`（「清空 / 跳过」）+ `.wp-cv`（箭头）。
+   顺序就是「清空 / 跳过」在箭头**左边**（需求 6）：动作排在开合前面。
+   之所以不是一个 button 全包下来：button 里套 button 是非法 HTML，
+   浏览器会把里层那个甩到外面去，点起来完全不是看到的样子。 */
 .wp-row {
   display: flex; align-items: center; gap: 4px; width: 100%;
   border-radius: var(--r-md); transition: background .14s;
@@ -1226,10 +1243,20 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .wp-k { flex: 0 0 auto; color: var(--text-3); }
 .wp-v { font-weight: 600; font-variant-numeric: tabular-nums; }
 .wp-v.none { font-weight: 400; color: var(--text-3); }
-.wp-cv { margin-left: auto; color: var(--text-3); transition: transform .16s; }
+
+/* 开合箭头现在自己是**一个按钮**（原先它是 `.wp-head` 里的一个图标，
+   因为「清空 / 跳过」得排在它左边，而那样就没法留在同一个 button 里）。
+   点它和点 `.wp-head` 是同一件事，两个都带 aria-expanded。 */
+.wp-cv {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  padding: 5px 6px; border: none; border-radius: var(--r-sm);
+  background: none; color: var(--text-3);
+  transition: transform .16s, color .14s;
+}
+.wp-cv:hover { color: var(--primary); }
 .wp-row.open .wp-cv { transform: rotate(180deg); }
 
-/* 「清空 / 跳过」：贴着开合箭头，日期、时间各一个（需求 3）。
+/* 「清空 / 跳过」：在开合箭头**左边**，日期、时间各一个（需求 3、6）。
    文案会变（有值 = 清空，没值 = 跳过），所以给个最小宽度 ——
    不然两行右边的按钮会随字数左右错开，看着像没对齐 */
 .wp-act {
@@ -1244,20 +1271,12 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .wp-body { padding: 0 8px 8px; animation: fadeUp .14s ease; }
 .wp-body .jp-head { margin: 6px 0; }
 
-/* 底栏现在只剩一个「收起」：「不设置」拆到两层标题行上（需求 3），
-   时间层那个「清除时间」也一起挪上去了（需求 4）。出口不再堆在底部。 */
-.wp-foot {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 4px; padding: 8px 8px 2px; border-top: 1px dashed var(--border);
-}
-.wp-foot .grow { flex: 1; }
-.wp-foot .ghost-btn { padding: 6px 13px; font-size: 12px; }
+/* `.wp-foot` 整块**删了**（需求 7）：那个「收起」是面板里唯一的出口，
+   现在点面板外面就收 —— 出口不该只长在底部。 */
 
 /* 面板里那只表盘比抽屉里的小一号：面板宽 268，扣掉内边距只剩 234，
    塞 246 的表盘会顶到边。表盘的**直径**由 JS 按 face 算（见 ui/Clock.tsx），
    这里只管里面那些格子的字号 —— 它们不跟着直径走 */
-.wp-clock .cp-cell { min-width: 52px; padding: 2px 8px; font-size: 22px; }
-.wp-clock .cp-colon { font-size: 18px; }
 .wp-clock .cp-num { width: 23px; height: 23px; font-size: 10.5px; }
 .wp-clock .cp-ap { padding: 3px 13px; }
 .wp-clock .cp-now { padding: 3px 8px; font-size: 11px; }
@@ -1287,18 +1306,17 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-xl); box-shadow: var(--shadow-lg); padding: 15px;
 }
-.cp-display { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 11px; }
-.cp-cell {
-  min-width: 66px; padding: 3px 10px; border: none; border-radius: var(--r-md);
-  background: var(--panel-2); color: var(--text-2);
-  font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums;
-  transition: background .14s, color .14s;
-}
-.cp-cell:hover { background: var(--panel-3); }
-.cp-cell.active { background: var(--primary-soft); color: var(--primary); }
-.cp-colon { font-size: 22px; color: var(--text-3); }
+/* `.cp-display` / `.cp-cell` / `.cp-colon` 三块**整组删了**（需求 4）：
+   表盘上面那两个 27px 的大数字没有了。生效时间早就写在横条那个按钮上
+   （`.fast-clock .fc-t`），面板里再重复一遍纯属占地方 —— 这个面板只有
+   234px 宽，表盘已经占掉 198。时 / 分圈的切换改由表盘正中心那个点承担。 */
 
-.cp-ampm { display: flex; justify-content: center; gap: 6px; margin-bottom: 9px; }
+/* 上午 / 下午**仍然居中**，但「现在」挂在右边（需求 5）。
+   写法是「居中的那一组自己是个 span，现在走绝对定位」——
+   把「现在」当第三个 flex 子元素的话，justify-content:center 会把
+   三个一起居中，上午 / 下午 整组就左偏了，而这两个键的居中是面板的基准线。 */
+.cp-ampm { position: relative; display: flex; justify-content: center; margin-bottom: 9px; }
+.cp-apm { display: flex; gap: 6px; }
 .cp-ap {
   padding: 4px 16px; border: none; border-radius: var(--r-md); cursor: pointer;
   background: var(--panel-2); color: var(--text-2); font-size: 12px;
@@ -1316,7 +1334,21 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   background: var(--primary); transform-origin: left center; border-radius: var(--r-xs);
   transition: transform .18s cubic-bezier(.3, .8, .3, 1);
 }
-.cp-dot { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--primary); }
+/* 表盘正中心：**点它切时圈 / 分圈**（需求 4）。原先这个切换是显示行上那两个
+   大数字（点小时那个数切回小时档），显示行删了之后总得有个地方切，
+   而中心本来就在指针轴上，点它最自然。
+   上面那个「时 / 分」是**状态**不是提示：不写的话，同一个位置上那 12 个数
+   是 12 点还是 12 分，只能靠数数猜。 */
+.cp-dot {
+  position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+  margin: -13px 0 0 -13px; padding: 0;
+  border: none; border-radius: 50%;
+  background: var(--panel-3); color: var(--text-3);
+  font-size: 10.5px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.cp-dot:hover { background: var(--primary-soft); color: var(--primary); }
+.cp-dot.m { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 .cp-num {
   position: absolute; transform: translate(-50%, -50%);
   width: 25px; height: 25px; padding: 0; border: none; border-radius: 50%;
@@ -1328,13 +1360,13 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 /* 表盘下面**不再有说明文字**（需求 7）。原先那行 `.cp-tip` 写的是
    「选小时（12 在顶部）」「选分钟，每格 5 分钟（顶端 60 就是 0 分）」——
    表盘上就画着 12 在顶部、数出来就是每格 5 分钟，写出来只是把人当不会看。
-   现在靠 `.cp-cell.active` 表达在拨小时还是分钟，一个字都不用说。 */
+   现在靠中心那个 `.cp-dot` 上的「时 / 分」表达在拨哪一圈，一个字都不多说。 */
 
-/* 「现在」跟着时间显示走（需求 4）：它拨的就是左边那两个数，
-   离得近才像同一个控件。原先它孤零零挂在表盘下面，和「清除时间」并排 ——
-   两个都长得像出口，但一个改值、一个清值，完全不是一类东西。 */
+/* 「现在」在上午 / 下午的**右侧**，但那一组仍然居中（需求 5）。
+   绝对定位是关键 —— 它不参与上面那组的居中计算。 */
 .cp-now {
-  margin-left: 8px; padding: 4px 10px;
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  padding: 4px 10px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: none; color: var(--text-3); font-size: 12px;
   transition: border-color .14s, color .14s;
@@ -1661,14 +1693,23 @@ body.sheet-open .tab:active { background: none; }
 
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
-  .fast-add input { font-size: 16px; }
-  /* 按钮上那两行是小字，手机上加的是**点击面**不是字号 */
-  .fast-clock { padding: 6px 10px; }
-  /* 这里曾经有一条 `.fast-add { padding-right: 62px }`，是给右下角那个浮动
-     圆钮让位的。收起键搬进横条之后（需求 1）就不需要了 —— 它现在是个正常的
-     flex 子元素，自己占自己的位置，不用靠内边距躲。 */
-  .fast-save { padding: 6px 12px; }
-  .fast-collapse { padding: 6px 8px; }
+  /* 16px 是**必须的**：iOS Safari 在字号 < 16px 的输入控件上会自动放大整页，
+     而放大之后那一屏就再也回不到原样了。textarea 和 input 同罪。 */
+  .fast-add textarea { font-size: 16px; }
+  /* 窄屏的横条是 `position: fixed`（定位值由 Shell.tsx 按几何算，见那边的
+     BAR_BOTTOM / fabBottom），所以这里只留内边距和**弹出的动画**。
+     动画挂在 `:not([hidden])` 上：`display:none` 会让动画被移除，
+     再显示时重新开始 —— 正是「点 + 号弹出来」要的效果。
+     transform-origin 在 Shell.tsx 里设成右中（= 圆钮的左边缘），
+     所以这一下看着是从那个圆里长出来的。 */
+  .fast-add { margin: 0; padding: 9px 13px; }
+  .fast-add:not([hidden]) { animation: fastPop .18s cubic-bezier(.3, .8, .3, 1); }
+  /* 按钮上那两行是小字，手机上加的是**点击面**不是字号；
+     高度仍是 30px（需求 3），只放宽左右内边距 */
+  .fast-clock { padding: 0 10px; }
+  .fast-save { padding: 0 11px; }
+  /* 圆钮和横条竖直居中（需求 2）：横条被撑成两行时圆心跟着往下走。
+     位置由 Shell.tsx 按横条的实测高度反推后写成内联样式，这里不写死。 */
 
   /* 列表分组间距收一点 */
   .list-group { margin-bottom: 18px; }
@@ -1700,9 +1741,10 @@ body.sheet-open .tab:active { background: none; }
   .primary-btn, .danger-btn { padding: 11px 18px; }
   .field-row { gap: 10px; }
 
-  /* 时钟弹窗：手机上居中铺开一点，好按 */
+  /* 时钟弹窗：手机上居中铺开一点，好按。
+     这里曾经还有一条 `.cp-cell { min-width: 58px; font-size: 25px }` ——
+     显示行删掉之后（需求 4）那个类名已经不存在了，规则一起删。 */
   .clock-pop { width: min(300px, calc(100vw - 40px)); }
-  .cp-cell { min-width: 58px; font-size: 25px; }
 
   /* 习惯页：热力点放大一点 */
   .heat-dot { width: 15px; height: 15px; }

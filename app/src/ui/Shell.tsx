@@ -18,9 +18,9 @@
  *    见项目 CLAUDE.md 四、23。别以为「拖过一次就记住了」。
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
+  AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
   MoreHorizontal, Plus, Search, Settings, Sun, Trash2, X, Clock,
 } from 'lucide-react';
@@ -611,7 +611,12 @@ export function QuickAdd({ state, onSubmit }: {
   // 「N」快捷键与 FAB 都要先展开再聚焦 —— 展开是异步的，得等 DOM 更新
   const focusOnExpand = useRef(false);
   const clockBtn = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  /** 横条展开后的实测高度。窄屏的 + / × 要跟着它竖直居中（需求 2）——
+   *  输入框撑成两行时那个圆钮得往下挪，不然就顶在横条上沿 */
+  const [barH, setBarH] = useState(0);
 
   const ui = state.ui;
   const def = quickDefaults(ui, D.today());
@@ -669,20 +674,105 @@ export function QuickAdd({ state, onSubmit }: {
     }
   }, [expanded]);
 
+  /* 输入框默认一行、内容多了自己撑开（需求 2）。textarea 不会自己长高，
+     得每次改完先把 height 归零再读 scrollHeight —— 不归零的话它只会越长越高，
+     删掉一行也缩不回去（scrollHeight 里有当前 height 的份）。 */
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = '0px';
+    el.style.height = el.scrollHeight + 'px';
+  }, [text, expanded]);
+
+  /* 量横条高度，给窄屏那个 + / × 用（需求 2：它要和输入框竖直居中）。
+     用 ResizeObserver 而不是盯 text —— 换行、字体、内边距都会改高度，
+     逐个列依赖必然漏一个。收起时横条是 display:none，量到 0，
+     正好让圆钮回到默认位置。
+
+     **光靠 ResizeObserver 不够。** 它在「元素本来 display:none、后来才有盒子」
+     这一步上**不一定会投递**：收起时挂上去的观察者，展开后收不到第一次通知，
+     `barH` 一直是 0，圆钮就停在默认位置 —— 而那个位置是按「横条只有一行」
+     算的，横条一高它就偏上（实测偏 20.6px）。
+     所以展开 / 文字变化时**当场再量一次**（layout effect 里读 offsetHeight
+     是同步的，拿到的就是这一帧的真实值），ResizeObserver 只兜底那些
+     不经过 React 的高度变化（字体替换、换行）。 */
+  useLayoutEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    setBarH(el.offsetHeight);
+  }, [expanded, text]);
+
+  useLayoutEffect(() => {
+    const el = barRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setBarH(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* 点空白收起（需求 7 / 8）—— **两级，而且必须在同一个 handler 里**：
+     面板开着就先收面板、横条留着；面板没开才收横条。
+     分成两处挂会打架：两个都是 document 上的 capture 监听，谁先跑只看注册
+     顺序，而面板又是横条的 DOM 子节点，「点在面板里」在两边都成立，
+     必然有一边误判（先收横条的话，用户点空白想收面板却把整个输入框也收了）。
+     横条与 + / × 里面的点击一律放行，交给各自的 onClick。 */
+  useEffect(() => {
+    if (!expanded) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (barRef.current?.contains(t)) return;
+      if (fabRef.current?.contains(t)) return;
+      if (whenOpen) { setWhenOpen(false); return; }
+      // 宽屏没有 FAB，横条是常驻的，点空白只该收面板，不该把输入框收掉
+      if (narrow) setExpanded(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [narrow, expanded, whenOpen]);
+
   // 跟着 tab 来的默认日期也算「有」—— 按钮上要写出来（需求 6）
   const hasWhen = !!(effDate || effTime);
 
+  /* 窄屏那套几何（需求 1、2）—— 三句话说完：
+       · 横条固定在标签栏上方 64px 处，右端留出圆钮的位置（74 = 16 + 48 + 10）。
+       · 圆钮一直在原地，收起时是 +、展开时变 ×，**输入框就是从它这儿弹出来的**
+         （CSS 的 transform-origin 钉在横条的右中，也就是圆钮的左边缘）。
+       · 圆钮和横条**竖直居中**：横条被撑成两行时圆心跟着往下走，
+         所以它的 bottom 由横条的实测高度反推，而不是写死。
+     64 是「标签栏 56 + 8px 缝」；58 是圆钮的下限，再低就压到标签栏上了。 */
+  const BAR_BOTTOM = 64;
+  const fabBottom = expanded && barH > 0
+    ? Math.max(58, BAR_BOTTOM - 24 + barH / 2)
+    : 68;
+
   return (
     <>
-      {/* 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
+      {/* 设置页 / 垃圾箱没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
       <div
         className="fast-add"
+        ref={barRef}
         hidden={ui.nav === 'trash' || ui.nav === 'settings' || (narrow && !expanded)}
+        style={narrow ? {
+          position: 'fixed',
+          left: '13px',
+          right: '74px',
+          // margin 也要在内联里清掉：基线上那条 `.fast-add { margin: 6px 22px 18px }`
+          // 是给**流内**布局的，而 fixed + left/right 的定位里 margin 会**再加一层**偏移
+          //（right:74px 实际让出 96px）。CSS 媒体块里虽然也清了，但媒体查询按**真实**
+          // 视口宽度走，探针那种「JS 判窄、CSS 判宽」的环境里清不掉。
+          margin: 0,
+          bottom: `calc(${BAR_BOTTOM}px + env(safe-area-inset-bottom, 0px))`,
+          // 缩放 / 滑出的原点 = 圆钮的左边缘，这样看起来就是从那个圆里长出来的
+          transformOrigin: '100% 50%',
+        } : undefined}
       >
         <span className="fast-plus"><Plus size={15} /></span>
-        <input
+        {/* 默认一行，内容多了自己撑开（需求 2）。用 textarea 而不是 input：
+            要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
+            这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           value={text}
           placeholder={QUICK_PLACEHOLDER}
           aria-label="快速添加"
@@ -692,10 +782,25 @@ export function QuickAdd({ state, onSubmit }: {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit(e.ctrlKey || e.metaKey);
+            }
             if (e.key === 'Escape') { e.currentTarget.blur(); }
           }}
         />
+        {/* 「保存」是个 ✓，摆在日期按钮**前面**（需求 3）。
+            一行里三个文字按钮太吵，保存这件事有个勾就够了。
+            高度和日期按钮一样：那个按钮要摆两行 10px 的小字，
+            ✓ 得跟它齐平，不然一行里高矮不齐。 */}
+        <button
+          className="fast-save"
+          type="button"
+          disabled={!text.trim()}
+          title="保存这条任务"
+          aria-label="保存这条任务"
+          onClick={() => submit(false)}
+        ><Check size={16} /></button>
         <button
           ref={clockBtn}
           className={'fast-clock' + (hasWhen ? ' on' : '')}
@@ -715,27 +820,6 @@ export function QuickAdd({ state, onSubmit }: {
             </span>
           )}
         </button>
-        {/* 「保存」：不用回车也能交（需求 6）。没写字的时候**禁用** ——
-            一个点下去没反应的按钮，比没有按钮更让人犯嘀咕 */}
-        <button
-          className="fast-save"
-          type="button"
-          disabled={!text.trim()}
-          title="保存这条任务"
-          onClick={() => submit(false)}
-        >保存</button>
-        {/* 窄屏展开后的收起键就摆在横条里（需求 1）。原先它是右下角那个浮动的
-            圆钮：48px 的圆比横条还高 6px，贴在横条右端时上下都探出去一截，
-            看着像「× 掉出了输入框」。横条里的按钮就该是横条的一部分。 */}
-        {narrow && (
-          <button
-            className="fast-collapse"
-            type="button"
-            title="收起快速添加"
-            aria-label="收起快速添加"
-            onClick={() => { setWhenOpen(false); setExpanded(false); }}
-          ><X size={16} /></button>
-        )}
         <WhenPop
           open={whenOpen}
           anchor={clockBtn.current}
@@ -769,21 +853,28 @@ export function QuickAdd({ state, onSubmit }: {
         </div>
       </div>
 
-      {/* 窄屏的浮动 + 号：**只在收起时**才存在。展开之后收起键搬进横条里
-          （见上面 `.fast-collapse`）—— 一个浮在横条外面的圆钮和横条抢同一块
-          位置，怎么摆都会探出边。 */}
-      {narrow && !expanded && (
+      {/* 窄屏那个圆钮：**一直在**（需求 1）。收起时是 +、展开时原地变 ×，
+          输入框就是从这里弹出去的 —— 所以它不能跟着横条一起被 display:none 掉，
+          那样就没有「弹出来」可言了。它和输入框竖直居中（需求 2），
+          位置由横条的实测高度反推，见上面 fabBottom。 */}
+      {narrow && (
         <button
-          className="fast-fab"
+          ref={fabRef}
+          className={'fast-fab' + (expanded ? ' open' : '')}
           type="button"
           hidden={ui.nav === 'trash' || ui.nav === 'settings'}
-          title="快速添加"
-          aria-label="快速添加"
-          aria-expanded={false}
-          onClick={() => { focusOnExpand.current = true; setExpanded(true); }}
-        >
-          <Plus size={20} />
-        </button>
+          title={expanded ? '收起快速添加' : '快速添加'}
+          aria-label={expanded ? '收起快速添加' : '快速添加'}
+          aria-expanded={expanded}
+          style={{ bottom: `calc(${fabBottom}px + env(safe-area-inset-bottom, 0px))` }}
+          onClick={() => {
+            // 收起时顺手把面板也收了：面板挂在横条里，横条没了它也就没了，
+            // 留着 whenOpen 下次展开会「凭空」弹出上一次的面板
+            if (expanded) setWhenOpen(false);
+            else focusOnExpand.current = true;
+            setExpanded((v) => !v);
+          }}
+        >{expanded ? <X size={20} /> : <Plus size={20} />}</button>
       )}
     </>
   );
