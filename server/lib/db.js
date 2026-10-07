@@ -246,7 +246,7 @@ function migrateFrom(from) {
       throw new Error(
         `数据库是 schema v${from}，当前代码要 v${SCHEMA_VERSION}，` +
         `但没有 v${v} → v${v + 1} 的迁移脚本。\n` +
-        `拒绝自动改动，请先备份 ${_file} 再手工迁移（见 DEPLOY.md 的「数据结构升级」）。`,
+        `拒绝自动改动，请先备份 ${_file} 再手工迁移（见 DEPLOY-运维.md 的「数据模型演进」与 docs/重构路线.md）。`,
       );
     }
   }
