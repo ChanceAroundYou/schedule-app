@@ -26,13 +26,13 @@
 │   ├── public/             icon.svg · manifest.json · sw.js（原样拷进 dist/）
 │   ├── src/
 │   │   ├── main.tsx        入口：**先拆旧版 Service Worker**，再挂载
-│   │   ├── App.tsx         串起来的那层（约 700 行，见下）
+│   │   ├── App.tsx         串起来的那层（约 840 行，见下）
 │   │   ├── vite-env.d.ts   vite/client 的类型（import.meta.env 等）
 │   │   ├── domain/         纯逻辑，零 React / DOM / 网络依赖
 │   │   │   ├── types.ts    LocalState · Task · Habit · Op
 │   │   │   ├── date.ts     today / addDays / weekStart / monthMatrix / fmt* / shortLoad
-│   │   │   │                / parseDateText（「找日期」输入框专用，见四、35 末）
-│   │   │   ├── parse.ts    自然语言解析（规则顺序敏感，见四、35）
+│   │   │   │                / parseDateText（「找日期」输入框专用，见四、25 末）
+│   │   │   ├── parse.ts    自然语言解析（规则顺序敏感，见四、25）
 │   │   │   ├── repeat.ts   重复推进 + seriesRootOf + 派生 id
 │   │   │   ├── layout.ts   HOUR_H 等时间轴常量 + layoutOverlap
 │   │   │   ├── model.ts    counts / liveTasks / dayLoad / 各种选择器
@@ -52,7 +52,7 @@
 │   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期 / 设置入口
 │   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
-│   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
+│   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、12）
 │   │   │   ├── Settings.tsx  设置页：tab 布局（外观 · 安全 · 日程集 · 关于）
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── AiPanel.tsx  AI 对话面板：气泡 + 动作条 + **提案卡片**（点确认才落库）
@@ -61,7 +61,7 @@
 │   │   │   ├── aiClient.ts  fetch + ReadableStream 读 SSE（带 Authorization）
 │   │   │   ├── ProjectSheet.tsx  项目：建 / 改名 / 删 · 泳道看板
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
-│   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
+│   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、6 与四、12）
 │   │   │   ├── Clock.tsx   时间转盘：`ClockBody` 表盘本体 + `ClockPop`（抽屉里那个浮层）
 │   │   │   ├── WhenPop.tsx  快速添加的日期 / 时间两层折叠面板 + 共享的 `MiniCalendar`
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
@@ -77,7 +77,7 @@
 │   │   │   ├── Trash.tsx     垃圾箱
 │   │   │   └── parts.tsx    行/方块等共享小组件
 │   │   └── styles/
-│   │       ├── legacy.css  旧版那 68 KB 设计系统，**不带 @layer**（见四、27）
+│   │       ├── legacy.css  旧版那 90 KB 设计系统，**不带 @layer**（见四、17）
 │   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
@@ -113,7 +113,7 @@
 ├── deploy/                 nginx conf + systemd 单元的本地副本
 ├── legacy/                 旧版纯静态应用，**冻结**（回滚用，见 DEPLOY.md 七）
 ├── docs/                   接口.md · 重构路线.md
-├── .gitattributes          行尾一律锁成 LF，压过各机器的 core.autocrlf（见四、48）
+├── .gitattributes          行尾一律锁成 LF，压过各机器的 core.autocrlf（见四、36）
 ├── package.json            只声明 AI 那一组依赖（见六、1），**没有 build 脚本**
 └── README.md  CLAUDE.md  DEPLOY.md
 ```
@@ -439,7 +439,7 @@ cd app && npm run build          # tsc -b && vite build → ../dist/
 node server/server.js                        # 127.0.0.1:25692，数据落 server/data/
 SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试时用）
 
-# 依赖装在**本机磁盘**上，不在共享盘（CIFS 上成千上万个小文件正是四、30
+# 依赖装在**本机磁盘**上，不在共享盘（CIFS 上成千上万个小文件正是四、21
 # 那个丢文件风险）。靠工程根目录一个软链接指过去：
 ls -la node_modules
 #   node_modules -> /home/xiaokubao/.local/share/schedule-deps/node_modules
@@ -542,12 +542,12 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 「成员列表加载完」写的是 `innerText.includes('创建者')`，而那是 ROLE_LABEL，
 > 发邀请那个 `<select>` 的 `<option>` 里就有一个 —— 浮层一开就成立，等于没等。
 > 失败信息是「成员列表里有自己」，指向完全错的地方。现在等的是成员**条数**非零。
-> 另外它**不能以换行开头**（ASI 会把 `return` 断成空语句），见「四、39」。
+> 另外它**不能以换行开头**（ASI 会把 `return` 断成空语句），见「四、29」。
 
 > 第「十」节专测**只读成员被挡下时的提示**：真把爸爸降成 viewer → 真点勾选
 > → 真看提示里有没有集名。分两段等（本地 cals 的角色先、DOM 后）—— 合成
 > 一个条件的话，超时时分不清「同步没发生」和「同步到了但界面没画」。
-> 写这一节时踩到「合成点击少了 pointerdown」，见「四、40」。
+> 写这一节时踩到「合成点击少了 pointerdown」，见「四、32」。
 
 > 第「十一」节专测**冲突提示的接线**：判定本身在 `domain/merge.ts` 有单测，
 > 这里证的是「引擎把这一轮推的 op 和这一轮拉回的改动对上了没有」。
@@ -556,7 +556,7 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 再在本机改同一个字段、真点开抽屉看那条提示、真点「知道了」看它落盘。
 > 验过它有牙：把 `engine.ts` 里那句 `store.addConflicts(...)` 拔掉重建，
 > 只在「冲突记到本地」那一步中断。
-> 写这一节时踩到 `persist()` 防抖（见「四、41」）和 waitFor 只吃表达式（「四、42」）。
+> 写这一节时踩到 `persist()` 防抖（见「四、30」）和 waitFor 只吃表达式（「四、29」）。
 
 > 第「十二」节专测 **AI 写路径的接线**：模型调工具 → 工具造提案 → SSE 推卡片 →
 > 用户点确认 → 服务器落库。它自己另起一个 **40 行的假模型服务**（说 OpenAI
@@ -570,7 +570,7 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > `HTMLTextAreaElement` 的原型（拿 `HTMLInputElement` 的来 call 会当场
 > `Illegal invocation`）；`snapshot.tasks` 是**按 id 索引的对象**不是数组
 > （见 `server/lib/sync.js` 的 `snapshot`），写 `.some()` 直接 TypeError；
-> **假模型判轮次不能数「第几次调用」**（见「四、51」）—— 那个全局计数一被
+> **假模型判轮次不能数「第几次调用」**（见「四、39」）—— 那个全局计数一被
 > SDK 重试或别的来源串扰就错位，第一轮拿到文本收尾，卡片永远不出现且
 > **一条报错都没有**（约 1/9 概率）。改成看这一轮 `messages` 里有没有
 > `role:'tool'`。
@@ -579,20 +579,20 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 >
 > 第「十三」节（2026-10-06）专测**时间轴上下沿的键盘通路**：
 > `Tab` 能不能够到那两个把手、方向键有没有按 `data-act` 接到对的那一端。
-> 用 CDP 的 `Input.dispatchKeyEvent` 按**真实焦点**派发（见「四、44」），
+> 用 CDP 的 `Input.dispatchKeyEvent` 按**真实焦点**派发（见「四、33」），
 > 不是自己在页面里造一个 target。算式本身（15 分钟一档、上沿固定底边）
 > 在 `domain.test.ts` 的 `nudgeEdge` 用例里，这一节只管接线。
 >
 > 第「十四」节专测**软键盘避让的管道**：`useKeyboardInset` 有没有写 `--kb`、
 > 固定浮层有没有读它。真软键盘无头里造不出来，所以只验这两端（同触屏那条的限度）。
-> 写这两节时连踩了三个**伪装成产品 bug 的探针坑**，见「四、43」。
+> 写这两节时连踩了三个**伪装成产品 bug 的探针坑**，见「四、31」。
 >
 > 第「十五」节（2026-10-06）专测**语义与焦点**：抽屉是不是 `[role=dialog]`、
 > 焦点开时进不进面板（要落在面板本身，不是第一个输入框）、Tab 圈不圈得住
 > （从**最后一个**可聚焦元素按，才证得了）、关掉还回不还回原处；
 > 侧栏的 `aria-current`、找日期的 `aria-expanded`；以及 `prefers-reduced-motion`
 > 关掉过渡但放过加载圈。验过它有牙（三处一起改坏，三条当场红）。
-> 四个坑都在「四、45」：`[role=dialog]` 的歧义、上一节留着的抽屉、
+> 四个坑都在「四、34」：`[role=dialog]` 的歧义、上一节留着的抽屉、
 > `getComputedStyle` 的 `1e-05s`。
 >
 > 第「十六」节（2026-10-06）补的是**此前一条断言都没有的三样**：找日期的
@@ -602,59 +602,38 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 见「五、界面约定」里那条宽度。
 > 验过它有牙：把 `parseDateText` 里裸周几那句 `if (!m[1] && d < today)` 改坏、
 > 重新构建，只有「裸周几落在将来」那一条红（差 -1 天）。
-> 三个坑都在「四、46」。
+> 三个坑都在「四、35」。
 >
-> 第「十七」节 2026-10-07 又扩了三样（快速添加那三件改动的接线）：
-> 时钟按钮点下去**先出日期面板**（42 格、待办箱默认 0 格高亮）、
-> 选完日期才出转盘、胶囊上日期和时间**同时在**、选的那天真的落库；
-> **占位符在「今天」和「待办箱」两页完全一样**；
-> 以及窄屏的**浮动 `+` 号**（在、默认收起、点开、再点收起）。
-> 窄屏那条靠 `Page.addScriptToEvaluateOnNewDocument` 里一个 `matchMedia` 的
-> Proxy 强行把 `(max-width: 900px)` 判成 true（`sessionStorage.__forceNarrow === '0'`
-> 时放行真实值），绕开无头 Chrome 那个 526px 的下限（见四、34）。
-> 写这几条时踩到 `evalJs` 少了 `return`（见四、39），三条假红。
+> 第「十七」节（2026-10-07）跟着「快速添加」那几件改动扩了**三轮**
+> （216 → 254 → 266 条），几处**断言口径整个换掉**，别照着旧记忆找。
+> 三轮的走向：先补「时钟按钮 → 日期面板 → 转盘」这条链与窄屏浮动 `+` 号；
+> 再把「日期 / 时间分两层」改成**两层折叠面板**（`ui/WhenPop.tsx`），
+> 并把转盘拆成 `ClockBody`（本体，谁要谁嵌）+ `ClockPop`（抽屉那个浮层，仍是 246px）；
+> 最后跟着圆钮 / 几何 / 表盘那批改动重写断言。
 >
-> 第「十七」节 2026-10-07 又扩了两轮。第二轮把「日期 / 时间分两层」改成
-> **两层折叠面板**（`ui/WhenPop.tsx`）：上面日期、下面时间，各点各的标题行开合，
-> **同时只开一层**；没日期先开日期层、有日期（**含 tab 默认的那个**）先开时间层；
-> 点中某天自动收起日期层切到时间层；底部一个独立的「不设置」把日期和时间一起清掉。
-> 同轮把转盘拆成 `ClockBody`（本体，谁要谁嵌）+ `ClockPop`（抽屉里那个浮层），
-> 下午那圈直接写 12–23、分钟那圈写 60,5,…,55，面板里那只表盘缩到 198px
-> （抽屉里仍是 246，`.clock-pop` 的 278px 宽度是按它配出来的）。
-> 断言跟着变成：两层的开合互斥、表盘尺寸与居中、两圈的标签字面量、
-> **按钮上那两行写的是生效值**（`10/7` + `08:00`，跟面板里是同一个值）、
-> 「不设置」能压过「今天」页的默认日期；另外补了**抽屉里那个转盘**的一整段
-> （246px 没被带跑、出口是「清除/取消/确定」、「取消」真的是反悔）。
-> 写这几条时踩到 `clickEl` 把表达式**原样拼进页面求值**（见四、47），
-> 选择器少了 `document.querySelector(` 前缀，`#content` 被当成类的私有字段。
+> 只有三条值得留在文档里：
 >
-> 第「十七」节 2026-10-07 第三轮（**本轮 216 → 254 条**）跟着「快速添加那八条改动」
-> 走了一遍，几处**断言口径整个换掉**，别照着旧记忆找：
->
-> - 窄屏那个圆钮**一直在**：收起 `.lucide-plus` / 展开 `.lucide-x`（lucide 自带
->   的图标类名，比数 svg 的 path 稳）。原先断言「展开后 `.fast-fab` 消失」的
->   那三条连同 `.fast-collapse` 一起删了。
-> - 新增横条与圆钮的**几何**断言：`position: fixed`、右端给圆钮让出的缝、
->   `transform-origin` 解析成 px 后**等于横条宽度**（钉在右端）、两者**竖直居中**。
->   居中那条不能当场量一次就判 —— 横条高度会被字体替换 / 换行改掉，而那一帧
+> - **窄屏那个圆钮一直在**：收起 `.lucide-plus` / 展开 `.lucide-x`（用 lucide 自带的
+>   图标类名，比数 svg 的 path 稳）。原先「展开后 `.fast-fab` 消失」那三条连同
+>   `.fast-collapse` 一起删了。
+> - **「竖直居中」不能当场量一次就判**：横条高度会被字体替换 / 换行改掉，而那一帧
 >   `ResizeObserver` 还没回调（实测偶发假红）。用一个**轮询到稳定**的小工具
->   `settleCenter()`，**不用 `waitFor`**：它超时是抛异常，会把后面几十条断言全带走。
-> - 输入框默认一行、变长了自己撑开（量 `getBoundingClientRect().height`）。
-> - 「点空白两级收起」：`mousedown` 派发在 `#content` 上，第一次只收面板、
->   第二次才收横条。
-> - 「保存」那个按钮**没有文字了**，断言改成 `.lucide-check` + 它的右边缘不越过
->   日期按钮的左边缘 + 两者**同高**。
-> - 表盘那段：`.cp-display` / `.cp-cell` 全没了，改成看**中心那个点**写的是「时」
->   还是「分」；顺带走一遍「点中心切圈 → 再点切回来」。
->   ⚠️ **面板关掉时 `ClockBody` 是卸载的**，重开后表盘回到小时圈 ——
->   旧断言里那句「点一下切回小时档」在新版会**真的切成分钟圈**（本轮第一遍就是这么红的）。
-> - `.wp-foot` 那两处「点收起」换成 `closeWhen()`（点 `#content`）；
->   新增「面板底部没有出口」和「清空 / 跳过 在箭头左边」（比几何，不比 DOM 顺序）。
+>   `settleCenter()`，**不用 `waitFor`** —— 它超时是抛异常，会把后面几十条断言全带走。
+> - ⚠️ **面板关掉时 `ClockBody` 是卸载的**，重开后表盘回到小时圈 ——
+>   旧断言里那句「点一下切回小时档」在新版会**真的切成分钟圈**（本轮第一遍就这么红的）。
+>
+> 其余（两层的开合互斥、表盘尺寸与居中、两圈标签字面量、`.cp-display` 整组删掉改成看
+> 中心那个点写「时」还是「分」、「保存」只剩 ✓ 图标且与日期按钮同高、
+> `.wp-foot` 的「点收起」换成 `closeWhen()`、几何断言比 px 不比 DOM 顺序）
+> **照文件里的断言读**，文档不重复一遍。
+> 窄屏那条靠 `Page.addScriptToEvaluateOnNewDocument` 里给 `matchMedia` 套 Proxy
+> 强行把 `(max-width: 900px)` 判成 true（`sessionStorage.__forceNarrow === '0'` 时
+> 放行真实值），绕开无头 Chrome 那个 526px 的下限（见四、24）。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
 
-其余探针坑见「四、33」。
+其余探针坑见「四、24」。
 
 > **旧版根目录那个 `package.json`（`npm test` 空转的那个）已经没有了，
 > 但 2026-10-06 又建了一个新的** —— 就是现在这一个，只声明 AI 那一组依赖，
@@ -664,6 +643,9 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 ---
 
 ## 四、踩过的坑（改代码前先看这里）
+
+> 编号是稳定引用（正文里到处在指「见四、N」）。**合并 / 删除条目时要把引用一起改**，
+> 别让编号漂移。
 
 ### 同步 / 数据
 
@@ -723,29 +705,25 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 `if (isDragging()) return;`。拖动只有几秒，跳过这一轮没有代价 ——
 outbox 还在，下一个轮询或下一次本地改动自然会把它推上去。
 
-**3. LWW 是逐字段的，不是整条**
+**3. LWW 与 op 的三条：逐字段 · 幂等不靠 oplog · 时间戳只拒绝不钳制**
 
-整条任务做 LWW：手机改标题、桌面改日期，后同步的那方会把对方**整个字段集**
-覆盖掉，用户看到「我改的东西凭空没了」。逐字段的代码量几乎一样，但两个改动都留得住。
+**逐字段，不是整条。** 整条任务做 LWW：手机改标题、桌面改日期，后同步的那方会把
+对方**整个字段集**覆盖掉，用户看到「我改的东西凭空没了」。逐字段的代码量几乎一样，
+但两个改动都留得住。
 
-> **逐字段 LWW 有个副作用要说出来**：手机上改了标题、桌面上也改了标题，
-> 后同步的那台会看到「字自己变了」，因为它压根不知道另一台也动过。
-> 所以同一个字段两边都改过时，任务详情里会多一条只读提示（见二、同步末）。
-> 提示本身不改数据 —— LWW 已经判完了，它只是把判决结果说出来。
+> **副作用要说出来**：同一个字段两边都改过时，后同步的那台会看到「字自己变了」，
+> 因为它压根不知道另一台也动过。所以任务详情里会多一条只读提示（见二、同步末）——
+> 提示本身不改数据，LWW 已经判完了，它只是把判决结果说出来。
 
-**4. 幂等不靠 oplog**
+**幂等不靠 oplog。** 比较键 `(ts, deviceId)` 由客户端在**创建 op 时固定**并持久化在
+发件箱里。同一条 op 重放时比较键完全相同 → `ON CONFLICT` 的 `WHERE` 不成立 →
+一行都不改。**不要**再加一张「这批 op 处理过了」的表。
 
-LWW 的比较键 `(ts, deviceId)` 由客户端在**创建 op 时固定**并持久化在发件箱里。
-同一条 op 重放时比较键完全相同 → `ON CONFLICT` 的 `WHERE` 不成立 → 一行都不改。
-所以**不要**再加一张「这批 op 处理过了」的表。
+**时间戳只拒绝、不钳制。** 钳制过一版，问题是钳制值取决于「收到请求的那一刻」，
+同一条 op 重放两次会钳出两个不同的时间戳，**幂等性当场破掉**。现在改成超过
+24 小时就退回并标 `code: 'clock'`，客户端留着不丢、等时钟校准后自然能推上来。
 
-**5. 时间戳只拒绝、不钳制**
-
-钳制过一版，问题是钳制值取决于「收到请求的那一刻」，同一条 op 重放两次会钳出
-两个不同的时间戳，**幂等性当场破掉**。现在改成超过 24 小时就退回并标
-`code: 'clock'`，客户端留着不丢、等时钟校准后自然能推上来。
-
-**6. 旧数据导入：先同步，再看账号空不空 —— 顺序不能反**
+**4. 旧数据导入：先同步，再看账号空不空 —— 顺序不能反**
 
 `sync/engine.ts` 的 `bootstrap()` 里是 `await syncNow()` **之后**才判断
 「要不要把本机的旧数据搬上来」，而且判据是**服务器账号里有没有东西**、
@@ -758,7 +736,7 @@ LWW 的比较键 `(ts, deviceId)` 由客户端在**创建 op 时固定**并持�
 
 ### 前端 / UI
 
-**7. `data-drop` 必须挂在有 padding 的元素的祖先上**
+**5. `data-drop` 必须挂在有 padding 的元素的祖先上**
 
 这是「有的任务拖不动」的真正根因，踩过两次。`data-drop` 原先挂在**内层**
 `.allday-items` 上，而它有 `padding`：拖到 padding、任务之间的空隙、容器边缘时
@@ -767,7 +745,7 @@ LWW 的比较键 `(ts, deviceId)` 由客户端在**创建 op 时固定**并持�
 
 修法：`data-drop` + `data-date` 上移到最外层 `.allday-zone`，内层纯做布局。
 
-**8. 拖动排序用「让位洞」模型，不是插入线**
+**6. 拖动排序用「让位洞」模型，不是插入线**
 
 拖动时其他任务**实时地、平滑地挪开**，在光标处留出一个占位洞 `.drop-hole`，
 落点由「洞在哪」直接表达。位置本身就是位置，不用一条线去暗示。
@@ -830,15 +808,12 @@ HTML5 拖拽里每帧改 DOM 顺序代价太高，而且 transition 会和 drago
 | `.touch-drag` | 触屏长按「提起」后的抬起阴影（`tailwind.css` 里的新表面，别去 `legacy.css` 找） | 在用 |
 | `.tl-guide` | 时间轴落点线 + 时间徽章 | 在用 |
 | `.tl-busy.drag-src` | 拖走时隐藏原位置的占用底纹 | 在用 |
-| `.ins-line` / `.ins-bar` / `.ins-hl` | 旧插入线模型 | **已彻底删除** |
-
-> `.ins-*` **连 CSS 规则都没了**，`legacy.css` 里只剩一句提到它们的注释
-> （第 823 行附近，说明「这套已废弃」）。别照着旧文档去找它们的样式。
+| `.ins-line` / `.ins-bar` / `.ins-hl` | 旧插入线模型 | **已彻底删除**（连 CSS 规则都没了，`legacy.css` 里只剩一句「这套已废弃」的注释） |
 
 **时间轴落点仍是画线**（`.tl-guide`），没有改成洞 —— 时间轴是连续坐标不是列表，
 「让位」在那里没有对应概念。这两种落点表达不要混。
 
-**9. 拖到视口上下缘会自动滚屏**
+**7. 拖到视口上下缘会自动滚屏**
 
 `runAutoScroll()` 用 `requestAnimationFrame` **持续**滚，不是在 `dragover` 里挪一点 ——
 `dragover` 的触发频率跟着鼠标走，鼠标不动就不触发，滚动会一顿一顿的。
@@ -848,7 +823,7 @@ HTML5 拖拽里每帧改 DOM 顺序代价太高，而且 transition 会和 drago
 **滚完位置变了，落点必须按新位置重算**，否则洞会停在旧处。
 `runAutoScroll` 里因此要保留 `dragProbe` / `dragProbeZone` 并重新调 `showDropGuide()`。
 
-**10. 高度一律用 JS 实算，不要写 `calc(100vh - N)`**
+**8. 高度一律用 JS 实算，不要写 `calc(100vh - N)`**
 
 浏览器工具栏、缩放、系统字号都会让那个 N 猜错（实测差 22px）。正确做法：
 
@@ -857,15 +832,14 @@ var cs = getComputedStyle(el);
 var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
 ```
 
-用它的地方是 `views/Calendar.tsx` 的 `availHeight(el)` / `useViewLayout()`。
-**旧版叫 `Views.fitWeekHeight` / `fitMonthHeight`，名字已经没了**（现在是同一个
-`fit()` 里分支处理周视图和月视图），改代码时别照着旧名字找。
+用它的地方是 `views/Calendar.tsx` 的 `availHeight(el)` / `useViewLayout()`，
+**周视图与月视图走同一个 `fit()` 分支处理**。
 
 那段 `fit()` 还负责写 `--week-head-h`（周视图表头的实测高度），
 因为周视图未定时行的 `sticky` `top` 取的就是这个变量 —— 写死必错
 （CSS 里的兜底值是 `var(--week-head-h, 79px)`）。
 
-**11. 月视图必须能滚**
+**9. 月视图必须能滚**
 
 `fit()` 里对月视图**只写下限**，不均分：
 `gridAutoRows = minmax(下限, auto)`（先清掉 `gridTemplateRows`，
@@ -883,7 +857,7 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > 「每格直接列出几条」**不写死**，超出的折叠成「还有 N 项」并加 `data-jump`
 > 可点进那天的日视图。上限不能太大：15 会把整行撑到几百像素、同行其他天全被拉空。
 
-**12. 窄屏断点 900px，`isNarrow()` 与 CSS 媒体查询必须一致**
+**10. 窄屏断点 900px，`isNarrow()` 与 CSS 媒体查询必须一致**
 
 `ui/hooks.ts` 的 `useIsNarrow()` 用 `matchMedia('(max-width: 900px)')`，CSS 里对应
 `@media (max-width: 900px)`。**改一处必须改另一处**，否则标签栏与侧栏的显隐会打架。
@@ -903,17 +877,14 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > `styles/legacy.css` 里**另有** `@media (max-width: 820px)` 与 `(max-width: 640px)`
 > 两处，那是排版微调（字号、间距），**不是**响应式断点，别混。
 
-**13. 顶栏绝对不能加 `position` / `z-index` / `sticky`**
+**11. 顶栏绝对不能加 `position` / `z-index` / `sticky`**
 
 会生成层叠上下文，把里面的找日期面板（z-index 60）困住，导致被下方内容盖住变半透明。
 实测踩过：窄屏下面板整个变半透明。窄屏下顶栏随内容一起滚反而省垂直空间。
 
-**14. 触屏有 hover 落地、有拖拽，但两条路完全分开**
+**12. 触屏与鼠标：两条路完全分开，只共用落点**
 
-这一条的旧版内容是「触屏没有 hover，也没有 HTML5 拖拽，排序靠长按弹操作层」——
-**后半句已经不成立**（2026-10-06 起触屏能拖了）。现在是：
-
-- `@media (hover: none)` 处理 hover 才显形的元素（拖拽抓手、箭头、背景高亮）。**这条没变。**
+- `@media (hover: none)` 处理 hover 才显形的元素（拖拽抓手、箭头、背景高亮）。
 - **鼠标走 HTML5 拖拽，触屏走自己那条 `pointer` 通路，两条路不共用输入，只共用落点。**
   输入那一段在 `ui/dnd.ts` 的文件头（`beginTouch` / `moveTouch` / `endTouch`）；
   落点那一段（`applyDropAt` / `finishDrag` / `commitDrop`）**是同一份代码** ——
@@ -930,61 +901,58 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
   这一串正好打在它的遮罩上，遮罩的 `onClick={onClose}` 当场把操作层关掉 ——
   **表现是「长按完什么也没发生」**，而事件日志里干净得看不出问题。
   只在「提起过」的那一次吞，普通点击不受影响。
-- `lp.current.fired` 标志：长按生效后抬手那一下补的 `click` 要吞掉，
-  否则会顺带打开抽屉。取消是容器上的 `onPointerMove` / `onPointerUp` /
-  `onPointerCancel` / `onPointerLeave` 四个一起调的 `clearLp` ——
-  **不是 capture 阶段拦截**（旧版是，新版走 React 的委托 `onClick`，
-  在 `App.tsx` 的点击委托最前面一行 `return`）
-  > **它的复位必须排在 `pointerDown` 里那次鼠标 `return` 之前。** 把它写在
-  > 后面，鼠标这条路就永远不复位，长按过后用鼠标点的第一下被静默吃掉
-  > （探针第「十」节第一次就是这么失败的，见四、40）。
+- `lp.current.fired` 标志：长按生效后抬手那一下补的 `click` 要吞掉，否则会顺带打开抽屉。
+  取消是容器上的 `onPointerMove` / `onPointerUp` / `onPointerCancel` / `onPointerLeave`
+  四个一起调的 `clearLp` —— **不是 capture 阶段拦截**（新版走 React 的委托 `onClick`，
+  在 `App.tsx` 的点击委托最前面一行 `return`）。
+  > **它的复位必须排在 `pointerDown` 里那次鼠标 `return` 之前。** 写在后面，
+  > 鼠标这条路就永远不复位，长按过后用鼠标点的第一下被静默吃掉
+  > （探针第「十」节第一次就是这么失败的，见四、32）。
 - **动作值用无歧义前缀**：`dur60` 不是 `d60` —— 后者与 `del` / `date` 撞，
   靠 `+slice(1) > 0` 猜必然误伤。改动作值时按 `/^dur(\d+)$/` 匹配
 - 窄屏下显式 `dragstart` → `preventDefault()`，避免某些移动浏览器模拟出半截行为
   （**只对 HTML5 那条路有意义**，触屏那条根本不发 `dragstart`）
 
-> 触屏这条路**已经有自动化覆盖**了，见第三节「测试」与四、34 —— 不必只靠真机。
+> 触屏这条路**已经有自动化覆盖**了，见第三节「测试」与四、24 —— 不必只靠真机。
 > 但探针证的是「指针事件管道通」，不是「真手指在真手机上顺手」。
 
-**15. `moveInList` 的候选列表不能排除自己**
+**13. 列表与输入框的四条小规矩**
 
-原来的实现 `filter` 时把被移动的任务自己排除了，`findIndex` 恒返回 -1，
-`refIdx` 永远是 0 → **「下移」永远把任务插到最前面**。
-现在用含自己的 `all` 定位、用排除自己的 `list` 取参照。
+- **`moveInList` 的候选列表不能排除自己。** 原来 `filter` 时把被移动的任务自己
+  排除了，`findIndex` 恒返回 -1，`refIdx` 永远是 0 → **「下移」永远把任务插到最前面**。
+  现在用含自己的 `all` 定位、用排除自己的 `list` 取参照。
+- **浮层外点击收起要用 `mousedown` + capture。** `useOutsideClose()` 里是
+  `document.addEventListener('mousedown', ..., true)`。不用 capture 的话，
+  面板内 input 的 blur 会抢先把它关掉。
+- **输入框不要在编辑时重建。** 换掉 DOM 节点或改正在编辑的那个 input 的 `value`
+  会让光标跳到开头。`Drawer.tsx` 里标题 / 备注是**本地草稿**（按 `lastId` 的 ref 记住），
+  就是为了让「打字期间的重渲染」不至于把光标拽走。
+- **滚动位置要在 render 阶段读，不能在 effect 里读。** `useViewLayout` 要在重渲染前后
+  保住 `.content` 和 `.week-view` 的滚动位置。React 会先跑完整个 render 阶段再改 DOM，
+  所以**在 render 体内读 `el.scrollTop` 拿到的是更新前**的值；放进 `useLayoutEffect`
+  读到的已经是清零后的 0。
 
-**16. 浮层外点击收起要用 `mousedown` + capture**
+**14. 时间轴与日期格的四条小规矩**
 
-`useOutsideClose()` 里是 `document.addEventListener('mousedown', ..., true)`。
-不用 capture 的话，面板内 input 的 blur 会抢先把它关掉。
+- **日期密度指示用淡底 + 底部短横，不要用 4px 圆点。** 找日期面板与月视图的日期格：
+  有未完成任务的格子加淡底 + 一条短横，横宽按任务数分 3 档（`.lv2` / `.lv3` 控制）。
+  **圆点 4px 在 1x 屏上几乎看不见**。窄屏下月视图格子压成圆点（`font-size:0`）
+  是因为那里塞不进文字，与这里不是一回事。
+- **时间轴方块是两行，短任务不渲染第二行。** `.tl-event` = `.ev-head`（勾选圈 + 标题）
+  + `.ev-time`（时间段）。高度 < 46px 时**不渲染**时间行（15 分钟的短任务会被挤成两半）。
+  时间行样式明显弱于标题：`font-size: 10.5px` / `color: var(--text-3)`。
+- **时间轴上下沿都可拖。** `.ev-resize` 是下沿、`.ev-resize-top` 是上沿（复用同一套样式）。
+  上沿拖动时 `ns = clamp(start + addMin, 0, end - 15)`，**底边固定**，
+  同时改 `time` 和 `duration`；下沿只改 `duration`。15 分钟步进。
+  > 测试时 `.ev-resize` **同时匹配上下沿** —— 用 `[data-act="resize-top"]` 区分，
+  > 否则会误判拉伸失效。
+- **已完成的未定时任务不占日程位置。** `untimedOn(iso)` = `!t.time && !t.done`，
+  日 / 周视图共用。已完成的**定时**任务仍留在时间轴上灰显 —— 它占着具体时间段，
+  抹掉会丢失「那段时间做过什么」。
+  「今天」页有可折叠的「今天已完成」区块，状态存 `ui.tdoneOpen`，默认收起。
+  在里面取消勾选会让任务自动回到日程页。
 
-**17. 输入框不要在编辑时重建**
-
-换掉 DOM 节点或改正在编辑的那个 input 的 `value` 会让光标跳到开头。
-`Drawer.tsx` 里标题 / 备注是**本地草稿**（按 `lastId` 的 ref 记住），
-就是为了让「打字期间的重渲染」不至于把光标拽走。
-
-**18. 日期密度指示用淡底 + 底部短横，不要用 4px 圆点**
-
-找日期面板与月视图的日期格：有未完成任务的格子加淡底 + 一条短横，
-横宽按任务数分 3 档（`.lv2` / `.lv3` 控制）。**圆点 4px 在 1x 屏上几乎看不见**。
-窄屏下月视图格子压成圆点（`font-size:0`）是因为那里塞不进文字，与这里不是一回事。
-
-**19. 时间轴方块是两行，短任务不渲染第二行**
-
-`.tl-event` = `.ev-head`（勾选圈 + 标题）+ `.ev-time`（时间段）。
-高度 < 46px 时**不渲染**时间行（15 分钟的短任务会被挤成两半）。
-时间行样式明显弱于标题：`font-size: 10.5px` / `color: var(--text-3)`。
-
-**20. 时间轴上下沿都可拖**
-
-`.ev-resize` 是下沿、`.ev-resize-top` 是上沿（复用同一套样式）。
-上沿拖动时 `ns = clamp(start + addMin, 0, end - 15)`，**底边固定**，
-同时改 `time` 和 `duration`；下沿只改 `duration`。15 分钟步进。
-
-> 测试时 `.ev-resize` **同时匹配上下沿** —— 用 `[data-act="resize-top"]` 区分，
-> 否则会误判拉伸失效。
-
-**21. 重叠任务按「重叠簇」分列**
+**15. 重叠任务按「重叠簇」分列**
 
 `domain/layout.ts` 的 `layoutOverlap(events)`：先切成重叠簇
 （`e.start < cur.end` 并入，否则另起一组），再在**簇内**贪心分列，每簇独立算 `cols`。
@@ -996,26 +964,16 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > **占位底纹 `tl-busy` 必须与方块同列宽**（`left: e.col*w%` + `width: calc(w% - 4px)`）。
 > 原来 `left:0; right:0` 整条铺满，两个穿插任务叠在一起时整段时间被染色。
 
-**22. 已完成的未定时任务不占日程位置**
-
-`untimedOn(iso)` = `!t.time && !t.done`，日 / 周视图共用。
-已完成的**定时**任务仍留在时间轴上灰显 —— 它占着具体时间段，抹掉会丢失
-「那段时间做过什么」。
-
-「今天」页有可折叠的「今天已完成」区块，状态存 `ui.tdoneOpen`，默认收起。
-在里面取消勾选会让任务自动回到日程页。
-
-**23. 侧栏顺序存在 `ui.navOrder` / `ui.navBottom`，`normalizeUi` 必须区分 undefined 与空数组**
+**16. 侧栏顺序存在 `ui.navOrder` / `ui.navBottom`，`normalizeUi` 必须区分 undefined 与空数组**
 
 状态存 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部那一组）。
 底部组在窄屏是底部标签栏之外的「更多」抽屉，宽屏是侧栏的下半区。
 
-> ⚠️ **老版本的标题是「侧栏顺序可拖动」，那是过期说法。** React 重写之后
-> `ui.navOrder` / `ui.navBottom` **一度是死数据**：`ui/Shell.tsx` 还在读它们，
+> ⚠️ React 重写之后这两个字段**一度是死数据**：`ui/Shell.tsx` 还在读它们，
 > 但全项目**没有任何调用点写它们**（`grep -rn 'navBottom' app/src` 只有类型、
-> 默认值、`normalizeUi` 和读取处）。所以「拖过一次顺序就记住了」在那一版是假的 ——
-> 看到的永远是默认顺序。写入方在 2026-10-06 的「功能区自定义」里补回，
-> 入口在**设置页**（不复用 `ui/dnd.ts`，那套是给时间轴与让位洞用的）。
+> 默认值、`normalizeUi` 和读取处）。所以「拖过一次顺序就记住了」在那一版是假的。
+> 写入方在 2026-10-06 的「功能区自定义」里补回，入口在**设置页**
+> （不复用 `ui/dnd.ts`，那套是给时间轴与让位洞用的）。
 
 处理在 `domain/model.ts` 的 `normalizeUi()`：
 
@@ -1025,21 +983,28 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > 代码里就是 `bottom === null ? ['trash'] : bottom`，`domain.test.ts` 有用例锁着。
 
 其他坑：侧栏 active 高亮要用统一的 `$$('.nav-item')` 取，不能分开写 `#nav`
-与 `#navBottom`。（旧版还有一条「`dragend` 后补一次 `click`，用 `navJustDragged`
-吞掉」—— 那个标志在新版代码里**不存在**，别照着找。）
+与 `#navBottom`。
 
-**24. CSS 层叠：同特异度后写的赢，给折叠元素加类要查 display**
+**17. CSS 层叠两条：同特异度后写的赢；Tailwind 无层赢过一切**
 
-`.habit-list { display:flex }` 声明在 `.mc` 之后会覆盖 `display:grid`。
-同特异度下后写的赢，必须补 `.habit-list.mc { display:grid }` 提一级特异度。
-
-`.td-body` 收起时 `display:none`，但 `.mc { display:grid }` 在后面会把它强制变成 grid
-→ **折叠的「今天已完成」区块凭空展开**。必须补
+**同特异度后写的赢，给折叠元素加类要查 `display`。** `.habit-list { display:flex }`
+声明在 `.mc` 之后会覆盖 `display:grid`，必须补 `.habit-list.mc { display:grid }`
+提一级特异度。`.td-body` 收起时 `display:none`，但 `.mc { display:grid }` 在后面
+会把它强制变成 grid → **折叠的「今天已完成」区块凭空展开**。必须补
 `.today-done .td-body { display:none }` + `.today-done.open .td-body.mc { display:grid }`。
 
 > 规律：**给折叠 / 隐藏元素加类时，一定要检查该元素的 `display` 规则与新类的层叠顺序。**
 
-**25. `.mc` 是显式加的类，不是靠 CSS 猜子元素**
+**Tailwind 4 把它的东西（含 preflight 重置）全部塞进 `@layer`，而没有层的作者样式永远赢过
+任何层内的样式。** 所以 `tailwind.css` 里 `@import "./legacy.css"`（不带 layer）就压在所有
+Tailwind 工具类之上 —— 这正是我们要的，legacy.css 是这个应用已经定稿的设计系统。
+
+> **代价**：在 legacy.css 已经覆盖的元素上，Tailwind 工具类**不生效**
+> （给 `.task-row` 加个 `mt-2` 是白写的）。新表面（登录页、浮层、`.ms-user` 等）
+> 用的是 legacy 里根本没有的类名，不受影响。新样式的配色**跟着 legacy.css 的
+> CSS 变量走**（`var(--text-3)` 等），写死颜色会让深色模式在新表面上失效。
+
+**18. `.mc` 是显式加的类，不是靠 CSS 猜子元素**
 
 宽屏列表分列靠 `.mc`。它加在：待办箱 `.group-items`、今天主列表、
 已完成 / 逾期 / 垃圾箱的每个分组内部、打卡 `.habit-list`、「今天已完成」明细。
@@ -1056,10 +1021,9 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 `.trash-head`、`.habit-add`、`.empty`）用 `grid-column: 1/-1` 排除分列。
 分列后 `.mc > .task-row/.habit-row` 的 `margin-bottom` 要清掉，改用 `row-gap: 7px`。
 
-> 那个媒体块里还有一行 `.habit-list.mc { display: grid }` —— 是提特异度用的，
-> 见上面「CSS 层叠」那条。
+> 那个媒体块里还有一行 `.habit-list.mc { display: grid }` —— 是提特异度用的，见四、17。
 
-**26. 原生 `confirm()` 在 PWA 里会被静默吞掉**
+**19. 原生 `confirm()` 在 PWA 里会被静默吞掉**
 
 用原生 `confirm()` / `alert()`，PWA 环境会**直接返回 `false`** ——
 表现为「点了删除完全没反应」，用户看不到任何提示，代码却以为他点了取消。
@@ -1077,34 +1041,15 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 | `App.tsx` `importBackup` | 导入备份 —— **是「合并」，不是覆盖**，文案里写明了 |
 | `Drawer.tsx` 删除任务 | 软删除，可在垃圾箱还原 |
 
-**27. Tailwind 4 的层叠：无层样式赢过一切**
-
-Tailwind 4 把它的东西（含 preflight 重置）全部塞进 `@layer`，
-而**没有层的作者样式永远赢过任何层内的样式**。所以 `tailwind.css` 里
-`@import "./legacy.css"`（不带 layer）就压在所有 Tailwind 工具类之上 ——
-这正是我们要的，legacy.css 是这个应用已经定稿的设计系统。
-
-> **代价要说清楚**：在 legacy.css 已经覆盖的元素上，Tailwind 工具类**不生效**。
-> 给 `.task-row` 加个 `mt-2` 是白写的。新表面（登录页、浮层、`.ms-user` 等）
-> 用的是 legacy 里根本没有的类名，不受影响。
-> 新样式的配色**跟着 legacy.css 的 CSS 变量走**（`var(--text-3)` 等），
-> 写死颜色会让深色模式在新表面上失效。
-
-**28. 事件委托：为什么 `views/` 组件不能有回调**
+**20. 事件委托：为什么 `views/` 组件不能有回调**
 
 见「一、`App.tsx` 里那几件事为什么都在一个文件」。一句话：行会被重排 / 重绘替换，
 挂在行上的 handler 会跟着丢。**新增交互时：在 `views/` 里出 `data-act` 属性，
 在 `App.tsx` 的委托 switch 里加一个 case。** 别往 `views/` 里塞 `onClick`。
 
-**29. 滚动位置要在 render 阶段读，不能在 effect 里读**
-
-`useViewLayout` 要在重渲染前后保住 `.content` 和 `.week-view` 的滚动位置。
-React 会先跑完整个 render 阶段再改 DOM，所以**在 render 体内读 `el.scrollTop`
-拿到的是更新前**的值；放进 `useLayoutEffect` 读到的已经是清零后的 0。
-
 ### 环境 / 工具
 
-**30. 工程目录在 SMB 上，偶发丢文件（**重要**）**
+**21. 工程目录在 SMB 上，偶发丢文件（重要）**
 
 工程目录挂在 CIFS 上（`actimeo=1` `nobrl` `mapposix`，`/mnt/fnos` 还是个
 `timeout=3` 的 autofs）。**2026-10-06 实测丢过一次 `app/src/App.tsx`**：
@@ -1117,10 +1062,10 @@ React 会先跑完整个 render 阶段再改 DOM，所以**在 render 体内读 
 - **别用 `perl -i` / `sed -i` 这类原地改写工具。** 它们靠「写临时文件再改名」，
   在 CIFS 上改名会失败，而且**原始文件会当场消失**（2026-10-06 实测丢了一次
   `app/tests/browser-smoke.mjs`，靠 `git checkout` 捞回来的）。
-  要用编辑工具改，或者写临时文件再 `mv`
+  要用编辑工具改，或者写临时文件再 `mv`。改行尾同理，见四、36
 - 源码没必要放共享盘上
 
-**31. `pkill -f "…"` 会打到自己**
+**22. `pkill -f "…"` 会打到自己**
 
 `pkill -f "node server/server.js"` 连同一条命令里的 shell 一起杀掉（exit 144），
 因为 zsh 的命令行本身就含这个字符串。
@@ -1128,8 +1073,9 @@ React 会先跑完整个 render 阶段再改 DOM，所以**在 render 体内读 
 - **拆成两条命令**，别在同一条里既 pkill 又出现那个字面量
 - 或者用端口：`fuser -k 25692/tcp`
 - 写成 `node [s]erver/server.js` 只在「同一条命令里没有字面量」时才有用
+- 无头 Chrome 残留同理，用 `pkill -x chrome`（按进程名精确匹配），见四、40
 
-**32. 非交互式 shell 里 `systemctl --user` 连不上总线**
+**23. 非交互式 shell 里 `systemctl --user` 连不上总线**
 
 ```
 Failed to connect to user scope bus via local transport:
@@ -1143,9 +1089,8 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 ```
 
-**33. 无头 Chrome 的坑（照抄即可）**
+**24. 无头 Chrome 的坑（照抄即可）**
 
-- 注入的脚本**后缀必须是 `.txt`**。`.js` 会被 MIME 猜测当 HTML 解析，报 `Unexpected token '<'`
 - 用 `document.body.textContent` 搜中文会命中内联 `<script>` 源码本身，
   导致「已删除的文案仍存在」的假阳性 —— 改用 `document.getElementById('content').textContent`
 - 合成 `DragEvent` 时 `target` 默认是派发元素（`content`），
@@ -1153,28 +1098,21 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
   `Object.defineProperty(ev, 'target', { value: 真实元素 })`
 - **不要在测试脚本里写 `location.reload()`**：内联脚本随页面重新执行 → 无限刷新，
   headless Chrome 挂住只能 taskkill
-- 断言 CSS 生效优先看 `display` / `getComputedStyle`；
-  transition 相关的 `opacity` 在无头 `--virtual-time-budget` 下读值不可靠
-- `.tl-busy` 没有 transition 计时上下文，无头环境实测 `opacity` 读出来仍是 1，
-  隐藏源底纹必须用 `display:none`
-- `file://` 下 localStorage 在多个无头实例间**共享**，连续截图会串状态 ——
-  每个截图必须给 `--user-data-dir=/tmp/xxx` 独立 profile
-- iframe 跨文档：`file://` 下 `postMessage` 被拦，跨文档读 DOM 也不行，
-  **只能用 `localStorage` 传递**（同源）。iframe 里的测试链要等跑完，
-  外层用 `setInterval` 轮询，别用固定 `setTimeout`
-- 用 python 写含 `\n` 的 JS 注入片段时容易转义出错 —— **直接用 Write 工具写探针文件**
-- python 的 `str.replace` 若目标串不存在会**静默不替换** —— 要加 `assert old in s`
+- 断言 CSS 生效优先看 `display` / `getComputedStyle`，**别读 `opacity`** ——
+  无头下 transition 相关的读值不可靠（`.tl-busy` 实测读出来永远是 1，
+  所以隐藏源底纹用的是 `display:none`，不是 `opacity: 0`）
 - 合成事件后调用了会触发重渲染的操作（如 drop），
   后续测试必须**重新 querySelector**，旧引用指向已脱离文档的节点，`getBoundingClientRect()` 全是 0
-- 无头 Chrome 截图要 `--ignore-certificate-errors`
 - 无头算「本周内某一天」时用 `weekStart(today)` 再偏移，
   不要直接 `today+2`，否则跨周时列不存在会拿到 null
 
-**34. 无头 Chrome 有最小窗口宽度约 526px（窄屏仍测不了，但触屏能测了）**
+> 更早那份 `tests/smoke.mjs`（`file://` + iframe + python 注入那一代）另有自己的一堆坑：
+> 注入脚本后缀必须 `.txt`、`--virtual-time-budget` 下读不到 `opacity`、截图要
+> `--ignore-certificate-errors`、iframe 跨文档只能靠 `localStorage` 传值……
+> **那份已冻结**，要跑它再翻它自己的头部注释，**别把那些限制套到 `browser-smoke.mjs` 上**。
 
-`--window-size=390` 实测 `innerWidth` 是 526，量不到真手机宽度，截图也会被裁。
-
-**窄屏那一套（≤900px 的标签栏、「更多」抽屉、`@media (hover: none)` 的排版）
+**最小窗口宽度约 526px。** `--window-size=390` 实测 `innerWidth` 是 526，量不到真手机宽度，
+截图也会被裁。**窄屏那一套（≤900px 的标签栏、「更多」抽屉、`@media (hover: none)` 的排版）
 仍然没有自动化覆盖，改那边只能靠手工在真机上看。**
 
 > 旧版曾用一个固定宽度的 iframe 包住应用来绕开这个限制，**后来放弃了** ——
@@ -1183,6 +1121,8 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 > 相比之下 `Emulation.setDeviceMetricsOverride` 会触发完整重排、
 > 之后合成事件不再进处理器，也不能用。
 > **要补窄屏测试，先想清楚用哪条路**，别直接抄 iframe 那套。
+> 现在窄屏那条是靠 `Page.addScriptToEvaluateOnNewDocument` 里给 `matchMedia` 套
+> Proxy 强行把 `(max-width: 900px)` 判成 true 绕过去的（第十七节）。
 
 **但「触屏」和「窄屏」是两件事，别一起放弃。** 触屏只需要指针事件带上
 `pointerType: 'touch'`，**在桌面视口下就能合成**，不需要真的窄：
@@ -1204,7 +1144,7 @@ await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
 > 这条路证的是「指针管道通、手势逻辑对」，**不是**「真手指在真手机上顺手」。
 > 真机手感仍然要人看。
 
-**35. 解析器的规则顺序不能重排：重复必须在日期之前**
+**25. 解析器的规则顺序不能重排：重复必须在日期之前**
 
 `domain/parse.ts` 的 `rulesOf()` 返回的数组顺序是有意义的，注释里写了原因：
 **「每周一」如果不先被重复规则吃掉，会被后面的日期规则当成「周一」解析成某个具体日期。**
@@ -1236,13 +1176,13 @@ await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
 > **两天前**。改这块时两个解析器要一起看，`domain.test.ts` 有一条用例
 > 直接拿 `parse()` 的结果和 `parseDateText()` 比，口径一歪就红。
 
-**36. 窄屏的负载文字要用 `shortLoad`，不要用完整时长**
+**26. 窄屏的负载文字要用 `shortLoad`，不要用完整时长**
 
 月视图格子窄（53px 宽），完整文案「3小时45分」会**折成三行把日期数字挤扁**。
 `D.shortLoad(mins)` 是专门给窄屏的：`225 → 3¾`、`60 → 1时`、`45 → 45分`。
 只有宽屏才用完整的 `D.fmtDuration`。
 
-**37. 改 nginx 配置在本机直接 cp，别 ssh 自己**
+**27. 改 nginx 配置在本机直接 cp，别 ssh 自己**
 
 这台机器（`ubuntu`，`192.168.1.6`）**就是 nginx 与后端所在的服务器**，
 工程目录也在本机。所以改 `deploy/schedule.conf` 后直接：
@@ -1255,68 +1195,40 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 > **别写 `ssh nas`** —— `~/.ssh/config` 里没有 `nas` 这个别名
 > （本机叫 `ubuntu` / `fn`），在本机上执行会报 `Could not resolve hostname nas`。
 
-**38. 端口 25692 上如果有个手动起的进程，systemd 服务会静默重启循环**
+**28. 端口 25692 上如果有个手动起的进程，systemd 服务会静默重启循环**
 
 表现是 `systemctl --user status` 里 `restart counter is at N`，
 `journalctl` 里 `EADDRINUSE`。**排查后端时先看 25692 是谁占着。**
 `ss -lptn 'sport = :25692'`。
 
-**39. 探针里的 `waitFor` 表达式不能以换行开头（ASI 会把它变成裸 `return`）**
+**29. 探针表达式：`waitFor` 只吃表达式、`evalJs` 要自己 `return`**
 
 `evalJs` 把表达式包成 `(async () => { <表达式> })()`，`waitFor` 再在前面加
-`return`。表达式要是从模板字符串的换行处开始：
+`return`。两个函数长得像、用法不一样：
 
-```js
-await waitFor(page, `
-  [...document.querySelectorAll('[data-cal]')].some(…) ? 1 : null`, '…');
-```
+- **`waitFor` 的表达式不能以换行开头。** 从模板字符串的换行处开始的话，
+  生成的代码就是 `return\n [ …`，**ASI 在 `return` 后面补一个分号** ——
+  整条表达式成了不可达代码，求值恒为 `undefined`，一直等到超时。
+  报错长这样：`等不到「…」，最后一次求值 = undefined`。看着像应用没反应，
+  其实探针自己写错了，而且**多行表达式（为了排版好看）几乎必然踩上**
+  （第「十」节就是这么假失败了两轮）。
+  > 已经在 `waitFor` 里 `expr.trim()` 掉了，别把这个 trim 当成多余的。
+  > 写多行模板时也别把 `? 1 : null` 拆到下一行 —— 那是另一个坑。
+- **`waitFor` 只能放表达式。** `const t = …;` 这种语句会直接报
+  `SyntaxError: Unexpected token 'const'`。要写多行就包一层：
+  ```js
+  await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
+  ```
+- **`evalJs` 不会替你补 `return`** —— 光写一个表达式等于算完就丢，求值恒为
+  `undefined`。断言写成
+  ``ok(await evalJs(page, `!!document.querySelector('.fast-fab')`), …)``
+  就永远是红的，而页面其实好好的（2026-10-07 加浮动 + 号时三条假红，
+  诊断行里 `fab: true` 和那条 FAIL 摆在一起才看破）。
+  > **规矩：`evalJs` 一律写 `return …;`，`waitFor` 一律不写。**
+- **`evalJs` 报异常时打的是 `exceptionDetails.exception.description`**，
+  只打 `exceptionDetails.text` 的话每个异常都长成一句「Uncaught」，等于没说。
 
-生成的代码就是 `return\n [ …`，**ASI 在 `return` 后面补一个分号** ——
-整条表达式成了不可达代码，求值恒为 `undefined`，一直等到超时。
-报错长这样：`等不到「…」，最后一次求值 = undefined`。看着像应用没反应，
-其实探针自己写错了，而且**多行表达式（为了排版好看）几乎必然踩上**
-（第「十」节就是这么假失败了两轮）。
-
-> 已经在 `waitFor` 里 `expr.trim()` 掉了，别把这个 trim 当成多余的。
-> 写多行模板时也别把 `? 1 : null` 拆到下一行 —— 那是另一个坑。
-
-> **同一个包装的另一半：`evalJs` 里的表达式必须自己写 `return`。**
-> `waitFor` 会替你补 `return`，`evalJs` **不会** —— 它只是
-> `(async () => { <表达式> })()`，光写一个表达式等于算完就丢，求值恒为
-> `undefined`。断言写成
-> ``ok(await evalJs(page, `!!document.querySelector('.fast-fab')`), …)``
-> 就永远是红的，而页面其实好好的（2026-10-07 加浮动 + 号时三条假红，
-> 诊断行里 `fab: true` 和那条 FAIL 摆在一起才看破）。
-> **规矩：`evalJs` 一律写 `return …;`，`waitFor` 一律不写。**
-
-**40. 探针的合成点击必须连 `pointerdown` 一起补，`el.click()` 不算一次真点击**
-
-这个应用的点击委托是 **pointerdown 驱动**的（长按状态机就挂在
-`onPointerDown` 上），`el.click()` 只补一个 `click`，跟真手指/真鼠标走的
-不是同一条路：
-
-```js
-el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', … }));
-el.dispatchEvent(new PointerEvent('pointerup',   { bubbles: true, pointerType: 'mouse', … }));
-el.dispatchEvent(new MouseEvent('click', …));
-```
-
-> 第「十」节原来只写 `el.click()`，于是被第八节触屏拖拽留下的
-> `lp.current.fired` 整下吃掉，断言报的是「提示里没点名是哪个集」——
-> 指向的是提示的实现，而真正的问题在点击根本没进去。
->
-> **这一条也顺带捉到一个真 bug**：那个标志的复位本来排在 `pointerDown` 的
-> 鼠标 `return` 之后，鼠标点的那一刻不复位（触屏点有自己的 pointerdown，
-> 所以只有鼠标这条中招）。验过它有牙：把复位挪到 `return` 之后重新构建，
-> 恰好失败那两条（见四、14 的引用）。
->
-> 反过来说，**「第一下被吃掉」这种症状先怀疑探针**：真手指的点击永远带
-> pointerdown，而合成事件不带 —— 别急着去改产品代码。
-
-> 这一段现在是 `clickEl(page, 表达式)` 一个函数（连同事件序列一起返回，
-> 失败信息里就直接看得出点没点进去），别再在调用点手写一遍。
-
-**41. `persist()` 有防抖，别在改动之后立刻读 localStorage**
+**30. `persist()` 有防抖，别在改动之后立刻读 localStorage**
 
 `store.persist()` 是**防抖**的。所以「加一条任务 → 立刻读 localStorage 找它」
 读到的还是**上一版**的盘子：界面上那一行已经在了、`outbox.length === 0`
@@ -1339,23 +1251,11 @@ const mine = await waitFor(page, `
 > 要真值就走 DOM 或等轮询，**别把「读一次 localStorage」当成同步点**。
 > 反过来说，凡是拿 localStorage 当断言的（第「十」节的降级、第「十一」节的
 > 冲突记录），都套在 `waitFor` 里 —— 那才是它该有的用法。
+>
+> 新建的任务在防抖落盘之前读不到，`undefined + 15` 是 `NaN`，于是「按了键没反应」
+> —— 这类失败**诊断行要带原始值，不要只写「等不到」**。
 
-**42. `waitFor` 只能放**表达式**，多语句要包一层 IIFE**
-
-`waitFor` 把参数包成 `return <expr>`（见四、39），所以 `const t = …;` 这种
-语句会直接报 `SyntaxError: Unexpected token 'const'`。要写多行就包一层：
-
-```js
-await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
-```
-
-> `evalJs` 没有这个限制（它包的是 `(async () => { … })()`），
-> 两个函数长得像、用法不一样。
-> 顺带：`evalJs` 报异常时打的是 `exceptionDetails.exception.description`，
-> 只打 `exceptionDetails.text` 的话每个异常都长成一句「Uncaught」，等于没说
-> （这条也踩过）。
-
-**43. 写探针时踩到的三个（都会伪装成「应用坏了」）**
+**31. 写探针时踩到的两个（都会伪装成「应用坏了」）**
 
 2026-10-06 加「方向键微调时间轴上下沿」那一节时，连着假失败三轮，
 每一轮**指向的都是产品代码，实际全是探针自己的错**：
@@ -1368,16 +1268,51 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 - **`.ev-resize` 会先命中上沿**（上沿的 class 是 `ev-resize ev-resize-top`，
   DOM 里排在前面）。断言名写着「下沿」、实际查的是上沿 —— 两者形状一样，
   于是照样绿。要下沿就用 `.ev-resize:not(.ev-resize-top)`。
-- **基准值不能刚保存就读 localStorage**（四、41 的翻版）。新建的任务在
-  `persist()` 防抖落盘之前读不到，`undefined + 15` 是 `NaN`，
-  于是「按了键没反应」。这次是靠失败信息里那句 `目标时长 undefined` 定位的 ——
-  **诊断行要带原始值，不要只写「等不到」**。
 
-> 共同点：**症状全都指向产品，根因全在探针**。上一节（四、40）那段
-> 「先怀疑探针」在这里又应验了三次。加断言时顺手把关键中间量打进失败信息里，
+> 共同点：**症状全都指向产品，根因全在探针**。上一节（四、32）那段
+> 「先怀疑探针」在这里又应验了。加断言时顺手把关键中间量打进失败信息里，
 > 能省掉一整轮 4 分钟的复跑。
 
-**44. 合成方向键要用 CDP 的 `Input.dispatchKeyEvent`**
+**32. 合成点击与 `clickEl`**
+
+这个应用的点击委托是 **pointerdown 驱动**的（长按状态机就挂在
+`onPointerDown` 上），`el.click()` 只补一个 `click`，跟真手指/真鼠标走的
+不是同一条路：
+
+```js
+el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', … }));
+el.dispatchEvent(new PointerEvent('pointerup',   { bubbles: true, pointerType: 'mouse', … }));
+el.dispatchEvent(new MouseEvent('click', …));
+```
+
+> 第「十」节原来只写 `el.click()`，于是被第八节触屏拖拽留下的
+> `lp.current.fired` 整下吃掉，断言报的是「提示里没点名是哪个集」——
+> 指向的是提示的实现，而真正的问题在点击根本没进去。
+>
+> **这一条也顺带捉到一个真 bug**：那个标志的复位本来排在 `pointerDown` 的
+> 鼠标 `return` 之后，鼠标点的那一刻不复位（触屏点有自己的 pointerdown，
+> 所以只有鼠标这条中招）。验过它有牙：把复位挪到 `return` 之后重新构建，
+> 恰好失败那两条（见四、12 的引用）。
+>
+> 反过来说，**「第一下被吃掉」这种症状先怀疑探针**：真手指的点击永远带
+> pointerdown，而合成事件不带 —— 别急着去改产品代码。
+
+`clickEl(page, x)` 把 `x` **原样拼进页面里求值**（`const el = ${x};`），
+不是当字符串传进去再 `querySelector`。所以：
+
+- **必须给完整的 `document.querySelector('…')`**。只写 `'#content .task-row'`
+  会被当成 JS 源码，`#content` 在类体里是**私有字段**语法，
+  报的是 `SyntaxError: Private field '#content' must be declared in an enclosing class`
+  —— 这个报错完全指不到「选择器写错了」。
+- **里面的字符串用单引号**（整段本身已经在模板字符串里了）。要拼一个动态 id，
+  用 `'…[data-id=' + ${JSON.stringify(id)} + ']'` 那种拼法，
+  别在双引号里再塞双引号。
+- 拿不准就先用 `evalJs` 单独试一次那段表达式，再喂给 `clickEl`。
+
+> 这一段现在是 `clickEl(page, 表达式)` 一个函数（连同事件序列一起返回，
+> 失败信息里就直接看得出点没点进去），别再在调用点手写一遍。
+
+**33. 合成方向键要用 CDP 的 `Input.dispatchKeyEvent`**
 
 `el.dispatchEvent(new KeyboardEvent('keydown', …))` 也能让处理器跑起来，
 但那样 `target` 是**我们自己摆上去的**：控件要是压根拿不到焦点（比如漏了
@@ -1391,7 +1326,7 @@ await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', c
 
 `keyDown` 和 `rawKeyDown` 都进得来（实测同效），`keyUp` 要跟着发一个。
 
-**45. 探针里的 `[role="dialog"]` 现在是个歧义选择器**
+**34. 探针里的 `[role="dialog"]` 现在是个歧义选择器**
 
 详情抽屉也变成 `role="dialog"` 之后，第十六节原来那句
 `waitFor('[role="dialog"]' 存在)` 会**先命中抽屉**（它本来就开着）：
@@ -1411,7 +1346,7 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
   它在 Chrome 里读出来是 `1e-05s`。比字符串会得到假失败，
   要按单位解析成秒再比大小。
 
-**46. 探针伺服的是 `dist/`，不是源码**
+**35. 探针伺服的是 `dist/`，不是源码**
 
 `serveDist()` 读的是 `../dist`，所以**改完前端不 `npm run build` 就等于没改**：
 第十七节第一次跑出来的「裸周几落在将来」是绿的，但那时跑的是上一轮的产物 ——
@@ -1427,21 +1362,7 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
   —— 垃圾箱**本来就该**留在底部组（`navBottom` 是「哪些归底部」，
   不是「底部组里只有谁」）。改成和 DOM 里量到的顺序比，才既对又不脆。
 
-**47. `clickEl` 的参数是「一整段表达式」，不是「一个选择器」**
-
-`clickEl(page, x)` 把 `x` **原样拼进页面里求值**（`const el = ${x};`），
-不是当字符串传进去再 `querySelector`。所以：
-
-- **必须给完整的 `document.querySelector('…')`**。只写 `'#content .task-row'`
-  会被当成 JS 源码，`#content` 在类体里是**私有字段**语法，
-  报的是 `SyntaxError: Private field '#content' must be declared in an enclosing class`
-  —— 这个报错完全指不到「选择器写错了」。
-- **里面的字符串用单引号**（整段本身已经在模板字符串里了）。要拼一个动态 id，
-  用 `'…[data-id=' + ${JSON.stringify(id)} + ']'` 那种拼法，
-  别在双引号里再塞双引号。
-- 拿不准就先用 `evalJs` 单独试一次那段表达式，再喂给 `clickEl`。
-
-**48. 行尾一律 LF，`.gitattributes` 锁着 —— 别删它，也别用会改行尾的工具**
+**36. 行尾一律 LF，`.gitattributes` 锁着 —— 别删它，也别用会改行尾的工具**
 
 全仓库（`app/` `server/` `docs/` `legacy/` 和根目录）**文本文件一律 LF，没有例外**，
 由根目录那一行 `.gitattributes` 管着：
@@ -1453,7 +1374,7 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 - **`eol=lf` 不能省。** 只写 `text=auto` 的话，仓库里虽然存的是 LF，
   但 `core.autocrlf=true` 的机器（Windows）**检出时又会写出 CRLF** —— 等于没约定。
   `eol=lf` 会压过每台机器各自的 `autocrlf`。
-- 仓库里**没有二进制文件**（93 个全是文本），`text=auto` 只是给将来留的口子。
+- 仓库里**没有二进制文件**（全是文本），`text=auto` 只是给将来留的口子。
 
 > **为什么值得单独立一条**：2026-10-07 提交 `app/src/styles/legacy.css` 时，
 > 整个文件被从 CRLF 归一成 LF，`git show --stat` 报 **3440 行改动**，
@@ -1468,31 +1389,15 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 git ls-files --eol | grep -v '^i/lf.*w/lf'
 ```
 
-**真要把一个 CRLF 文件改成 LF，两步的顺序不能反：**
-
-```bash
-git add --renormalize .                      # ① 先把索引里的 blob 归一成 LF
-rm <文件> && git checkout -- <文件>           # ② 再从 LF 的索引写回工作区
-```
-
-> **① 不能省。** `eol=lf` **不会**在检出时把 CRLF 剥掉 —— git 只转换
-> 「它自己写进索引的那份 LF」，索引 blob 里本来就有的 CRLF 它原样吐回来。
-> 所以只做 ② 的话，文件从 CRLF 变成 CRLF，看起来什么也没发生
-> （2026-10-07 就这么白跑了一趟）。`git ls-files --eol` 里
-> `i/crlf w/crlf` 变成 `i/lf w/crlf`，才算走对了第一步。
-
 **别用 `sed -i` / `perl -i` 去改行尾** —— 它们在 CIFS 上靠「写临时文件再改名」，
-改名会失败、原文件当场消失，见四、30。要改就走上面的 `renormalize` + `checkout`。
+改名会失败、原文件当场消失，见四、21。
 
-> **`legacy/` 里那 8 个文件是最后的 CRLF 据点**（`app.js` / `store.js` /
-> `styles.css` / `views.js` 加 4 个测试脚本），2026-10-07 已一并归一成 LF。
-> 那些 CRLF 是当年在 Windows 上写出来的**残留，不是约定** ——
-> 同一个目录里的 `clock.js` / `parse.js` 一直是 LF。
-> 改完记得重建那份**不进版本库**的回滚产物：`node legacy/tools/sync-dist.mjs`
-> （它按字节把 `legacy/*` 拷进 `legacy/dist/`，并在 `BUILD.txt` 里记 sha256 前 8 位，
-> 所以行尾一变哈希就跟着变）。
+> 真要把一个 CRLF 文件掰成 LF，顺序是 `git add --renormalize .` 再
+> `rm <文件> && git checkout -- <文件>`。**① 不能省** —— `eol=lf` 不会在检出时剥掉
+> 索引 blob 里本来就有的 CRLF，只做 ② 看起来什么也没发生（2026-10-07 白跑过一趟）。
+> **全仓库 2026-10-07 已经归一过了，现在没有 CRLF 文件**，上面这套留着备用。
 
-**49. `ResizeObserver` 不保证投递「元素本来 `display:none`、后来才有盒子」这一步**
+**37. `ResizeObserver` 不保证投递「元素本来 `display:none`、后来才有盒子」这一步**
 
 窄屏那个圆钮要跟着横条的**实测高度**竖直居中（见五、快速添加），量高度用的是
 `ResizeObserver`。但**收起时挂上去的观察者，展开后收不到第一次通知** ——
@@ -1516,7 +1421,7 @@ layout effect 里读 `offsetHeight` 是**同步**的（强制一次布局），�
 > **推而广之**：凡是「按元素实测尺寸去摆另一个元素」，别把 `ResizeObserver` 当唯一信源。
 > 它只保证「尺寸**变了**会告诉你」，不保证「从没有盒子到有盒子」一定算一次变化。
 
-**50. `position: fixed` + `left` / `right` 时，`margin` 会**再加一层**偏移**
+**38. `position: fixed` + `left` / `right` 时，`margin` 会**再加一层**偏移**
 
 `fixed` 元素的包含块是视口，`left` / `right` 定位的是它的**外边距盒**。
 所以基线上那条 `.fast-add { margin: 6px 22px 18px }`（本来是给流内布局的）
@@ -1524,12 +1429,12 @@ layout effect 里读 `offsetHeight` 是**同步**的（强制一次布局），�
 
 窄屏那套几何是内联 `style` 给的（理由见五），所以 `margin: 0` 也必须写在内联里 ——
 CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探针是「JS 判窄、CSS 判宽」
-的环境（四、34），那边清不掉，量出来就是「差 22px」这种看着像算错了的数。
+的环境（四、24），那边清不掉，量出来就是「差 22px」这种看着像算错了的数。
 
 > 同类坑：`fixed` 元素的 `width: 100%` 是**视口**的 100%，不是父元素的；
 > 要跟父元素对齐只能用 `left` / `right` 或 `transform`。
 
-**51. 假模型的「第几次调用」不能当轮次判据**
+**39. 假模型的「第几次调用」不能当轮次判据**
 
 第「十二」节那个假模型服务原先写的是 `if (modelCalls === 1)` 就给 tool_call、
 否则给文本收尾。**那个全局计数不是「这一轮对话的第几轮」** —— 它数的是进程里
@@ -1549,21 +1454,19 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 > `if (!q) return` 静默返回）。**实测不成立** —— `input` 派发后同一个任务内发送键
 > 就已经可点，React 对离散事件是同步 flush 的。别照这个假设去改代码。
 
-**52. 无头 Chrome 被 kill / OOM 之后会残留，把内存吃到下一轮跑不动**
+**40. 跑完测试必须收干净，否则下一轮假失败（Chrome 进程 · 服务进程 · 端口）**
 
-`browser-smoke.mjs` 起的 Chrome 进程在探针被中断后不会跟着走，实测一次能攒到
-30 多个。12 GB 的机器被吃到见底，下一轮直接被 SIGKILL（exit 137），报在
-「等不到侧栏渲染」上 —— 看着像产品 bug，其实是内存不够。
-
-跑完必须 `pkill -x chrome`（`chrome_crashpad_handler` 一并），再
+**Chrome 进程**：`browser-smoke.mjs` 起的无头 Chrome 被 kill / OOM 之后会残留，
+实测一次能攒到 30 多个。12 GB 的机器被吃到见底，下一轮直接被 SIGKILL（exit 137），
+报在「等不到侧栏渲染」上 —— 看着像产品 bug，其实是内存不够。
+跑完 `pkill -x chrome`（`chrome_crashpad_handler` 一并），再
 `ps aux | grep -c '[c]hrome'` 确认归零。
 
-**53. 测试服务进程被中断后还留在监听，下一轮 EADDRINUSE，而且报错指错地方**
-
-`browser-smoke.mjs` 的静态服务（`WEB_PORT = 5198`）与临时后端（`API_PORT = 25701`）、
-`smoke-share.mjs` 的后端，被 kill 后都还占着端口。下一轮 `EADDRINUSE`；更坑的是
-**新起的那个会静默失败、探针转去连上一个残留的旧后端**，于是报出来的错完全指错地方
-（实测是 `/api/auth/register` 409 —— 旧库里已经有那个用户了）。
+**测试服务进程**：`browser-smoke.mjs` 的静态服务（`WEB_PORT = 5198`）与临时后端
+（`API_PORT = 25701`）、`smoke-share.mjs` 的后端，被中断后都还占着端口。
+下一轮 `EADDRINUSE`；更坑的是**新起的那个会静默失败、探针转去连上一个残留的旧
+后端**，于是报出来的错完全指错地方（实测是 `/api/auth/register` 409 ——
+旧库里已经有那个用户了）。
 
 跑完 `ss -ltnp | grep -E '5198|25701'` 找出 pid `kill` 掉，顺带
 `rm -rf /tmp/sched-browser-*`。**要连着跑多个测试（或同时跑）之前，先确认
@@ -1646,7 +1549,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 **1. 顶栏（`.topbar`）在所有端都是一行** —— 标题 + 搜索 + 同步状态。
 窄屏原先被 `legacy.css` 改成 `flex-direction: column`，而第二行里的
 `date-nav` 自己还会 `flex-wrap`，实际是**三行**。现在统一 `row`。
-顶栏**照旧不许加 `position` / `z-index` / `sticky`**（见四、13）。
+顶栏**照旧不许加 `position` / `z-index` / `sticky`**（见四、11）。
 
 **2. 日程页的控件搬进副header**（`ui/Shell.tsx` 的 `CalSubheader`）：
 `‹ › / 今 / 找日期` + `日|周|月`，只在 `nav === 'calendar'` 时渲染，
@@ -1732,7 +1635,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 > 居中）探针测不了。** 探针的伪窄屏只在 JS `matchMedia` 上套了 Proxy，CSS
 > `@media (max-width: 900px)` 不认这个 —— 窗口真的 1280px，媒体查询就是不匹配。
 > `Emulation.setDeviceMetricsOverride` 能把视口改窄，但改完之后合成事件不进处理器
-> （见四、34），没法点进周视图。**这几条只能靠真机 / 真浏览器看。**
+> （见四、24），没法点进周视图。**这几条只能靠真机 / 真浏览器看。**
 
 ### 快速添加：窄屏一个圆钮 `+` / `×`，日期 / 时间分两层（2026-10-07）
 
@@ -1757,9 +1660,9 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
   不是写死的。58 是下限（再低就压到标签栏上）。
 - **这些几何量写在 `Shell.tsx` 的内联 `style` 里，不只是 CSS 媒体块里。**
   媒体查询按**真实**视口宽度走，而探针是「JS 判窄、CSS 判宽」的环境
-  （见四、34），只写媒体块的话那边量不到。`margin: 0` 也必须写在内联里 ——
+  （见四、24），只写媒体块的话那边量不到。`margin: 0` 也必须写在内联里 ——
   `position: fixed` + `left/right` 的定位里 `margin` 会**再加一层**偏移
-  （`right: 74px` 实际让出 96px，见四、50）。
+  （`right: 74px` 实际让出 96px，见四、38）。
 - **弹出动画**：`@keyframes fastPop` 挂在 `.fast-add:not([hidden])` 上，
   配合内联的 `transform-origin: 100% 50%`（= 圆钮的左边缘）。
   挂 `:not([hidden])` 是因为 `display:none` 会把动画移除、再显示时重新开始。
@@ -1777,7 +1680,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 - 收起的横条靠 `hidden` 属性藏（Tailwind 4 preflight 的
   `[hidden] { display: none !important }` 压得住 `legacy.css` 里没分层的
   `.fast-add { display: flex }`）。**别改成自己加一个 `display:none` 的类** ——
-  那就得跟层叠顺序再斗一次（见四、24）。
+  那就得跟层叠顺序再斗一次（见四、17）。
 
 **点空白收起是「两级」，而且两级在同一个 handler 里**（`Shell.tsx` 的 `QuickAdd`）：
 面板开着 → 先收面板、横条留着；面板没开 → 才收横条。宽屏没有「收横条」这一级
@@ -1809,7 +1712,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
   在「今天」页上它更是唯一能把默认的今天摘掉的路。
 - **`pendingDate` / `pendingTime` 是三态**：`undefined`（没表过态 → 用默认）、
   `null`（明确说不要）、`'…'`（选了这个）。**混成两态的话「清空」会被
-  tab 默认值顶回来**，点了跟没点一样 —— 和 `navBottom` 是同一类坑（见四、23）。
+  tab 默认值顶回来**，点了跟没点一样 —— 和 `navBottom` 是同一类坑（见四、16）。
 - **按钮上那两行写的是生效值**（`10/7` + `08:00`，`D.fmtSlashMD`），
   跟面板里写的是同一个 `effDate` / `effTime`。**别一个写 `pending*`、
   一个写 `eff*`** —— 那会出现「按钮写 10/7、面板高亮别的日子」。
@@ -2028,7 +1931,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 成员是拉的，断网后角色下拉根本不渲染）和**第十三节**（待办箱 / 抽屉 / 月视图，
 断网后跑）。`a11y(root)` 收一个可选选择器，**扫浮层时一定要传** ——
 不传就扫全文档，侧栏里任意一个没名字的控件都会算到浮层那条断言头上，
-失败信息指错地方（这个探针里栽过一次，见四、40）。
+失败信息指错地方（这个探针里栽过一次，见四、32）。
 
 验过它有牙：把 `<CheckBtn>` 换回 `<span>`、或者拿掉一个 `aria-label`，对应那条立刻红。
 
@@ -2092,7 +1995,7 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 - 遮罩加 `aria-hidden="true"`：它只是个鼠标目标（键盘走 Escape），别让读屏念一个空 div。
 - `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `legacy.css` 末尾
   **关掉焦点环** —— 一圈 2px 顺着整个浮层轮廓跑，看着像界面坏了。
-  （必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer` 里，压不过它，见四、27。）
+  （必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer` 里，压不过它，见四、17。）
 
 **锁在哪**：`browser-smoke.mjs` **第十六节**。它从**最后一个**可聚焦元素按 Tab
 （从中间按证不了什么 —— 前后都在浮层里，圈不圈都一样），再按 Escape 看焦点有没有
