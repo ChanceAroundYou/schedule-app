@@ -64,11 +64,11 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
                     p-6 pb-[calc(1.5rem+var(--kb,0px))]">
       <form
         onSubmit={submit}
-        className="mx-auto my-auto w-full max-w-sm rounded-2xl bg-[var(--panel)]
+        className="mx-auto my-auto w-full max-w-sm rounded-[var(--r-xl)] bg-[var(--panel)]
                    p-7 shadow-lg text-[var(--text)]"
       >
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl
+          <div className="flex h-12 w-12 items-center justify-center rounded-[var(--r-xl)]
                           bg-[var(--primary)] text-[var(--on-primary)]">
             <CalendarCheck size={24} />
           </div>
@@ -79,7 +79,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         </div>
 
         {register && (
-          <div className="mb-4 rounded-xl bg-[var(--panel-3)] p-3
+          <div className="mb-4 rounded-[var(--r-lg)] bg-[var(--panel-3)] p-3
                           text-[12.5px] leading-relaxed text-[var(--text-2)]">
             家里人各自注册一个账户，然后互相邀请进同一个日程集就能一起用了。
           </div>
@@ -88,7 +88,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
         <input
           id={fid + '-name'}
-          className="mb-3 w-full rounded-lg border border-[var(--input)] bg-transparent
+          className="mb-3 w-full rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -101,7 +101,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         <input
           id={fid + '-pwd'}
           type="password"
-          className="w-full rounded-lg border border-[var(--input)] bg-transparent
+          className="w-full rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
                      px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

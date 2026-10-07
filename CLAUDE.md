@@ -783,6 +783,15 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 防抖动，加粗反而会挤动布局。
 `app/tests/color-scan.mjs` 锁着这条（BANNED「写死的边框宽度」+ REQUIRED `--border-w`）。
 
+**风格轴的另一半是圆角，走 `--r-xs/sm/md/lg/xl/pill`**（soft 2 / 7 / 9 / 12 / 18 /
+999px，flat 全 0，notion 1 / 3 / 4 / 6 / 8 / 4px）。`.tsx` 里**不许出现 Tailwind
+自带的 `rounded` / `rounded-lg` / `rounded-2xl`** —— 那些是写死的像素值，切到
+flat / notion 时原地不动。症状正是用户报的「无论怎么切都是圆角胶囊」：
+`Calendars.tsx` 16 处、`Sheet` 与 toast 3 处、`Auth.tsx` 5 处都栽在这上面，
+现在全仓已清干净。按角色挑档：卡片 `--r-lg` · 浮层 `--r-xl` · 行与按钮 `--r-md` ·
+输入框与下拉 `--r-sm` · 小徽标与图标按钮 `--r-xs`。
+**唯一例外是色板那个圆点（`rounded-full`）** —— 它本来就该是圆的，三档都不变。
+
 > **旧名字 `--border-2` 和常见范式是反的。** 多数设计系统里带「2」的那个
 > 是**更弱**的（Ant 的 `colorBorderSecondary` 就是），而它实际更强。
 > 现在的名字取自 shadcn 的 `--input` / Material 3 的 `outline` / Primer 的
