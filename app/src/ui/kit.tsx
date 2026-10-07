@@ -16,7 +16,7 @@ import {
   type ReactNode, type ButtonHTMLAttributes, type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import { cx } from './cx.ts';
 import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
@@ -303,3 +303,101 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
 
 /** 给外部（比如在 effect 里）用的遮罩层元素引用类型别名 */
 export type ElRef = RefObject<HTMLElement | null>;
+
+/* ============================ 胶囊选择器 ============================ */
+
+/**
+ * 一排二选一 / 多选一的胶囊。
+ *
+ * **不是 `<select>`**：原生 select 在 PWA 里样式不可控、和项目设计系统不一致，
+ * 且移动端体验差。小选项集（≤ 7 个固定选项）一律用这个。
+ *
+ * 全局原则见 CLAUDE.md「三、界面约定」末尾。
+ */
+export function Chips<K extends string | number>({ value, options, onPick, render, labelOf, label, labelledBy }: {
+  value: K;
+  options: readonly K[];
+  onPick: (k: K) => void;
+  /** 色板那一轴要在胶囊里画一个色点 */
+  render?: (k: K) => ReactNode;
+  /** 把选项 key 显示成什么文字。不传就用 key 本身 */
+  labelOf?: (k: K) => string;
+  /** 这组控件的无障碍名字（没有可见标签时用） */
+  label?: string;
+  /** 有可见标签时，指向那个标签元素的 id —— 比 label 更准，且不用把文字写两遍 */
+  labelledBy?: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={label} aria-labelledby={labelledBy}>
+      {options.map((k) => {
+        const on = k === value;
+        return (
+          <button
+            key={String(k)}
+            type="button"
+            data-pick={k}
+            aria-pressed={on}
+            onClick={() => onPick(k)}
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
+              on
+                ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+                : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] border-[var(--border)]',
+            )}
+          >
+            {render?.(k)}
+            {labelOf ? labelOf(k) : k}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================ Sheet 选择器 ============================ */
+
+/**
+ * 动态 / 大选项集的选择器：一个按钮，点开是 Sheet 浮层。
+ *
+ * 用于选项数量不固定（如项目列表）或选项较多的场合。
+ * 小选项集（≤ 7 个固定选项）用 Chips 更直接。
+ */
+export function SheetPicker<K extends string>({ value, options, onPick, label, labelledBy }: {
+  value: K;
+  options: readonly { value: K; label: string }[];
+  onPick: (v: K) => void;
+  label: string;
+  /** 有可见标签时指向那个标签元素的 id（浮层标题仍用 label） */
+  labelledBy?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value);
+  return (
+    <>
+      <Btn variant="chip" onClick={() => setOpen(true)} aria-label={label} aria-labelledby={labelledBy}>
+        {current?.label || '选择…'}
+        <ChevronDown size={14} />
+      </Btn>
+      <Sheet open={open} onClose={() => setOpen(false)} title={label}>
+        <div className="flex flex-col gap-1">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onPick(o.value); setOpen(false); }}
+              className={cx(
+                'flex items-center justify-between rounded-[var(--r-md)] px-3 py-2.5 text-left text-[13.5px] transition',
+                o.value === value
+                  ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
+                  : 'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
+              )}
+            >
+              {o.label}
+              {o.value === value && <Check size={14} />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
+  );
+}

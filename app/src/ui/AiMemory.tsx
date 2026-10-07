@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { api } from '../data/api.ts';
 import type { AiAuthorizations, AiMemory } from '../domain/ai.ts';
+import { Chips } from './kit.tsx';
 
 const TYPE_LABEL: Record<string, string> = {
   preference: '偏好',
@@ -69,46 +70,46 @@ export function AiMemory() {
         <div className="ai-memory-section">
           <div className="ai-memory-title">授权</div>
           <div className="ai-auth-grid">
-            <label className="ai-auth-item">
+            <div className="ai-auth-item">
               <span>任务增删改</span>
-              <select
+              <Chips<string>
                 value={auth.taskCrud}
-                onChange={(e) => void saveAuth({ taskCrud: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </select>
-            </label>
-            <label className="ai-auth-item">
+                options={['free', 'confirm']}
+                onPick={(v) => void saveAuth({ taskCrud: v })}
+                labelOf={(v) => v === 'free' ? '免确认' : '需确认'}
+                label="任务增删改"
+              />
+            </div>
+            <div className="ai-auth-item">
               <span>打卡</span>
-              <select
+              <Chips<string>
                 value={auth.habitCheckin}
-                onChange={(e) => void saveAuth({ habitCheckin: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </select>
-            </label>
-            <label className="ai-auth-item">
+                options={['free', 'confirm']}
+                onPick={(v) => void saveAuth({ habitCheckin: v })}
+                labelOf={(v) => v === 'free' ? '免确认' : '需确认'}
+                label="打卡"
+              />
+            </div>
+            <div className="ai-auth-item">
               <span>日程集管理</span>
-              <select
+              <Chips<string>
                 value={auth.calendarMgmt}
-                onChange={(e) => void saveAuth({ calendarMgmt: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </select>
-            </label>
-            <label className="ai-auth-item">
+                options={['free', 'confirm']}
+                onPick={(v) => void saveAuth({ calendarMgmt: v })}
+                labelOf={(v) => v === 'free' ? '免确认' : '需确认'}
+                label="日程集管理"
+              />
+            </div>
+            <div className="ai-auth-item">
               <span>晚间汇报</span>
-              <select
+              <Chips<string>
                 value={auth.eveningReportEnabled ? 'on' : 'off'}
-                onChange={(e) => void saveAuth({ eveningReportEnabled: e.target.value === 'on' })}
-              >
-                <option value="off">关闭</option>
-                <option value="on">开启</option>
-              </select>
-            </label>
+                options={['off', 'on']}
+                onPick={(v) => void saveAuth({ eveningReportEnabled: v === 'on' })}
+                labelOf={(v) => v === 'off' ? '关闭' : '开启'}
+                label="晚间汇报"
+              />
+            </div>
             {auth.eveningReportEnabled && (
               <label className="ai-auth-item">
                 <span>汇报时间</span>

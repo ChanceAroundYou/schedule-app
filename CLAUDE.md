@@ -68,7 +68,7 @@
 │   │   │   ├── aiClient.ts  fetch + ReadableStream 读 SSE（带 Authorization）
 │   │   │   ├── ProjectSheet.tsx  项目：建 / 改名 / 删 · 泳道看板
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
-│   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见踩坑 6 与踩坑 12）
+│   │   │   ├── dndkit.tsx   @dnd-kit 拖放系统（列表排序 + 时间轴拖拽，见踩坑 6 与踩坑 12）
 │   │   │   ├── Clock.tsx   时间转盘：`ClockBody` 表盘本体 + `ClockPop`（抽屉里那个浮层）
 │   │   │   ├── WhenPop.tsx  快速添加的日期 / 时间两层折叠面板 + 共享的 `MiniCalendar`
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
@@ -139,7 +139,7 @@
    > **不是「懒得拆」，是必须这样。** 行是 React 渲染的，拖拽重排、同步落地
    > 都会把它们换掉，挂在行上的 handler 会跟着丢。容器级 handler 永远在。
    > 代价：`views/` 里全是纯展示组件，**零回调**。
-3. **拖拽 / 拉伸**：`useDragLayer(containerRef)` + `.ev-resize` 的 mousedown。
+3. **拖拽 / 拉伸**：`DndProvider`（@dnd-kit）+ `.ev-resize` 的 mousedown。
 4. **长按提起 + 触屏拖拽 / 长按操作层**（触屏）、**快捷键**、**导出 / 导入**。
 
 ### 三层状态，别混
@@ -350,6 +350,17 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 存 `ui.style`，靠 `documentElement` 上的 `data-style` + `legacy.css` 令牌块。
 **色板没有** —— 那是账本项目的机制，别照抄。
 
+### 选择控件：零原生 `<select>`
+
+项目内**不允许**出现原生 `<select>` 元素。按选项数量分两种：
+
+| 场合 | 组件 | 适用 |
+|------|------|------|
+| 固定选项 ≤ 7 个 | `Chips<K>` | 角色、主题、风格、时长、重复单位 |
+| 动态/大量选项 | `SheetPicker<K>` | 项目选择、日期选择 |
+
+两个组件都在 `ui/kit.tsx` 中，支持键盘导航和读屏。
+
 ### 变量名不许写错，也不许给兜底值
 
 `.tsx` 里引用变量**一律不给兜底值**。有兜底值时不报错、不白屏，只是**两套主题下
@@ -423,7 +434,7 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 | 场合 | 怎么写 | 例子 |
 |---|---|---|
 | 有可见标签的输入框 | `useId()` + `<label htmlFor>` | `Drawer.tsx` 的日期 / 时间 / 时长 / 重复 / 备注 |
-| 下拉框、没有可见标签的框 | `aria-label` | 管理浮层那两个角色 `<select>`、邀请用户名框 |
+| 没有可见标签的控件（`Chips` / `SheetPicker` 这类按钮组） | `aria-label` 或 `aria-labelledby` | 管理浮层那两个角色 `Chips`、抽屉的「项目」`SheetPicker`、邀请用户名框 |
 | 只有图标的按钮 | `<IconBtn label="…">`（`ui/kit.tsx`） | 抽屉的关闭、各类「删除 / 移出」 |
 | 有文字的按钮 | 什么都不用加 | 可见文字**就是**它的名字 |
 
@@ -522,10 +533,10 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 `transform`，`getBoundingClientRect()` 读到的是位移后的值）。
 **不要再退回插入线模型。**
 
-**4. 触屏与鼠标两条路完全分开，只共用落点**（[踩坑 12](docs/踩坑.md)）
-输入那一段在 `ui/dnd.ts` 的文件头；落点那一段（`applyDropAt` / `finishDrag` /
-`commitDrop`）**是同一份代码**。改落点逻辑时两条路一起变，这是故意的。
-抬手那一下必须把浏览器补的鼠标事件整串掐掉，否则「长按完什么也没发生」。
+**4. 拖拽统一走 @dnd-kit 的 PointerSensor**（[踩坑 12](docs/踩坑.md)）
+鼠标和触摸由 `PointerSensor` 统一处理，不再需要两条输入通路。
+`activationConstraint: { distance: 8 }` 替代了原来的 `TOUCH_SLOP`。
+长按 → ActSheet 流程保留在 App.tsx，与 dnd-kit 的 `onDragStart` 协调。
 
 **5. CSS 层叠两条**（[踩坑 17](docs/踩坑.md)）
 同特异度后写的赢 —— 给折叠元素加类时要查 `display`。

@@ -19,7 +19,7 @@ import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/type
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { liveProjects } from '../domain/model.ts';
-import { Btn, useConfirm } from './kit.tsx';
+import { Btn, Chips, SheetPicker, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
@@ -260,24 +260,27 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
           </div>
 
           <div className="field">
-            <label htmlFor={fid + '-dur'}>时长</label>
-            <select id={fid + '-dur'} value={task.duration || 60} onChange={(e) => patch({ duration: +e.target.value })}>
-              {DURATIONS.map((m) => <option value={m} key={m}>{D.fmtDuration(m)}</option>)}
-            </select>
+            <span className="flabel" id={fid + '-dur-l'}>时长</span>
+            <Chips<number>
+              value={task.duration || 60}
+              options={DURATIONS}
+              onPick={(v) => patch({ duration: v })}
+              labelOf={(v) => D.fmtDuration(v)}
+              labelledBy={fid + '-dur-l'}
+            />
           </div>
 
           <div className="field">
-            <label htmlFor={fid + '-rep'}>重复</label>
-            <select
-              id={fid + '-rep'}
+            <span className="flabel" id={fid + '-rep-l'}>重复</span>
+            <Chips<RepeatRule['unit']>
               value={rep.unit}
-              onChange={(e) => {
-                const unit = e.target.value as RepeatRule['unit'];
+              options={REPEAT_UNITS.map((u) => u.value)}
+              onPick={(unit) => {
                 patch({ repeat: toRepeat({ ...rep, unit, n: 1, end: null }, task.date) });
               }}
-            >
-              {REPEAT_UNITS.map((u) => <option value={u.value} key={u.value}>{u.label}</option>)}
-            </select>
+              labelOf={(u) => REPEAT_UNITS.find((x) => x.value === u)?.label || u}
+              labelledBy={fid + '-rep-l'}
+            />
             {rep.unit !== 'none' && (
               <div className="repeat-panel">
                 <div className="rp-row">
@@ -333,11 +336,10 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                 )}
                 <div className="rp-row">
                   <span>结束</span>
-                  <select
+                  <Chips<string>
                     value={rep.end?.type || 'never'}
-                    aria-label="重复结束方式"
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    options={['never', 'date', 'count']}
+                    onPick={(v) => {
                       patch({
                         repeat: {
                           ...rep,
@@ -347,11 +349,9 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                         },
                       });
                     }}
-                  >
-                    <option value="never">不限</option>
-                    <option value="date">到某天</option>
-                    <option value="count">重复几次</option>
-                  </select>
+                    labelOf={(v) => ({ never: '不限', date: '到某天', count: '重复几次' } as Record<string, string>)[v] || v}
+                    label="重复结束方式"
+                  />
                   {rep.end?.type === 'date' && (
                     <input
                       type="date" value={rep.end.date}
@@ -376,15 +376,17 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             拖动顺手把「搬家」也做掉，比什么都不做更让人措手不及。
           */}
           <div className="field">
-            <label htmlFor={fid + '-proj'}>项目</label>
-            <select
-              id={fid + '-proj'}
+            <span className="flabel" id={fid + '-proj-l'}>项目</span>
+            <SheetPicker<string>
               value={task.projectId || ''}
-              onChange={(e) => onPatch(task.id, { projectId: e.target.value || null })}
-            >
-              <option value="">不属于任何项目</option>
-              {projs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+              options={[
+                { value: '', label: '不属于任何项目' },
+                ...projs.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+              onPick={(v) => onPatch(task.id, { projectId: v || null })}
+              label="项目"
+              labelledBy={fid + '-proj-l'}
+            />
           </div>
 
           <div className="field">

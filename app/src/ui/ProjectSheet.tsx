@@ -9,7 +9,7 @@
  * 填了就是手改覆盖 —— 空 vs 0 是两回事，所以用 `''` 而不是 0 表达「自动」。
  */
 import { useId, useState } from 'react';
-import { Btn, Sheet, useConfirm } from './kit.tsx';
+import { Btn, Chips, Sheet, useConfirm } from './kit.tsx';
 import * as store from '../data/store.ts';
 import { STATUS_LABEL } from '../domain/model.ts';
 import type { LocalState, ProjectStatus } from '../domain/types.ts';
@@ -71,11 +71,14 @@ export function ProjectSheet({ state, id, onClose }: {
         </div>
 
         <div className="field">
-          <label htmlFor={fid + '-s'}>状态</label>
-          <select id={fid + '-s'} value={status}
-            onChange={(e) => setStatus(e.target.value as ProjectStatus)}>
-            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
+          <label id={fid + '-s-l'}>状态</label>
+          <Chips<ProjectStatus>
+            value={status}
+            options={STATUSES}
+            onPick={setStatus}
+            labelOf={(s) => STATUS_LABEL[s]}
+            label="状态"
+          />
         </div>
 
         <div className="field">

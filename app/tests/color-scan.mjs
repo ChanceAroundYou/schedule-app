@@ -118,5 +118,48 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const v of neutral) console.log('    ' + v);
 
   console.log('\n不达标 ' + failed + ' 条');
+
+  // 扫描 .tsx 文件里的原生 <select> 元素
+  // 项目约定：零原生 <select>，一律用 Chips 或 SheetPicker 替代
+  const SRC = fileURLToPath(new URL('../src', import.meta.url));
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+
+  function findTsx(dir) {
+    const results = [];
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        results.push(...findTsx(full));
+      } else if (entry.endsWith('.tsx')) {
+        results.push(full);
+      }
+    }
+    return results;
+  }
+
+  const tsxFiles = findTsx(SRC);
+  let selectCount = 0;
+  console.log('\n.tsx 文件里的原生 <select>（断言为零）');
+  for (const file of tsxFiles) {
+    let content = readFileSync(file, 'utf8');
+    // 去掉注释和模板字符串里的 <select>，避免误报
+    content = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      .replace(/`[^`]*`/g, '');
+    const matches = content.match(/<select[\s>]/g);
+    if (matches) {
+      selectCount += matches.length;
+      const rel = file.replace(SRC, 'src');
+      console.log('  FAIL ' + rel + '  ' + matches.length + ' 处');
+    }
+  }
+  if (selectCount === 0) {
+    console.log('  ok    0 处');
+  } else {
+    failed++;
+    console.log('  → 改用 Chips<K>（≤7 个固定选项）或 SheetPicker<K>（动态/大量选项）');
+  }
+
+  console.log('\n不达标 ' + failed + ' 条');
   process.exit(failed ? 1 : 0);
 }

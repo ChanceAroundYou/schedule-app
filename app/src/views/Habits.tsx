@@ -18,6 +18,8 @@ import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
+import { SortableList } from '../ui/dndkit.tsx';
+import * as store from '../data/store.ts';
 
 export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title: string) => void }) {
   const [draft, setDraft] = useState('');
@@ -59,18 +61,20 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
   return (
     <div className="habits-view">
       {addBar}
-      <div className="habit-list mc" data-drop="list" data-scope="habits" data-kind="habit">
-        {habits.map((h) => {
+      <SortableList
+        items={habits.map((h) => h.id)}
+        onReorder={(newOrder) => store.reorder('habit', newOrder)}
+        scope="habits"
+        renderItem={(id) => {
+          const h = state.habits[id];
           const done = !!(h.log && h.log[today]);
           const st = habitStreak(h);
           return (
             <div
               className={'habit-row' + (done ? ' done' : '')}
-              key={h.id}
               data-habit={h.id}
               data-id={h.id}
               data-kind="habit"
-              draggable
             >
               <CheckBtn id={h.id} on={done} act="habit" sm />
               <div className="habit-main">
@@ -95,8 +99,9 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
               </button>
             </div>
           );
-        })}
-      </div>
+        }}
+        className="habit-list mc"
+      />
     </div>
   );
 }

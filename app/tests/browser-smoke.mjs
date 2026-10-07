@@ -376,14 +376,14 @@ try {
   ok(sheetText.includes('邀请成员'), '创建者能看到发邀请的入口');
 
   // 浮层里的控件也要有名字。**这一段是补漏**：「每个输入框都有名字」原来只扫了
-  // 抽屉（第十三节），管理浮层的名字框和两个角色下拉一个都没有可访问名字 ——
+  // 抽屉（第十三节），管理浮层的名字框和角色选择器一个都没有可访问名字 ——
   // 它们从来就没被任何断言看过。
   //
   // 放在这里而不是第十三节：成员是**联网拉的**，第十三节跑在断网之后，
-  // 那时成员列表是空的、角色下拉根本不渲染，扫过去等于空过（候选数为 0）。
+  // 那时成员列表是空的、角色选择器根本不渲染，扫过去等于空过（候选数为 0）。
   const sheetA11y = await evalJs(page, `return { bad: ${a11y('[role="dialog"]')},
-    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select').length };`);
-  ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 两个角色下拉）');
+    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select, [role="dialog"] button[aria-pressed]').length };`);
+  ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 角色选择器）');
   ok(sheetA11y.bad.length === 0, '管理浮层里每个控件都有名字'
     + (sheetA11y.bad.length ? '：\n      ' + sheetA11y.bad.join('\n      ') : ''));
 
@@ -472,13 +472,13 @@ try {
   ok(errors.length === 0, '邀请这一段也没有 console 报错'
     + (errors.length ? '：\n      ' + fmt(errors) : ''));
 
-  console.log('\n八、触屏：长按提起 → 拖动排序 → 没动就弹操作层');
+  console.log('\n八、触屏：长按 → 拖动排序 → 没动就弹操作层');
   // 桌面视口 + 触屏事件。**不需要窄屏**：长按 / 拖拽只认 pointerType，
   // 不认宽度（while 窄屏的标签栏那套是另一回事，那个本机测不了，见 CLAUDE.md 四、34）。
   // 用 CDP 合成触摸，Chrome 会照常派生出 pointerType:'touch' 的 pointer 事件。
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
-  // 待办箱空的时候**没有** [data-drop] 那块（走 Empty 分支），所以这里只能等
+  // 待办箱空的时候**没有**可拖拽区域（走 Empty 分支），所以这里只能等
   // 「视图切过去了」这件事，不能等列表本身 —— 列表要等第一条任务加进去才出现
   await waitFor(page,
     `(document.body.innerText.includes('待办箱是空的') || !!document.querySelector('[data-scope="inbox"]'))`,
@@ -526,26 +526,20 @@ try {
   // 后面的断言全跟着假失败。所以这里连 target 一起查。
   ok(pt.some((x) => x.startsWith('pointerdown:touch:任务行')),
     '合成的触摸打在任务行上，事件序列 = ' + JSON.stringify(pt));
-  const lifted = await evalJs(page,
-    `return !!document.querySelector('[data-scope="inbox"] .task-el.touch-drag');`);
-  ok(lifted, '长按 0.5 秒后那一行进入「提起」状态');
   await touch(page, 'touchEnd');
   await new Promise((r) => setTimeout(r, 200));
   const up = await evalJs(page, `return {
     seq: window.__pt,
     sheet: !!document.querySelector('.act-sheet.open'),
-    lifted: !!document.querySelector('.task-el.touch-drag'),
-    editing: document.body.dataset.dragging || null,
   };`);
-  ok(up.sheet, '提起后原地松手 → 弹出操作层（原来的老路没丢）；'
-    + '事件序列 ' + JSON.stringify(up.seq.slice(1)) + '，'
-    + '还提着？' + up.lifted + '，拖动中？' + up.editing);
+  ok(up.sheet, '长按后原地松手 → 弹出操作层；'
+    + '事件序列 ' + JSON.stringify(up.seq.slice(1)));
   ok(await evalJs(page, `return document.querySelectorAll('.act-sheet.open .as-btn').length > 0;`),
     '操作层里有按钮');
   await evalJs(page, `document.querySelector('.act-sheet .as-cancel').click(); return true;`);
   ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`), '操作层能关掉');
 
-  // —— 再验拖动：提起后往下挪一条 ——
+  // —— 再验拖动：长按后往下挪一条 ——
   const p2 = await rectOf('甲');
   const q = await rectOf('丙');
   await touch(page, 'touchStart', p2);
@@ -553,15 +547,11 @@ try {
   await touch(page, 'touchMove', { x: p2.x, y: p2.y + 12 });
   await touch(page, 'touchMove', { x: q.x, y: q.y });
   await new Promise((r) => setTimeout(r, 250));
-  ok(await evalJs(page, `return !!document.querySelector('.drop-hole');`),
-    '拖到别处时出现了让位洞');
   await touch(page, 'touchEnd');
   await new Promise((r) => setTimeout(r, 250));
   const after = await inbox();
   ok(after.join('') !== '甲乙丙', '拖完顺序真的变了，实际 ' + JSON.stringify(after));
   ok(after[after.length - 1] === '甲', '被拖的「甲」到了最后一位，实际 ' + JSON.stringify(after));
-  ok(await evalJs(page, `return !document.querySelector('.drop-hole') && !document.querySelector('.task-el.touch-drag');`),
-    '松手后洞和「提起」状态都收干净了');
   // 落库了才算数：不能只是视觉上挪了一下
   const saved = await evalJs(page, `
     const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
@@ -577,47 +567,64 @@ try {
   // 「Touch points must be between 1 and 16」，看着像触摸点的问题，其实是这个参数）
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
 
-  console.log('\n九、鼠标拖拽：HTML5 那一路没被触屏改动带坏');
-  /* 两条路（HTML5 / 触屏）共用 applyDropAt + finishDrag + commitDrop，
-     所以这一节要证的**不是**排序逻辑本身（第八节已经证过了），
-     而是鼠标这条**入口**还通着：dragstart 有没有记住拖的是谁、
-     dragover 有没有靠 closest 找到落点容器、drop 有没有真的落库。
-     重构共享代码时最先坏的通常就是这一段接线。
+  console.log('\n九、鼠标拖拽：MouseSensor 那一路没被触屏改动带坏');
+  /* 鼠标走 dnd-kit 的 MouseSensor（mousedown / mousemove / mouseup）。
+     这一节要证的**不是**排序逻辑本身（第八节已经证过了），
+     而是鼠标这条**入口**还通着：mousedown 有没有记住拖的是谁、
+     mousemove 有没有触发拖拽、mouseup 有没有真的落库。
+     重构共享代码时最先坏的通常就是这一段接线。 */
 
-     合成 DragEvent 要显式给 dataTransfer —— Chrome 上不给是 null，
-     onDragStart 里一句 e.dataTransfer.effectAllowed = 'move' 就抛异常，
-     表现成「拖了半天没反应」。CLAUDE.md 四、33 还记着另一条：
-     target 默认是派发元素，所以事件要派在**行**上、不要派在容器上。 */
-  const dragFire = (type, text) => evalJs(page, `
-    const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
-      .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
-    if (!el) return 'missing:' + ${JSON.stringify(text)};
-    const r = el.getBoundingClientRect();
-    if (!window.__dt) window.__dt = new DataTransfer();   // 同一个 drag 要共用一份
-    el.dispatchEvent(new DragEvent(${JSON.stringify(type)}, {
-      bubbles: true, cancelable: true,
-      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
-      dataTransfer: window.__dt,
-    }));
+  const pointerDrag = async (fromText, toText) => {
+    const from = await evalJs(page, `
+      const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+        .find((e) => e.textContent.trim() === ${JSON.stringify(fromText)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    `);
+    const to = await evalJs(page, `
+      const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+        .find((e) => e.textContent.trim() === ${JSON.stringify(toText)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    `);
+    if (!from || !to) return 'missing';
+    await evalJs(page, `
+      const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+        .find((e) => e.textContent.trim() === ${JSON.stringify(fromText)});
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 50));
+    await evalJs(page, `
+      const el = document.elementFromPoint(${from.x}, ${from.y + 12});
+      el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: ${from.x}, clientY: ${from.y + 12} }));
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 50));
+    await evalJs(page, `
+      const el = document.elementFromPoint(${to.x}, ${to.y});
+      el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: ${to.x}, clientY: ${to.y} }));
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 50));
+    await evalJs(page, `
+      const el = document.elementFromPoint(${to.x}, ${to.y});
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: ${to.x}, clientY: ${to.y} }));
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 350));
     return 'ok';
-  `);
+  };
 
   ok((await inbox()).join('') === '乙丙甲', '接着第八节的状态，「甲」还在最后，实际 ' + JSON.stringify(await inbox()));
-  ok(await dragFire('dragstart', '甲') === 'ok', '合成 dragstart 打在行上');
-  ok(await evalJs(page, `return document.body.classList.contains('dragging-active');`),
-    'dragstart 之后进入了拖动状态（说明事件真进了处理器，不是被丢了）');
-  ok(await dragFire('dragover', '乙') === 'ok', '合成 dragover 打在目标行上');
-  ok(await evalJs(page, `return !!document.querySelector('.drop-hole');`),
-    'dragover 时也让位出了洞（鼠标这条路同样走 applyDropAt）');
-  await dragFire('drop', '乙');
-  await new Promise((r) => setTimeout(r, 200));
+  ok(await pointerDrag('甲', '乙') === 'ok', '合成 pointer 拖拽打在行上');
   const mAfter = await inbox();
   ok(mAfter.join('') !== '乙丙甲', '鼠标拖完顺序真的变了，实际 ' + JSON.stringify(mAfter));
   ok(mAfter[0] === '甲', '「甲」被拖回了第一位，实际 ' + JSON.stringify(mAfter));
-  await dragFire('dragend', '甲');
-  await new Promise((r) => setTimeout(r, 200));
-  ok(await evalJs(page, `return !document.querySelector('.drop-hole') && !document.body.classList.contains('dragging-active');`),
-    'dragend 之后洞和拖动状态都收干净了');
   const mSaved = await evalJs(page, `
     const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
     return Object.values(now).filter((t) => !t.deleted).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
@@ -2220,34 +2227,56 @@ try {
   ok(await evalJs(page, `return !document.querySelector('[data-tab]');`),
     '宽屏设置页不显示底栏胶囊（按设备分屏）');
 
-  // 设置页调序：dragstart / dragover / drop 必须**分开的 tick** ——
-  // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的 dragKey 仍是 null
-  // （加探针时踩过，症状是「拖了但完全没反应」，看着像产品坏了）
+  // 设置页调序：mousedown / mousemove / mouseup 必须**分开的 tick** ——
+  // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的状态仍是旧的。
+  // 走第九节那套合成鼠标事件（MouseSensor 已证过能起来）：
+  // 第一次 mousemove 只挪 12px，刚好越过 distance:8 的激活门槛。
+  // 起手必须打在拖拽把手（.cursor-grab）上 —— listeners 只绑在那儿。
   const navRow = (k) => `[...document.querySelectorAll('[data-nav-row]')].find((x) => x.dataset.navRow === ${JSON.stringify(k)})`;
-  await evalJs(page, `
-    return (() => {
-      const el = ${navRow('trash')};
-      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
-      return 'ok';
-    })();
+  const navHandle = (k) => `document.querySelector('[data-nav-row="${k}"] .cursor-grab')`;
+
+  ok(await evalJs(page, `return !!${navHandle('trash')};`), '拖拽把手在（listeners 绑在那儿）');
+  ok((await evalJs(page, `return ${navRow('trash')}.getAttribute('role');`)) === 'button',
+    'dnd-kit 的 attributes 挂上了（role=button）');
+
+  const navSrc = await evalJs(page, `
+    const el = ${navHandle('trash')};
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   `);
-  await new Promise((r) => setTimeout(r, 70));
-  await evalJs(page, `
-    return (() => {
-      const el = ${navRow('today')};
-      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
-      return 'ok';
-    })();
+  const navDst = await evalJs(page, `
+    const el = ${navRow('today')};
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   `);
-  await new Promise((r) => setTimeout(r, 70));
+
   await evalJs(page, `
-    return (() => {
-      const dst = ${navRow('today')};
-      const src = ${navRow('trash')};
-      dst.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
-      src.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
-      return 'ok';
-    })();
+    ${navHandle('trash')}.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, cancelable: true, clientX: ${navSrc.x}, clientY: ${navSrc.y} }));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 60));
+  await evalJs(page, `
+    const el = document.elementFromPoint(${navSrc.x}, ${navSrc.y + 12});
+    el.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, cancelable: true, clientX: ${navSrc.x}, clientY: ${navSrc.y + 12} }));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 60));
+  ok(await evalJs(page, `return ${navRow('trash')}.className.includes('opacity-40');`),
+    '拖起来了（isDragging → opacity-40）');
+  await evalJs(page, `
+    const el = document.elementFromPoint(${navDst.x}, ${navDst.y});
+    el.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, cancelable: true, clientX: ${navDst.x}, clientY: ${navDst.y} }));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 60));
+  await evalJs(page, `
+    const el = document.elementFromPoint(${navDst.x}, ${navDst.y});
+    el.dispatchEvent(new MouseEvent('mouseup', {
+      bubbles: true, cancelable: true, clientX: ${navDst.x}, clientY: ${navDst.y} }));
+    return true;
   `);
   await waitForUi('设置页调序落盘',
     `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.navOrder.indexOf('trash') === 1 ? 1 : null`);
@@ -2469,24 +2498,21 @@ try {
     '交完之后「保存」又回到禁用态');
 
   await clickEl(page, `[...document.querySelectorAll('.task-el')].find((x) => x.textContent.includes('写方案'))`);
-  await waitFor(page, `!!document.querySelector('select[id$="-proj"]')`, '抽屉里的项目下拉');
-  const optVal = await evalJs(page, `
+  await waitFor(page, `!!document.querySelector('button[aria-label="项目"]')`, '抽屉里的项目选择器');
+  await clickEl(page, `document.querySelector('button[aria-label="项目"]')`);
+  // Sheet 是 portal 到 body 的（body > 浮层容器 > 面板）；抽屉也是 dialog 但在
+  // #content 里，裸 `[role="dialog"]` 会先命中抽屉 —— 见第 1322 行那段。
+  const PICKER = `document.querySelector('body > div > div[role="dialog"]')`;
+  await waitFor(page, `${PICKER} ? 1 : null`, '项目选择器打开');
+  const pickResult = await evalJs(page, `
     return (() => {
-      const s = document.querySelector('select[id$="-proj"]');
-      const o = [...s.options].find((x) => x.textContent.trim() === '星星包');
-      return o ? o.value : null;
+      const btns = [...document.querySelectorAll('body > div > div[role="dialog"] button')];
+      const o = btns.find((x) => x.textContent.trim().includes('星星包'));
+      if (o) { o.click(); return 'ok'; }
+      return 'missing';
     })();
   `);
-  ok(!!optVal, '项目下拉里列得到这个项目');
-  await evalJs(page, `
-    return (() => {
-      const s = document.querySelector('select[id$="-proj"]');
-      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-      set.call(s, ${JSON.stringify(optVal)});
-      s.dispatchEvent(new Event('change', { bubbles: true }));
-      return 'ok';
-    })();
-  `);
+  ok(pickResult === 'ok', '项目选择器里选得到「星星包」');
   await new Promise((r) => setTimeout(r, 250));
   await clickEl(page, `document.querySelector('.drawer-foot button:last-child')`);
   await new Promise((r) => setTimeout(r, 300));
@@ -2498,31 +2524,45 @@ try {
   ok((await evalJs(page, `return document.querySelectorAll('.pj-col[data-scope$=":todo"] .pj-card').length;`)) === 1,
     '任务落在「待办」列');
 
-  // 拖卡片换列：同样是分开的 tick（见上一节的说明）
+  // 拖卡片换列：和第九节同一套合成鼠标事件，**两次** move ——
+  // 第一次只挪 12px 越过 MouseSensor 的 distance:8，第二次才去目标列。
+  const pjCard = `document.querySelector('.pj-col[data-scope$=":todo"] .pj-card')`;
+  const pjDst = `document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b')`;
+  const pjSrc = await evalJs(page, `
+    const r = ${pjCard}.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  `);
   await evalJs(page, `
-    return (() => {
-      const el = document.querySelector('.pj-col[data-scope$=":todo"] .pj-card');
-      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
-      return 'ok';
-    })();
+    ${pjCard}.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, cancelable: true, clientX: ${pjSrc.x}, clientY: ${pjSrc.y} }));
+    return true;
   `);
   await new Promise((r) => setTimeout(r, 70));
   await evalJs(page, `
-    return (() => {
-      const el = document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b');
-      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
-      return 'ok';
-    })();
+    const el = document.elementFromPoint(${pjSrc.x}, ${pjSrc.y + 12});
+    el.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, cancelable: true, clientX: ${pjSrc.x}, clientY: ${pjSrc.y + 12} }));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  const pjDstXY = await evalJs(page, `
+    const r = ${pjDst}.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  `);
+  await evalJs(page, `
+    const el = document.elementFromPoint(${pjDstXY.x}, ${pjDstXY.y});
+    el.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, cancelable: true, clientX: ${pjDstXY.x}, clientY: ${pjDstXY.y} }));
+    return true;
   `);
   await new Promise((r) => setTimeout(r, 70));
   await evalJs(page, `
-    return (() => {
-      document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b')
-        .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
-      return 'ok';
-    })();
+    const el = document.elementFromPoint(${pjDstXY.x}, ${pjDstXY.y});
+    el.dispatchEvent(new MouseEvent('mouseup', {
+      bubbles: true, cancelable: true, clientX: ${pjDstXY.x}, clientY: ${pjDstXY.y} }));
+    return true;
   `);
-  await new Promise((r) => setTimeout(r, 250));
+  await new Promise((r) => setTimeout(r, 350));
   // 按标题找**这一条**，不能拿 `Object.values(tasks)[0]` —— 前面几节
   // （十～十三）也加了任务，[0] 是它们中的某一条，doing 当然是 undefined
   await waitForUi('doing 落库',

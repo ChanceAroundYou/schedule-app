@@ -23,7 +23,7 @@ import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { api, ApiError } from '../data/api.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
-import { Btn, Sheet, toast, useConfirm } from './kit.tsx';
+import { Btn, Chips, Sheet, toast, useConfirm } from './kit.tsx';
 
 const ROLES: Role[] = ['owner', 'editor', 'viewer'];
 
@@ -273,19 +273,16 @@ export function ManageSheet({ state, open, onClose }: {
               <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
               {manage ? (
                 <>
-                  <select
+                  <Chips<Role>
                     value={m.role}
-                    disabled={busy}
-                    aria-label={`「${m.name}」的权限`}
-                    onChange={(e) => void run(async () => {
-                      await api.setRole(calId, m.id, e.target.value as Role);
+                    options={ROLES}
+                    onPick={(r) => void run(async () => {
+                      await api.setRole(calId, m.id, r);
                       toast('权限已更新');
                     })}
-                    className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                               px-1.5 py-1 text-[12px] outline-none"
-                  >
-                    {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
+                    labelOf={(r) => ROLE_LABEL[r]}
+                    label={`「${m.name}」的权限`}
+                  />
                   <button
                     type="button"
                     title="移出日程集"
@@ -331,14 +328,13 @@ export function ManageSheet({ state, open, onClose }: {
               className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                          bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
             />
-            <select
+            <Chips<Role>
               value={inviteRole}
-              aria-label="邀请的权限"
-              onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
-            >
-              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>
+              options={ROLES}
+              onPick={(r) => setInviteRole(r)}
+              labelOf={(r) => ROLE_LABEL[r]}
+              label="邀请的权限"
+            />
             <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
           </div>
           <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">

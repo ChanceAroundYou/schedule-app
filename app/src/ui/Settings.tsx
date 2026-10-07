@@ -20,13 +20,16 @@ import {
   Pencil, Upload, Download, Trash2, UserRound, Plus, Crown, Eye, UserMinus,
   UserPlus, Users, X, AlertTriangle, ChevronDown,
 } from 'lucide-react';
+import { DndContext, MouseSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Chips, Sheet, useConfirm, toast } from './kit.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
@@ -62,48 +65,6 @@ function Card({ icon, title, children, hint }: {
   );
 }
 
-/**
- * 一排二选一 / 三选一的胶囊。
- *
- * **不是 `<select>`**：这三轴一共 6+3+3 个选项，是用户会反复来回试的东西，
- * 每次都要展开一次下拉等于把「试」这件事的摩擦拉满。
- */
-function Chips<K extends string>({ value, options, onPick, render }: {
-  value: K;
-  options: readonly K[];
-  onPick: (k: K) => void;
-  /** 色板那一轴要在胶囊里画一个色点，那个色点得跟着这一轴自己的取值走 */
-  render?: (k: K) => React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map((k) => {
-        const on = k === value;
-        return (
-          <button
-            key={k}
-            type="button"
-            data-pick={k}
-            aria-pressed={on}
-            onClick={() => onPick(k)}
-            className={cx(
-              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
-              on
-                ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
-            )}
-          >
-            {render?.(k)}
-            {(T.ACCENTS as Record<string, { label: string }>)[k as unknown as string]?.label
-              || (T.THEMES as Record<string, { label: string }>)[k as unknown as string]?.label
-              || (T.STYLES as Record<string, { label: string }>)[k as unknown as string]?.label || k}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ============================ 功能区自定义 ============================ */
 
 /**
@@ -113,13 +74,8 @@ function Chips<K extends string>({ value, options, onPick, render }: {
  * **拖一下排序**。选择和排序是同一件事的两面 —— 用户要的就是「这几项按这个
  * 顺序排」，拆成两段反而要来回切。
  *
- * 拖拽两条路，按输入方式分开：
- *  - 桌面端 HTML5 drag（`draggable` + onDragStart/Over/Drop/End）
- *  - 移动端 pointer 通路，**只挂在抓手上**（`touch-none`）—— 抓手之外的区域
- *    仍能正常滚动页面，不会「想滚页却拖动了顺序」。
- *
- * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的，
- * 套到一个 7 行的静态列表上属于杀鸡用牛刀。
+ * 拖拽走 @dnd-kit：MouseSensor 处理鼠标输入（mousedown/mousemove/mouseup）。
+ * 移动 8px 才开始拖 —— 轻点（不移动）不会触发拖，所以「点一下打勾」不受影响。
  */
 function NavCard({ state }: { state: LocalState }) {
   const ui = state.ui;
@@ -129,11 +85,7 @@ function NavCard({ state }: { state: LocalState }) {
   const narrow = useIsNarrow();
 
   const [rows, setRows] = useState<string[]>(order);
-  const [dragKey, setDragKey] = useState<string | null>(null);
-  const [overKey, setOverKey] = useState<string | null>(null);
   useEffect(() => setRows(order), [order]);
-
-  const label = (k: string) => navDef(k).label;
 
   /** 选中口径跟着设备走：窄屏是底栏那几项，宽屏是侧栏下半区那几项 */
   const isOn = (k: string) => (narrow ? tabs.has(k) : bottom.has(k));
@@ -155,59 +107,22 @@ function NavCard({ state }: { state: LocalState }) {
     }
   };
 
-  /** 桌面端：拖到 `k` 上跟它换一格 */
-  const onDragOver = (k: string) => (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!dragKey || dragKey === k) return;
-    const next = rows.slice();
-    const i = next.indexOf(dragKey);
-    const j = next.indexOf(k);
-    if (i < 0 || j < 0) return;
-    next[i] = k;
-    next[j] = dragKey;
-    setRows(next);
-    setOverKey(k);
-  };
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+  );
 
-  const endDrag = () => {
-    if (dragKey && rows.join() !== order.join()) store.setUi({ navOrder: rows });
-    setDragKey(null);
-    setOverKey(null);
-  };
-
-  /* ---- 移动端：抓手上的 pointer 拖拽 ---- */
-  const touch = useRef<{ startY: number; from: number; moved: boolean } | null>(null);
-
-  const gripDown = (e: React.PointerEvent, idx: number) => {
-    if (e.pointerType === 'mouse') return;   // 鼠标走 HTML5 那条
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    touch.current = { startY: e.clientY, from: idx, moved: false };
-  };
-  const gripMove = (e: React.PointerEvent) => {
-    const t = touch.current;
-    if (!t) return;
-    if (!t.moved && Math.abs(e.clientY - t.startY) > 8) {
-      t.moved = true;
-      setDragKey(rows[t.from]);
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setRows((prev) => {
+        const oldIndex = prev.indexOf(String(active.id));
+        const newIndex = prev.indexOf(String(over.id));
+        if (oldIndex < 0 || newIndex < 0) return prev;
+        const next = arrayMove(prev, oldIndex, newIndex);
+        store.setUi({ navOrder: next });
+        return next;
+      });
     }
-    if (!t.moved) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nav-row]');
-    const k = el?.getAttribute('data-nav-row');
-    if (!k) return;
-    const j = rows.indexOf(k);
-    if (j < 0 || j === t.from) return;
-    const next = rows.slice();
-    const [moved] = next.splice(t.from, 1);
-    next.splice(j, 0, moved);
-    setRows(next);
-    t.from = j;
-    setOverKey(k);
-  };
-  const gripUp = () => {
-    const t = touch.current;
-    touch.current = null;
-    if (t?.moved) endDrag();
   };
 
   return (
@@ -218,54 +133,56 @@ function NavCard({ state }: { state: LocalState }) {
       <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
         {narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}
       </div>
-      <ul className="flex flex-col gap-1">
-        {rows.map((k, idx) => {
-          const on = isOn(k);
-          return (
-            <li
-              key={k}
-              data-nav-row={k}
-              data-tab={narrow ? k : undefined}
-              role="button"
-              tabIndex={0}
-              aria-pressed={on}
-              draggable
-              onDragStart={(e) => {
-                setDragKey(k);
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', k);
-              }}
-              onDragOver={onDragOver(k)}
-              onDrop={(e) => { e.preventDefault(); endDrag(); }}
-              onDragEnd={endDrag}
-              onClick={() => toggle(k)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(k); } }}
-              className={cx(
-                'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-1.5 text-[12.5px] transition',
-                dragKey === k && 'opacity-40',
-                overKey === k && dragKey !== k
-                  ? 'border-[var(--primary)] ' + LINE
-                  : on
-                    ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                    : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
-              )}
-            >
-              <span
-                className="shrink-0 cursor-grab touch-none text-[var(--text-3)]"
-                onPointerDown={(e) => gripDown(e, idx)}
-                onPointerMove={gripMove}
-                onPointerUp={gripUp}
-                onPointerCancel={gripUp}
-              >
-                <GripVertical size={13} />
-              </span>
-              <span className="min-w-0 flex-1 truncate">{label(k)}</span>
-              {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
-            </li>
-          );
-        })}
-      </ul>
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <SortableContext items={rows} strategy={verticalListSortingStrategy}>
+          <ul className="flex flex-col gap-1">
+            {rows.map((k) => (
+              <SortableNavRow key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
     </Card>
+  );
+}
+
+/** 功能区里一行可排序的导航项 */
+function SortableNavRow({ id, on, narrow, onToggle }: {
+  id: string;
+  on: boolean;
+  narrow: boolean;
+  onToggle: (k: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      data-nav-row={id}
+      data-tab={narrow ? id : undefined}
+      onClick={() => onToggle(id)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
+      className={cx(
+        'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-1.5 text-[12.5px] transition',
+        isDragging && 'opacity-40',
+        on
+          ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+          : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
+      )}
+    >
+      <span {...listeners} className="shrink-0 cursor-grab touch-none text-[var(--text-3)]">
+        <GripVertical size={13} />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>
+      {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
+    </li>
   );
 }
 
@@ -573,19 +490,16 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                   <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
                   {manage ? (
                     <>
-                      <select
+                      <Chips<Role>
                         value={m.role}
-                        disabled={busy}
-                        aria-label={`「${m.name}」的权限`}
-                        onChange={(e) => void run(async () => {
-                          await api.setRole(calId, m.id, e.target.value as Role);
+                        options={ROLES}
+                        onPick={(r) => void run(async () => {
+                          await api.setRole(calId, m.id, r);
                           toast('权限已更新');
                         })}
-                        className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                                   px-1.5 py-1 text-[12px] outline-none"
-                      >
-                        {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                      </select>
+                        labelOf={(r) => ROLE_LABEL[r]}
+                        label={`「${m.name}」的权限`}
+                      />
                       <button
                         type="button"
                         title="移出日程集"
@@ -631,14 +545,13 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                   className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                              bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
                 />
-                <select
+                <Chips<Role>
                   value={inviteRole}
-                  aria-label="邀请的权限"
-                  onChange={(e) => setInviteRole(e.target.value as Role)}
-                  className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
-                >
-                  {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                </select>
+                  options={ROLES}
+                  onPick={(r) => setInviteRole(r)}
+                  labelOf={(r) => ROLE_LABEL[r]}
+                  label="邀请的权限"
+                />
                 <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
               </div>
               <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
@@ -798,6 +711,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
                   value={ui.accent}
                   options={['jade', 'azure', 'clay', 'plum', 'gold', 'slate']}
                   onPick={(k) => store.setUi({ accent: k })}
+                  labelOf={(k) => T.ACCENTS[k].label}
                   // 色点在**自己身上**带 data-accent + data-theme，于是它拿到的
                   // --primary 就是选中那套（含暗色档那组提亮过的值）。
                   // 不在 TS 里再存一份十六进制 —— 那两份一定会漂。
@@ -819,6 +733,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
                     value={ui.style}
                     options={['soft', 'flat', 'notion']}
                     onPick={(k) => store.setUi({ style: k })}
+                    labelOf={(k) => T.STYLES[k].label}
                   />
                 </div>
               </div>
@@ -832,6 +747,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
                   value={ui.theme}
                   options={['auto', 'light', 'dark']}
                   onPick={(k) => store.setUi({ theme: k })}
+                  labelOf={(k) => T.THEMES[k].label}
                 />
               </div>
             </div>

@@ -22,7 +22,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
-  Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
+  Flame, FolderKanban, Inbox, Loader2, MailPlus,
   MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock,
 } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
@@ -500,9 +500,9 @@ export function Tabbar({ state, onNav, onMore }: {
  * **深浅 / 导入 / 导出 / 退出登录不在这儿**：它们只有设置页一个入口
  * （外观卡、数据卡、账户卡）。抽屉里再放一份就是第二套入口，两边迟早说不到一起。
  */
-export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites }: {
+export function MoreSheet({ state, open, onClose, onNav, onInvites }: {
   state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
-  onManageCal: () => void; onInvites: () => void;
+  onInvites: () => void;
 }) {
   const c = counts(state);
   const panel = useRef<HTMLDivElement>(null);
@@ -528,8 +528,6 @@ export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites 
   if (!open) return null;
 
   const goto = (k: string) => { onNav(k); onClose(); };
-  // 窄屏侧栏收起来了，日程集入口得在这里有一份
-  const cal = state.cals.find((x) => x.id === state.ui.cal) || null;
   const pending = state.invites.length;
 
   /**
@@ -568,10 +566,6 @@ export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites 
         <div className="ms-grab" />
         <div className="ms-grid">
           {rest.map(navTile)}
-          <button className="ms-item" onClick={() => { onManageCal(); onClose(); }}>
-            <span className="mi"><Layers size={20} /></span>
-            <span className="mt">{cal ? cal.name : '日程集'}</span>
-          </button>
           {!!pending && (
             <button className="ms-item" onClick={() => { onInvites(); onClose(); }}>
               <span className="mi"><MailPlus size={20} /></span><span className="mt">邀请</span>
@@ -930,7 +924,7 @@ export function Shell({
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}
       <MoreSheet
         state={state} open={more && narrow} onClose={() => setMore(false)}
-        onNav={onNav} onManageCal={onManageCal} onInvites={onInvites}
+        onNav={onNav} onInvites={onInvites}
       />
     </div>
   );
