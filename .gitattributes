@@ -1,0 +1,10 @@
+# 行尾：**一律 LF**，没有例外。见 CLAUDE.md 四、48。
+#
+# 这一行同时管住两件事：仓库里存的是 LF，检出到工作区也是 LF。
+# 关键是 eol=lf 会**压过**每台机器各自的 core.autocrlf ——
+# 只写 text=auto 的话，在 Windows 上克隆（autocrlf=true）又会写出 CRLF。
+#
+# 别删这一行。删了之后，任何一个被 Windows 工具写过一遍的文件都会带着 CRLF
+# 回来，下次提交就是整份重写 —— app/src/styles/legacy.css 那次 3400 行的
+# 假 diff 就是这么来的（真实改动只有 152/98 行）。
+* text=auto eol=lf

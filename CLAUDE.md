@@ -89,6 +89,7 @@
 ├── deploy/                 nginx conf + systemd 单元的本地副本
 ├── legacy/                 旧版纯静态应用，**冻结**（回滚用，见 DEPLOY.md 七）
 ├── docs/                   接口.md · 重构路线.md
+├── .gitattributes          行尾一律锁成 LF，压过各机器的 core.autocrlf（见四、48）
 └── README.md  CLAUDE.md  DEPLOY.md
 ```
 
@@ -1273,6 +1274,57 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
   用 `'…[data-id=' + ${JSON.stringify(id)} + ']'` 那种拼法，
   别在双引号里再塞双引号。
 - 拿不准就先用 `evalJs` 单独试一次那段表达式，再喂给 `clickEl`。
+
+**48. 行尾一律 LF，`.gitattributes` 锁着 —— 别删它，也别用会改行尾的工具**
+
+全仓库（`app/` `server/` `docs/` `legacy/` 和根目录）**文本文件一律 LF，没有例外**，
+由根目录那一行 `.gitattributes` 管着：
+
+```
+* text=auto eol=lf
+```
+
+- **`eol=lf` 不能省。** 只写 `text=auto` 的话，仓库里虽然存的是 LF，
+  但 `core.autocrlf=true` 的机器（Windows）**检出时又会写出 CRLF** —— 等于没约定。
+  `eol=lf` 会压过每台机器各自的 `autocrlf`。
+- 仓库里**没有二进制文件**（93 个全是文本），`text=auto` 只是给将来留的口子。
+
+> **为什么值得单独立一条**：2026-10-07 提交 `app/src/styles/legacy.css` 时，
+> 整个文件被从 CRLF 归一成 LF，`git show --stat` 报 **3440 行改动**，
+> 而 `git diff --ignore-all-space` 显示真实改动只有 152/98 行。
+> 那次 diff 差点把「这个文件到底改了什么」整个盖掉。
+> 规矩就是：**一个文件要么一直 LF，要么一直 CRLF，不能让它中途变。**
+> 判断一份 diff 是不是纯行尾改动，就用 `git diff --ignore-all-space`。
+
+**查还有没有残留**（索引和工作区一起看，有输出就是有）：
+
+```bash
+git ls-files --eol | grep -v '^i/lf.*w/lf'
+```
+
+**真要把一个 CRLF 文件改成 LF，两步的顺序不能反：**
+
+```bash
+git add --renormalize .                      # ① 先把索引里的 blob 归一成 LF
+rm <文件> && git checkout -- <文件>           # ② 再从 LF 的索引写回工作区
+```
+
+> **① 不能省。** `eol=lf` **不会**在检出时把 CRLF 剥掉 —— git 只转换
+> 「它自己写进索引的那份 LF」，索引 blob 里本来就有的 CRLF 它原样吐回来。
+> 所以只做 ② 的话，文件从 CRLF 变成 CRLF，看起来什么也没发生
+> （2026-10-07 就这么白跑了一趟）。`git ls-files --eol` 里
+> `i/crlf w/crlf` 变成 `i/lf w/crlf`，才算走对了第一步。
+
+**别用 `sed -i` / `perl -i` 去改行尾** —— 它们在 CIFS 上靠「写临时文件再改名」，
+改名会失败、原文件当场消失，见四、30。要改就走上面的 `renormalize` + `checkout`。
+
+> **`legacy/` 里那 8 个文件是最后的 CRLF 据点**（`app.js` / `store.js` /
+> `styles.css` / `views.js` 加 4 个测试脚本），2026-10-07 已一并归一成 LF。
+> 那些 CRLF 是当年在 Windows 上写出来的**残留，不是约定** ——
+> 同一个目录里的 `clock.js` / `parse.js` 一直是 LF。
+> 改完记得重建那份**不进版本库**的回滚产物：`node legacy/tools/sync-dist.mjs`
+> （它按字节把 `legacy/*` 拷进 `legacy/dist/`，并在 `BUILD.txt` 里记 sha256 前 8 位，
+> 所以行尾一变哈希就跟着变）。
 
 ---
 
