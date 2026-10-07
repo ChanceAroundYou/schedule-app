@@ -1022,7 +1022,6 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* ================= 垃圾箱 ================= */
 
 .trash-head { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
-.trash-tip { flex: 1; font-size: 12px; color: var(--text-2); }
 .trash-row { cursor: default; }
 .trash-row:hover::after { opacity: 0; }
 .trash-ico { font-size: 14px; }

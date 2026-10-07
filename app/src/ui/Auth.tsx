@@ -78,13 +78,6 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           </div>
         </div>
 
-        {register && (
-          <div className="mb-4 rounded-[var(--r-lg)] bg-[var(--panel-3)] p-3
-                          text-[12.5px] leading-relaxed text-[var(--text-2)]">
-            家里人各自注册一个账户，然后互相邀请进同一个日程集就能一起用了。
-          </div>
-        )}
-
         <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
         <input
           id={fid + '-name'}

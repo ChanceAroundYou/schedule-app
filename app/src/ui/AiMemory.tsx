@@ -137,6 +137,7 @@ export function AiMemory() {
                   <input
                     className="ai-memory-edit"
                     value={editText}
+                    aria-label="编辑记忆"
                     onChange={(e) => setEditText(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void saveEdit(m.id);

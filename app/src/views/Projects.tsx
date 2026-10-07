@@ -177,10 +177,7 @@ export function ProjectsView({ state, onNew, onEdit, onNext }: {
       {!list.length && (
         <div className="empty">
           <div>还没有项目</div>
-          <div className="empty-sub">
-            长周期的事放这儿。泳道头上那两样（下一步 · 几天没动）是给
-            「想不起来做到哪儿了」用的 —— 不用先写计划
-          </div>
+          <div className="empty-sub">长周期的事放这儿。</div>
         </div>
       )}
 

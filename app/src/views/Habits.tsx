@@ -37,6 +37,7 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
         type="text"
         id="habitInput"
         placeholder="添加一个打卡项，如：学英语"
+        aria-label="添加打卡项"
         autoComplete="off"
         spellCheck={false}
         value={draft}

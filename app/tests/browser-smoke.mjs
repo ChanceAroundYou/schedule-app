@@ -356,6 +356,16 @@ try {
     ok(await evalJs(page, `return !!document.querySelector('${marker}');`), nav + ' 有 ' + marker);
   }
 
+  // 打卡页的输入框也要有名字 —— a11y() 原来只扫了待办箱 / 抽屉 / 浮层，
+  // 打卡页从来没被扫过，habitInput 只有 placeholder 的漏洞就是这么漏掉的
+  await evalJs(page, `document.querySelector('[data-nav="habits"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('.habit-add')`, '打卡页渲染出来', 8000);
+  const hab = await evalJs(page, `return { bad: ${a11y('.habit-add')},
+    cands: document.querySelectorAll('.habit-add input').length };`);
+  ok(hab.cands === 1, '打卡页有 ' + hab.cands + ' 个输入框可查');
+  ok(hab.bad.length === 0, '打卡页每个控件都有名字'
+    + (hab.bad.length ? '：\n      ' + hab.bad.join('\n      ') : ''));
+
   console.log('\n五、管理浮层：改名能落库');
   await evalJs(page, `document.querySelector('[data-cal-manage]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('[data-cal-name]')`, '管理浮层打开');
@@ -844,6 +854,14 @@ try {
   // 切到 AI 页
   await evalJs(page, `document.querySelector('[data-nav="ai"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('.ai-wrap')`, 'AI 面板渲染出来', 8000);
+
+  // AI 面板的输入框也要有名字 —— a11y() 原来从没扫过 AI 面板，
+  // .ai-input 只有 placeholder 的漏洞就是这么漏掉的
+  const aiA11y = await evalJs(page, `return { bad: ${a11y('.ai-wrap')},
+    cands: document.querySelectorAll('.ai-wrap input, .ai-wrap textarea').length };`);
+  ok(aiA11y.cands >= 1, 'AI 面板有 ' + aiA11y.cands + ' 个输入框可查');
+  ok(aiA11y.bad.length === 0, 'AI 面板每个控件都有名字'
+    + (aiA11y.bad.length ? '：\n      ' + aiA11y.bad.join('\n      ') : ''));
 
   // 发一句话。`.ai-input` 是 <textarea>，setter 必须取 HTMLTextAreaElement
   // 那个原型上的 —— 拿 HTMLInputElement 的来 call 会当场 `Illegal invocation`
