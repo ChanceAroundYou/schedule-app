@@ -14,8 +14,8 @@
  *
  * **上面那排数字写的是 24 小时制**（下午 3 点就是 15，不是 03）。这是跟
  * 「下午那圈直接写 12–23」配套的：表盘上点的是 15、上面显示的却是 03，
- * 用户会以为点错了。上午 12 点（午夜）因此显示 00 —— 这是 24 小时制的
- * 标准写法，不是 bug。
+ * 用户会以为点错了。上午圈写 0–11（午夜是 0，不是 12），和按钮/输入框
+ * 显示的 HH:MM 完全一致 —— 标签就是点下去得到的那个值。
  *
  * 两处分身，**表盘本体只有一份**：
  *   · `ClockBody` —— 表盘本身，不带定位、不带「确定 / 取消」。谁要谁嵌。
@@ -83,9 +83,10 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
   const isHour = mode === 'h';
 
   /* 表盘上 12 个位置，k = 0 是顶端（12 点位置），顺时针。
-     标签必须**等于点下去得到的那个值**，否则用户点「3」出来 15 会以为坏了。 */
+     标签必须**等于点下去得到的那个值**，否则用户点「3」出来 15 会以为坏了。
+     上午圈写 0–11（午夜是 0），下午圈写 12–23，和按钮/输入框的 HH:MM 一致。 */
   const labelOf = (k: number) => isHour
-    ? (k === 0 ? 12 : (isAm ? k : k + 12))
+    ? (isAm ? k : k + 12)
     : (k === 0 ? 60 : k * 5);
 
   /** 当前值落在第几个位置 —— 指针角度和「哪个数高亮」都用它 */
@@ -130,8 +131,8 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
         <span className="cp-apm">
           <button className={'cp-ap' + (isAm ? ' on' : '')} onClick={() => setAmPm(true)}>上午</button>
           <button className={'cp-ap' + (!isAm ? ' on' : '')} onClick={() => setAmPm(false)}>下午</button>
+          <button className="cp-now" onClick={now}>现在</button>
         </span>
-        <button className="cp-now" onClick={now}>现在</button>
       </div>
 
       {/* 大号的时间显示**没有**（需求 4）：生效时间已经写在横条那个按钮上

@@ -19,7 +19,7 @@
  * 后来在设置页补回 —— 见项目 CLAUDE.md 四、23。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
@@ -29,7 +29,6 @@ import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { counts, liveTasks, CUSTOMIZABLE, quickDefaults } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
-import { repeatLabel } from '../domain/repeat.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { CalSwitcher } from './Calendars.tsx';
 import { MiniCalendar, WhenPop } from './WhenPop.tsx';
@@ -608,7 +607,6 @@ export function QuickAdd({ state, onSubmit }: {
      默认值顶回来，点了跟没点一样（normalizeUi 的 navBottom 是同一类坑）。 */
   const [pendingDate, setPendingDate] = useState<string | null | undefined>(undefined);
   const [pendingTime, setPendingTime] = useState<string | null | undefined>(undefined);
-  const [focused, setFocused] = useState(false);
   // 窄屏默认收起成右下角一个 FAB，点一下展开、再点收起（需求 3C）
   const [expanded, setExpanded] = useState(!narrow);
   /** 日期 / 时间那个面板（两层折叠，见 ui/WhenPop.tsx） */
@@ -618,10 +616,6 @@ export function QuickAdd({ state, onSubmit }: {
   const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const fabRef = useRef<HTMLButtonElement>(null);
-  /** 横条展开后的实测高度。窄屏的 + / × 要跟着它竖直居中（需求 2）——
-   *  输入框撑成两行时那个圆钮得往下挪，不然就顶在横条上沿 */
-  const [barH, setBarH] = useState(0);
 
   const ui = state.ui;
   const def = quickDefaults(ui, D.today());
@@ -631,11 +625,6 @@ export function QuickAdd({ state, onSubmit }: {
   // 否则「今天」页上按钮写着 10/7、面板里却高亮别的日子，用户不知道该信哪个
   const effDate = pendingDate !== undefined ? pendingDate : (parsed?.date ?? def.date);
   const effTime = pendingTime !== undefined ? pendingTime : (parsed?.time ?? def.time);
-  const chips: [string, string][] = [];
-  if (effDate) chips.push(['date', D.relLabel(effDate)]);
-  if (effTime) chips.push(['time', effTime]);
-  if (parsed?.duration) chips.push(['dur', D.fmtDuration(parsed.duration)]);
-  if (parsed?.repeat) chips.push(['rep', repeatLabel(parsed.repeat)]);
 
   const submit = (openDetail: boolean) => {
     const raw = text.trim();
@@ -679,42 +668,6 @@ export function QuickAdd({ state, onSubmit }: {
     }
   }, [expanded]);
 
-  /* 输入框默认一行、内容多了自己撑开（需求 2）。textarea 不会自己长高，
-     得每次改完先把 height 归零再读 scrollHeight —— 不归零的话它只会越长越高，
-     删掉一行也缩不回去（scrollHeight 里有当前 height 的份）。 */
-  useLayoutEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = '0px';
-    el.style.height = el.scrollHeight + 'px';
-  }, [text, expanded]);
-
-  /* 量横条高度，给窄屏那个 + / × 用（需求 2：它要和输入框竖直居中）。
-     用 ResizeObserver 而不是盯 text —— 换行、字体、内边距都会改高度，
-     逐个列依赖必然漏一个。收起时横条是 display:none，量到 0，
-     正好让圆钮回到默认位置。
-
-     **光靠 ResizeObserver 不够。** 它在「元素本来 display:none、后来才有盒子」
-     这一步上**不一定会投递**：收起时挂上去的观察者，展开后收不到第一次通知，
-     `barH` 一直是 0，圆钮就停在默认位置 —— 而那个位置是按「横条只有一行」
-     算的，横条一高它就偏上（实测偏 20.6px）。
-     所以展开 / 文字变化时**当场再量一次**（layout effect 里读 offsetHeight
-     是同步的，拿到的就是这一帧的真实值），ResizeObserver 只兜底那些
-     不经过 React 的高度变化（字体替换、换行）。 */
-  useLayoutEffect(() => {
-    const el = barRef.current;
-    if (!el) return;
-    setBarH(el.offsetHeight);
-  }, [expanded, text]);
-
-  useLayoutEffect(() => {
-    const el = barRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setBarH(el.offsetHeight));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   /* 点空白收起（需求 7 / 8）—— **两级，而且必须在同一个 handler 里**：
      面板开着就先收面板、横条留着；面板没开才收横条。
      分成两处挂会打架：两个都是 document 上的 capture 监听，谁先跑只看注册
@@ -726,7 +679,6 @@ export function QuickAdd({ state, onSubmit }: {
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (barRef.current?.contains(t)) return;
-      if (fabRef.current?.contains(t)) return;
       if (whenOpen) { setWhenOpen(false); return; }
       // 宽屏没有 FAB，横条是常驻的，点空白只该收面板，不该把输入框收掉
       if (narrow) setExpanded(false);
@@ -738,93 +690,88 @@ export function QuickAdd({ state, onSubmit }: {
   // 跟着 tab 来的默认日期也算「有」—— 按钮上要写出来（需求 6）
   const hasWhen = !!(effDate || effTime);
 
-  /* 窄屏那套几何（需求 1、2）—— 三句话说完：
-       · 横条固定在标签栏上方 64px 处，右端留出圆钮的位置（74 = 16 + 48 + 10）。
-       · 圆钮一直在原地，收起时是 +、展开时变 ×，**输入框就是从它这儿弹出来的**
-         （CSS 的 transform-origin 钉在横条的右中，也就是圆钮的左边缘）。
-       · 圆钮和横条**竖直居中**：横条被撑成两行时圆心跟着往下走，
-         所以它的 bottom 由横条的实测高度反推，而不是写死。
-     64 是「标签栏 56 + 8px 缝」；58 是圆钮的下限，再低就压到标签栏上了。 */
-  const BAR_BOTTOM = 64;
-  const fabBottom = expanded && barH > 0
-    ? Math.max(58, BAR_BOTTOM - 24 + barH / 2)
-    : 68;
-
   return (
     <>
       {/* 设置页 / 垃圾箱没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
       <div
-        className="fast-add"
+        className={'fast-add' + (expanded ? ' open' : '')}
         ref={barRef}
-        hidden={ui.nav === 'trash' || ui.nav === 'settings' || (narrow && !expanded)}
+        hidden={ui.nav === 'trash' || ui.nav === 'settings'}
         style={narrow ? {
           position: 'fixed',
           left: '13px',
-          right: '74px',
+          right: '0',
           // margin 也要在内联里清掉：基线上那条 `.fast-add { margin: 6px 22px 18px }`
           // 是给**流内**布局的，而 fixed + left/right 的定位里 margin 会**再加一层**偏移
           //（right:74px 实际让出 96px）。CSS 媒体块里虽然也清了，但媒体查询按**真实**
           // 视口宽度走，探针那种「JS 判窄、CSS 判宽」的环境里清不掉。
           margin: 0,
-          bottom: `calc(${BAR_BOTTOM}px + env(safe-area-inset-bottom, 0px))`,
-          // 缩放 / 滑出的原点 = 圆钮的左边缘，这样看起来就是从那个圆里长出来的
-          transformOrigin: '100% 50%',
+          bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
         } : undefined}
       >
-        <span className="fast-plus"><Plus size={15} /></span>
-        {/* 默认一行，内容多了自己撑开（需求 2）。用 textarea 而不是 input：
-            要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
-            这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={text}
-          placeholder={QUICK_PLACEHOLDER}
-          aria-label="快速添加"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(e) => setText(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit(e.ctrlKey || e.metaKey);
-            }
-            if (e.key === 'Escape') { e.currentTarget.blur(); }
-          }}
-        />
-        {/* 「保存」是个 ✓，摆在日期按钮**前面**（需求 3）。
-            一行里三个文字按钮太吵，保存这件事有个勾就够了。
-            高度和日期按钮一样：那个按钮要摆两行 10px 的小字，
-            ✓ 得跟它齐平，不然一行里高矮不齐。 */}
-        <button
-          className="fast-save"
-          type="button"
-          disabled={!text.trim()}
-          title="保存这条任务"
-          aria-label="保存这条任务"
-          onClick={() => submit(false)}
-        ><Check size={16} /></button>
-        <button
-          ref={clockBtn}
-          className={'fast-clock' + (hasWhen ? ' on' : '')}
-          type="button"
-          title="选择日期和时间"
-          aria-expanded={whenOpen}
-          onClick={() => setWhenOpen((v) => !v)}
-        >
-          <Clock size={15} />
-          {/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
-              写的都是**生效值** —— 跟着 tab 来的默认日期（今天页 / 日程页）
-              也在这儿显示，和面板里写的是同一个值（需求 6）。 */}
-          {hasWhen && (
-            <span className="fc-when">
-              {effDate && <span className="fc-d">{D.fmtSlashMD(effDate)}</span>}
-              {effTime && <span className="fc-t">{effTime}</span>}
-            </span>
-          )}
-        </button>
+        <div className="fast-add-body">
+          {/* 固定两行，超过可内部滚动（需求 1）。用 textarea 而不是 input：
+              要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
+              这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
+          <textarea
+            ref={inputRef}
+            rows={2}
+            value={text}
+            placeholder={QUICK_PLACEHOLDER}
+            aria-label="快速添加"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit(e.ctrlKey || e.metaKey);
+              }
+              if (e.key === 'Escape') { e.currentTarget.blur(); }
+            }}
+          />
+          {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
+              10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
+              句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
+              用户看得见（需求 7）。 */}
+          <span className="fast-hint">
+            {hasWhen
+              ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
+                  .filter(Boolean).join(' · ')
+              : 'Ctrl + Enter 打开详细设置'}
+          </span>
+        </div>
+        {/* 时间/保存按钮上下叠放（需求 4）：时间在上，保存在下，固定位置 */}
+        <div className="fast-side">
+          <button
+            ref={clockBtn}
+            className={'fast-clock' + (hasWhen ? ' on' : '')}
+            type="button"
+            title="选择日期和时间"
+            aria-expanded={whenOpen}
+            onClick={() => setWhenOpen((v) => !v)}
+          >
+            <Clock size={15} />
+            {/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
+                写的都是**生效值** —— 跟着 tab 来的默认日期（今天页 / 日程页）
+                也在这儿显示，和面板里写的是同一个值（需求 6）。 */}
+            {hasWhen && (
+              <span className="fc-when">
+                {effDate && <span className="fc-d">{D.fmtSlashMD(effDate)}</span>}
+                {effTime && <span className="fc-t">{effTime}</span>}
+              </span>
+            )}
+          </button>
+          {/* 「保存」是个 ✓（需求 3）。一行里三个文字按钮太吵，保存这件事有个勾就够了。 */}
+          <button
+            className="fast-save"
+            type="button"
+            disabled={!text.trim()}
+            title="保存这条任务"
+            aria-label="保存这条任务"
+            onClick={() => submit(false)}
+          ><Check size={16} /></button>
+        </div>
         <WhenPop
           open={whenOpen}
           anchor={clockBtn.current}
@@ -836,51 +783,24 @@ export function QuickAdd({ state, onSubmit }: {
           onTime={setPendingTime}
           onClose={() => setWhenOpen(false)}
         />
-        {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
-            10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
-            句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
-            用户看得见（需求 7）。 */}
-        <span className="fast-hint">
-          {hasWhen
-            ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
-                .filter(Boolean).join(' · ')
-            : 'Ctrl + Enter 打开详细设置'}
-        </span>
-
-        <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
-          {!!chips.length && (
-            <>
-              <span className="fp-chip k-title">{parsed?.title || text}</span>
-              <span className="fp-arrow">→</span>
-              {chips.map(([k, v]) => <span className={'fp-chip k-' + k} key={k}>{v}</span>)}
-            </>
-          )}
-        </div>
+        {/* 窄屏那个圆钮：在横条内（需求 2）。收起时是 +、展开时原地变 ×。 */}
+        {narrow && (
+          <button
+            className={'fast-fab' + (expanded ? ' open' : '')}
+            type="button"
+            title={expanded ? '收起快速添加' : '快速添加'}
+            aria-label={expanded ? '收起快速添加' : '快速添加'}
+            aria-expanded={expanded}
+            onClick={() => {
+              // 收起时顺手把面板也收了：面板挂在横条里，横条没了它也就没了，
+              // 留着 whenOpen 下次展开会「凭空」弹出上一次的面板
+              if (expanded) setWhenOpen(false);
+              else focusOnExpand.current = true;
+              setExpanded((v) => !v);
+            }}
+          >{expanded ? <X size={20} /> : <Plus size={20} />}</button>
+        )}
       </div>
-
-      {/* 窄屏那个圆钮：**一直在**（需求 1）。收起时是 +、展开时原地变 ×，
-          输入框就是从这里弹出去的 —— 所以它不能跟着横条一起被 display:none 掉，
-          那样就没有「弹出来」可言了。它和输入框竖直居中（需求 2），
-          位置由横条的实测高度反推，见上面 fabBottom。 */}
-      {narrow && (
-        <button
-          ref={fabRef}
-          className={'fast-fab' + (expanded ? ' open' : '')}
-          type="button"
-          hidden={ui.nav === 'trash' || ui.nav === 'settings'}
-          title={expanded ? '收起快速添加' : '快速添加'}
-          aria-label={expanded ? '收起快速添加' : '快速添加'}
-          aria-expanded={expanded}
-          style={{ bottom: `calc(${fabBottom}px + env(safe-area-inset-bottom, 0px))` }}
-          onClick={() => {
-            // 收起时顺手把面板也收了：面板挂在横条里，横条没了它也就没了，
-            // 留着 whenOpen 下次展开会「凭空」弹出上一次的面板
-            if (expanded) setWhenOpen(false);
-            else focusOnExpand.current = true;
-            setExpanded((v) => !v);
-          }}
-        >{expanded ? <X size={20} /> : <Plus size={20} />}</button>
-      )}
     </>
   );
 }
