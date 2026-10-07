@@ -23,7 +23,7 @@ import { chatStream } from './aiClient.ts';
 import { AiSettingsSheet } from './AiSettings.tsx';
 import { AiHistory } from './AiHistory.tsx';
 import { AiMemory } from './AiMemory.tsx';
-import { Btn, IconBtn, toast } from './kit.tsx';
+import { Btn, IconBtn, Textarea, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
@@ -414,8 +414,8 @@ export function AiPanel({ state, onConfirmed }: {
       </div>
 
       <div className="ai-compose">
-        <textarea
-          className="ai-input"
+        <Textarea
+          className="flex-1 resize-none max-h-[140px] leading-[1.6]"
           value={text}
           rows={narrow ? 1 : 2}
           placeholder="问点排期上的事…（回车发送，Shift+回车换行）"

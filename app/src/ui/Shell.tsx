@@ -33,6 +33,7 @@ import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } f
 import { CalSwitcher } from './Calendars.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
 import { WhenPop } from './WhenPop.tsx';
+import { Input, Textarea, Btn, IconBtn } from './kit.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -177,9 +178,9 @@ function Sidebar({ state, onNav, onNew, onManageCal, onInvites }: {
         {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事）。
             导入 / 导出 / 深浅 / 退出登录**只留在设置页一处** —— 这里原先各有一份
             重复入口，收进设置页之后侧栏底部只留设置这一个动作。 */}
-        <button className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
+        <Btn variant="ghost" data-nav="settings" onClick={() => onNav('settings')}>
           <Settings size={13} /> 设置
-        </button>
+        </Btn>
         <div className="tip">数据已同步到服务器，本机也留了一份</div>
       </div>
     </aside>
@@ -222,7 +223,7 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
   return (
     <div className="jump-pop" ref={box}>
       <div className="jp-row">
-        <input
+        <Input
           type="text"
           value={text}
           placeholder="输入日期，如 10月15日"
@@ -266,7 +267,7 @@ function SearchInput({ kw, setKw, autoFocus }: {
   return (
     <div className="search-box">
       <span className="search-ico"><Search size={14} /></span>
-      <input
+      <Input
         type="text"
         value={kw}
         placeholder="搜索…"
@@ -325,29 +326,33 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
   return (
     <div className="cal-subhead">
       <div className="date-nav">
-        <button className="round-btn" title="上一个" onClick={() => onShift(-1)}>
+        <Btn variant="normal" title="上一个" onClick={() => onShift(-1)}>
           <ChevronLeft size={15} />
-        </button>
-        <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
+        </Btn>
+        <Btn variant="normal" title="下一个" onClick={() => onShift(1)}>
           <ChevronRight size={15} />
-        </button>
+        </Btn>
         {/* 只留一个「今」字。在不在今天**不靠文字**，靠 .away 那一档配色
             （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 .today-btn */}
-        <button
-          className={'text-btn today-btn' + (atToday ? '' : ' away')}
+        <Btn
+          variant="ghost"
+          size="sm"
+          className={atToday ? '' : 'away'}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
-        >今</button>
+        >今</Btn>
         <div className="jump-wrap">
-          <button
-            className={'text-btn jump-btn' + (jump ? ' on' : '')}
+          <Btn
+            variant="ghost"
+            size="sm"
+            className={jump ? 'on' : ''}
             title="跳到指定日期（快捷键 D）"
             aria-haspopup="dialog"
             aria-expanded={jump}
             onClick={() => setJump(!jump)}
           >
             <span className="jb-ico"><CalendarDays size={13} /></span>
-          </button>
+          </Btn>
           <JumpPop
             open={jump}
             cursor={ui.cursor}
@@ -412,15 +417,14 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
       <div className="topbar-right">
         {narrow ? (
           <>
-            <button
-              className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
-              title="搜索"
-              aria-label="搜索任务"
+            <IconBtn
+              label="搜索任务"
+              className={'search-toggle' + (searchOpen || kw ? ' on' : '')}
               aria-expanded={searchOpen}
               onClick={() => setSearchOpen(!searchOpen)}
             >
               <Search size={16} />
-            </button>
+            </IconBtn>
             <SearchPop
               open={searchOpen}
               kw={kw}
@@ -714,7 +718,7 @@ export function QuickAdd({ state, onSubmit }: {
           {/* 固定两行，超过可内部滚动（需求 1）。用 textarea 而不是 input：
               要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
               这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
-          <textarea
+          <Textarea
             ref={inputRef}
             rows={2}
             value={text}

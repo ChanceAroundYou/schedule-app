@@ -42,6 +42,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as D from '../domain/date.ts';
+import { Btn } from './kit.tsx';
 
 /** 抽屉里那个浮层的表盘直径。`.clock-pop` 的 278px 宽度就是按它配出来的
  *  （278 扣掉两条 1px 边框和左右各 15px 内边距 = 246），见 legacy.css 那段注释 */
@@ -247,10 +248,10 @@ export function ClockPop({ open, anchor, value, onChange, onClose }: ClockPopPro
       <ClockBody value={value} onChange={setDraft} />
 
       <div className="cp-foot">
-        <button className="chip tiny" onClick={() => { onChange(null); onClose(); }}>清除</button>
+        <Btn variant="chip" size="sm" onClick={() => { onChange(null); onClose(); }}>清除</Btn>
         <span className="grow" />
-        <button className="ghost-btn" onClick={onClose}>取消</button>
-        <button className="primary-btn" onClick={() => { onChange(draft); onClose(); }}>确定</button>
+        <Btn variant="ghost" onClick={onClose}>取消</Btn>
+        <Btn variant="primary" onClick={() => { onChange(draft); onClose(); }}>确定</Btn>
       </div>
     </div>
   );

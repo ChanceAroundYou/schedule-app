@@ -25,6 +25,7 @@ import {
 } from '../domain/model.ts';
 import type { LocalState, Project, Task } from '../domain/types.ts';
 import { fmtMD } from '../domain/date.ts';
+import { Btn } from '../ui/kit.tsx';
 
 /** 三列。顺序就是板子上的顺序 —— `projectColumn` 的返回值要对得上 */
 const COLS = [
@@ -171,7 +172,7 @@ export function ProjectsView({ state, onNew, onEdit, onNext }: {
     <div className="pj-wrap">
       <div className="pj-top">
         <h2 className="pj-h">项目</h2>
-        <button className="text-btn" type="button" onClick={onNew}>＋ 新建项目</button>
+        <Btn variant="ghost" type="button" onClick={onNew}>＋ 新建项目</Btn>
       </div>
 
       {!list.length && (

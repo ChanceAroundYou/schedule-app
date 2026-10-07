@@ -18,6 +18,7 @@ import {
   doneTasks, liveHabits, overdueCount, overdueTasks, todayDoneTasks, todayTasks, inboxTasks,
 } from '../domain/model.ts';
 import { Caret, CheckBtn, CheckinStrip, Empty, TaskRow } from './parts.tsx';
+import { Btn } from '../ui/kit.tsx';
 
 /* ============================== 待办箱 ============================== */
 
@@ -120,10 +121,10 @@ function OverdueRow({ task: t, days }: { task: Task; days: number }) {
           {t.time && <><span className="dot">·</span><span className="m-time">{t.time}</span></>}
           {t.duration && t.time && <><span className="dot">·</span><span className="m-dur">{D.fmtDuration(t.duration)}</span></>}
           <span className="od-quick">
-            <button className="od-btn" data-act="reschedule" data-id={t.id} data-date={t0}>今天</button>
-            <button className="od-btn" data-act="reschedule" data-id={t.id} data-date={D.addDays(t0, 1)}>明天</button>
+            <Btn variant="normal" size="sm" data-act="reschedule" data-id={t.id} data-date={t0}>今天</Btn>
+            <Btn variant="normal" size="sm" data-act="reschedule" data-id={t.id} data-date={D.addDays(t0, 1)}>明天</Btn>
             {/* 「改到…」用离屏 <input type="date"> + showPicker()，不走完整抽屉 */}
-            <button className="od-btn ghost" data-act="pick-date" data-id={t.id}>改到…</button>
+            <Btn variant="ghost" size="sm" data-act="pick-date" data-id={t.id}>改到…</Btn>
           </span>
         </div>
       </div>

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
+import { Btn } from './kit.tsx';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
 
@@ -105,14 +106,16 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
         </div>
         <div className="as-grid">
           {list.map((a) => (
-            <button
-              className={'as-btn' + (a.danger ? ' danger' : '') + (a.on ? ' on' : '')}
+            <Btn
+              variant="chip"
+              size="sm"
+              className={(a.danger ? 'danger ' : '') + (a.on ? 'on' : '')}
               key={a.value}
               onClick={() => run(a.value)}
             >
               <span className="ai">{a.icon}</span>
               <span>{a.label}</span>
-            </button>
+            </Btn>
           ))}
         </div>
         <button className="as-cancel" onClick={onClose}>取消</button>

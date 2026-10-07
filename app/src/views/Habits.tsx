@@ -18,6 +18,7 @@ import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
+import { Input, Btn } from '../ui/kit.tsx';
 
 export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title: string) => void }) {
   const [draft, setDraft] = useState('');
@@ -33,7 +34,7 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
 
   const addBar = (
     <div className="habit-add">
-      <input
+      <Input
         type="text"
         id="habitInput"
         placeholder="添加一个打卡项，如：学英语"
@@ -44,7 +45,7 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
       />
-      <button className="primary-btn" onClick={add}><Plus size={14} /> 添加</button>
+      <Btn variant="primary" onClick={add}><Plus size={14} /> 添加</Btn>
     </div>
   );
 
