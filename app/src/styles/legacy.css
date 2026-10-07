@@ -394,13 +394,16 @@ b, strong { font-variant-numeric: tabular-nums; }
   transition: background .14s, color .14s, border-color .14s;
 }
 .text-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
-/* 「今天」按钮：只在真的离开今天之后才需要，此时才亮起来提示可以跳回去 */
+/* 「今天」按钮：**选中就是今天时亮起**（需求 6）。
+   默认（不在今天）压暗 —— 它此刻没有指向任何东西；
+   就在今天时亮起来，表示「你现在看的就是今天」，和日 / 周 / 月那三个
+   视图档的 `.on` 是同一套语义。 */
 .today-btn { margin-left: 4px; color: var(--text-3); border-color: transparent; }
-.today-btn.away {
+.today-btn.on {
   color: var(--primary); border-color: var(--primary);
   background: var(--primary-pale); font-weight: 600;
 }
-.today-btn.away:hover { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+.today-btn.on:hover { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
 
 /* ================= 顶栏「找日期」跳转面板 ================= */
 
@@ -1103,31 +1106,47 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 /* ================= 快速添加 ================= */
 
+/* 横条本体（只管 `margin` / `z-index`）与**动画层**（`.fast-add-shell`）分开：
+   圆钮 `.fast-fab` 是 `.fast-add` 的子节点、shell 的兄弟。动画必须挂在 shell 上
+   —— 挂在 `.fast-add` 上的话，`transform` 和 `opacity` 会作用到整棵子树，
+   圆钮被拖着右移 28px、缩小 4%、淡出，动画一结束弹回原位（实测最大偏移 30.5px），
+   就是那个「异常跳变」。 */
 .fast-add {
+  margin: 6px 22px 18px;
+  /* 需求 1：给输入框很高的 z-index，否则会被日视图/周视图等里面的元素挡住。
+     窄屏下它是 position: fixed，在 #content 外面，但 #content 内的 sticky 元素
+     （表头 z-index 5/6）会创建新的层叠上下文，可能盖住它。 */
+  z-index: 100;
+}
+/* 真正的「那个盒子」：背景 / 边框 / 圆角 / 阴影 / 内边距 / flex 排布都在这一层，
+   展开 / 关闭动画也挂在它身上。它**不含圆钮**，所以怎么动都带不动圆钮。 */
+.fast-add-shell {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin: 6px 22px 18px; padding: 11px 16px;
+  padding: 11px 16px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
   transition: border-color .16s, box-shadow .16s;
+  /* 需求 3：缩放基准定在**圆钮的圆心**（右 13 + 48/2 = 37）——
+     看着就是这个盒子被吸进圆钮里 / 从圆钮里长出来。 */
+  transform-origin: calc(100% - 37px) center;
 }
-.fast-add:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
-/* 收起时只露圆钮：内容 display:none，横条背景/边框/阴影去掉（需求 2）。
-   **border 只透明、不整个删掉** —— 圆钮是绝对定位钉在右下角的（见 .fast-fab），
-   而 absolute 的包含块是 **padding box**：border 一删一加，padding box 就
-   平移 1px，圆钮跟着跳一下。留个透明边框占住位置，圆钮才真的一动不动。 */
-.fast-add:not(.open) {
-  background: none; border-color: transparent; box-shadow: none;
-}
-.fast-add:not(.open) .fast-add-body,
-.fast-add:not(.open) .fast-side {
-  display: none;
-}
+.fast-add:focus-within .fast-add-shell { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
+/* 收起时只露圆钮：整个盒子 display:none（需求 2）。
+   盒子不再承担圆钮的定位 —— 圆钮的 `bottom` 相对 `.fast-add` 的 padding box，
+   而 `.fast-add` 的**底边**由 fixed 的 bottom 钉死：盒子在不在、多高，圆钮都不动。 */
+.fast-add:not(.open) .fast-add-shell { display: none; }
 
+/* 输入框那一行占满横条的剩余宽度，把时间 / 保存按钮**挤到右边**（需求 4）——
+   原先 `.fast-add-body` 没有 flex，只占 textarea 的内容宽（cols=20），
+   `.fast-side` 紧跟在左边，离右下角的圆钮足足 867px。 */
+.fast-add-body { flex: 1; }
 /* 输入框固定两行，超过可内部滚动（需求 1）。
    resize:none 是必须的 —— 浏览器默认给 textarea 一个右下角的拖拽角，
-   在这个横条里拖它只会把布局拖坏。 */
+   在这个横条里拖它只会把布局拖坏。
+   **width: 100% 而不是 flex: 1** —— `.fast-add-body` 不是 flex 容器，
+   textarea 的 flex: 1 从来就没生效过（它只对 flex 父元素有意义）。 */
 .fast-add textarea {
-  flex: 1; min-width: 140px; border: none; outline: none; background: none;
+  width: 100%; min-width: 140px; border: none; outline: none; background: none;
   font: inherit; font-size: 14.5px; line-height: 1.35;
   padding: 0; margin: 0; resize: none; overflow-y: auto;
   height: calc(2 * 1.35em);
@@ -1187,25 +1206,35 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 /* 面板展开时那条淡入上浮（.wp-body / .jump-pop / 快速添加浮层都用它） */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-/* 窄屏横条展开时从圆钮那儿长出来（配合 .fast-add 的窄屏定位） */
+/* 需求 3：展开动画 —— 盒子从圆钮那儿长出来。挂在 `.fast-add-shell` 上，
+   **只用 scaleX**：带 Y 的 `scale` 就是那个「竖直方向压扁」（a 和 d 一起缩）。
+   数值和 fastPopOut 完全对称，一正一反。 */
 @keyframes fastPop {
-  from { opacity: 0; transform: translateX(28px) scale(.96); }
+  from { opacity: 0; transform: translateX(24px) scaleX(.5); }
   to { opacity: 1; transform: none; }
+}
+/* 需求 3：关闭动画 —— 向圆钮收紧。`forwards` 让动画结束后保持最终状态
+   （opacity: 0），直到 React 把 `.closing` 一起移除、盒子 display:none。 */
+@keyframes fastPopOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(24px) scaleX(.5); }
 }
 
 /* ================= 快速添加的圆钮（窄屏，在横条内） ================= */
 
 /* 圆钮钉在横条**右下角**（需求 1）：绝对定位，不参与 flex ——
-   收起时 `.fast-add-body` / `.fast-side` 都是 display:none，只剩它一个
-   flex 子元素，默认的 justify-content:flex-start 会把它甩到**左边**；
-   展开时它又会跟着内容跑。钉死之后 + / × 在同一个位置不动。
+   收起时盒子整个 display:none，只剩它一个，默认的 justify-content:flex-start
+   会把它甩到**左边**；展开时它又会跟着内容跑。钉死之后 + / × 在同一个位置不动。
 
-   贴的是横条的右下角，而横条的**底边**是固定的（Shell.tsx 内联的
-   bottom: calc(64px + env(...))），所以相对屏幕它也不动 ——
-   展开时横条从圆钮上方长出来，圆钮自己不挪窝。
-   right / bottom 用的就是窄屏横条的内边距（见下面 @media 里那条 padding）。 */
+   贴的是 `.fast-add` 的右下角，而 `.fast-add` 的**底边**由 Shell.tsx 内联的
+   `bottom: calc(64px + env(...))` 钉死 —— 高度怎么变，底边都在那儿，
+   所以相对屏幕它也不动。`bottom` 是相对 **padding box 底边**量的，
+   `.fast-add` 自己不设内边距 / 边框（那些在 `.fast-add-shell` 上），
+   所以 18 就是「展开后竖直居中」那个位置：盒子高 84（内边距 9×2 + 内容 64
+   + 边框 1×2），48 的圆钮居中 → (84 − 48) / 2 = 18。
+   用固定值而不是 flex 居中，是因为绝对定位的 bottom 相对的是那条**不动的底边**。 */
 .fast-fab {
-  position: absolute; right: 13px; bottom: 9px;
+  position: absolute; right: 13px; bottom: 18px;
   display: flex; align-items: center; justify-content: center;
   width: 48px; height: 48px; border: none; border-radius: 50%;
   background: var(--primary); color: var(--on-primary);
@@ -1215,9 +1244,14 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-fab:hover { filter: brightness(1.06); }
 .fast-fab:active { transform: scale(.94); }
 /* 展开态：同一个圆、同一个位置，只是图标换成 ×（需求 1）。
-   底色压暗一档，免得那个 × 看着还像个「加」的召唤 */
-.fast-fab.open { background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); }
-.fast-fab.open:hover { filter: none; border: var(--border-w) solid var(--primary); color: var(--primary); }
+   底色压暗一档，免得那个 × 看着还像个「加」的召唤；
+   **主题色描边常亮**（需求 1）—— 它说的是「这个开关现在是开着的」，
+   是状态不是 hover 反馈，所以不挂在 `:hover` 上，失去焦点也留着。 */
+.fast-fab.open {
+  background: var(--panel); color: var(--primary);
+  border: var(--border-w) solid var(--primary); box-shadow: var(--shadow);
+}
+.fast-fab.open:hover { filter: none; background: var(--primary-soft); }
 
 /* ================= 快速添加的「日期 + 时间」面板 ================= */
 
@@ -1388,6 +1422,10 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-now:hover { background: var(--panel-3); color: var(--primary); }
+/* 当前拨到的时刻**就是现在**时亮起（需求 5）：点了「现在」、或者自己拨到
+   此刻，这个键都该是选中态 —— 和上午 / 下午那对 `.cp-ap.on` 同一套语义。 */
+.cp-now.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-now.on:hover { background: var(--primary); color: var(--on-primary); }
 .cp-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .cp-foot .grow { flex: 1; }
 .cp-foot .ghost-btn, .cp-foot .primary-btn { padding: 6px 13px; font-size: 12px; }
@@ -1519,14 +1557,14 @@ input, select, textarea { font-size: max(14px, 16px); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
   .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
-  .sidebar-footer .ghost-btn:hover, .today-btn.away:hover { background: none; color: inherit; }
+  .sidebar-footer .ghost-btn:hover, .today-btn.on:hover { background: none; color: inherit; }
   .quick-add:hover { background: var(--primary); color: var(--on-primary); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
   .primary-btn:hover { transform: none; }
-  .today-btn.away:hover { background: var(--primary-pale); }
+  .today-btn.on:hover { background: var(--primary-pale); }
   .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
   .search-box:hover { border-color: var(--input); background: var(--panel-2); }
   .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
@@ -1653,7 +1691,8 @@ body.sheet-open .tab:active { background: none; }
   /* 内容区给底部标签栏让位 */
   .main { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
   .content { padding: 12px 13px 8px; }
-  .fast-add { margin: 4px 13px 12px; padding: 9px 13px; }
+  .fast-add { margin: 4px 13px 12px; }
+  .fast-add-shell { padding: 9px 13px; }
   .list-view, .habits-view { max-width: none; }
 
   /* 顶栏单行：标题 + 搜索图标 + 状态 */
@@ -1712,17 +1751,15 @@ body.sheet-open .tab:active { background: none; }
   /* 16px 是**必须的**：iOS Safari 在字号 < 16px 的输入控件上会自动放大整页，
      而放大之后那一屏就再也回不到原样了。textarea 和 input 同罪。 */
   .fast-add textarea { font-size: 16px; }
-  /* 窄屏的横条是 `position: fixed`（定位值由 Shell.tsx 按几何算，见那边的
-     BAR_BOTTOM / fabBottom），所以这里只留内边距和**弹出的动画**。
-     动画挂在 `:not([hidden])` 上：`display:none` 会让动画被移除，
-     再显示时重新开始 —— 正是「点 + 号弹出来」要的效果。
-     transform-origin 在 Shell.tsx 里设成右中（= 圆钮的左边缘），
-     所以这一下看着是从那个圆里长出来的。 */
-  /* 右侧让出圆钮的位置（需求 2）：13(内边距) + 48(圆钮) + 10(间隙) = 71。
+  /* 窄屏的横条是 `position: fixed`（定位值由 Shell.tsx 内联，见那边的
+     bottom: calc(64px + env(...))），所以这里只留内边距 ——
+     展开 / 关闭动画不在这儿，见文件末尾那两条 `.fast-add[data-narrow]` 规则。 */
+  /* 右侧让出圆钮的位置（需求 2）：13(内边距) + 48(圆钮) + 4(间隙) = 65。
      圆钮是绝对定位钉在右下角的（见上面 .fast-fab），这里只是让正文
-     （输入框 / 时间 / 保存）别被它压住 —— 于是那几个按钮也一并靠到右端。 */
-  .fast-add { margin: 0; padding: 9px 71px 9px 13px; }
-  .fast-add:not([hidden]) { animation: fastPop .18s cubic-bezier(.3, .8, .3, 1); }
+     （输入框 / 时间 / 保存）别被它压住。间隙压到 4px（需求 4）——
+     原先留 10px，时间 / 保存两个小按钮离圆钮显得太远。 */
+  .fast-add { margin: 0; }
+  .fast-add-shell { padding: 9px 65px 9px 13px; }
   /* 按钮上那两行是小字，手机上加的是**点击面**不是字号；
      高度仍是 30px（需求 3），只放宽左右内边距 */
   .fast-clock { padding: 0 10px; }
@@ -1770,6 +1807,22 @@ body.sheet-open .tab:active { background: none; }
   .habit-row { padding: 13px 14px; }
   .ci-item { padding: 9px 13px; }
 }
+
+/* 需求 3：展开 / 关闭动画。两条都挂在 `.fast-add-shell` 上 ——
+   圆钮是 shell 的**兄弟**，动画碰不到它（挂在 `.fast-add` 上会带飞圆钮）。
+   窄屏限定用 `[data-narrow]`（Shell.tsx 按 JS 的 narrow 写）而不是 CSS 的
+   `@media`：探针环境里「JS 判窄、CSS 判宽」两者不一致，而圆钮和 fixed 定位
+   本来就跟着 JS 的 narrow 走，动画跟着它才自洽，也才测得到。
+   **放媒体查询外面**的理由同上：放进 `@media (max-width: 900px)` 里，
+   探针那种伪窄屏下永远不生效，等于没测。 */
+/* 展开：挂在 `.open` 上，不是 `:not([hidden])`。收起时 shell 是 display:none，
+   加 `.open` 让它重新显示，动画随之从头开始；挂在 `:not([hidden])` 上的话
+   只在挂载时跑一次（`.open` 变来变去不改那条 animation 的计算值，动画不重跑），
+   等于「点 + 号弹出来」根本没有动画。 */
+.fast-add[data-narrow].open .fast-add-shell { animation: fastPop .18s cubic-bezier(.3, .8, .3, 1); }
+/* 关闭：**必须排在展开那条后面** —— `.closing` 期间 `.open` 还在，两条选择器
+   特异度相同，后写的赢。 */
+.fast-add[data-narrow].closing .fast-add-shell { animation: fastPopOut .18s cubic-bezier(.3, .8, .3, 1) forwards; }
 
 /* 640px 以下：手机常见的窄屏，进一步收 */
 @media (max-width: 640px) {

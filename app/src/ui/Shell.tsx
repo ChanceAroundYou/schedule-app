@@ -19,7 +19,7 @@
  * 后来在设置页补回 —— 见项目 CLAUDE.md 四、23。
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
@@ -331,10 +331,11 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
         <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
           <ChevronRight size={15} />
         </button>
-        {/* 只留一个「今」字。在不在今天**不靠文字**，靠 .away 那一档配色
-            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 .today-btn */}
+        {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `.on` 那一档配色
+            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 .today-btn。
+            **就在今天才亮**（需求 6）：和日 / 周 / 月三个视图档同一个语义。 */}
         <button
-          className={'text-btn today-btn' + (atToday ? '' : ' away')}
+          className={'text-btn today-btn' + (atToday ? ' on' : '')}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
         >今</button>
@@ -612,11 +613,48 @@ export function QuickAdd({ state, onSubmit }: {
   const [expanded, setExpanded] = useState(!narrow);
   /** 日期 / 时间那个面板（两层折叠，见 ui/WhenPop.tsx） */
   const [whenOpen, setWhenOpen] = useState(false);
+  // 需求 3：关闭动画期间为 true。`.closing` class 触发 CSS 动画，
+  // 动画结束后才真正 `setExpanded(false)`（内容 display:none）。
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
   // 「N」快捷键与 FAB 都要先展开再聚焦 —— 展开是异步的，得等 DOM 更新
   const focusOnExpand = useRef(false);
+  // 需求 2：点击外部关闭选择框后，**阻止 click 冒泡到 #content**，
+  // 否则会触发日视图空白处的「新建任务」。
+  const justClosed = useRef(false);
   const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
+
+  // 需求 3：关闭横条时先播放收缩动画，动画结束后才真正 setExpanded(false)。
+  // 直接 setExpanded(false) 会让内容立即 display:none，高度瞬间坍塌（"压扁"）。
+  const closeBar = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setWhenOpen(false);
+    closeTimer.current = window.setTimeout(() => {
+      setExpanded(false);
+      setClosing(false);
+      closeTimer.current = undefined;
+    }, 180);
+  }, [closing]);
+
+  // 展开时取消可能正在播放的关闭动画
+  const openBar = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = undefined;
+    }
+    setClosing(false);
+    setExpanded(true);
+  }, []);
+
+  // 组件卸载时清理 timer
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
 
   const ui = state.ui;
   const def = quickDefaults(ui, D.today());
@@ -674,19 +712,38 @@ export function QuickAdd({ state, onSubmit }: {
      分成两处挂会打架：两个都是 document 上的 capture 监听，谁先跑只看注册
      顺序，而面板又是横条的 DOM 子节点，「点在面板里」在两边都成立，
      必然有一边误判（先收横条的话，用户点空白想收面板却把整个输入框也收了）。
-     横条与 + / × 里面的点击一律放行，交给各自的 onClick。 */
+     横条与 + / × 里面的点击一律放行，交给各自的 onClick。
+
+     需求 2：点击外部关闭**选择框**后，阻止 click 冒泡到 #content，
+     否则会触发日视图空白处的「新建任务」。用 justClosed 标记，
+     click handler 里检查并 stopPropagation。
+     **只在真实 mousedown（e.isTrusted）时设置 justClosed** —— 合成事件
+     （测试的 closeWhen()）只关面板，不该阻止后续 click。 */
   useEffect(() => {
     if (!expanded) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (barRef.current?.contains(t)) return;
-      if (whenOpen) { setWhenOpen(false); return; }
+      if (whenOpen) {
+        setWhenOpen(false);
+        if (e.isTrusted) justClosed.current = true;
+        return;
+      }
       // 宽屏没有 FAB，横条是常驻的，点空白只该收面板，不该把输入框收掉
-      if (narrow) setExpanded(false);
+      if (narrow) closeBar();
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!justClosed.current) return;
+      justClosed.current = false;
+      e.stopPropagation();
     };
     document.addEventListener('mousedown', onDown, true);
-    return () => document.removeEventListener('mousedown', onDown, true);
-  }, [narrow, expanded, whenOpen]);
+    document.addEventListener('click', onClick, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('click', onClick, true);
+    };
+  }, [narrow, expanded, whenOpen, closeBar]);
 
   // 跟着 tab 来的默认日期也算「有」—— 按钮上要写出来（需求 6）
   const hasWhen = !!(effDate || effTime);
@@ -695,9 +752,13 @@ export function QuickAdd({ state, onSubmit }: {
     <>
       {/* 设置页 / 垃圾箱没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
       <div
-        className={'fast-add' + (expanded ? ' open' : '')}
+        className={'fast-add' + (expanded ? ' open' : '') + (closing ? ' closing' : '')}
         ref={barRef}
         hidden={ui.nav === 'trash' || ui.nav === 'settings'}
+        // 展开 / 关闭动画只该在窄屏（有圆钮、横条 fixed）时跑。用 JS 的 narrow
+        // 而不是 CSS 的 @media：探针环境里两者不一致（JS 判窄、CSS 判宽），
+        // 而圆钮和 fixed 定位本来就跟着 JS 的 narrow 走。
+        data-narrow={narrow ? '' : undefined}
         style={narrow ? {
           position: 'fixed',
           left: '13px',
@@ -710,68 +771,75 @@ export function QuickAdd({ state, onSubmit }: {
           bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
         } : undefined}
       >
-        <div className="fast-add-body">
-          {/* 固定两行，超过可内部滚动（需求 1）。用 textarea 而不是 input：
-              要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
-              这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
-          <textarea
-            ref={inputRef}
-            rows={2}
-            value={text}
-            placeholder={QUICK_PLACEHOLDER}
-            aria-label="快速添加"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submit(e.ctrlKey || e.metaKey);
-              }
-              if (e.key === 'Escape') { e.currentTarget.blur(); }
-            }}
-          />
-          {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
-              10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
-              句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
-              用户看得见（需求 7）。 */}
-          <span className="fast-hint">
-            {hasWhen
-              ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
-                  .filter(Boolean).join(' · ')
-              : 'Ctrl + Enter 打开详细设置'}
-          </span>
-        </div>
-        {/* 时间/保存按钮上下叠放（需求 4）：时间在上，保存在下，固定位置 */}
-        <div className="fast-side">
-          <button
-            ref={clockBtn}
-            className={'fast-clock' + (hasWhen ? ' on' : '')}
-            type="button"
-            title="选择日期和时间"
-            aria-expanded={whenOpen}
-            onClick={() => setWhenOpen((v) => !v)}
-          >
-            <Clock size={15} />
-            {/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
-                写的都是**生效值** —— 跟着 tab 来的默认日期（今天页 / 日程页）
-                也在这儿显示，和面板里写的是同一个值（需求 6）。 */}
-            {hasWhen && (
-              <span className="fc-when">
-                {effDate && <span className="fc-d">{D.fmtSlashMD(effDate)}</span>}
-                {effTime && <span className="fc-t">{effTime}</span>}
-              </span>
-            )}
-          </button>
-          {/* 「保存」是个 ✓（需求 3）。一行里三个文字按钮太吵，保存这件事有个勾就够了。 */}
-          <button
-            className="fast-save"
-            type="button"
-            disabled={!text.trim()}
-            title="保存这条任务"
-            aria-label="保存这条任务"
-            onClick={() => submit(false)}
-          ><Check size={16} /></button>
+        {/* 展开 / 关闭动画挂在**这一层**（见 legacy.css 的 fastPop / fastPopOut），
+            不是挂在 `.fast-add` 上。圆钮（`.fast-fab`）是 `.fast-add` 的子节点、
+            这一层的**兄弟** —— 父元素一 transform、一改 opacity，整棵子树跟着动，
+            圆钮会被拖着右移 28px、缩小 4%、淡出，动画一结束再弹回原位
+            （实测最大偏移 30.5px），看着就是「异常跳变」。所以动画和圆钮必须分层。 */}
+        <div className="fast-add-shell">
+          <div className="fast-add-body">
+            {/* 固定两行，超过可内部滚动（需求 1）。用 textarea 而不是 input：
+                要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
+                这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
+            <textarea
+              ref={inputRef}
+              rows={2}
+              value={text}
+              placeholder={QUICK_PLACEHOLDER}
+              aria-label="快速添加"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  submit(e.ctrlKey || e.metaKey);
+                }
+                if (e.key === 'Escape') { e.currentTarget.blur(); }
+              }}
+            />
+            {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
+                10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
+                句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
+                用户看得见（需求 7）。 */}
+            <span className="fast-hint">
+              {hasWhen
+                ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
+                    .filter(Boolean).join(' · ')
+                : 'Ctrl + Enter 打开详细设置'}
+            </span>
+          </div>
+          {/* 时间/保存按钮上下叠放（需求 4）：时间在上，保存在下，固定位置 */}
+          <div className="fast-side">
+            <button
+              ref={clockBtn}
+              className={'fast-clock' + (hasWhen ? ' on' : '')}
+              type="button"
+              title="选择日期和时间"
+              aria-expanded={whenOpen}
+              onClick={() => setWhenOpen((v) => !v)}
+            >
+              <Clock size={15} />
+              {/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
+                  写的都是**生效值** —— 跟着 tab 来的默认日期（今天页 / 日程页）
+                  也在这儿显示，和面板里写的是同一个值（需求 6）。 */}
+              {hasWhen && (
+                <span className="fc-when">
+                  {effDate && <span className="fc-d">{D.fmtSlashMD(effDate)}</span>}
+                  {effTime && <span className="fc-t">{effTime}</span>}
+                </span>
+              )}
+            </button>
+            {/* 「保存」是个 ✓（需求 3）。一行里三个文字按钮太吵，保存这件事有个勾就够了。 */}
+            <button
+              className="fast-save"
+              type="button"
+              disabled={!text.trim()}
+              title="保存这条任务"
+              aria-label="保存这条任务"
+              onClick={() => submit(false)}
+            ><Check size={16} /></button>
+          </div>
         </div>
         <WhenPop
           open={whenOpen}
@@ -795,9 +863,11 @@ export function QuickAdd({ state, onSubmit }: {
             onClick={() => {
               // 收起时顺手把面板也收了：面板挂在横条里，横条没了它也就没了，
               // 留着 whenOpen 下次展开会「凭空」弹出上一次的面板
-              if (expanded) setWhenOpen(false);
-              else focusOnExpand.current = true;
-              setExpanded((v) => !v);
+              if (expanded) closeBar();
+              // 展开**不自动聚焦**（需求 2）：手机上那会当场弹出软键盘，把用户
+              // 想先看一眼的输入框挡住。要打字自己点一下输入框 —— 键盘的 N
+              // 仍然聚焦（那是明确要输入，见上面那个 useEffect）。
+              else openBar();
             }}
           >{expanded ? <X size={20} /> : <Plus size={20} />}</button>
         )}

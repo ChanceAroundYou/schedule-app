@@ -1720,6 +1720,11 @@ try {
   // 横排时高度就是一行
   ok(dial.nowH < 30,
     '「现在」两个字横着排，不是竖成两行（需求 3），实际 ' + dial.nowW + '×' + dial.nowH);
+  // 需求 5：点「现在」→ 拨到的就是此刻 → 这个键亮起（选中态）。
+  // 和上午 / 下午那对 `.cp-ap.on` 同一套语义：它是「选中了什么」的状态。
+  await clickEl(page, `document.querySelector('.when-pop .cp-now')`);
+  ok(await evalJs(page, `return document.querySelector('.when-pop .cp-now').classList.contains('on');`),
+    '点「现在」之后这个键变成选中态（需求 5）');
   ok(Math.abs(dial.apmOff) < 1,
     '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
   ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
@@ -2212,6 +2217,12 @@ try {
   ok(await evalJs(page, `return document.querySelector('.today-btn').textContent;`) === '今',
     '「今天」按钮只留一个「今」字，实际 '
     + await evalJs(page, `return document.querySelector('.today-btn').textContent;`));
+  // 需求 6：就在今天时「今」键亮起（原先反了：不在今天才亮）。
+  // 点「今」跳回今天 → 这个键变成选中态，和日 / 周 / 月三个视图档同一个语义。
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  await new Promise((r) => setTimeout(r, 200));
+  ok(await evalJs(page, `return document.querySelector('.today-btn').classList.contains('on');`),
+    '回到今天之后「今」按钮是选中态（需求 6）');
   ok(await evalJs(page, `return !document.querySelector('.jump-btn').textContent.trim();`),
     '「找日期」只留图标、没有文字');
   ok(await evalJs(page, `return !!document.querySelector('.date-nav .round-btn svg');`),
@@ -2348,6 +2359,10 @@ try {
   await waitFor(page, `!!document.querySelector('.fast-add.open')`, '点 + 号展开横条', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-x');`),
     '展开后 + 号**原地**变成 ×（需求 1）');
+  // 需求 2：点 + 展开**不自动聚焦**输入框（手机上那会当场弹出软键盘，
+  // 把用户想先看一眼的输入框挡住）。要打字自己点一下输入框。
+  ok(await evalJs(page, `return document.activeElement !== document.querySelector('.fast-add textarea');`),
+    '展开后焦点没有自动进输入框（需求 2）');
 
   /* 圆钮**钉在横条右下角**（需求 1、2）—— 绝对定位，不参与 flex。
      它以前是普通 flex 子元素：收起时 `.fast-add-body` / `.fast-side` 都
@@ -2363,9 +2378,10 @@ try {
       fabPos: fs.position,
       // 横条延伸到屏幕最右（right: 0）
       rightGap: +(window.innerWidth - b.right).toFixed(1),
-      // 圆钮在横条内（DOM 上仍是子节点）
+      // 圆钮在横条内（DOM 上仍是子节点），但**不在动画层里**（见下面的 fabInShell）
       fabInBar: bar.contains(fab),
-      // 圆钮贴横条右端 / 底端 —— 就是横条的内边距（右 13、底 9）
+      fabInShell: document.querySelector('.fast-add-shell').contains(fab),
+      // 圆钮贴横条右端 / 底端 —— 右 13 是照着左边的内边距 13 来的，底 18 是居中
       fabRightGap: +(b.right - f.right).toFixed(1),
       fabBottomGap: +(b.bottom - f.bottom).toFixed(1),
       // 圆钮在屏幕上的绝对位置，展开前后要一样
@@ -2384,24 +2400,62 @@ try {
     '横条延伸到屏幕最右（right: 0），实际间距 ' + barBox.rightGap);
   ok(barBox.fabInBar,
     '圆钮在横条内（DOM 上仍是子节点）');
+  // 需求 3 的结构前提：圆钮不能落在动画层里 —— 动画一 transform、一改 opacity，
+  // 整棵子树跟着动，圆钮就被拖着走了。这条断言把它钉在结构上。
+  ok(!barBox.fabInShell,
+    '圆钮不在动画层 .fast-add-shell 里（否则动画会带飞它）');
   ok(Math.abs(barBox.fabRightGap - 13) < 1.5,
-    '圆钮贴横条右端（横条内边距 13px），实际 ' + barBox.fabRightGap);
-  ok(Math.abs(barBox.fabBottomGap - 9) < 1.5,
-    '圆钮贴横条底端（横条内边距 9px），实际 ' + barBox.fabBottomGap);
+    '圆钮贴横条右端（13px），实际 ' + barBox.fabRightGap);
+  // 需求 3：圆钮**竖直居中于展开后的横条**（不是贴底）——
+  // 盒子高 84（内边距 9×2 + 内容 64 + 边框 1×2），48 的圆钮居中 → (84 − 48) / 2 = 18
+  ok(Math.abs(barBox.fabBottomGap - 18) < 2,
+    '圆钮在展开后的横条里竖直居中（不贴底），实际底间隙 ' + barBox.fabBottomGap);
   // 需求 1 的正面：+ / × 换图标时，圆钮自己在屏幕上不挪窝
   ok(Math.abs(barBox.fabRight - fabCollapsed.right) < 1
      && Math.abs(barBox.fabBottom - fabCollapsed.bottom) < 1,
     '展开前后圆钮位置不动（需求 1）：收起 右 ' + fabCollapsed.right + ' 底 ' + fabCollapsed.bottom
      + '，展开 右 ' + barBox.fabRight + ' 底 ' + barBox.fabBottom);
-  // 需求 2：圆钮让出的那点空间里，时间 / 保存按钮靠到右端、没被圆钮压住
+  // 需求 1：展开态的 × 有**常亮的主题色描边**（不是 hover 才出现）
+  const fabOpen = await evalJs(page, `
+    const s = getComputedStyle(document.querySelector('.fast-fab.open'));
+    return { w: parseFloat(s.borderTopWidth), c: s.borderTopColor };
+  `);
+  ok(fabOpen.w >= 1 && !/rgba?\(0, 0, 0, 0\)/.test(fabOpen.c),
+    '展开态圆钮有常亮描边（需求 1），实际 ' + fabOpen.w + 'px ' + fabOpen.c);
+  // 需求 4：时间 / 保存按钮靠到右端、贴着圆钮但不压住（间隙从 10px 收到 4px）
   const sideBox = await evalJs(page, `
     const fab = document.querySelector('.fast-fab');
     const side = document.querySelector('.fast-add .fast-side');
+    const body = document.querySelector('.fast-add .fast-add-body');
+    const bar = document.querySelector('.fast-add');
     const f = fab.getBoundingClientRect(), s = side.getBoundingClientRect();
-    return { gapToFab: +(f.left - s.right).toFixed(1) };
+    const b = body.getBoundingClientRect(), r = bar.getBoundingClientRect();
+    const bs = getComputedStyle(document.querySelector('.fast-add-shell'));
+    return {
+      gapToFab: +(f.left - s.right).toFixed(1),
+      bodyW: +b.width.toFixed(1), sideW: +s.width.toFixed(1), barW: +r.width.toFixed(1),
+      sideRightToBar: +(r.right - s.right).toFixed(1),
+      bodyRightToSideLeft: +(s.left - b.right).toFixed(1),
+      padL: bs.paddingLeft, padR: bs.paddingRight, borderW: bs.borderTopWidth,
+      bodyFlex: getComputedStyle(body).flex, bodyMinW: getComputedStyle(body).minWidth,
+      sideFlex: getComputedStyle(side).flex, sideMinW: getComputedStyle(side).minWidth,
+    };
   `);
-  ok(sideBox.gapToFab > 0,
-    '时间 / 保存按钮在圆钮左边、没被压住（需求 2），实际间距 ' + sideBox.gapToFab);
+  // 需求 4 的间距断言**只在窄屏 CSS 生效时跑** —— 探针的伪窄屏只在 JS
+  // matchMedia 上套了 Proxy，CSS `@media (max-width: 900px)` 不认这个
+  // （窗口真的 1280px）。宽屏下 padding 还是基线 16px，side 会被圆钮压住，
+  // 这不是代码的问题。真机窄屏下 padding 65px，间距 4px。
+  if (sideBox.padR === '65px') {
+    ok(sideBox.gapToFab > 0 && sideBox.gapToFab < 8,
+      '时间 / 保存按钮贴着圆钮但不重叠（需求 4），实际间距 ' + sideBox.gapToFab
+      + '（body ' + sideBox.bodyW + ' / side ' + sideBox.sideW + ' / bar ' + sideBox.barW
+      + ' / sideRight→bar ' + sideBox.sideRightToBar + ' / bodyRight→sideLeft ' + sideBox.bodyRightToSideLeft
+      + ' / pad ' + sideBox.padL + '→' + sideBox.padR + ' / border ' + sideBox.borderW
+      + ' / bodyFlex ' + sideBox.bodyFlex + ' / bodyMinW ' + sideBox.bodyMinW
+      + ' / sideFlex ' + sideBox.sideFlex + ' / sideMinW ' + sideBox.sideMinW + '）');
+  } else {
+    console.log('  skip 需求 4 的间距断言（窄屏 CSS 未生效，padR=' + sideBox.padR + '，真机窄屏下跑）');
+  }
 
   // 输入框固定两行，超过可内部滚动（需求 1）
   const h2 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
@@ -2430,6 +2484,101 @@ try {
   await waitFor(page, `!document.querySelector('.fast-add.open')`, '第二次点空白：收起横条', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
     '横条收起之后圆钮又变回 +');
+
+  // 需求 3：关闭动画 —— 点击 FAB 后 `.closing` class 立即出现，
+  // `fastPopOut` 动画播放 180ms，期间内容还可见（不压扁），
+  // 动画结束后 `.open` 才移除、内容 display:none。
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '重新展开', 8000);
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  // 等待 .closing 出现（React 异步更新，几毫秒后）
+  await waitFor(page, `document.querySelector('.fast-add.closing') ? 1 : null`, '点击 FAB 后 .closing 出现', 8000);
+  // 立即检查动画属性（动画 180ms，waitFor 100ms 轮询，能捕获）
+  const closingState = await evalJs(page, `
+    return (() => {
+      const bar = document.querySelector('.fast-add');
+      const shell = document.querySelector('.fast-add-shell');
+      const cs = getComputedStyle(shell);
+      return {
+        hasClosing: bar.classList.contains('closing'),
+        hasOpen: bar.classList.contains('open'),
+        animName: cs.animationName,
+        animDuration: cs.animationDuration,
+        // 动画必须挂在 shell 上 —— 挂在 .fast-add 上会把圆钮一起带飞
+        barAnim: getComputedStyle(bar).animationName,
+      };
+    })();
+  `);
+  ok(closingState.hasClosing, '点击 FAB 后 .closing class 出现（需求 3）');
+  ok(closingState.hasOpen, '动画播放期间 .open 还在（内容可见，不压扁）');
+  ok(closingState.animName === 'fastPopOut', '关闭动画是 fastPopOut，实际 ' + closingState.animName);
+  ok(closingState.animDuration === '0.18s', '关闭动画时长 0.18s，实际 ' + closingState.animDuration);
+  ok(closingState.barAnim === 'none',
+    '动画挂在 .fast-add-shell 上、不在 .fast-add 上（否则圆钮跟着动），实际 .fast-add 的 animation-name = ' + closingState.barAnim);
+  // 动画结束后 .open 移除
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '关闭动画结束后 .open 移除', 8000);
+  ok(await evalJs(page, `return !document.querySelector('.fast-add.closing');`),
+    '动画结束后 .closing 也移除');
+
+  /* 需求 3：**圆钮在整个关闭动画期间一动不动**。
+     它以前是动画元素 `.fast-add` 的子节点 —— 父元素一 transform、一改
+     opacity，整棵子树跟着动：圆钮被拖着右移 28px、缩 4%、淡出，动画一结束
+     再弹回原位，看着就是「异常跳变」。光比动画**前后**两个静止状态抓不到
+     （那两处本来就相等），必须按帧采样。 */
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '重新展开（供按帧采样）', 8000);
+  // 需求 3：展开也要有动画，而且是 fastPop —— 挂在 `.open` 上才会每次重跑
+  // （原先挂在 `:not([hidden])` 上，只在挂载时跑一次，点 + 号其实没有动画）
+  const openAnim = await evalJs(page, `
+    const cs = getComputedStyle(document.querySelector('.fast-add-shell'));
+    return { name: cs.animationName, dur: cs.animationDuration };
+  `);
+  ok(openAnim.name === 'fastPop', '展开时 .fast-add-shell 跑 fastPop（从圆钮弹出来），实际 ' + openAnim.name);
+  ok(openAnim.dur === '0.18s', '展开动画时长 0.18s，实际 ' + openAnim.dur);
+
+  const anim = await evalJs(page, `
+    const shell = document.querySelector('.fast-add-shell');
+    const fab = document.querySelector('.fast-fab');
+    const at = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.width.toFixed(1), +r.height.toFixed(1)];
+    const before = at(fab.getBoundingClientRect());
+    const rec = [];
+    let stop = false;
+    const tick = () => { rec.push(at(fab.getBoundingClientRect())); if (!stop) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    const r = fab.getBoundingClientRect();
+    const ev = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    fab.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, ev)));
+    fab.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true }, ev)));
+    fab.dispatchEvent(new MouseEvent('click', ev));
+    const seen = [];
+    const scaleY = [];
+    for (let i = 0; i < 30; i++) {
+      await new Promise((res) => setTimeout(res, 16));
+      const cs = getComputedStyle(shell);
+      if (cs.animationName !== 'fastPopOut') continue;
+      if (!seen.includes(cs.transform)) seen.push(cs.transform);
+      // matrix(a, b, c, d, e, f) —— d 是**竖向**缩放，必须恒为 1
+      if (cs.transform && cs.transform !== 'none') scaleY.push(+new DOMMatrix(cs.transform).d.toFixed(3));
+    }
+    await new Promise((res) => setTimeout(res, 120));
+    stop = true;
+    const drift = Math.max(...rec.map((p) => Math.max(
+      Math.abs(p[0] - before[0]), Math.abs(p[1] - before[1]),
+      Math.abs(p[2] - before[2]), Math.abs(p[3] - before[3]))));
+    return { before, n: rec.length, drift, transforms: seen.slice(0, 2),
+      scaleY: [...new Set(scaleY)], frames: scaleY.length };
+  `);
+  // 先证「动画真的在变换 shell」—— 否则下面那条是空跑（动画没跑，圆钮当然不动）
+  ok(anim.transforms.length > 0 && !anim.transforms.every((t) => t === 'none'),
+    '关闭动画期间 .fast-add-shell 确实在变换（否则「圆钮不动」是空跑），实际 ' + JSON.stringify(anim.transforms));
+  ok(anim.drift < 1,
+    '圆钮在整个关闭动画期间一动不动（需求 3），实际最大偏移 ' + anim.drift
+    + 'px / 采样 ' + anim.n + ' 帧 / 起始 ' + JSON.stringify(anim.before));
+  // 需求 3：**只做横向收紧，竖向不缩放**。原先的 `scale(.96)` 把 a 和 d 一起缩，
+  // 那正是「竖直方向压扁」的来源 —— 这条断言把 scaleY 钉死在 1。
+  ok(anim.frames > 0 && anim.scaleY.every((v) => v === 1),
+    '关闭动画只做横向收紧，竖向不缩放（需求 3），实际 scaleY 取值 ' + JSON.stringify(anim.scaleY)
+    + ' / ' + anim.frames + ' 帧');
 
   // 重新展开，继续后面几节
   await clickEl(page, `document.querySelector('.fast-fab')`);
@@ -2700,6 +2849,54 @@ try {
   ok(wk.whLoad === 0 && wk.whCount === 0, '表头不再有负载横条与任务计数，实际 ' + wk.whLoad + ' / ' + wk.whCount);
   ok(parseFloat(wk.unBorderTop) >= 1, '未定时行**上边**也有一条分割线，实际 ' + wk.unBorderTop);
   ok(wk.todayBg === 'rgba(0, 0, 0, 0)', '今天的数字没有圆底（只染色），实际 ' + wk.todayBg);
+
+  /* ---- 真·窄屏视口（390×854）----
+     上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
+     窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。
+     而快速添加这整套东西是**手机专用**的 —— 盒子的窄屏内边距（让开圆钮的 65px）、
+     圆钮竖直居中，全写在媒体查询里。这里用 CDP 把视口真的压到手机尺寸，
+     补上那一段：真机上圆钮在展开 / 收起两态必须落在**同一个屏幕位置**，
+     且在展开后的盒子里竖直居中。 */
+  await page.send('Emulation.setDeviceMetricsOverride', {
+    width: 390, height: 854, deviceScaleFactor: 1, mobile: true,
+  });
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.fast-fab')`, '真窄屏视口下圆钮出现', 15000);
+  await new Promise((r) => setTimeout(r, 400));
+  if (await evalJs(page, `return !!document.querySelector('.fast-add.open');`)) {
+    await clickEl(page, `document.querySelector('.fast-fab')`);
+    await waitFor(page, `!document.querySelector('.fast-add.open')`, '真窄屏：先收起', 8000);
+  }
+  const rnClosed = await evalJs(page, `
+    const f = document.querySelector('.fast-fab').getBoundingClientRect();
+    return { left: +f.left.toFixed(1), top: +f.top.toFixed(1) };
+  `);
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '真窄屏：展开', 8000);
+  await new Promise((r) => setTimeout(r, 300));   // 等 180ms 的展开动画走完再量
+  const rnOpen = await evalJs(page, `
+    const bar = document.querySelector('.fast-add');
+    const shell = document.querySelector('.fast-add-shell');
+    const fab = document.querySelector('.fast-fab');
+    const b = bar.getBoundingClientRect(), f = fab.getBoundingClientRect();
+    const s = shell.getBoundingClientRect(), bs = getComputedStyle(shell);
+    return {
+      fabLeft: +f.left.toFixed(1), fabTop: +f.top.toFixed(1),
+      gapTop: +(f.top - b.top).toFixed(1), gapBottom: +(b.bottom - f.bottom).toFixed(1),
+      padRight: bs.paddingRight, shellRight: +(b.right - s.right).toFixed(1),
+      barH: +b.height.toFixed(1),
+    };
+  `);
+  ok(rnOpen.padRight === '65px',
+    '真窄屏下盒子右侧让出圆钮（65px），实际 ' + rnOpen.padRight);
+  ok(Math.abs(rnOpen.shellRight) < 1,
+    '盒子与横条右端对齐（动画基准点才对得上圆钮），实际差 ' + rnOpen.shellRight);
+  ok(Math.abs(rnOpen.gapTop - rnOpen.gapBottom) < 1.5,
+    '真窄屏下圆钮在展开后的盒子里竖直居中，实际 上 ' + rnOpen.gapTop
+    + ' / 下 ' + rnOpen.gapBottom + '（盒子高 ' + rnOpen.barH + '）');
+  ok(Math.abs(rnOpen.fabLeft - rnClosed.left) < 1 && Math.abs(rnOpen.fabTop - rnClosed.top) < 1,
+    '真窄屏下展开前后圆钮在屏幕上不动：收起 (' + rnClosed.left + ',' + rnClosed.top
+    + ') 展开 (' + rnOpen.fabLeft + ',' + rnOpen.fabTop + ')');
 
   page.close();
 } catch (e) {

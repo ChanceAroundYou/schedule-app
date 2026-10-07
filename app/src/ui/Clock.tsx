@@ -81,6 +81,11 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
   const isAm = hour < 12;
   const isHour = mode === 'h';
+  // 拨到的时刻**正好是此刻** → 「现在」键亮起（需求 5）。和上午 / 下午那对
+  // `.cp-ap.on` 同一套语义：它是「选中了什么」的状态，不是按钮的 hover。
+  // 每次渲染重算即可 —— 用户一拨动就会重渲染（hour / minute 是 state）。
+  const nowMin = D.nowMin();
+  const isNow = hour === Math.floor(nowMin / 60) && minute === nowMin % 60;
 
   /* 表盘上 12 个位置，k = 0 是顶端（12 点位置），顺时针。
      标签必须**等于点下去得到的那个值**，否则用户点「3」出来 15 会以为坏了。
@@ -131,7 +136,7 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
         <span className="cp-apm">
           <button className={'cp-ap' + (isAm ? ' on' : '')} onClick={() => setAmPm(true)}>上午</button>
           <button className={'cp-ap' + (!isAm ? ' on' : '')} onClick={() => setAmPm(false)}>下午</button>
-          <button className="cp-now" onClick={now}>现在</button>
+          <button className={'cp-now' + (isNow ? ' on' : '')} onClick={now}>现在</button>
         </span>
       </div>
 
