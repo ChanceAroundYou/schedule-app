@@ -87,6 +87,14 @@ export function fmtMD(isoStr: string): string {
   return d.getMonth() + 1 + '月' + d.getDate() + '日';
 }
 
+/** 「10/7」—— 快速添加横条上那个小按钮里的写法。
+ *  那儿是**两行**（上行日期、下行时间），一行只有十几像素高、几十像素宽，
+ *  `fmtMD` 的「10月7日」会把按钮撑胖，所以另给一个最省的格式。 */
+export function fmtSlashMD(isoStr: string): string {
+  const d = parseISO(isoStr);
+  return d.getMonth() + 1 + '/' + d.getDate();
+}
+
 export function fmtFull(isoStr: string): string {
   const d = parseISO(isoStr);
   const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];

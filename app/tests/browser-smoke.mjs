@@ -1441,60 +1441,108 @@ try {
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '找日期面板收起', 8000);
 
-  /* ---- 3. 两层：先选日期、再选时间 ---- */
+  /* ---- 3. 两层折叠面板：日期 / 时间，同时只开一层 ---- */
   // 换到待办箱：这一节最后要往箱子里加一条带时间的任务，得站在能看见它的页面上
   await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
   await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切到待办箱', 8000);
 
-  // 点时钟按钮**先出日期面板**（不是直接出转盘）—— 这是需求 3 的两层
+  // 面板是**两层折叠**：点标题行展开对应那层，两层不能同时开。
+  // 待办箱默认无日期 → 打开时应该先开**日期**层（需求 5）
   await clickEl(page, `document.querySelector('.fast-clock')`);
-  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '先出日期面板', 8000);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '先出日期面板', 8000);
   const dp = await evalJs(page, `
-    const pop = document.querySelector('.date-pop');
+    const pop = document.querySelector('.when-pop');
+    const rows = [...pop.querySelectorAll('.wp-row')];
     return {
       cells: pop.querySelectorAll('.jp-cell').length,
       cur: pop.querySelectorAll('.jp-cell.cur').length,
       today: pop.querySelectorAll('.jp-cell.today').length,
+      open: rows.map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(','),
+      label: rows.map((b) => b.querySelector('.wp-v').textContent.trim()).join('|'),
     };
   `);
   ok(dp.cells === 42, '日期面板是 6×7 的月历，实际 ' + dp.cells);
   ok(dp.cur === 0, '待办箱默认无日期 → 面板里没有高亮，实际 ' + dp.cur);
   ok(dp.today === 1, '今天仍然描边（只是不选中），实际 ' + dp.today);
+  ok(dp.open === 'date:开,time:关', '没日期时先开日期层、时间层关着，实际 ' + dp.open);
+  ok(dp.label === '未设置|未设置', '两层都写「未设置」，实际 ' + JSON.stringify(dp.label));
 
-  // 「不选日期」→ 进第二层（待办箱那条路：保持无日期、只带时间）
-  await clickEl(page, `[...document.querySelectorAll('.date-pop .dp-foot button')].find((b) => b.textContent.trim() === '不选日期')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '再出时间转盘', 8000);
+  // 两层不能同时开：点时间标题行 → 日期层收起
+  await clickEl(page, `document.querySelector('.when-pop [data-layer="time"]')`);
+  const onlyOne = await evalJs(page, `
+    const pop = document.querySelector('.when-pop');
+    return [...pop.querySelectorAll('.wp-row')]
+      .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(',');
+  `);
+  ok(onlyOne === 'date:关,time:开',
+    '两层不能同时开，点了时间层日期层就收起，实际 ' + onlyOne);
+
+  // 表盘：比抽屉里那个小一号（198 而不是 246），且在面板里居中
   const dial = await evalJs(page, `
-    const pop = document.querySelector('.clock-pop');
+    const pop = document.querySelector('.when-pop');
     const f = pop.querySelector('.cp-face').getBoundingClientRect();
-    const p = pop.getBoundingClientRect();
+    const w = pop.querySelector('.wp-clock').getBoundingClientRect();
     return {
-      left: +(f.left - p.left).toFixed(1),
-      right: +(p.right - f.right).toFixed(1),
-      pad: getComputedStyle(pop).paddingLeft,
+      size: Math.round(f.width),
+      left: +(f.left - w.left).toFixed(1),
+      right: +(w.right - f.right).toFixed(1),
       nums: pop.querySelectorAll('.cp-num').length,
       ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
     };
   `);
+  ok(dial.size === 198, '面板里的表盘比抽屉里那个小一号，实际 ' + dial.size + 'px');
   ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
   ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
   ok(Math.abs(dial.left - dial.right) < 1,
-    '表盘在弹层里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right + '（弹层内边距 ' + dial.pad + '）');
+    '表盘在面板里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right);
 
-  // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
-  const tip = await evalJs(page, `return document.querySelector('.cp-tip').textContent.trim();`);
+  // 下午那圈直接写 12–23，不用心算 +12；分钟那圈写 60,5,…,55（真钟表的样子）
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  const pmNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
+  ok(pmNums === '12,13,14,15,16,17,18,19,20,21,22,23',
+    '下午那圈直接写 12–23（不是 1–12），实际 ' + pmNums);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
+  const tip = await evalJs(page, `return document.querySelector('.when-pop .cp-tip').textContent.trim();`);
   ok(/分钟/.test(tip), '选完小时自动进分钟档，实际 ' + JSON.stringify(tip));
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
-  const shown = await evalJs(page, `return document.querySelector('.cp-display').textContent.trim();`);
-  ok(shown === '12:30', '表盘上写的是 12 小时制的 12:30，实际 ' + JSON.stringify(shown));
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
-  const pill = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
-  ok(pill === '00:30', '选完换算成 24 小时制的 00:30 显示在胶囊上，实际 ' + JSON.stringify(pill));
+  const minNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
+  ok(minNums === '60,5,10,15,20,25,30,35,40,45,50,55',
+    '分钟那圈写 60,5,…,55（顶端 60 就是 0 分），实际 ' + minNums);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
+  const shown = await evalJs(page, `return document.querySelector('.when-pop .cp-display').textContent.trim();`);
+  ok(shown === '15:30', '下午 3 点选出来是 24 小时制的 15:30，实际 ' + JSON.stringify(shown));
 
-  // 时间要真跟着任务落库 —— 只断言胶囊是「选中了但没带上」的假通过
+  // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格。
+  // 注意先点一下表盘上的**小时格**切回小时档 —— 刚才选完 15 已经自动跳到分钟档了，
+  // 分钟那圈里根本没有「12」这一格（标签是 60,5,…,55）
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
+  await clickEl(page, `document.querySelector('.when-pop .cp-display .cp-cell')`);
+  const amNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
+  ok(amNums === '12,1,2,3,4,5,6,7,8,9,10,11',
+    '上午那圈还是 12,1,…,11（和下午那圈正好对照），实际 ' + amNums);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
+  // 上面那排数字写的是 **24 小时制**：上午 12 点（午夜）就是 00。
+  // 这是跟「下午那圈直接写 12–23」配套的 —— 点的是 15、上面显示 03 会让人以为点错了
+  const shown2 = await evalJs(page, `return document.querySelector('.when-pop .cp-display').textContent.trim();`);
+  ok(shown2 === '00:30', '上午 12 点显示成 24 小时制的 00:30，实际 ' + JSON.stringify(shown2));
+
+  // 表盘是**实时**的（没有「确定」）：标题行立刻跟着走，
+  // 而按钮上写的是**生效值** —— 待办箱没有日期，所以只有第二行
+  const live = await evalJs(page, `
+    return {
+      row: document.querySelector('.when-pop [data-layer="time"] .wp-v').textContent.trim(),
+      d: document.querySelector('.fast-clock .fc-d') ? document.querySelector('.fast-clock .fc-d').textContent.trim() : null,
+      t: document.querySelector('.fast-clock .fc-t') ? document.querySelector('.fast-clock .fc-t').textContent.trim() : null,
+    };
+  `);
+  ok(live.row === '00:30', '拨完表盘标题行立刻变成 00:30，实际 ' + JSON.stringify(live.row));
+  ok(live.d === null && live.t === '00:30',
+    '待办箱没有日期 → 按钮上只有第二行 00:30，实际 ' + JSON.stringify(live));
+
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '完成')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「完成」收起面板', 8000);
+
+  // 时间要真跟着任务落库 —— 只断言按钮是「选中了但没带上」的假通过
   const n0 = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
   await setText('.fast-add input', '转盘定时');
   await evalJs(page, `
@@ -1506,38 +1554,93 @@ try {
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.title === '转盘定时');
-      return t ? { time: t.time } : null;
+      return t ? { date: t.date, time: t.time } : null;
     })()
   `, '带时间的任务落盘', 8000);
   ok(made && made.time === '00:30',
-    '转盘选的时间跟着任务一起落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made && made.time));
+    '转盘选的时间跟着任务一起落库（不是只显示在按钮上），实际 ' + JSON.stringify(made));
+  ok(made && made.date === null,
+    '待办箱那条的日期仍然是空的（只选了时间），实际 ' + JSON.stringify(made && made.date));
 
-  /* ---- 4. 两层一起用：选日期 + 选时间 ---- */
-  // 换到「今天」页：默认日期是今天，面板里应该高亮今天
+  /* ---- 4. 跟着 tab 来的默认日期：按钮上、面板里必须是同一个值 ---- */
+  // 换到「今天」页：默认日期是今天
   await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'today')`);
   // 今天页的列表作用域是 `day:<日期>`（见 views/Lists.tsx），**没有** `today` ——
   // 别照待办箱的 `inbox` 类推。作用域是拖动排序的分组键，改成 `today` 会把
   // 「按天分组」拆掉，所以是探针写错了、不是应用少了这个属性。
   await waitFor(page, `document.querySelector('[data-scope^="day:"]') ? 1 : null`, '切到今天页', 8000);
-  await clickEl(page, `document.querySelector('.fast-clock')`);
-  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '今天页先出日期面板', 8000);
-  const dp2 = await evalJs(page, `
-    const pop = document.querySelector('.date-pop');
-    const t = new Date();
-    const iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
-    return { cur: pop.querySelectorAll('.jp-cell.cur').length, label: pop.querySelector('.jp-label').textContent.trim(), iso };
+
+  // 需求 6：**还没碰过任何控件**，按钮上就该有那个跟着 tab 来的日期
+  const btn = await evalJs(page, `
+    const d = document.querySelector('.fast-clock .fc-d');
+    const t = document.querySelector('.fast-clock .fc-t');
+    const today = new Date();
+    return {
+      d: d ? d.textContent.trim() : null,
+      t: t ? t.textContent.trim() : null,
+      todayMD: (today.getMonth() + 1) + '/' + today.getDate(),
+    };
   `);
-  ok(dp2.cur === 1, '今天页默认高亮今天，实际高亮 ' + dp2.cur + ' 格');
-  // 点今天那一格 → 进第二层
-  await clickEl(page, `document.querySelector('.date-pop .jp-cell.cur')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '选完日期出转盘', 8000);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '3')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
-  const pill2 = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
-  ok(/月.*日 15:00/.test(pill2 || ''), '胶囊上同时显示日期和时间，实际 ' + JSON.stringify(pill2));
+  ok(btn.d === btn.todayMD,
+    '「今天」页上按钮直接写着今天的日期（不用先点开面板），实际 ' + JSON.stringify(btn));
+  ok(btn.t === null, '没有默认时间 → 第二行不出现，实际 ' + JSON.stringify(btn.t));
+
+  // 已经有日期 → 打开面板先开**时间**层（需求 5）
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开日期时间面板', 8000);
+  const first = await evalJs(page, `
+    const pop = document.querySelector('.when-pop');
+    return {
+      open: [...pop.querySelectorAll('.wp-row')]
+        .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(','),
+      drow: pop.querySelector('[data-layer="date"] .wp-v').textContent.trim(),
+    };
+  `);
+  ok(first.open === 'date:关,time:开',
+    '已经有日期（tab 默认的也算）→ 打开时先开时间层，实际 ' + first.open);
+  // 面板里写的和按钮上写的是**同一天** —— 按钮 10/7、面板 10月7日 周三
+  const [bm, bd] = btn.d.split('/');
+  ok(first.drow.startsWith(bm + '月' + bd + '日'),
+    '面板日期行的值和按钮上那个是同一个（需求 6），实际 按钮=' + btn.d + ' 面板=' + first.drow);
+
+  // 点日期标题行 → 换开日期层，月历里高亮的就是刚才那个默认日期
+  await clickEl(page, `document.querySelector('.when-pop [data-layer="date"]')`);
+  const dp2 = await evalJs(page, `
+    const pop = document.querySelector('.when-pop');
+    return {
+      cur: pop.querySelectorAll('.jp-cell.cur').length,
+      curToday: pop.querySelectorAll('.jp-cell.cur.today').length,
+      open: [...pop.querySelectorAll('.wp-row')]
+        .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(','),
+    };
+  `);
+  ok(dp2.cur === 1 && dp2.curToday === 1,
+    '今天页默认高亮今天（且面板里也认为它是「今天」），实际 ' + JSON.stringify(dp2));
+  ok(dp2.open === 'date:开,time:关', '换开日期层时时间层收起，实际 ' + dp2.open);
+
+  // 点今天那一格 → 自动收起日期层、切到时间层（需求 5）
+  await clickEl(page, `document.querySelector('.when-pop .jp-cell.cur')`);
+  const swapped = await evalJs(page, `
+    const pop = document.querySelector('.when-pop');
+    return [...pop.querySelectorAll('.wp-row')]
+      .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(',');
+  `);
+  ok(swapped === 'date:关,time:开',
+    '选好日期自动收起日期层、切到时间层，实际 ' + swapped);
+
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
+  // 分钟那圈顶端那格写的是 60（就是 0 分），没有「0」这一格
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '完成')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「完成」收起面板', 8000);
+  const pill2 = await evalJs(page, `
+    const d = document.querySelector('.fast-clock .fc-d');
+    const t = document.querySelector('.fast-clock .fc-t');
+    return { d: d ? d.textContent.trim() : null, t: t ? t.textContent.trim() : null };
+  `);
+  ok(pill2.d === btn.todayMD && pill2.t === '15:00',
+    '按钮上两行同时在：日期一行、时间一行，实际 ' + JSON.stringify(pill2));
 
   const n1 = await evalJs(page, `return document.querySelectorAll('[data-scope^="day:"] .task-el').length;`);
   await setText('.fast-add input', '两层一起');
@@ -1556,7 +1659,34 @@ try {
   ok(made2 && made2.time === '15:00',
     '选的时间跟着任务落库，实际 ' + JSON.stringify(made2));
   ok(made2 && /^\d{4}-\d{2}-\d{2}$/.test(made2.date || ''),
-    '选的日期跟着任务落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made2));
+    '选的日期跟着任务落库（不是只显示在按钮上），实际 ' + JSON.stringify(made2));
+
+  /* ---- 4b. 「不设置」要能压过 tab 默认的日期 ---- */
+  // 这一条守的是 `undefined`（没表过态 → 用默认）与 `null`（明确说不要）必须分开：
+  // 混成一个的话，在「今天」页上点「不设置」会被默认的今天顶回来，点了跟没点一样
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '面板再打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '不设置')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '「不设置」等价于选完了、面板收起', 8000);
+  const cleared = await evalJs(page, `
+    return document.querySelector('.fast-clock .fc-when') ? document.querySelector('.fast-clock .fc-when').textContent.trim() : null;
+  `);
+  ok(cleared === null, '「不设置」之后按钮上不再显示日期 / 时间，实际 ' + JSON.stringify(cleared));
+
+  await setText('.fast-add input', '不设置那条');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  const made3 = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '不设置那条');
+      return t ? { date: t.date, time: t.time } : null;
+    })()
+  `, '「不设置」那条落盘', 8000);
+  ok(made3 && made3.date === null && made3.time === null,
+    '「不设置」压过了「今天」页的默认日期，日期与时间都空，实际 ' + JSON.stringify(made3));
 
   /* ---- 5. 占位符不随 tab 变（需求 1B） ---- */
   const phToday = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
@@ -1565,6 +1695,97 @@ try {
   const phInbox = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
   ok(phToday === phInbox,
     '占位符不随 tab 变，实际 今天=' + JSON.stringify(phToday) + ' 待办箱=' + JSON.stringify(phInbox));
+
+  /* ---- 6. 抽屉里那个转盘没被这次重构碰坏 ---- */
+  // 快速添加用的是 ClockBody（嵌在两层面板里），抽屉用的是 ClockPop（带定位、
+  // 带「确定 / 取消」）。两条路共用表盘本体，但**出口语义相反**：
+  // 快速添加是实时的，抽屉是「取消 = 反悔」。这一节专守抽屉那条路。
+  //
+  // 先建一条**干净的任务**（无时间）再开它的抽屉 —— 直接拿现成的任务，
+  // 万一它已经正好是 15:00，「确定之后变成 15:00」就成了假通过。
+  await setText('.fast-add input', '抽屉转盘');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '抽屉转盘');
+      return t ? t.id : null;
+    })()
+  `, '先建一条干净的任务', 8000);
+  const rowId = await evalJs(page, `
+    const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+      .find((x) => x.title === '抽屉转盘');
+    return t ? t.id : null;
+  `);
+  ok(!!rowId, '那条干净的任务找得到，实际 ' + JSON.stringify(rowId));
+  // clickEl 把这段表达式**原样拼进页面里求值**，所以：
+  //   · 得是完整的 `document.querySelector(...)`，不是光一个选择器；
+  //   · id 用 JSON.stringify 拼进去，**属性值自己还要再包一对方括号内的引号** ——
+  //     UUID 以数字开头，`[data-id=1954b402-…]` 不是合法标识符，querySelector
+  //     当场抛 SyntaxError（2026-10-07 在这儿中断过一次，报的是选择器不合法）
+  await clickEl(page, `document.querySelector('#content .task-row[data-id="' + ${JSON.stringify(rowId)} + '"]')`);
+  await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
+
+  await clickEl(page, `document.querySelector('.drawer .fast-clock')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '抽屉里弹出转盘', 8000);
+  const dface = await evalJs(page, `
+    const f = document.querySelector('.clock-pop .cp-face').getBoundingClientRect();
+    const p = document.querySelector('.clock-pop').getBoundingClientRect();
+    return {
+      size: Math.round(f.width),
+      left: +(f.left - p.left).toFixed(1),
+      right: +(p.right - f.right).toFixed(1),
+      foot: [...document.querySelectorAll('.clock-pop .cp-foot button')].map((b) => b.textContent.trim()).join('/'),
+      quick: [...document.querySelectorAll('.clock-pop .cp-quick button')].map((b) => b.textContent.trim()).join('/'),
+    };
+  `);
+  // 抽屉里那只**不缩小**：`.clock-pop` 的 278px 宽度是按 246 的表盘配出来的
+  // （见 legacy.css 那段注释），给它套上 `.wp-clock` 那套小字会顶到边
+  ok(dface.size === 246, '抽屉里那只表盘仍是 246px（没被面板那套小字带跑），实际 ' + dface.size);
+  ok(Math.abs(dface.left - dface.right) < 1,
+    '表盘在弹层里居中，实际 左 ' + dface.left + ' / 右 ' + dface.right);
+  ok(dface.foot === '清除/取消/确定', '出口是「清除 / 取消 / 确定」，实际 ' + JSON.stringify(dface.foot));
+  ok(dface.quick === '现在', '「现在」跟着表盘走（它拨的是针），实际 ' + JSON.stringify(dface.quick));
+
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '点「确定」收起转盘', 8000);
+  const committed = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t ? t.time : null;
+    })()
+  `, '抽屉里选的时间落盘', 8000);
+  ok(committed === '15:00', '点「确定」之后时间真的写进任务，实际 ' + JSON.stringify(committed));
+  ok(await evalJs(page, `return document.querySelector('.drawer .fast-clock').classList.contains('on');`),
+    '抽屉那个时钟按钮亮起来了（它表示「这条已经定了时间」）');
+
+  // 「取消 = 反悔」：拨一个**不一样**的时间再取消，任务上的时间不能变
+  await clickEl(page, `document.querySelector('.drawer .fast-clock')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '转盘再打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '9')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '取消')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '点「取消」收起转盘', 8000);
+  const afterCancel = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t ? t.time : null;
+    })()
+  `, '取消之后读回时间', 8000);
+  ok(afterCancel === '15:00',
+    '「取消」是反悔：拨到 09:00 又取消，任务上仍是 15:00，实际 ' + JSON.stringify(afterCancel));
+
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '把抽屉关掉', 8000);
 
   console.log('\n十八、功能区自定义：底栏挑哪几项、设置页调序都记得住');
 
@@ -1670,13 +1891,56 @@ try {
   await reloadAs(false, '宽屏侧栏渲染出来了');
   ok(await evalJs(page, `return !!document.querySelector('.topbar .search-box input');`),
     '宽屏顶栏仍是常驻搜索框（只有窄屏才收成图标）');
-  // 日程页的日期长文本只该出现一次 —— 在副header 里。顶栏原来也写一遍，
-  // 于是「10月7日」在相邻两行各出现一次（这次重构顺手去掉的那份重复）
+  // 日程页的日期长文本只该出现一次 —— 在顶栏标题里。副header 原来也写一遍，
+  // 于是「10月7日」在相邻两行各出现一次；现在副header 只放控件。
   await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('.cal-subhead')`, '宽屏日程副header渲染出来');
-  ok(await evalJs(page, `return document.querySelectorAll('.date-range').length;`) === 1,
-    '日程页的日期长文本只出现一次，实际 '
-    + await evalJs(page, `return document.querySelectorAll('.date-range').length;`));
+  ok(await evalJs(page, `return document.querySelectorAll('.cal-subhead .date-range').length;`) === 0,
+    '副header 不再重复日期长文本，实际 '
+    + await evalJs(page, `return document.querySelectorAll('.cal-subhead .date-range').length;`));
+
+  // 顶栏标题就是那唯一一份日期，粒度跟视图走：日 = 某天 · 周 = 这一周的起止 ·
+  // 月 = 年月。周视图原先跟月视图一样写「2026年10月」，看不出「这一周是哪一周」。
+  const topTitle = () => evalJs(page, `return document.querySelector('.topbar .view-title').textContent;`);
+  const dayTitle = await topTitle();
+  ok(/^\d{1,2}月\d{1,2}日$/.test(dayTitle), '日视图顶栏标题是具体某天，实际 ' + dayTitle);
+
+  // 副header 的三件控件：今天只留一个「今」字、找日期只留图标、上一/下一个有图标
+  ok(await evalJs(page, `return document.querySelector('.today-btn').textContent;`) === '今',
+    '「今天」按钮只留一个「今」字，实际 '
+    + await evalJs(page, `return document.querySelector('.today-btn').textContent;`));
+  ok(await evalJs(page, `return !document.querySelector('.jump-btn').textContent.trim();`),
+    '「找日期」只留图标、没有文字');
+  ok(await evalJs(page, `return !!document.querySelector('.date-nav .round-btn svg');`),
+    '上一/下一个按钮里是图标');
+
+  // 上一/下一个的**功能**跟着视图走：日 = 换一天 · 周 = 切一周 · 月 = 切一月。
+  // 判据是顶栏标题（那唯一一份日期），不是游标 —— 用户看的就是它。
+  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(dayTitle)} ? 1 : null`,
+    '日视图按「下一个」标题变了', 8000);
+  ok(await evalJs(page, `return document.querySelector('.topbar .view-title').textContent;`) !== dayTitle,
+    '日视图按「下一个」换了一天，实际 ' + await topTitle());
+
+  await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
+  await waitFor(page, `document.querySelector('[data-view="week"].on') ? 1 : null`, '切到周视图', 8000);
+  const weekTitle = await topTitle();
+  ok(/^\d{1,2}月\d{1,2}日 – \d{1,2}月\d{1,2}日$/.test(weekTitle),
+    '周视图顶栏标题是这一周的起止，实际 ' + weekTitle);
+  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(weekTitle)} ? 1 : null`,
+    '周视图按「下一个」标题变了', 8000);
+  const weekTitle2 = await topTitle();
+  ok(weekTitle2 !== weekTitle, '周视图按「下一个」切了一周，实际 ' + weekTitle2);
+
+  await evalJs(page, `document.querySelector('[data-view="month"]').click(); return true;`);
+  await waitFor(page, `document.querySelector('[data-view="month"].on') ? 1 : null`, '切到月视图', 8000);
+  const monthTitle = await topTitle();
+  ok(/^\d{4}年\d{1,2}月$/.test(monthTitle), '月视图顶栏标题是年月，实际 ' + monthTitle);
+  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(monthTitle)} ? 1 : null`,
+    '月视图按「下一个」标题变了', 8000);
+  ok(await topTitle() !== monthTitle, '月视图按「下一个」切了一月，实际 ' + await topTitle());
   await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
   await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的侧栏列表');
   ok(await evalJs(page, `return !document.querySelector('[data-tab]');`),

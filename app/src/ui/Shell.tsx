@@ -31,8 +31,7 @@ import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { CalSwitcher } from './Calendars.tsx';
-import { ClockPop } from './Clock.tsx';
-import { MiniCalendar, DatePop } from './DatePop.tsx';
+import { MiniCalendar, WhenPop } from './WhenPop.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -233,7 +232,7 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
       </div>
 
-      {/* 月历格子与快速添加的「先选日期」共用同一份 —— 见 ui/DatePop.tsx */}
+      {/* 月历格子与快速添加那个「日期 + 时间」面板共用同一份 —— 见 ui/WhenPop.tsx */}
       <MiniCalendar
         month={month}
         value={cursor}
@@ -319,16 +318,8 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
     atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
   }
 
-  // 日期长文本（原先在顶栏，随副header一起搬过来）。粒度跟着视图走：
-  // 日 = 具体某天；周 = 这一周的起止；月 = 第几周（满屏六行时比「哪个月」有用）
-  let range = D.fmtFull(ui.cursor);
-  if (ui.view === 'week') {
-    const s = D.weekStart(ui.cursor);
-    range = D.fmtMD(s) + ' – ' + D.fmtMD(D.addDays(s, 6));
-  } else if (ui.view === 'month') {
-    range = '第 ' + D.weekOfMonth(ui.cursor) + ' 周';
-  }
-
+  // 副header **只放控件**。日期长文本在顶栏（就在上面一行的标题里）——
+  // 两行各报一次日期，读的人不知道该看哪一行。
   return (
     <div className="cal-subhead">
       <div className="date-nav">
@@ -338,12 +329,13 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
         <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
           <ChevronRight size={15} />
         </button>
+        {/* 只留一个「今」字。在不在今天**不靠文字**，靠 .away 那一档配色
+            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 .today-btn */}
         <button
           className={'text-btn today-btn' + (atToday ? '' : ' away')}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
-        >{atToday ? '今天' : '回到今天'}</button>
-        <span className="date-range">{range}</span>
+        >今</button>
         <div className="jump-wrap">
           <button
             className={'text-btn jump-btn' + (jump ? ' on' : '')}
@@ -353,7 +345,6 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
             onClick={() => setJump(!jump)}
           >
             <span className="jb-ico"><CalendarDays size={13} /></span>
-            <span className="jb-txt">找日期</span>
           </button>
           <JumpPop
             open={jump}
@@ -382,10 +373,10 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   const online = useOnline();
   const [kw, setKw] = useSearchValue(ui.search, onSearch);
 
-  // 标题写**具体日期 / 年月**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
+  // 标题写**具体日期**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
   // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
-  // 日程页的日期长文本（日 = 某天 / 周 = 起止 / 月 = 第 N 周）在副header里，
-  // 它就在下面一行 —— 顶栏别再写一遍，那是「两行都在报同一个日期」。
+  // 粒度跟着视图走：日 = 某天 · 周 = 这一周的起止 · 月 = 年月。
+  // 周视图原先跟月视图一样写「2026年10月」，看不出「这一周是哪一周」。
   let title = '今天';
   let range = D.fmtFull(D.today());
   if (ui.nav === 'inbox') { title = '待办箱'; range = '没有日期的事先放这儿'; }
@@ -395,10 +386,13 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
-    // 日期长文本归副header（就在下面一行）—— 顶栏只留标题，别把同一天写两遍
+    // 日期长文本归顶栏（就在这一行）—— 副header 只放控件，别把同一天写两遍
+    const ws = D.weekStart(ui.cursor);
     title = ui.view === 'day'
       ? D.fmtMD(ui.cursor)
-      : D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+      : ui.view === 'week'
+        ? D.fmtMD(ws) + ' – ' + D.fmtMD(D.addDays(ws, 6))
+        : D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
     range = '';
   }
 
@@ -603,13 +597,17 @@ export function QuickAdd({ state, onSubmit }: {
 }) {
   const narrow = useIsNarrow();
   const [text, setText] = useState('');
-  const [pendingDate, setPendingDate] = useState<string | null>(null);
-  const [pendingTime, setPendingTime] = useState<string | null>(null);
+  /* 日期 / 时间的三态：`undefined` = 用户没表过态（用 tab 默认值），
+     `null` = 用户明确说了「不要」，`'…'` = 选了这个。
+     **必须区分 undefined 与 null** —— 否则「不设置」在「今天」页上会被
+     默认值顶回来，点了跟没点一样（normalizeUi 的 navBottom 是同一类坑）。 */
+  const [pendingDate, setPendingDate] = useState<string | null | undefined>(undefined);
+  const [pendingTime, setPendingTime] = useState<string | null | undefined>(undefined);
   const [focused, setFocused] = useState(false);
   // 窄屏默认收起成右下角一个 FAB，点一下展开、再点收起（需求 3C）
   const [expanded, setExpanded] = useState(!narrow);
-  const [dateOpen, setDateOpen] = useState(false);
-  const [clockOpen, setClockOpen] = useState(false);
+  /** 日期 / 时间那个面板（两层折叠，见 ui/WhenPop.tsx） */
+  const [whenOpen, setWhenOpen] = useState(false);
   // 「N」快捷键与 FAB 都要先展开再聚焦 —— 展开是异步的，得等 DOM 更新
   const focusOnExpand = useRef(false);
   const clockBtn = useRef<HTMLButtonElement>(null);
@@ -618,9 +616,11 @@ export function QuickAdd({ state, onSubmit }: {
   const ui = state.ui;
   const def = quickDefaults(ui, D.today());
   const parsed: ParseOut | null = text.trim() ? parse(text) : null;
-  // 生效值：picker > 文本解析 > tab 默认。预览画的是生效值，不让人猜
-  const effDate = pendingDate ?? parsed?.date ?? def.date;
-  const effTime = pendingTime ?? parsed?.time ?? def.time;
+  // 生效值：面板选的 > 文本解析 > tab 默认。预览画的是生效值，不让人猜。
+  // **按钮上的文本和面板里写的必须是同一个 effDate / effTime**（需求 6）——
+  // 否则「今天」页上按钮写着 10/7、面板里却高亮别的日子，用户不知道该信哪个
+  const effDate = pendingDate !== undefined ? pendingDate : (parsed?.date ?? def.date);
+  const effTime = pendingTime !== undefined ? pendingTime : (parsed?.time ?? def.time);
   const chips: [string, string][] = [];
   if (effDate) chips.push(['date', D.relLabel(effDate)]);
   if (effTime) chips.push(['time', effTime]);
@@ -631,11 +631,12 @@ export function QuickAdd({ state, onSubmit }: {
     const raw = text.trim();
     if (!raw) return;
     const p = parse(raw);
-    const date = pendingDate ?? p?.date ?? def.date;
-    const time = pendingTime ?? p?.time ?? def.time;
+    const date = pendingDate !== undefined ? pendingDate : (p?.date ?? def.date);
+    const time = pendingTime !== undefined ? pendingTime : (p?.time ?? def.time);
     setText('');
-    setPendingDate(null);
-    setPendingTime(null);
+    setPendingDate(undefined);
+    setPendingTime(undefined);
+    setWhenOpen(false);
     onSubmit({
       title: (p?.title || raw),
       date,
@@ -668,7 +669,8 @@ export function QuickAdd({ state, onSubmit }: {
     }
   }, [expanded]);
 
-  const hasWhen = !!(pendingDate || pendingTime);
+  // 跟着 tab 来的默认日期也算「有」—— 按钮上要写出来（需求 6）
+  const hasWhen = !!(effDate || effTime);
 
   return (
     <>
@@ -699,44 +701,38 @@ export function QuickAdd({ state, onSubmit }: {
           className={'fast-clock' + (hasWhen ? ' on' : '')}
           type="button"
           title="选择日期和时间"
-          onClick={() => {
-            // 两层：先选日期、再选时间。已经开着哪层就关哪层
-            if (dateOpen) { setDateOpen(false); return; }
-            if (clockOpen) { setClockOpen(false); return; }
-            setDateOpen(true);
-          }}
+          aria-expanded={whenOpen}
+          onClick={() => setWhenOpen((v) => !v)}
         >
           <Clock size={15} />
+          {/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
+              写的都是**生效值** —— 跟着 tab 来的默认日期（今天页 / 日程页）
+              也在这儿显示，和面板里写的是同一个值（需求 6）。 */}
           {hasWhen && (
-            <span className="fc-time">
-              {pendingDate ? D.fmtMD(pendingDate) : ''}
-              {pendingDate && pendingTime ? ' ' : ''}
-              {pendingTime || ''}
+            <span className="fc-when">
+              {effDate && <span className="fc-d">{D.fmtSlashMD(effDate)}</span>}
+              {effTime && <span className="fc-t">{effTime}</span>}
             </span>
           )}
         </button>
-        <DatePop
-          open={dateOpen}
+        <WhenPop
+          open={whenOpen}
           anchor={clockBtn.current}
-          value={pendingDate ?? def.date}
+          date={effDate}
+          time={effTime}
           todayIso={D.today()}
           loadOf={(iso) => jumpLoad(state, iso)}
-          onPick={(d) => { setPendingDate(d); setDateOpen(false); setClockOpen(true); }}
-          onClear={() => { setPendingDate(null); setDateOpen(false); setClockOpen(true); }}
-          onClose={() => setDateOpen(false)}
-        />
-        <ClockPop
-          open={clockOpen}
-          anchor={clockBtn.current}
-          value={pendingTime}
-          onChange={(v) => { setPendingTime(v); setClockOpen(false); }}
-          onClose={() => setClockOpen(false)}
+          onDate={setPendingDate}
+          onTime={setPendingTime}
+          onTimeClear={() => setPendingTime(null)}
+          onClearAll={() => { setPendingDate(null); setPendingTime(null); setWhenOpen(false); }}
+          onClose={() => setWhenOpen(false)}
         />
         {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
-            10月20日 15:00」，不然只有那个小胶囊显示，很容易漏看 */}
+            10月20日 15:00」，不然只有那个小按钮显示，很容易漏看 */}
         <span className="fast-hint">
           {hasWhen
-            ? [pendingDate && '日期 ' + D.fmtMD(pendingDate), pendingTime && '时间 ' + pendingTime]
+            ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
                 .filter(Boolean).join(' · ') + ' · 再点时钟图标可改'
             : 'Ctrl + Enter 打开详细设置'}
         </span>
@@ -763,6 +759,9 @@ export function QuickAdd({ state, onSubmit }: {
           aria-expanded={expanded}
           onClick={() => {
             if (!expanded) focusOnExpand.current = true;
+            // 收起横条时把日期 / 时间面板一起收掉 —— 它的锚点就是横条上那个按钮，
+            // 横条没了它还浮在那儿，点都点不着
+            else setWhenOpen(false);
             setExpanded((v) => !v);
           }}
         >

@@ -27,7 +27,11 @@
   --text-2: #474955;
   --text-3: #5f6577;
   --border: #e7e4de;
-  --border-2: #d8d3ca;
+  /* 交互控件的描边（输入框 / 下拉 / 勾选圈 / 幽灵按钮 / 视图切换 / 滚动条把手）。
+     **必须 ≥3:1**（WCAG 1.4.11）—— 勾选圈尤其要紧：那个 20px 的空圈只有它自己
+     说明「这里能点」。装饰性的线（卡片边 / 浮层边 / 进度槽 / 拖拽抓手）走 --border，
+     那一档不要求 3:1。按「能不能操作」分，不按「长得像不像框」分。 */
+  --input: #82889b;
   /* 可见边框的宽度。风格轴靠它换「线」的粗细：soft / notion 都是 1px，
      flat 是 2px（Minimalist Flat 的硬边框感）。规则区里凡是全边的
      `border: … solid …` 都引用它，**别再写死 1px** —— 写死的那一处会在
@@ -35,14 +39,14 @@
      `border: 1px solid transparent`（占位边框）不引用它：那种不参与视觉，
      只是撑住尺寸防抖动，加粗反而会挤动布局。 */
   --border-w: 1px;
-  --primary: #395ef6;
+  --primary: #27795a;
   --primary-soft: #e6f3ec;
   --primary-pale: #f1f9f5;
-  --danger: #d5262c;
+  --danger: #cf252b;
   --danger-soft: #fdeeef;
-  --warn: #a16217;
+  --warn: #995d16;
   --warn-soft: #fdf3e6;
-  --ok: #158054;
+  --ok: #147a50;
   --ok-soft: #e8f7f0;
   --purple: #3f7d8c;
   --shadow: 0 1px 2px rgba(38, 32, 24, .06);
@@ -53,10 +57,11 @@
      最坏情况下单个元素差 2px（8px→7px 那一档），肉眼看不出来。 */
   --r-xs: 2px; --r-sm: 7px; --r-md: 9px; --r-lg: 12px; --r-xl: 18px; --r-pill: 999px;
 
-  /* 主色上的前景色。主色本身是浅色时（暗色档的主色、以后的青玉那类色板）
-     它必须翻成深色，否则白字压浅底读不出来 —— 原来 21 处写死 color:#fff。 */
-  --primary-fg: #fff;
-  --danger-fg: #fff;
+  /* 主色 / 危险色上的前景色。主色是浅色时（暗色档全部、以后的浅色板）它必须
+     翻成深色，否则白字压浅底读不出来 —— 原来 21 处写死 color:#fff。
+     :root 这一套取的是**默认色板 jade** 的值（applyAccent 总会写上 data-accent，
+     所以 :root 只在首帧 FOUC 那一瞬生效，但别让它跟默认色板对不上）。 */
+  --on-primary: #ffffff;
 
   /* toast 是反色的小黑条，深浅两档都长这样，所以它自带三个值 */
   --toast-bg: #1b1f28; --toast-fg: #fff; --toast-link: #9db4ff;
@@ -71,10 +76,10 @@
   --wide: 920px;
 
   --chip-date-bg: #e9eeff; --chip-date-fg: #3a5bd9;
-  --chip-time-bg: #e4f6ee; --chip-time-fg: #138a5d;
+  --chip-time-bg: #e4f6ee; --chip-time-fg: #117d55;
   --chip-dur-bg: #f0eaff; --chip-dur-fg: #6b45c8;
-  --chip-pri-bg: #fdecec; --chip-pri-fg: #cf3b41;
-  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #a9691a;
+  --chip-pri-bg: #fdecec; --chip-pri-fg: #c6383e;
+  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #9d6118;
 }
 
 [data-theme="dark"] {
@@ -87,7 +92,7 @@
   --text-2: #b8b3ab;
   --text-3: #97928a;
   --border: #302c27;
-  --border-2: #3d3831;
+  --input: #71767f;
   --primary: #6fc0a0;
   --primary-soft: #1a2e27;
   --primary-pale: #152420;
@@ -101,8 +106,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .35);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
-  --primary-fg: #14120f;
-  --danger-fg: #1a0f0d;
+  --on-primary: #14120f;
   --chip-date-bg: #223052; --chip-date-fg: #9db4ff;
   --chip-time-bg: #1c3b30; --chip-time-fg: #6fd6a8;
   --chip-dur-bg: #2c2445; --chip-dur-fg: #bfa4ff;
@@ -111,65 +115,65 @@
 }
 
 /* ================= 色板轴 =================
-   6 套，只改主色族（--primary / soft / pale / fg / --purple）与语义色的冷暖。
+   6 套，只改主色族（--primary / soft / pale / --on-primary / --purple）与语义色的冷暖。
    底色（--bg / --panel*）**不随色板走**，那是「深浅」那一轴的事 —— 两轴混在一起
    会变成 6×2 套手工配色，改一处要翻 12 个地方。
 
-   --primary-fg 是主色上的**前景色**：主色是浅色时（暗色档全部、以后的浅色板）
+   --on-primary 是主色上的**前景色**：主色是浅色时（暗色档全部、以后的浅色板）
    它必须是深色，否则白字压浅底读不出来。这是原来 21 处写死 color:#fff 的病根。
-   azure 那一套例外，两个档都是 #fff —— 它的职责就是「还原成今天的样子」。
+   亮色档六套都是 #fff —— 它们的主色都压到了 4.5:1 以上，白字压得住。
 
    暗色档用复合选择器 [data-theme="dark"][data-accent="…"]，特异度比单属性的
    高一级，所以不依赖两块的先后顺序 —— 但也别把暗色档写到亮色档前面去。 */
 
 [data-accent="jade"] {
-  --primary: #2a8261; --primary-soft: #e6f3ec; --primary-pale: #f1f9f5;
-  --primary-fg: #fff; --purple: #3f7d8c;
+  --primary: #27795a; --primary-soft: #e6f3ec; --primary-pale: #f1f9f5;
+  --on-primary: #fff; --purple: #3f7d8c;
 }
 [data-accent="azure"] {
-  --primary: #4a6cf7; --primary-soft: #edf1ff; --primary-pale: #f6f8ff;
-  --primary-fg: #fff; --purple: #7b53d8;
+  --primary: #4260dc; --primary-soft: #edf1ff; --primary-pale: #f6f8ff;
+  --on-primary: #fff; --purple: #7b53d8;
 }
 [data-accent="clay"] {
-  --primary: #b45c3f; --primary-soft: #fbeee8; --primary-pale: #fdf6f2;
-  --primary-fg: #fff; --purple: #8a5a7a;
+  --primary: #a5543a; --primary-soft: #fbeee8; --primary-pale: #fdf6f2;
+  --on-primary: #fff; --purple: #8a5a7a;
 }
 [data-accent="plum"] {
   --primary: #8a4a86; --primary-soft: #f7ecf6; --primary-pale: #fbf5fa;
-  --primary-fg: #fff; --purple: #5f4a9c;
+  --on-primary: #fff; --purple: #5f4a9c;
 }
 [data-accent="gold"] {
-  --primary: #8f6614; --primary-soft: #faf1dc; --primary-pale: #fdf8ee;
-  --primary-fg: #fff; --purple: #6b7a3a;
+  --primary: #8d6414; --primary-soft: #faf1dc; --primary-pale: #fdf8ee;
+  --on-primary: #fff; --purple: #6b7a3a;
 }
 [data-accent="slate"] {
   --primary: #4b5b70; --primary-soft: #eaeef3; --primary-pale: #f4f6f9;
-  --primary-fg: #fff; --purple: #5c6b80;
+  --on-primary: #fff; --purple: #5c6b80;
 }
 
 [data-theme="dark"][data-accent="jade"] {
   --primary: #6fc0a0; --primary-soft: #1a2e27; --primary-pale: #152420;
-  --primary-fg: #14120f; --purple: #7bb3c2;
+  --on-primary: #14120f; --purple: #7bb3c2;
 }
 [data-theme="dark"][data-accent="azure"] {
   --primary: #6d8bff; --primary-soft: #202739; --primary-pale: #1a2030;
-  --primary-fg: #fff; --purple: #a184f0;
+  --on-primary: #14120f; --purple: #a184f0;
 }
 [data-theme="dark"][data-accent="clay"] {
   --primary: #e08a68; --primary-soft: #301f19; --primary-pale: #261914;
-  --primary-fg: #14120f; --purple: #c395b5;
+  --on-primary: #14120f; --purple: #c395b5;
 }
 [data-theme="dark"][data-accent="plum"] {
   --primary: #c98cc4; --primary-soft: #2c1f2b; --primary-pale: #231a22;
-  --primary-fg: #14120f; --purple: #a48cd8;
+  --on-primary: #14120f; --purple: #a48cd8;
 }
 [data-theme="dark"][data-accent="gold"] {
   --primary: #d9b055; --primary-soft: #2c2517; --primary-pale: #231e13;
-  --primary-fg: #14120f; --purple: #a8b06a;
+  --on-primary: #14120f; --purple: #a8b06a;
 }
 [data-theme="dark"][data-accent="slate"] {
   --primary: #9aabc2; --primary-soft: #1e2530; --primary-pale: #191f28;
-  --primary-fg: #14120f; --purple: #8fa0b8;
+  --on-primary: #14120f; --purple: #8fa0b8;
 }
 
 /* ================= 风格轴 =================
@@ -210,7 +214,7 @@
   --shadow: none; --shadow-md: none; --shadow-lg: none;
   /* 往上投的那三条换成一条细线：底栏 / 抽屉 / 更多浮层还是要有条界，
      全 none 会让它们在内容上「糊」成一片 */
-  --shadow-up: 0 -1px 0 var(--border-2);
+  --shadow-up: 0 -1px 0 var(--border);
   --shadow-up-sm: none; --shadow-sticky: none;
   /* 边框仍是 1px —— Notion 的特征是「1px 微妙细线」，不是粗边框 */
   --border-w: 1px;
@@ -250,7 +254,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; color: var(--te
 b, strong { font-variant-numeric: tabular-nums; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: var(--r-sm); border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--input); border-radius: var(--r-sm); border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
@@ -276,7 +280,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .brand-logo {
   width: 32px; height: 32px; border-radius: var(--r-md);
   background: linear-gradient(140deg, var(--primary), var(--purple));
-  color: var(--primary-fg);
+  color: var(--on-primary);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 600;
   box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .32);
@@ -286,7 +290,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .quick-add {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 10px; margin-bottom: 16px;
-  background: var(--primary); color: var(--primary-fg);
+  background: var(--primary); color: var(--on-primary);
   border: none; border-radius: var(--r-md);
   font-size: 13px; font-weight: 500; letter-spacing: .3px;
   box-shadow: 0 2px 10px rgb(from var(--primary) r g b / .28);
@@ -324,10 +328,10 @@ b, strong { font-variant-numeric: tabular-nums; }
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; text-align: center; line-height: 19px; font-variant-numeric: tabular-nums;
 }
-.nav-item.active .count { background: var(--primary); color: var(--primary-fg); }
+.nav-item.active .count { background: var(--primary); color: var(--on-primary); }
 /* 逾期徽标用红色，一眼看出有几件拖着 */
 .nav-item .count.warn { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-.nav-item.active .count.warn { background: var(--danger); color: var(--danger-fg); }
+.nav-item.active .count.warn { background: var(--danger); color: var(--on-primary); }
 .nav-bottom { margin-top: auto; }
 
 /* 今日进度 */
@@ -348,7 +352,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .sidebar-footer { padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .ghost-btn {
-  flex: 1; padding: 7px; border: var(--border-w) solid var(--border-2); background: none;
+  flex: 1; padding: 7px; border: var(--border-w) solid var(--input); background: none;
   color: var(--text-2); border-radius: var(--r-md); font-size: 12px;
   transition: background .14s, color .14s, border-color .14s;
 }
@@ -369,14 +373,17 @@ b, strong { font-variant-numeric: tabular-nums; }
 /* 顶栏空间不够时，别把按钮里的字挤成竖排 —— 宁可先藏日期文字 */
 .date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+/* 30px 见方，跟旁边的 .text-btn 同高。里面只有一个图标，所以用 flex 居中 ——
+   靠 `line-height: 1` 加内联 SVG 的对齐会偏 1~2px，看着就是「没居中」。 */
 .round-btn {
-  width: 30px; height: 30px; border: var(--border-w) solid var(--border-2); background: none;
-  border-radius: var(--r-md); color: var(--text-2); font-size: 15px; line-height: 1;
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border: var(--border-w) solid var(--input); background: none;
+  border-radius: var(--r-md); color: var(--text-2);
   transition: background .14s, color .14s, border-color .14s;
 }
 .round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
 .text-btn {
-  padding: 6px 12px; border: var(--border-w) solid var(--border-2); background: none;
+  padding: 6px 12px; border: var(--border-w) solid var(--input); background: none;
   border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s, border-color .14s;
 }
@@ -400,7 +407,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jump-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
   width: 268px; padding: 12px;
-  background: var(--panel); border: var(--border-w) solid var(--border-2);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   animation: fadeUp .14s ease;
 }
@@ -409,13 +416,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .jp-row { display: flex; gap: 6px; }
 .jp-row input {
   flex: 1; min-width: 0; padding: 6px 9px; font-size: 12.5px;
-  border: var(--border-w) solid var(--border-2); border-radius: var(--r-sm);
+  border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
   background: var(--panel-2); color: var(--text);
 }
 .jp-row input:focus { outline: none; border-color: var(--primary); background: var(--panel); }
 .jp-go {
   padding: 0 11px; border: none; border-radius: var(--r-sm);
-  background: var(--primary); color: var(--primary-fg); font-size: 12.5px;
+  background: var(--primary); color: var(--on-primary); font-size: 12.5px;
 }
 .jp-go:hover { filter: brightness(1.08); }
 
@@ -447,7 +454,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .jp-cell.has.lv2::after { width: 14px; }
 .jp-cell.has.lv3::after { width: 19px; }
-.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: var(--primary-fg); }
+.jp-cell.has.cur, .jp-cell.has.today { background: var(--primary); color: var(--on-primary); }
 .jp-cell.has.cur { border-color: var(--primary); }
 .jp-cell.cur::after { background: #fff; }
 
@@ -456,7 +463,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 
 .search-box {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border: var(--border-w) solid var(--border-2);
+  padding: 6px 11px; border: var(--border-w) solid var(--input);
   border-radius: var(--r-md); background: var(--panel-2);
   transition: border-color .14s, background .14s;
 }
@@ -465,13 +472,13 @@ b, strong { font-variant-numeric: tabular-nums; }
 .search-ico { font-size: 12px; opacity: .6; }
 .clear-search { border: none; background: none; color: var(--text-3); font-size: 12px; }
 
-.view-switch { display: flex; border: var(--border-w) solid var(--border-2); border-radius: var(--r-md); overflow: hidden; }
+.view-switch { display: flex; border: var(--border-w) solid var(--input); border-radius: var(--r-md); overflow: hidden; }
 .view-switch button {
   padding: 6px 14px; border: none; background: none; color: var(--text-2); font-size: 12.5px;
   transition: background .14s, color .14s;
 }
 .view-switch button:hover { background: var(--panel-3); }
-.view-switch button.on { background: var(--primary); color: var(--primary-fg); }
+.view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
 /* ================= 日程副header ================= */
 
@@ -489,7 +496,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .search-pop {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
   width: min(300px, calc(100vw - 20px));
-  background: var(--panel); border: var(--border-w) solid var(--border-2);
+  background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 10px;
 }
 .search-pop .search-box { width: 100%; }
@@ -582,7 +589,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
 .tl-resize-tip {
   position: fixed; z-index: 80; pointer-events: none;
-  background: var(--primary); color: var(--primary-fg); font-size: 11px; font-weight: 600;
+  background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
   padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md); transform: translateY(3px);
 }
@@ -624,7 +631,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
 }
 .week-head-cell.today .wh-day {
-  background: var(--primary); color: var(--primary-fg); border-radius: 50%;
+  background: var(--primary); color: var(--on-primary); border-radius: 50%;
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .3);
 }
@@ -737,8 +744,8 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 .cell-date:hover { background: var(--primary-soft); color: var(--primary); }
 .cell-date.busy { font-weight: 700; }
-.month-cell.today .cell-date { background: var(--primary); color: var(--primary-fg); }
-.cell-today { font-size: 10px; background: var(--primary); color: var(--primary-fg); border-radius: var(--r-sm); padding: 0 5px; }
+.month-cell.today .cell-date { background: var(--primary); color: var(--on-primary); }
+.cell-today { font-size: 10px; background: var(--primary); color: var(--on-primary); border-radius: var(--r-sm); padding: 0 5px; }
 .cell-load { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .month-cell.lv3 .cell-load { color: var(--danger); }
 .cell-tasks { display: flex; flex-direction: column; gap: 3px; }
@@ -887,7 +894,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .row-main { flex: 1; min-width: 0; }
 .row-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); margin-top: 3px; flex-wrap: wrap; }
-.row-meta .dot { color: var(--border-2); }
+.row-meta .dot { color: var(--border); }
 .m-time { color: var(--primary); font-variant-numeric: tabular-nums; }
 .m-date.over { color: var(--danger); }
 .m-dur { color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -949,13 +956,13 @@ b, strong { font-variant-numeric: tabular-nums; }
   background: var(--panel-3); color: var(--text-2);
   font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
 }
-.od-btn:hover { background: var(--primary); color: var(--primary-fg); }
-.od-btn.ghost { background: transparent; border: var(--border-w) solid var(--border-2); }
-.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
+.od-btn:hover { background: var(--primary); color: var(--on-primary); }
+.od-btn.ghost { background: transparent; border: var(--border-w) solid var(--input); }
+.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--input); }
 
 .check-btn {
   width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
-  border: 1.5px solid var(--border-2); border-radius: 50%;
+  border: 1.5px solid var(--input); border-radius: 50%;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
 }
@@ -994,12 +1001,12 @@ b, strong { font-variant-numeric: tabular-nums; }
 }
 
 .chip {
-  padding: 4px 10px; border: var(--border-w) solid var(--border-2); background: var(--panel);
+  padding: 4px 10px; border: var(--border-w) solid var(--input); background: var(--panel);
   border-radius: var(--r-sm); color: var(--text-2); font-size: 12px;
   transition: border-color .14s, color .14s, background .14s;
 }
 .chip:hover { border-color: var(--primary); color: var(--primary); }
-.chip.active { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
+.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .chip.tiny { padding: 2px 8px; font-size: 11px; }
 .chip.danger { color: var(--danger); border-color: var(--danger); }
 
@@ -1066,7 +1073,7 @@ b, strong { font-variant-numeric: tabular-nums; }
   opacity: .4;
   transform: none !important;
   box-shadow: none;
-  outline: 1.5px dashed var(--border-2);
+  outline: 1.5px dashed var(--input);
   outline-offset: -2px;
   border-radius: var(--r-lg);
 }
@@ -1081,7 +1088,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .tl-guide span {
   position: absolute; left: 6px; top: -9px;
   padding: 1px 6px; border-radius: var(--r-sm);
-  background: var(--primary); color: var(--primary-fg);
+  background: var(--primary); color: var(--on-primary);
   font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md);
 }
@@ -1101,12 +1108,21 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
 .fast-clock {
-  border: var(--border-w) solid var(--border-2); background: none; color: var(--text-2);
-  border-radius: var(--r-md); padding: 5px 9px; font-size: 13px; line-height: 1;
+  display: flex; align-items: center; gap: 6px;
+  border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
+  border-radius: var(--r-md); padding: 4px 9px; font-size: 13px; line-height: 1;
   transition: border-color .14s, color .14s, background .14s;
 }
 .fast-clock:hover { border-color: var(--primary); color: var(--primary); }
 .fast-clock.set { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+
+/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
+   字号压到 10px —— 它是**按钮上的状态**，不是正文；两行加起来 23px，
+   跟左边那个 15px 的图标配得起来，横条不会被它撑高多少 */
+.fc-when { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.05; }
+.fc-when .fc-d, .fc-when .fc-t { font-size: 10px; font-variant-numeric: tabular-nums; }
+.fc-when .fc-d { font-weight: 600; }
+.fc-when .fc-t { color: var(--text-3); }
 
 .fast-parse {
   display: none; width: 100%; align-items: center; gap: 6px;
@@ -1134,7 +1150,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   z-index: 39;
   width: 48px; height: 48px; border: none; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--primary); color: var(--primary-fg);
+  background: var(--primary); color: var(--on-primary);
   box-shadow: var(--shadow-lg);
   transition: transform .16s, background .16s;
 }
@@ -1142,25 +1158,62 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fast-fab:active { transform: scale(.94); }
 .fast-fab.open { background: var(--panel-2); color: var(--text-2); }
 
-/* ================= 快速添加的「先选日期」面板 ================= */
+/* ================= 快速添加的「日期 + 时间」面板 ================= */
 
-/* 定位与宽度跟 .jump-pop 一致（里面那套 .jp-* 格子是共用的），
-   只是 position 改成 fixed —— 它要贴着横条上的时钟按钮出现，不是贴着顶栏 */
-.date-pop {
+/* 两层叠着往下展开：上面日期、下面时间，各点各的标题行开合，
+   **同时只开一层**（见 ui/WhenPop.tsx）。
+   定位跟 .jump-pop 同一套算法，只是 position: fixed —— 它贴着横条上那个
+   时钟按钮出现，不是贴着顶栏 */
+.when-pop {
   position: fixed; z-index: 70;
-  width: 268px; padding: 12px;
-  background: var(--panel); border: var(--border-w) solid var(--border-2);
+  width: 268px; padding: 8px;
+  background: var(--panel); border: var(--border-w) solid var(--input);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   animation: fadeUp .14s ease;
 }
-.dp-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.dp-foot .grow { flex: 1; }
+
+/* 层标题：整行可点，右边一个箭头，开着的时候箭头翻过来 */
+.wp-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 8px; border: none; border-radius: var(--r-md);
+  background: none; color: var(--text); font-size: 12.5px; text-align: left;
+  transition: background .14s;
+}
+.wp-row:hover { background: var(--panel-2); }
+.wp-row.open { background: var(--panel-2); }
+.wp-k { flex: 0 0 auto; color: var(--text-3); }
+.wp-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wp-v.none { font-weight: 400; color: var(--text-3); }
+.wp-cv { margin-left: auto; color: var(--text-3); transition: transform .16s; }
+.wp-row.open .wp-cv { transform: rotate(180deg); }
+
+/* 展开出来的那一层。左右各留 8px，跟层标题的 padding 对齐 */
+.wp-body { padding: 0 8px 8px; animation: fadeUp .14s ease; }
+.wp-body .jp-head { margin: 6px 0; }
+.wp-clear { display: flex; justify-content: center; margin-top: 6px; }
+.wp-clear .ghost-btn { padding: 5px 12px; font-size: 12px; }
+
+.wp-foot {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 4px; padding: 8px 8px 2px; border-top: 1px dashed var(--border);
+}
+.wp-foot .grow { flex: 1; }
+.wp-foot .ghost-btn, .wp-foot .primary-btn { padding: 6px 13px; font-size: 12px; }
+
+/* 面板里那只表盘比抽屉里的小一号：面板宽 268，扣掉内边距只剩 234，
+   塞 246 的表盘会顶到边。表盘的**直径**由 JS 按 face 算（见 ui/Clock.tsx），
+   这里只管里面那些格子的字号 —— 它们不跟着直径走 */
+.wp-clock .cp-cell { min-width: 52px; padding: 2px 8px; font-size: 22px; }
+.wp-clock .cp-colon { font-size: 18px; }
+.wp-clock .cp-num { width: 23px; height: 23px; font-size: 10.5px; }
+.wp-clock .cp-ap { padding: 3px 13px; }
+.wp-clock .cp-tip { padding: 7px 0 2px; }
 
 /* ================= 时钟时间选择器 ================= */
 
 .time-trigger {
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border: var(--border-w) solid var(--border-2); border-radius: var(--r-md);
+  padding: 7px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, color .14s;
 }
@@ -1199,7 +1252,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-ap:hover { background: var(--panel-3); }
-.cp-ap.on { background: var(--primary); color: var(--primary-fg); font-weight: 600; }
+.cp-ap.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 
 .cp-face {
   position: relative; width: 246px; height: 246px; margin: 0 auto;
@@ -1218,9 +1271,11 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   transition: background .14s, color .14s;
 }
 .cp-num:hover { background: var(--primary-soft); color: var(--primary); }
-.cp-num.on { background: var(--primary); color: var(--primary-fg); font-weight: 600; box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
+.cp-num.on { background: var(--primary); color: var(--on-primary); font-weight: 600; box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
 .cp-tip { text-align: center; font-size: 11px; color: var(--text-3); padding: 9px 0 3px; }
-.cp-foot { display: flex; align-items: center; gap: 6px; }
+/* 「现在」跟着表盘走（它拨的是针），所以它在 ClockBody 里、不在出口那一行 */
+.cp-quick { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+.cp-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .cp-foot .grow { flex: 1; }
 .cp-foot .ghost-btn, .cp-foot .primary-btn { padding: 6px 13px; font-size: 12px; }
 
@@ -1233,7 +1288,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .rp-l { flex: 0 0 34px; font-size: 12px; color: var(--text-2); }
 .rp-row input[type="number"], .rp-row select, .rp-row input[type="date"] {
-  padding: 6px 9px; border: var(--border-w) solid var(--border-2); border-radius: var(--r-sm);
+  padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
   background: var(--panel); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
@@ -1265,7 +1320,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .check-wrap { display: flex; }
 .check-wrap input { display: none; }
 .check-circle {
-  width: 20px; height: 20px; border: 2px solid var(--border-2); border-radius: 50%;
+  width: 20px; height: 20px; border: 2px solid var(--input); border-radius: 50%;
   cursor: pointer; position: relative; flex: 0 0 20px;
   transition: border-color .14s, background .14s, transform .12s;
 }
@@ -1287,7 +1342,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .field .sub { color: var(--text-3); }
 .field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
 .field input[type="date"], .field input[type="time"], .field select, .field textarea {
-  width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--border-2);
+  width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--input);
   border-radius: var(--r-md); background: var(--panel-2); outline: none;
   transition: border-color .14s, background .14s;
 }
@@ -1298,7 +1353,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
 .primary-btn {
   padding: 9px 20px; border: none; border-radius: var(--r-md);
-  background: var(--primary); color: var(--primary-fg); font-size: 13px; font-weight: 500;
+  background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 500;
   box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .26);
   transition: filter .14s, transform .12s;
 }
@@ -1344,7 +1399,7 @@ input, select, textarea { font-size: max(14px, 16px); }
   .tl-event:hover .ev-resize { opacity: .8; }
   .task-row::after { opacity: .4; }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
-  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--border-2); color: var(--text-2); }
+  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--input); color: var(--text-2); }
   .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
   .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
@@ -1352,15 +1407,15 @@ input, select, textarea { font-size: max(14px, 16px); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
   .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
   .sidebar-footer .ghost-btn:hover, .today-btn.away:hover { background: none; color: inherit; }
-  .quick-add:hover { background: var(--primary); color: var(--primary-fg); }
+  .quick-add:hover { background: var(--primary); color: var(--on-primary); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
   .primary-btn:hover { transform: none; }
   .today-btn.away:hover { background: var(--primary-pale); }
-  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--border-2); background: var(--panel-2); }
-  .search-box:hover { border-color: var(--border-2); background: var(--panel-2); }
+  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
+  .search-box:hover { border-color: var(--input); background: var(--panel-2); }
   .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
 }
 
@@ -1396,8 +1451,8 @@ input, select, textarea { font-size: max(14px, 16px); }
   font-variant-numeric: tabular-nums;
 }
 .tab .tb:empty { display: none; }
-.tab.active .tb { background: var(--primary); color: var(--primary-fg); }
-.tab .tb.warn { background: var(--danger); color: var(--danger-fg); font-weight: 600; }
+.tab.active .tb { background: var(--primary); color: var(--on-primary); }
+.tab .tb.warn { background: var(--danger); color: var(--on-primary); font-weight: 600; }
 
 /* ---- 「更多」抽屉 ---- */
 /* z-index 要高于底部标签栏（45），否则抽屉会被标签栏压住一截 */
@@ -1420,7 +1475,7 @@ body.sheet-open .tab:active { background: none; }
 }
 .more-sheet[hidden] { display: none; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
-.ms-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border-2); margin: 6px auto 14px; }
+.ms-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 14px; }
 .ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .ms-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
@@ -1450,7 +1505,7 @@ body.sheet-open .tab:active { background: none; }
   animation: slideUp .2s cubic-bezier(.3, .8, .3, 1);
 }
 .act-sheet[hidden] { display: none; }
-.as-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border-2); margin: 6px auto 10px; }
+.as-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 10px; }
 .as-title {
   font-size: 13.5px; font-weight: 600; padding: 0 2px 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1521,8 +1576,8 @@ body.sheet-open .tab:active { background: none; }
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
   .jump-pop { left: auto; right: 0; width: min(300px, calc(100vw - 20px)); }
-  /* 「先选日期」面板与找日期同一套格子，宽度口径一致 */
-  .date-pop { width: min(300px, calc(100vw - 20px)); }
+  /* 「日期 + 时间」面板与找日期同一套格子，宽度口径一致 */
+  .when-pop { width: min(300px, calc(100vw - 20px)); }
   .jp-cell { height: 34px; line-height: 28px; font-size: 13.5px; }
   .jp-cell.has::after { bottom: 4px; }
   .jp-cell.has.lv2::after { width: 16px; }
@@ -1542,7 +1597,8 @@ body.sheet-open .tab:active { background: none; }
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
   .fast-add input { font-size: 16px; }
-  .fast-clock { padding: 8px 11px; }
+  /* 按钮上那两行是小字，手机上加的是**点击面**不是字号 */
+  .fast-clock { padding: 6px 10px; }
   /* 横条展开后给右下角的 FAB 让位，别把时钟按钮盖住 */
   .fast-add { padding-right: 62px; }
 
@@ -1660,7 +1716,7 @@ body.sheet-open .tab:active { background: none; }
     background: var(--primary); border: none; overflow: hidden;
     font-size: 0; gap: 0;
   }
-  .cell-tasks .task-pill.done { background: var(--border-2); }
+  .cell-tasks .task-pill.done { background: var(--border); }
   .cell-more { font-size: 9.5px; padding-left: 0; }
 }
 
@@ -1668,8 +1724,6 @@ body.sheet-open .tab:active { background: none; }
   .topbar-right { gap: 8px; }
   /* 顶栏挤不下时先舍掉日期长文本，保住按钮本身 */
   .date-nav .date-range { display: none; }
-  /* 「找日期」收成只留日历图标，把宽度让给标题 */
-  .jb-txt { display: none; }
   .jump-btn { padding: 6px 9px; }
 }
 @media (max-width: 1000px) and (min-width: 901px) {
