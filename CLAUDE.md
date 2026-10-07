@@ -45,10 +45,11 @@
 │   │   │   └── store.test.ts
 │   │   ├── sync/engine.ts  outbox 推送 + 游标拉取 + 轮询调度 + 拖动守卫
 │   │   ├── ui/
-│   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期
+│   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期 / 设置入口
 │   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
 │   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
+│   │   │   ├── Settings.tsx  设置页：外观三轴 · 功能区自定义 · 数据备份 · 修改密码
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
@@ -1259,8 +1260,9 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 **脚本身份统一是「打卡」不是「习惯」。** `habits` 数组名保留（数据结构），
 界面文案一律「打卡」，侧栏 `data-nav="habits"` 的 label 写「打卡」。
 
-**深浅色只有 light / dark 两档**，存 `ui.theme`，顶栏切换。
-**没有多套风格 / 色板** —— 那是账本项目的机制，本项目没有，别照抄。
+**深浅色只有 light / dark 两档**，存 `ui.theme`，设置页切换。
+**风格有三档**（soft / flat / notion），存 `ui.style`，靠 `documentElement` 上的
+`data-style` + `legacy.css` 令牌块。**色板没有** —— 那是账本项目的机制，别照抄。
 
 **灰阶的取值是算出来的，不是挑出来的。** `--text` / `--text-2` / `--text-3`
 三档，每一档对**每一种底色**（亮色最难的是 `--panel-3` `#f3f5fa`）都要 ≥ 4.5:1
@@ -1405,6 +1407,13 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 `--input` 是输入框 / 下拉 / 勾选圈 / 幽灵按钮 / 视图切换 / 滚动条把手。
 **勾选圈最要紧**：那个 20px 的空圈只有它自己说明「这里能点」，而这个应用
 是给家里长辈用的。旧值亮 1.37 / 暗 1.53，等于没画。
+
+**风格轴靠 `--border-w` 换「线」的粗细**：soft / notion 都是 1px，flat 是 2px
+（Minimalist Flat 的硬边框感）。规则区里凡是全边的 `border: … solid …` 都引用它，
+**别再写死 1px** —— 写死的那一处在切到 flat 时会原地不动。
+`border: 1px solid transparent`（占位边框）不引用它：那种不参与视觉、只是撑尺寸
+防抖动，加粗反而会挤动布局。
+`app/tests/color-scan.mjs` 锁着这条（BANNED「写死的边框宽度」+ REQUIRED `--border-w`）。
 
 > **旧名字 `--border-2` 和常见范式是反的。** 多数设计系统里带「2」的那个
 > 是**更弱**的（Ant 的 `colorBorderSecondary` 就是），而它实际更强。
