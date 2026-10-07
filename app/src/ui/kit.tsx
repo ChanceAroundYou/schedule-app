@@ -84,20 +84,19 @@ export function Btn({ variant = 'normal', size = 'md', className, ...rest }: Btn
    --panel-2 / --primary），不在 .tsx 里写死颜色。
    需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
 
+/* 三个控件的共同外观只写一份 —— 改边框 / 底色 / 焦点 / 禁用时只改这里。
+   （legacy.css 里 `.field input` 那一组是同一套视觉的历史副本，
+   带 @layer 的 Tailwind 工具类压不过它，两边要保持一致。） */
+const CONTROL = [
+  'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+  'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+].join(' ');
+
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {}
 
 export function Input({ className, ...rest }: InputProps) {
-  return (
-    <input
-      {...rest}
-      className={cx(
-        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-    />
-  );
+  return <input {...rest} className={cx(CONTROL, className)} />;
 }
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -106,15 +105,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export function Select({ options, className, children, ...rest }: SelectProps) {
   return (
-    <select
-      {...rest}
-      className={cx(
-        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-    >
+    <select {...rest} className={cx(CONTROL, className)}>
       {options
         ? options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
         : children}
@@ -126,20 +117,36 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...rest }, ref) => {
-    return (
-      <textarea
-        ref={ref}
-        {...rest}
-        className={cx(
-          'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-          'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          className,
-        )}
-      />
-    );
+    return <textarea ref={ref} {...rest} className={cx(CONTROL, className)} />;
   }
 );
+
+/* 字段外壳：label + 控件 + 提示 / 错误。
+   只统一「结构」—— 校验逻辑、必填判定留在调用方。
+   错误用 role="alert" 播报，不依赖调用方再补 aria-describedby。 */
+interface FieldProps {
+  label: ReactNode;
+  /** 控件的 id，和 label 关联。控件自己也要给同一个 id */
+  htmlFor?: string;
+  /** 常驻的辅助说明（格式示例等） */
+  hint?: ReactNode;
+  /** 校验错误。有值时顶掉 hint */
+  error?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}
+
+export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
+  return (
+    <div className={cx('field', className)}>
+      <label htmlFor={htmlFor}>{label}</label>
+      {children}
+      {error
+        ? <div className="field-error" role="alert">{error}</div>
+        : hint && <div className="field-hint">{hint}</div>}
+    </div>
+  );
+}
 
 /* =============================== 底部浮层 =============================== */
 

@@ -14,6 +14,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const CSS = fileURLToPath(new URL('../src/styles/legacy.css', import.meta.url));
+/** 新表面。令牌仍全在 legacy.css，这里只借用它的变量 —— 但同样不许写死 */
+const NEW_SURFACES = fileURLToPath(new URL('../src/styles/tailwind.css', import.meta.url));
 
 /** 令牌块的选择器长这样。这些块里的写死值是**本分**，要跳过 */
 const TOKEN_BLOCK = /(^|,)\s*(:root|\[data-(theme|accent|style)[^\]]*\])\s*$/;
@@ -116,6 +118,26 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const neutral = shadows.filter((v) => !/^var\(--shadow|^none$|^inset|^rgb\(/.test(v));
   console.log('\n未走 --shadow* 的中性阴影（只报告，需人工判断）：' + neutral.length + ' 处');
   for (const v of neutral) console.log('    ' + v);
+
+  // tailwind.css（新表面）—— 没有令牌块（令牌全在 legacy.css），所以拿同一份
+  // BANNED 直接扫整份文件。之前它完全没人锁：写死的圆角和 1px 边框可以随便长，
+  // 而它们恰恰是切 flat / notion 时不会跟着动的那一批。
+  const tw = readFileSync(NEW_SURFACES, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  console.log('\ntailwind.css（新表面）里的写死值');
+  for (const [name, re, filter, how] of BANNED) {
+    const hits = [...tw.matchAll(re)].filter((m) => !filter || filter(m[1]));
+    const tag = hits.length ? 'FAIL' : 'ok  ';
+    if (hits.length) failed++;
+    console.log('  ' + tag + ' ' + name.padEnd(14) + String(hits.length).padStart(3) + ' 处   ' +
+      (hits.length ? '→ ' + how : ''));
+  }
+  // 兜底值和 legacy 那边一个道理：新表面的变量同样来自 legacy.css，
+  // 兜底值唯一的作用是把「变量名写错了」变成静默降级的写死浅色。
+  // `--kb` 例外 —— 没软键盘时它就该是 0，那是真默认值。
+  const fb = [...tw.matchAll(/var\((--[\w-]+)\s*,[^)]*\)/g)].filter((m) => m[1] !== '--kb');
+  if (fb.length) failed++;
+  console.log('  ' + (fb.length ? 'FAIL' : 'ok  ') + ' 多余的 var() 兜底值  ' + fb.length + ' 处   ' +
+    (fb.length ? '→ 只留 var(--x)' : ''));
 
   console.log('\n不达标 ' + failed + ' 条');
   process.exit(failed ? 1 : 0);
