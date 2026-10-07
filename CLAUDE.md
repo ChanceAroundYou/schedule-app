@@ -53,7 +53,8 @@
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
-│   │   │   ├── Clock.tsx   12 小时制时间转盘（快速添加里那个钟表按钮）
+│   │   │   ├── Clock.tsx   时间转盘：`ClockBody` 表盘本体 + `ClockPop`（抽屉里那个浮层）
+│   │   │   ├── WhenPop.tsx  快速添加的日期 / 时间两层折叠面板 + 共享的 `MiniCalendar`
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
 │   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline /
 │   │   │   │                useOutsideClose / useKeyboardInset / useFocusTrap
@@ -70,7 +71,7 @@
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
 │       ├── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
-│       └── contrast.mjs       色板 78 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
+│       └── contrast.mjs       色板 82 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
 │
 ├── server/                 后端（Node 22，**零 npm 依赖**）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
@@ -81,7 +82,7 @@
 │   ├── lib/invites.js      邀请：发出 → 待接受 → 接受 / 谢绝 / 撤回
 │   ├── lib/ratelimit.js    定点窗口限速（登录 / 注册 / 邀请）
 │   └── tests/
-│       ├── api.test.js        31 条接口用例
+│       ├── api.test.js        40 条接口用例
 │       └── smoke-share.mjs    真走网络：两个人共用一个集的全流程
 │
 ├── dist/                   构建产物（生成物，勿手改；nginx 只伺服这里）
