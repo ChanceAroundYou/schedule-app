@@ -34,6 +34,7 @@
 │   ├── src/
 │   │   ├── main.tsx        入口：**先拆旧版 Service Worker**，再挂载
 │   │   ├── App.tsx         串起来的那层（约 840 行，见下）
+│   │   ├── vite-env.d.ts   vite/client 的类型（import.meta.env 等）
 │   │   ├── domain/         纯逻辑，零 React / DOM / 网络依赖
 │   │   │   ├── types.ts    LocalState · Task · Habit · Op
 │   │   │   ├── date.ts     today / addDays / weekStart / monthMatrix / fmt* / shortLoad
@@ -44,39 +45,83 @@
 │   │   │   ├── model.ts    counts / liveTasks / dayLoad / 各种选择器
 │   │   │   ├── merge.ts    逐字段 LWW 客户端侧合并 + findConflicts（冲突判定）
 │   │   │   ├── ai.ts       AI：SSE 行解析 + 工具调用→人话 + 提案→人话（纯逻辑，见二、AI）
-│   │   │   └── *.test.ts   ai / project / domain
+│   │   │   ├── ai.test.ts
+│   │   │   ├── project.test.ts
+│   │   │   └── domain.test.ts
 │   │   ├── data/
-│   │   │   ├── store.ts    localStorage 持久化 + 增删改查 + ui.*（K = schedule-app-v4）
+│   │   │   ├── store.ts    localStorage 持久化 + 增删改查 + ui.* （K = schedule-app-v4）
 │   │   │   ├── api.ts      fetch('./api/…') 封装、令牌、缓存的 user
 │   │   │   ├── device.ts   设备标识（K = schedule-app-device）
 │   │   │   ├── legacy.ts   读旧版 schedule-app-v1，只读不删
 │   │   │   └── store.test.ts
 │   │   ├── sync/engine.ts  outbox 推送 + 游标拉取 + 轮询调度 + 拖动守卫
-│   │   ├── ui/             Shell（侧栏/顶栏/标签栏/更多抽屉/快速添加/找日期）·
-│   │   │                  Calendars · Drawer · ActSheet · Settings · Auth
-│   │   │                  AiPanel/AiSettings/AiHistory/AiMemory · aiClient
-│   │   │                  ProjectSheet · kit · dnd · Clock · WhenPop · DatePop
-│   │   │                  dragState · hooks · theme · cx
+│   │   ├── ui/
+│   │   │   ├── Shell.tsx   侧栏 / 顶栏 / 底部标签栏 / 更多抽屉 / 快速添加 / 找日期 / 设置入口
+│   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
+│   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
+│   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见踩坑 12）
+│   │   │   ├── Settings.tsx  设置页：tab 布局（外观 · 安全 · 日程集 · 关于）
+│   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
+│   │   │   ├── AiPanel.tsx  AI 对话面板：气泡 + 动作条 + **提案卡片**（点确认才落库）
+│   │   │   ├── AiSettings.tsx  Base URL / 模型 / key 的设置浮层
+│   │   │   ├── AiHistory.tsx · AiMemory.tsx  AI 的操作历史与记忆库视图
+│   │   │   ├── aiClient.ts  fetch + ReadableStream 读 SSE（带 Authorization）
+│   │   │   ├── ProjectSheet.tsx  项目：建 / 改名 / 删 · 泳道看板
+│   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
+│   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见踩坑 6 与踩坑 12）
+│   │   │   ├── Clock.tsx   时间转盘：`ClockBody` 表盘本体 + `ClockPop`（抽屉里那个浮层）
+│   │   │   ├── WhenPop.tsx  快速添加的日期 / 时间两层折叠面板 + 共享的 `MiniCalendar`
+│   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
+│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline /
+│   │   │   │                useOutsideClose / useKeyboardInset / useFocusTrap
+│   │   │   ├── theme.ts    外观三轴（accent / style / theme）的选项表
+│   │   │   └── cx.ts
 │   │   ├── views/          纯展示，零回调，只出 data-* 属性
-│   │   │                  Calendar · Lists · Habits · Projects · Trash · parts
-│   │   └── styles/         legacy.css（90 KB 设计系统，**不带 @layer**，见踩坑 17）
-│   │                        · tailwind.css（样式入口 + 新表面的少量 CSS）
-│   └── tests/             smoke.mjs · browser-smoke.mjs · contrast.mjs · color-scan.mjs
+│   │   │   ├── Calendar.tsx  DayView · WeekView · MonthView · useViewLayout
+│   │   │   ├── Lists.tsx     待办箱 · 今天 · 逾期 · 已完成
+│   │   │   ├── Habits.tsx    打卡
+│   │   │   ├── Projects.tsx  项目泳道看板（待办 / 进行中 / 已完成）
+│   │   │   ├── Trash.tsx     垃圾箱
+│   │   │   └── parts.tsx    行/方块等共享小组件
+│   │   └── styles/
+│   │       ├── legacy.css  旧版那 90 KB 设计系统，**不带 @layer**（见踩坑 17）
+│   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
+│   └── tests/
+│       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
+│       ├── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
+│       ├── contrast.mjs       色板 82 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
+│       └── color-scan.mjs     写死的边框宽度 / --border-w 变量扫描
 │
 ├── server/                 后端（Node 22，**只引 AI 那一组依赖**，见五、1）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
-│   ├── lib/                db · auth · sync · calendars · invites · ratelimit
-│   │   └── ai/             **AI 唯一能碰 pi 的地方**（见二、AI；依赖见五、1）
-│   │                       index.js（惰性 import）· chat.mjs（pi 只在这儿）
-│   │                       · tools.mjs（写入只造提案）· confirm.js（CJS，不碰 pi）
-│   │                       · prompt.mjs · settings.js · sessions.js · sse.mjs · dates.mjs
-│   └── tests/             api.test.js（46）· migration.test.js（8）· ai.test.js（18）
-│                            · smoke-share.mjs（真走网络）
+│   ├── lib/db.js           node:sqlite：建表 / field_state / changes / users / cals
+│   ├── lib/auth.js         scrypt 哈希 + 自签 JWT + 用户名口令校验
+│   ├── lib/sync.js         逐字段 LWW + 快照 + 全量游标增量 + 按集鉴权
+│   ├── lib/calendars.js    日程集：建 / 改名 / 删 / 退出 + 成员与角色
+│   ├── lib/invites.js      邀请：发出 → 待接受 → 接受 / 谢绝 / 撤回
+│   ├── lib/ratelimit.js    定点窗口限速（登录 / 注册 / 邀请 / AI）
+│   ├── lib/ai/             **AI 唯一能碰 pi 的地方**（见二、AI；依赖见五、1）
+│   │   ├── index.js        惰性 import 的入口：依赖没装好也起得来
+│   │   ├── chat.mjs        装配 pi 的 Agent + 事件→SSE 映射（pi 只在这儿）
+│   │   ├── tools.mjs       工具定义：只读直接跑，写入**只造提案**
+│   │   ├── confirm.js      提案落库点（CJS，不碰 pi）：重查权限 → applyOps
+│   │   ├── prompt.mjs      系统提示词（今天是哪天 + 先提案后确认）
+│   │   ├── settings.js     每人一行的模型配置，key 只进不出
+│   │   ├── sessions.js     会话与消息的读写
+│   │   ├── sse.mjs         SSE 写出
+│   │   └── dates.mjs       服务器侧的几个日期小工具
+│   └── tests/
+│       ├── api.test.js        46 条接口用例
+│       ├── migration.test.js  schema 迁移（**唯一会吃掉用户数据的代码**）
+│       ├── ai.test.js         18 条 AI 层用例（假模型，不联网）
+│       └── smoke-share.mjs    真走网络：两个人共用一个集的全流程
 │
 ├── dist/                   构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                 nginx conf + systemd 单元的本地副本
 ├── legacy/                 旧版纯静态应用，**冻结**（回滚用，见 DEPLOY.md 七）
-├── docs/                   接口.md · 重构路线.md · 踩坑.md · 测试.md · 业务模型.md · 界面约定.md
+├── docs/                   接口.md · 重构路线.md · 踩坑.md · 测试.md
+│                          业务模型.md · 界面约定.md
+├── .gitattributes          行尾一律锁成 LF，压过各机器的 core.autocrlf（见踩坑 36） · 踩坑.md · 测试.md
 ├── .gitattributes          行尾一律锁成 LF，压过各机器的 core.autocrlf（见踩坑 36）
 ├── package.json            只声明 AI 那一组依赖（见五、1），**没有 build 脚本**
 └── README.md  CLAUDE.md  DEPLOY.md
@@ -112,6 +157,7 @@
 ```bash
 cd app && npm run dev            # Vite :5199，/api 自动代理到 127.0.0.1:25692
 node server/server.js            # 后端 :25692，数据落 server/data/
+SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试时用）
 cd app && npm run build          # tsc -b && vite build → ../dist/
 ```
 
@@ -240,6 +286,7 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 **写路径：工具、提案、确认，三段。** 这是这个功能里最要紧的一条：
 
 1. **写工具（`create_task` 等五个）的 `execute` 正常返回，但只造提案、不落库。**
+   `tools.mjs` 里存进 `Map<toolCallId, proposal>`，返回一个成功结果。
    > **不用 pi 的 `beforeToolCall` 拦。** `block` 会产生一个**错误工具结果**，
    > 模型会以为工具坏了、换个说法反复重试。真正的强制是**结构性**的 ——
    > 写工具根本没有写的能力。
@@ -320,6 +367,15 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 **焦点环统一在 `legacy.css` 文件最末那一条 `:focus-visible`**，不要再散着写 ——
 它必须和 `--input` 一起改（`--input` 提到 3:1 之后，只染色的焦点环对比会掉到 1.45）。
 
+**风格轴的两半（线粗细 / 圆角）都在 `legacy.css` 的令牌块里。**
+**线的粗细**走 `--border-w`
+（soft / notion 1px、flat 2px），凡是全边的 `border: … solid …` 都引用它；
+**圆角**走 `--r-xs/sm/md/lg/xl/pill`，`.tsx` 里**不许出现 Tailwind 自带的
+`rounded` / `rounded-lg` / `rounded-2xl`** —— 那些是写死的像素值，切到 flat / notion
+时原地不动，症状就是「无论怎么切都是圆角胶囊」。按角色挑档：卡片 `--r-lg` ·
+浮层 `--r-xl` · 行与按钮 `--r-md` · 输入框与下拉 `--r-sm` · 小徽标 `--r-xs`。
+`color-scan.mjs` 锁着这两条，细节见 [docs/界面约定.md](docs/界面约定.md)。
+
 `app/tests/contrast.mjs` 四段都在锁：① 74 对「文字 on 真会落上去的底色」≥ 4.5:1；
 ② 8 对**控件描边 ≥ 3:1**（和 4.5 那条是两条不同的线）；③ `src/` 里引用了但
 `legacy.css` 没定义的变量；④ `.tsx` 里多余的 `var()` 兜底值。
@@ -336,6 +392,7 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 > 表达方式是 `App.tsx` 里给这几个视图传**哪一份 state**：`state`（全量）还是
 > `scoped`（`useScopedState()` 过滤过）。**不要**给 views/ 里的每个选择器加
 > `calId` 参数 —— 在状态这一层分叉一次，下游十几个选择器一个都不用动。
+> **侧栏徽标与顶栏一律用全量口径**，别跟着当前集变。
 
 **只读成员看到的界面不是「藏起来」，是「点了会告诉你为什么」。**
 `store.commitMany()` 挡下写入时 `denied` 计数 +1，`App.tsx` 弹一次提示。
