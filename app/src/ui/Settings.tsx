@@ -8,8 +8,8 @@
  * 而 `ui/` 下本来就是这个形态（Calendars / Auth / Drawer / ActSheet 都收回调）。
  * 把它放进 views/ 会让那条不变量第一次出现例外，例外一多就没人守了。
  *
- * 页面结构：**大 header + 小 tab 切换**。五个 tab：
- *   外观 · 账户安全 · 同步备份 · 日程集 · 关于
+ * 页面结构：**大 header + 小 tab 切换**。四个 tab：
+ *   外观 · 安全 · 日程集 · 关于
  *
  * 配色一律走 legacy.css 的 CSS 变量（新表面没有 legacy 规则，Tailwind 生效；
  * 写死颜色会让深色模式在这里失效）。
