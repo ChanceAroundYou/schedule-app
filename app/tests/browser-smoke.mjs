@@ -2234,16 +2234,16 @@ try {
   // 点「今」跳回今天 → 这个键变成选中态，和日 / 周 / 月三个视图档同一个语义。
   await clickEl(page, `document.querySelector('.today-btn')`);
   await new Promise((r) => setTimeout(r, 200));
-  ok(await evalJs(page, `return document.querySelector('.today-btn').classList.contains('on');`),
+  ok(await evalJs(page, `return document.querySelector('.today-btn').getAttribute('aria-pressed') === 'true';`),
     '回到今天之后「今」按钮是选中态（需求 6）');
   ok(await evalJs(page, `return !document.querySelector('.jump-btn').textContent.trim();`),
     '「找日期」只留图标、没有文字');
-  ok(await evalJs(page, `return !!document.querySelector('.date-nav .round-btn svg');`),
+  ok(await evalJs(page, `return !!document.querySelector('.date-nav [title="下一个"] svg');`),
     '上一/下一个按钮里是图标');
 
   // 上一/下一个的**功能**跟着视图走：日 = 换一天 · 周 = 切一周 · 月 = 切一月。
   // 判据是顶栏标题（那唯一一份日期），不是游标 —— 用户看的就是它。
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelector('.date-nav [title="下一个"]')`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(dayTitle)} ? 1 : null`,
     '日视图按「下一个」标题变了', 8000);
   ok(await evalJs(page, `return document.querySelector('.topbar .view-title').textContent;`) !== dayTitle,
@@ -2254,7 +2254,7 @@ try {
   const weekTitle = await topTitle();
   ok(/^\d{1,2}月\d{1,2}日 – \d{1,2}月\d{1,2}日$/.test(weekTitle),
     '周视图顶栏标题是这一周的起止，实际 ' + weekTitle);
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelector('.date-nav [title="下一个"]')`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(weekTitle)} ? 1 : null`,
     '周视图按「下一个」标题变了', 8000);
   const weekTitle2 = await topTitle();
@@ -2264,7 +2264,7 @@ try {
   await waitFor(page, `document.querySelector('[data-view="month"].on') ? 1 : null`, '切到月视图', 8000);
   const monthTitle = await topTitle();
   ok(/^\d{4}年\d{1,2}月$/.test(monthTitle), '月视图顶栏标题是年月，实际 ' + monthTitle);
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelector('.date-nav [title="下一个"]')`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(monthTitle)} ? 1 : null`,
     '月视图按「下一个」标题变了', 8000);
   ok(await topTitle() !== monthTitle, '月视图按「下一个」切了一月，实际 ' + await topTitle());
@@ -2323,7 +2323,7 @@ try {
   ok(await evalJs(page, `return document.querySelector('#content').textContent.includes('还没有项目');`),
     '空态说话，不是一片白');
 
-  await clickEl(page, `document.querySelector('.pj-top .text-btn')`);
+  await clickEl(page, `document.querySelector('.pj-top button')`);
   await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
   const setField = (sel, val) => evalJs(page, `
     return (() => {
@@ -2950,7 +2950,7 @@ try {
       return el ? Math.round(el.getBoundingClientRect().height * 10) / 10 : null;
     };
     return {
-      prev: pick('.date-nav .round-btn'),
+      prev: pick('.date-nav [title="上一个"]'),
       today: pick('.today-btn'),
       jump: pick('.jump-btn'),
       view: pick('.view-switch button'),

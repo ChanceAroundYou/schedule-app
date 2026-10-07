@@ -339,6 +339,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
         <Btn
           variant="normal"
           size="sm"
+          className="today-btn"
           aria-pressed={atToday}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
