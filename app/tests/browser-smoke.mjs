@@ -1453,7 +1453,7 @@ try {
   await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '先出日期面板', 8000);
   const dp = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
-    const rows = [...pop.querySelectorAll('.wp-row')];
+    const rows = [...pop.querySelectorAll('.wp-head')];
     return {
       cells: pop.querySelectorAll('.jp-cell').length,
       cur: pop.querySelectorAll('.jp-cell.cur').length,
@@ -1472,11 +1472,45 @@ try {
   await clickEl(page, `document.querySelector('.when-pop [data-layer="time"]')`);
   const onlyOne = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
-    return [...pop.querySelectorAll('.wp-row')]
+    return [...pop.querySelectorAll('.wp-head')]
       .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(',');
   `);
   ok(onlyOne === 'date:关,time:开',
     '两层不能同时开，点了时间层日期层就收起，实际 ' + onlyOne);
+
+  // 日期行没值 → 那行写「跳过」。点它 = 没什么可清的，往前走一步到时间层
+  const dateAct = await evalJs(page, `
+    const r = [...document.querySelectorAll('.when-pop .wp-row')]
+      .find((x) => x.querySelector('.wp-head').dataset.layer === 'date');
+    return r.querySelector('.wp-act').textContent.trim();
+  `);
+  ok(dateAct === '跳过', '没值那行写「跳过」，实际 ' + JSON.stringify(dateAct));
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-row')]
+    .find((x) => x.querySelector('.wp-head').dataset.layer === 'date').querySelector('.wp-act')`);
+  const afterSkip = await evalJs(page, `
+    return [...document.querySelectorAll('.when-pop .wp-head')]
+      .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(',');
+  `);
+  ok(afterSkip === 'date:关,time:开', '点「跳过」跳到时间层，实际 ' + afterSkip);
+
+  /* 面板会**自己收起**了（选完分钟、或日期时间两样都齐 —— 需求 5），
+     所以下面每一步都得先保证「面板开着、要的那层也开着」。
+     这两个小工具就干这个，别在每个断言前面手写一遍。 */
+  const openWhen = async () => {
+    if (await evalJs(page, `return !!document.querySelector('.when-pop');`)) return;
+    await clickEl(page, `document.querySelector('.fast-clock')`);
+    await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开日期时间面板', 8000);
+  };
+  const openLayer = async (name) => {
+    await openWhen();
+    const isOpen = await evalJs(page,
+      `return document.querySelector('.when-pop [data-layer="${name}"]').getAttribute('aria-expanded') === 'true';`);
+    if (isOpen) return;
+    await clickEl(page, `document.querySelector('.when-pop [data-layer="${name}"]')`);
+    await waitFor(page,
+      `document.querySelector('.when-pop [data-layer="${name}"]').getAttribute('aria-expanded') === 'true'`,
+      name + ' 层打开', 8000);
+  };
 
   // 表盘：比抽屉里那个小一号（198 而不是 246），且在面板里居中
   const dial = await evalJs(page, `
@@ -1489,11 +1523,18 @@ try {
       right: +(w.right - f.right).toFixed(1),
       nums: pop.querySelectorAll('.cp-num').length,
       ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
+      nowParent: pop.querySelector('.cp-now').parentElement.className,
+      nowText: pop.querySelector('.cp-now').textContent.trim(),
     };
   `);
   ok(dial.size === 198, '面板里的表盘比抽屉里那个小一号，实际 ' + dial.size + 'px');
   ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
   ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
+  // 「现在」摆在时间显示行里（需求 4）：它拨的就是左边那两个数，
+  // 离得近才像同一个控件。原先它孤零零挂在表盘下面，和「清除时间」并排 ——
+  // 两个都长得像出口，但一个改值、一个清值，完全不是一类东西
+  ok(dial.nowParent === 'cp-display', '「现在」在时间显示行里、不在表盘下面，实际 ' + JSON.stringify(dial.nowParent));
+  ok(dial.nowText === '现在', '「现在」两个字还在，实际 ' + JSON.stringify(dial.nowText));
   ok(Math.abs(dial.left - dial.right) < 1,
     '表盘在面板里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right);
 
@@ -1502,19 +1543,28 @@ try {
   const pmNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
   ok(pmNums === '12,13,14,15,16,17,18,19,20,21,22,23',
     '下午那圈直接写 12–23（不是 1–12），实际 ' + pmNums);
+  // 表盘下面**不该有任何说明文字**（需求 7）：12 在顶部是画着的，
+  // 「每格 5 分钟」数一下就知道 —— 写出来只是把人当不会看
+  ok(await evalJs(page, `return !document.querySelector('.when-pop .cp-tip');`),
+    '表盘下面没有「选小时（12 在顶部）」这类提示文字');
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
-  const tip = await evalJs(page, `return document.querySelector('.when-pop .cp-tip').textContent.trim();`);
-  ok(/分钟/.test(tip), '选完小时自动进分钟档，实际 ' + JSON.stringify(tip));
+  // 选完小时自动进分钟档 —— 提示文字没了，改看显示行上哪个数是 active
+  const mode = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-display .cp-cell')].map((c) => c.classList.contains('active') ? 'active' : '-').join(',');`);
+  ok(mode === '-,active', '选完小时自动进分钟档（分钟那个数变成 active），实际 ' + JSON.stringify(mode));
   const minNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
   ok(minNums === '60,5,10,15,20,25,30,35,40,45,50,55',
     '分钟那圈写 60,5,…,55（顶端 60 就是 0 分），实际 ' + minNums);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
-  const shown = await evalJs(page, `return document.querySelector('.when-pop .cp-display').textContent.trim();`);
-  ok(shown === '15:30', '下午 3 点选出来是 24 小时制的 15:30，实际 ' + JSON.stringify(shown));
+  // 分钟一落定 = 这次选择走完了 → 面板**自己收起**（需求 5），不用再点任何按钮
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板自动收起', 8000);
+  const shown = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
+  ok(shown === '15:30', '下午 3 点选出来是 24 小时制的 15:30（面板已自己收起，值写在按钮上），实际 ' + JSON.stringify(shown));
 
   // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格。
-  // 注意先点一下表盘上的**小时格**切回小时档 —— 刚才选完 15 已经自动跳到分钟档了，
+  // 面板刚自己收起了，先重新打开（openLayer 会连时间层一起打开）。
+  // 注意还要点一下表盘上的**小时格**切回小时档 —— 刚才选完 15 已经自动跳到分钟档了，
   // 分钟那圈里根本没有「12」这一格（标签是 60,5,…,55）
+  await openLayer('time');
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
   await clickEl(page, `document.querySelector('.when-pop .cp-display .cp-cell')`);
   const amNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
@@ -1522,13 +1572,15 @@ try {
     '上午那圈还是 12,1,…,11（和下午那圈正好对照），实际 ' + amNums);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板又自己收起', 8000);
   // 上面那排数字写的是 **24 小时制**：上午 12 点（午夜）就是 00。
   // 这是跟「下午那圈直接写 12–23」配套的 —— 点的是 15、上面显示 03 会让人以为点错了
-  const shown2 = await evalJs(page, `return document.querySelector('.when-pop .cp-display').textContent.trim();`);
+  const shown2 = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
   ok(shown2 === '00:30', '上午 12 点显示成 24 小时制的 00:30，实际 ' + JSON.stringify(shown2));
 
   // 表盘是**实时**的（没有「确定」）：标题行立刻跟着走，
   // 而按钮上写的是**生效值** —— 待办箱没有日期，所以只有第二行
+  await openLayer('time');
   const live = await evalJs(page, `
     return {
       row: document.querySelector('.when-pop [data-layer="time"] .wp-v').textContent.trim(),
@@ -1540,8 +1592,8 @@ try {
   ok(live.d === null && live.t === '00:30',
     '待办箱没有日期 → 按钮上只有第二行 00:30，实际 ' + JSON.stringify(live));
 
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '完成')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「完成」收起面板', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '收起')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「收起」收起面板', 8000);
 
   // 时间要真跟着任务落库 —— 只断言按钮是「选中了但没带上」的假通过
   const n0 = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
@@ -1592,7 +1644,7 @@ try {
   const first = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
     return {
-      open: [...pop.querySelectorAll('.wp-row')]
+      open: [...pop.querySelectorAll('.wp-head')]
         .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(','),
       drow: pop.querySelector('[data-layer="date"] .wp-v').textContent.trim(),
     };
@@ -1611,7 +1663,7 @@ try {
     return {
       cur: pop.querySelectorAll('.jp-cell.cur').length,
       curToday: pop.querySelectorAll('.jp-cell.cur.today').length,
-      open: [...pop.querySelectorAll('.wp-row')]
+      open: [...pop.querySelectorAll('.wp-head')]
         .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(','),
     };
   `);
@@ -1623,7 +1675,7 @@ try {
   await clickEl(page, `document.querySelector('.when-pop .jp-cell.cur')`);
   const swapped = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
-    return [...pop.querySelectorAll('.wp-row')]
+    return [...pop.querySelectorAll('.wp-head')]
       .map((b) => b.dataset.layer + (b.getAttribute('aria-expanded') === 'true' ? ':开' : ':关')).join(',');
   `);
   ok(swapped === 'date:关,time:开',
@@ -1633,8 +1685,8 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
   // 分钟那圈顶端那格写的是 60（就是 0 分），没有「0」这一格
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '完成')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「完成」收起面板', 8000);
+  // 日期早定了、分钟刚落定 → 两样都齐，面板自己收起（需求 5），不用点任何出口
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '日期时间都齐了，面板自己收起', 8000);
   const pill2 = await evalJs(page, `
     const d = document.querySelector('.fast-clock .fc-d');
     const t = document.querySelector('.fast-clock .fc-t');
@@ -1642,6 +1694,23 @@ try {
   `);
   ok(pill2.d === btn.todayMD && pill2.t === '15:00',
     '按钮上两行同时在：日期一行、时间一行，实际 ' + JSON.stringify(pill2));
+
+  // 这两行**必须一模一样**（需求 2）：字号、字重、颜色都同。
+  // 原先日期那行 600、时间那行是 --text-3 的浅灰，同一个按钮里两行字
+  // 看着像两种不同的东西。这里读**计算样式**，不是读类名 ——
+  // 类名一样不代表渲染出来一样（`.fast-clock.set` 那次就是这么漏过去的）
+  const twoLines = await evalJs(page, `
+    const cs = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const s = getComputedStyle(el);
+      return { size: s.fontSize, weight: s.fontWeight, color: s.color };
+    };
+    return { d: cs('.fast-clock .fc-d'), t: cs('.fast-clock .fc-t') };
+  `);
+  ok(twoLines.d && twoLines.t && twoLines.d.size === twoLines.t.size
+      && twoLines.d.weight === twoLines.t.weight && twoLines.d.color === twoLines.t.color,
+    '按钮上日期那行和时间那行字体完全一样，实际 ' + JSON.stringify(twoLines));
 
   const n1 = await evalJs(page, `return document.querySelectorAll('[data-scope^="day:"] .task-el').length;`);
   await setText('.fast-add input', '两层一起');
@@ -1662,17 +1731,40 @@ try {
   ok(made2 && /^\d{4}-\d{2}-\d{2}$/.test(made2.date || ''),
     '选的日期跟着任务落库（不是只显示在按钮上），实际 ' + JSON.stringify(made2));
 
-  /* ---- 4b. 「不设置」要能压过 tab 默认的日期 ---- */
+  /* ---- 4b. 每行的「清空 / 跳过」要能压过 tab 默认的日期（需求 3） ---- */
   // 这一条守的是 `undefined`（没表过态 → 用默认）与 `null`（明确说不要）必须分开：
-  // 混成一个的话，在「今天」页上点「不设置」会被默认的今天顶回来，点了跟没点一样
-  await clickEl(page, `document.querySelector('.fast-clock')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '面板再打开', 8000);
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '不设置')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '「不设置」等价于选完了、面板收起', 8000);
+  // 混成一个的话，在「今天」页上点「清空」会被默认的今天顶回来，点了跟没点一样。
+  // 「不设置」现在拆成两个、贴着各自标题行右边，文案跟着状态走。
+  await openWhen();
+  const acts = await evalJs(page, `
+    return [...document.querySelectorAll('.when-pop .wp-row')].map((r) => ({
+      layer: r.querySelector('.wp-head').dataset.layer,
+      act: r.querySelector('.wp-act').textContent.trim(),
+    }));
+  `);
+  // 日期是「今天」页的**默认值** —— 它也算「有值」，所以那行写「清空」；
+  // 时间没值，那行写「跳过」
+  ok(acts.map((a) => a.act).join(',') === '清空,跳过',
+    '有值那行写「清空」、没值那行写「跳过」（tab 默认的日期也算有值），实际 ' + JSON.stringify(acts));
+
+  // 「跳过」不是死按钮：时间行没值，点它 = 没什么可跳的了 → 收起面板
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-row')].find((r) => r.querySelector('.wp-head').dataset.layer === 'time').querySelector('.wp-act')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '没值那行的「跳过」收起面板', 8000);
+
+  // 再打开，点日期行的「清空」—— 这一下要能压过「今天」页的默认日期
+  await openWhen();
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-row')].find((r) => r.querySelector('.wp-head').dataset.layer === 'date').querySelector('.wp-act')`);
   const cleared = await evalJs(page, `
     return document.querySelector('.fast-clock .fc-when') ? document.querySelector('.fast-clock .fc-when').textContent.trim() : null;
   `);
-  ok(cleared === null, '「不设置」之后按钮上不再显示日期 / 时间，实际 ' + JSON.stringify(cleared));
+  ok(cleared === null, '点日期行的「清空」之后按钮上不再显示日期（压过了「今天」页的默认值），实际 ' + JSON.stringify(cleared));
+  const actAfter = await evalJs(page, `
+    return [...document.querySelectorAll('.when-pop .wp-row')].map((r) => r.querySelector('.wp-act').textContent.trim()).join(',');
+  `);
+  ok(actAfter === '跳过,跳过', '清空之后那行改写成「跳过」，实际 ' + JSON.stringify(actAfter));
+  // 「清空」刻意**不关**面板（多半是想重选），这里手动收起，免得它挡住下面
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .wp-foot button')].find((b) => b.textContent.trim() === '收起')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「收起」收起面板', 8000);
 
   await setText('.fast-add input', '不设置那条');
   await evalJs(page, `
@@ -1740,7 +1832,7 @@ try {
       left: +(f.left - p.left).toFixed(1),
       right: +(p.right - f.right).toFixed(1),
       foot: [...document.querySelectorAll('.clock-pop .cp-foot button')].map((b) => b.textContent.trim()).join('/'),
-      quick: [...document.querySelectorAll('.clock-pop .cp-quick button')].map((b) => b.textContent.trim()).join('/'),
+      quick: [...document.querySelectorAll('.clock-pop .cp-now')].map((b) => b.textContent.trim()).join('/'),
     };
   `);
   // 抽屉里那只**不缩小**：`.clock-pop` 的 278px 宽度是按 246 的表盘配出来的
@@ -2022,7 +2114,7 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.replace(/\\d+/g, '').trim() === '今天')`);
 
   /* ---- 窄屏的浮动 + 号（需求 1A / 3C） ---- */
-  // 窄屏默认收起成 FAB、点一下展开、再点收起。切 tab 文本不丢由 React 状态保证
+  // 窄屏默认收起成 FAB、点一下展开。切 tab 文本不丢由 React 状态保证
   // （QuickAdd 不随 tab 切换卸载，横条只是 display:none），这里证的是收起 / 展开这条接线。
   //
   // ⚠️ `evalJs` 把表达式包成 `(async () => { <表达式> })()` —— **必须自己写 `return`**，
@@ -2033,11 +2125,38 @@ try {
     '窄屏下横条默认收起');
   await clickEl(page, `document.querySelector('.fast-fab')`);
   await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display !== 'none'`, '点 + 号展开横条', 8000);
-  ok(await evalJs(page, `return document.querySelector('.fast-fab').getAttribute('aria-expanded') === 'true';`),
-    '展开后 FAB 变成 ×（aria-expanded=true）');
-  // 再点收起
-  await clickEl(page, `document.querySelector('.fast-fab')`);
-  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '再点收起横条', 8000);
+  // 展开之后 FAB **整个消失**，收起键搬进横条里（需求 1）：
+  // 那个 48px 的圆比横条还高，贴在横条右端时上下各探出约 6px，
+  // 看着就是「× 掉出了输入框」。横条里的按钮就该是横条的一部分。
+  ok(await evalJs(page, `return !document.querySelector('.fast-fab');`),
+    '展开后浮动 + 号消失（不再和横条抢位置）');
+  ok(await evalJs(page, `return !!document.querySelector('.fast-add .fast-collapse');`),
+    '横条里出现收起键');
+  // 收起键**在横条里面**，不探出横条的上下边 —— 这是需求 1 真正要守的那件事。
+  // （右边那条在 1280 下会读出 90 多像素的空隙，那是探针自己的毛病：
+  //   JS 被 matchMedia 的 Proxy 判成窄屏、CSS 仍按 1280 排版，于是 `.fast-hint`
+  //   也挤在这一行里。真机上 CSS 和 JS 都是窄屏，那个空隙不存在。）
+  const inBar = await evalJs(page, `
+    const bar = document.querySelector('.fast-add').getBoundingClientRect();
+    const x = document.querySelector('.fast-collapse').getBoundingClientRect();
+    const c = document.querySelector('.fast-clock').getBoundingClientRect();
+    return {
+      top: +(x.top - bar.top).toFixed(1),
+      bottom: +(bar.bottom - x.bottom).toFixed(1),
+      right: +(bar.right - x.right).toFixed(1),
+      sameRowAsClock: Math.abs(x.top - c.top) < 6,
+    };
+  `);
+  ok(inBar.top >= 0 && inBar.bottom >= 0,
+    '收起键不探出横条的上 / 下边，实际 上 ' + inBar.top + ' / 下 ' + inBar.bottom);
+  ok(inBar.right >= 0, '收起键也不探出横条的右边，实际 ' + inBar.right);
+  ok(inBar.sameRowAsClock,
+    '收起键和时钟按钮在同一行（不是被挤到第二行），实际 上 ' + inBar.sameRowAsClock);
+  // 点它收起
+  await clickEl(page, `document.querySelector('.fast-add .fast-collapse')`);
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '点收起键收起横条', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`),
+    '收起之后浮动 + 号回来了');
   // 重新展开，继续后面几节
   await clickEl(page, `document.querySelector('.fast-fab')`);
   await waitFor(page, `!!document.querySelector('.fast-add input')`, '重新展开');
@@ -2051,6 +2170,42 @@ try {
     })();
   `);
   await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
+
+  /* ---- 「保存」按钮：不用回车也能交（需求 6） ---- */
+  // 回车键还在，但不能再是**唯一**的路 —— 手机上「回车」是软键盘上那个小箭头，
+  // 找不着的人就只能干瞪眼。这一条证的是按钮在、点了真能交、空着的时候禁用。
+  const saveBtn = await evalJs(page, `
+    const b = document.querySelector('.fast-add .fast-save');
+    if (!b) return null;
+    const s = getComputedStyle(b);
+    return { disabled: b.disabled, text: b.textContent.trim(), display: s.display };
+  `);
+  ok(saveBtn && saveBtn.text === '保存', '横条上有「保存」按钮，实际 ' + JSON.stringify(saveBtn));
+  ok(saveBtn && saveBtn.display !== 'none', '「保存」按钮看得见（不是 display:none）');
+  // 空着的时候禁用：一个点下去没反应的按钮，比没有按钮更让人犯嘀咕
+  await setField('.fast-add input', '');
+  ok(await evalJs(page, `return document.querySelector('.fast-add .fast-save').disabled;`),
+    '没写字的时候「保存」是禁用的');
+  await setField('.fast-add input', '点保存交的');
+  ok(await evalJs(page, `return !document.querySelector('.fast-add .fast-save').disabled;`),
+    '写了字之后「保存」就能点了');
+  const nBefore = await evalJs(page, `return document.querySelectorAll('.task-el').length;`);
+  await clickEl(page, `document.querySelector('.fast-add .fast-save')`);
+  await waitFor(page, `document.querySelectorAll('.task-el').length > ${nBefore}`, '点「保存」任务出现', 8000);
+  const savedByBtn = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '点保存交的');
+      return t ? t.title : null;
+    })()
+  `, '点「保存」的任务落盘', 8000);
+  ok(savedByBtn === '点保存交的', '「保存」真的把任务交出去了（不是只清输入框），实际 ' + JSON.stringify(savedByBtn));
+  // 交完之后输入框清空、按钮回到禁用态
+  ok(await evalJs(page, `return document.querySelector('.fast-add input').value === '';`),
+    '交完之后输入框清空');
+  ok(await evalJs(page, `return document.querySelector('.fast-add .fast-save').disabled;`),
+    '交完之后「保存」又回到禁用态');
+
   await clickEl(page, `[...document.querySelectorAll('.task-el')].find((x) => x.textContent.includes('写方案'))`);
   await waitFor(page, `!!document.querySelector('select[id$="-proj"]')`, '抽屉里的项目下拉');
   const optVal = await evalJs(page, `

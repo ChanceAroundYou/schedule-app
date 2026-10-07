@@ -193,7 +193,7 @@ export function WhenPop({
        - 已经有值 → 「清空」：把这个字段清成未设置，**面板留着**（多半是想重选）。
          清时间要连表盘一起复位，见上面 dialKey 那段。
        - 还没有值 → 「跳过」：没什么可清的，那就往前走一步 ——
-         日期行跳去时间层，时间行直接收起面板。
+         日期行跳去时间层，时间行没什么可跳的了，直接收起面板。
 
      两种状态下点下去都有明确后果，不留一个点了没反应的死按钮。 */
   const actOf = (key: 'date' | 'time') => {
@@ -207,7 +207,10 @@ export function WhenPop({
         },
       };
     }
-    return { label: '跳过', run: () => setLayer(key === 'date' ? 'time' : null) };
+    return {
+      label: '跳过',
+      run: () => { if (key === 'date') setLayer('time'); else onClose(); },
+    };
   };
 
   const row = (key: 'date' | 'time', label: string, value: string | null, text: string) => {
