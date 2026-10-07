@@ -9,7 +9,9 @@
 
 import * as D from './date.ts';
 import { toRepeat } from './repeat.ts';
-import type { Habit, LocalState, Role, Task, UiPrefs } from './types.ts';
+import type {
+  AccentKey, Habit, LocalState, Project, ProjectStatus, Role, StyleKey, Task, ThemeMode, UiPrefs,
+} from './types.ts';
 
 /* ------------------------------------------------------------------ id */
 
@@ -358,13 +360,172 @@ export function makeHabit(title: string, order: number, calId: string, id?: stri
   };
 }
 
+/* ================================ 项目 ================================ */
+
+/** 超过这么多天没动就在项目页里标 ⚠。**只在项目页标，不主动弹**（用户裁决） */
+export const STALE_DAYS = 30;
+
+export const STATUS_LABEL: Record<ProjectStatus, string> = {
+  active: '推进中', waiting: '等外部', paused: '搁置', done: '收尾',
+};
+
+const STATUS_ALL: readonly ProjectStatus[] = ['active', 'waiting', 'paused', 'done'];
+
+export function hydrateProject<T extends Partial<Project> & MetaLike>(e: T): T & Project {
+  const p = e as T & Project;
+  if (p.calId === undefined) p.calId = '';
+  if (p.name === undefined) p.name = '未命名项目';
+  if (p.note === undefined) p.note = '';
+  if (p.next === undefined) p.next = '';
+  if (p.progress === undefined) p.progress = null;
+  if (p.createdAt === undefined) p.createdAt = 0;
+  if (!STATUS_ALL.includes(p.status)) p.status = 'active';
+  // 进度写成 0–100 之外的数就钳回去 —— 界面上那是个 0..100 的输入框，
+  // 但盘上那份可能是手改的
+  if (p.progress !== null) {
+    const n = Number(p.progress);
+    p.progress = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null;
+  }
+  return p;
+}
+
+export function makeProject(name: string, calId: string, id?: string): Project {
+  const p: Project = {
+    id: id || newId(),
+    calId,
+    name: name || '未命名项目',
+    note: '',
+    status: 'active',
+    next: '',
+    progress: null,
+    createdAt: Date.now(),
+    _ts: {},
+    _dev: {},
+  };
+  return p;
+}
+
+export function allProjects(s: LocalState): Project[] { return Object.values(s.projects); }
+
+export function liveProjects(s: LocalState): Project[] {
+  return allProjects(s).filter((p) => !isGone(p));
+}
+
+export function projectById(s: LocalState, id: string | null | undefined): Project | null {
+  if (!id) return null;
+  const p = s.projects[id];
+  return p && !isGone(p) ? p : null;
+}
+
+/** 挂在某个项目上的任务（含已完成的 —— 算进度要用）。墓碑不算 */
+export function tasksOfProject(s: LocalState, id: string): Task[] {
+  return liveTasks(s).filter((t) => t.projectId === id);
+}
+
+/**
+ * 泳道里那一列。三态：`done` 被 `done` 决定，`doing` 只管「没做完但在做」。
+ *
+ * 用 `!!t.doing` 而不是 `t.doing === true`：远端来的可能是 0/1，
+ * hydrateTask 不碰这个字段（它可选），别在这里被真值判断坑到。
+ */
+export function projectColumn(t: Task): 'todo' | 'doing' | 'done' {
+  if (t.done) return 'done';
+  return t.doing ? 'doing' : 'todo';
+}
+
+/**
+ * 0–100。**手填值优先**，否则 = 关联任务里已完成的比例。
+ *
+ * 没有关联任务时返回 0 而不是 100 —— 「一个任务都没有」不等于「做完了」，
+ * 那是「还没拆解」。泳道头会把这种情况写成 0/0 让用户看出来。
+ */
+export function projectProgress(s: LocalState, id: string): number {
+  const p = projectById(s, id);
+  if (p && p.progress !== null) return p.progress;
+  const list = tasksOfProject(s, id);
+  if (!list.length) return 0;
+  return Math.round((list.filter((t) => t.done).length / list.length) * 100);
+}
+
+/**
+ * 最后活动时刻 = 项目自身各字段的 `_ts` ∪ 关联任务的 `_ts` / `doneAt` / `createdAt`
+ * 取最大。
+ *
+ * **只用会同步的数据。** `_ts` / `_dev` 虽然只存在本地，但 `applyRemote` 会把
+ * 远端来的 `ts` 写进 `_ts`，所以它是**收敛的**、跨设备一致。
+ * **不要另加一个 `touchedAt` 字段** —— 那需要「读一次就写一次」，
+ * 会把只读浏览变成写入，白白产生 op，而且每台设备的「上次看」互相覆盖。
+ */
+export function projectTouchedAt(s: LocalState, id: string): number {
+  const p = projectById(s, id);
+  if (!p) return 0;
+  let max = 0;
+  const seen = (o: Record<string, number> | undefined) => {
+    for (const v of Object.values(o || {})) if (v > max) max = v;
+  };
+  seen(p._ts);
+  if (p.createdAt > max) max = p.createdAt;
+  for (const t of tasksOfProject(s, id)) {
+    seen(t._ts);
+    if (t.createdAt > max) max = t.createdAt;
+    if (t.doneAt && t.doneAt > max) max = t.doneAt;
+  }
+  return max;
+}
+
+/** 多少天没动了。算不出（没有任何时间戳）时给 0，别报一个吓人的巨大数 */
+export function projectStaleDays(s: LocalState, id: string, now = Date.now()): number {
+  const at = projectTouchedAt(s, id);
+  if (!at) return 0;
+  return Math.max(0, Math.floor((now - at) / 86400000));
+}
+
+/** 最久没动的排前面 —— 面板就是用来把「快被忘掉的那个」顶到眼前的 */
+export function sortProjects(s: LocalState, list: Project[]): Project[] {
+  return list.slice().sort((a, b) => {
+    const d = projectTouchedAt(s, a.id) - projectTouchedAt(s, b.id);
+    if (d) return d;
+    return a.name.localeCompare(b.name);   // 都是 0（新建还没来得及动）时给个稳定序
+  });
+}
+
 /* --------------------------------------------------------------- 界面偏好 */
 
 // 加页面时这里必须一起加：normalizeUi 会把不在表里的 nav 兜回 'today'
 // （旧版的 nav === 'notes' 就是这么处理的），漏了的话「刷新一下跳到别的页」。
 // 另外 navOrder 也是照着这张表补全的，老用户本地存的那份顺序里没有新页 ——
 // 补在这里，他们不用清 localStorage 就能看见它。
-const NAV_ALL = ['inbox', 'today', 'overdue', 'calendar', 'habits', 'done', 'ai', 'trash'];
+const NAV_ALL = [
+  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'done', 'ai', 'trash', 'settings',
+];
+
+/**
+ * 可自定义的功能项 —— `navOrder` 与 `ui.tabs` 都只从这里面选。
+ *
+ * **设置不在里面，这是有意的**：它的入口固定在侧栏底部与「更多」抽屉里。
+ * 放进来就等于允许用户把它自己隐藏掉，而「设置」正是他唯一能去改回来的地方 ——
+ * 藏起来之后没有第二条路，界面上就是一个死角。
+ */
+export const CUSTOMIZABLE: readonly string[] = NAV_ALL.filter((k) => k !== 'settings');
+
+/** 底栏最多放几项。「更多」恒占最后一格，所以总格数 ≤ 5（HIG 的 2–5 项） */
+export const TAB_MAX = 4;
+
+/**
+ * 底栏兜底。**空栏等于没有导航**，所以过滤后不足 1 项就回落到这里。
+ *
+ * 顺序与 navOrder 的前 4 项一致 —— 底栏是 navOrder 的子集（见 normalizeUi），
+ * 兜底值要是另排一套，用户会看到「恢复默认之后底栏顺序变了」。
+ */
+const DEFAULT_TABS: readonly string[] = ['inbox', 'today', 'overdue', 'calendar'];
+
+/* 外观轴的白名单。**故意与 ui/theme.ts 的 ACCENTS / STYLES 重复** ——
+   domain/ 不许引 ui/（那一层碰 DOM），而这两个列表的职责不同：
+   那边是「渲染哪些选项」（Record<Key, …>，少一个键编译不过），
+   这边是「磁盘上这个值还认不认」。加了新键要两边都补。 */
+const ACCENT_ALL: readonly AccentKey[] = ['jade', 'azure', 'clay', 'plum', 'gold', 'slate'];
+const STYLE_ALL: readonly StyleKey[] = ['soft', 'flat', 'notion'];
+const THEME_ALL: readonly ThemeMode[] = ['auto', 'light', 'dark'];
 
 export function defaultUi(): UiPrefs {
   return {
@@ -372,9 +533,12 @@ export function defaultUi(): UiPrefs {
     view: 'day',
     cursor: D.today(),
     theme: 'light',
+    accent: 'jade',
+    style: 'soft',
     search: '',
-    navOrder: NAV_ALL.slice(),
+    navOrder: CUSTOMIZABLE.slice(),
     navBottom: ['trash'],
+    tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     cal: null,
   };
@@ -384,7 +548,11 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   const d = defaultUi();
   const ui: UiPrefs = { ...d, ...(raw || {}) };
 
-  if (ui.theme !== 'dark') ui.theme = 'light';
+  // 三档都要认。写成 `!== 'dark' ? 'light'` 会把用户选的「跟随系统」每次刷新打回
+  // 常亮 —— 而 auto 是合法值，不是「没选」。
+  if (!THEME_ALL.includes(ui.theme)) ui.theme = 'light';
+  if (!ACCENT_ALL.includes(ui.accent)) ui.accent = 'jade';
+  if (!STYLE_ALL.includes(ui.style)) ui.style = 'soft';
   // cal 只保证是字符串或 null。它到底还存不存在要等服务器把集列表发下来，
   // 那一步在 store.setCals 里做 —— normalizeUi 是纯函数，不知道有哪些集。
   if (ui.cal != null && typeof ui.cal !== 'string') ui.cal = null;
@@ -400,10 +568,12 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   delete bag.noteId;
   delete bag.listFilter;
 
+  // order 只收 CUSTOMIZABLE 里的键：设置不进这个列表（见上面的注释）。
+  // 过滤 + 补全用的是同一个列表，两边不一致时会出现「过滤掉的又被补回来」。
   const order = Array.isArray(ui.navOrder)
-    ? ui.navOrder.filter((k) => NAV_ALL.includes(k))
+    ? ui.navOrder.filter((k) => CUSTOMIZABLE.includes(k))
     : [];
-  for (const k of NAV_ALL) if (order.indexOf(k) < 0) order.push(k);
+  for (const k of CUSTOMIZABLE) if (order.indexOf(k) < 0) order.push(k);
   ui.navOrder = order;
 
   // navBottom 不能用「空则默认」的写法 —— 那会把用户主动拖出底部的垃圾箱又塞回去。
@@ -413,7 +583,45 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
     : null;
   ui.navBottom = bottom === null ? ['trash'] : bottom;
 
+  // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
+  // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，
+  // 两个列表各排各的，用户不知道为什么。
+  //
+  // 与 navBottom 不同：**这里空栏没有合法解释**（底栏空着等于没有
+  // 导航），所以 [] 与「没设置」一样回落到默认，不区分。
+  const tabSet = new Set(
+    Array.isArray(ui.tabs) ? ui.tabs.filter((k) => CUSTOMIZABLE.includes(k)) : [],
+  );
+  const tabList = order.filter((k) => tabSet.has(k)).slice(0, TAB_MAX);
+  ui.tabs = tabList.length ? tabList : DEFAULT_TABS.slice();
+
   return ui;
+}
+
+/* -------------------------------------------------------- 快速添加的默认值 */
+
+/**
+ * 快速添加的默认日期 / 时间 —— 由**当前所在 tab** 决定。
+ *
+ * 抽成纯函数是为了能被单测锁住：这张表是「界面偏好 → 新任务默认值」的映射，
+ * 留在 Shell.tsx 里就只能靠浏览器探针测。
+ *
+ * `todayIso` 注入而不是内部取 `D.today()` —— 测试要能固定「今天」。
+ */
+export interface QuickDefaults {
+  date: string | null;
+  time: string | null;
+}
+
+/* 只读 `nav` 与 `cursor`，所以收 `Partial<UiPrefs>` —— 单测可以只摆这两样，
+   不必为了测一张映射表去凑齐 theme / accent / tabs 那一串无关字段。 */
+export function quickDefaults(ui: Partial<UiPrefs>, todayIso: string): QuickDefaults {
+  // 待办箱：默认**无日期、无时间** —— 丢进去的就是「还没定哪天做」的事
+  if (ui.nav === 'inbox') return { date: null, time: null };
+  // 日程页：默认落在**当前看的那天**（cursor 是今天就是今天，否则 cursor）
+  if (ui.nav === 'calendar') return { date: ui.cursor || todayIso, time: null };
+  // 今天 / 逾期 / 打卡 / 已完成 / 项目：默认今天
+  return { date: todayIso, time: null };
 }
 
 /* -------------------------------------------------------- v3 → v4 迁移 */

@@ -653,3 +653,160 @@ test('没登录读写配置一律 401', async () => {
     (await api('PUT', '/api/ai/settings', { body: { model: 'x' } })).status, 401,
   );
 });
+
+/* ================================================================ 项目 */
+
+test('项目实体走的是和任务同一条通道：推上去、拉得回、快照里有', async () => {
+  const p = op('proj-1', { name: '星星包', status: 'active', next: '排期' }, 20000, 'devA', 'project');
+  const r = await push([p]);
+  assert.deepStrictEqual(r.body.applied, [p.opId], 'project 不该被 ENTITIES 挡下');
+
+  const snap = await snapshot();
+  assert.ok(snap.projects, '快照必须带上 projects 这一桶');
+  assert.strictEqual(snap.projects['proj-1'].name, '星星包');
+  assert.strictEqual(snap.projects['proj-1'].status, 'active');
+  assert.strictEqual(snap.projects['proj-1'].calId, CAL, '每条都要带 calId，客户端据此归位');
+
+  // 增量这一路也要认得它 —— 否则第二台设备永远看不到别人改的项目
+  const cur = await api('POST', '/api/sync', { token: dad.token, body: { cursor: 0, ops: [] } });
+  const delta = await api('POST', '/api/sync', {
+    token: dad.token,
+    body: { cursor: cur.body.cursor, ops: [op('proj-1', { next: '已排期' }, 21000, 'devA', 'project')] },
+  });
+  const ch = delta.body.changes.find((c) => c.entity === 'project' && c.field === 'next');
+  assert.ok(ch, 'project 的增量必须能拉到');
+  assert.strictEqual(ch.value, '已排期');
+});
+
+test('项目墓碑不进快照，但仍然留库供别的设备拉', async () => {
+  await push([op('proj-2', { name: '要删的' }, 22000, 'devA', 'project')]);
+  await push([op('proj-2', { deleted: true, deletedAt: 23000 }, 23000, 'devA', 'project')]);
+
+  assert.ok(!(await snapshot()).projects['proj-2'], '墓碑不该出现在快照里');
+
+  const rows = db.allFields(calsOf(dad.userId))
+    .filter((r) => r.entity === 'project' && r.entity_id === 'proj-2' && r.field === 'deleted');
+  assert.strictEqual(rows.length, 1, '墓碑必须留库');
+});
+
+test('写 project 也要过权限：非成员推不进去', async () => {
+  // 把关点只有 applyOps 一处，所以这里证的是「project 没绕过它」。
+  // 用 mom：她这时已经被踢出 CAL 了，推任何东西都该被挡。
+  const sneaky = op('proj-1', { name: '偷改的' }, 24000, 'devMom', 'project', CAL);
+  const r = await push([sneaky], 1, mom.token);
+  assert.ok(!r.body.applied.includes(sneaky.opId), '非成员不该写进去');
+  assert.strictEqual(r.body.rejected[0].code, 'forbidden');
+
+  const after = (await snapshot(dad.token)).projects;
+  assert.strictEqual(after['proj-1'].name, '星星包', 'dad 的项目名字不能被 mom 改掉');
+});
+
+test('认不出的实体仍然被拒 —— 加了 project 不等于放开了口子', async () => {
+  const bad = op('x', { a: 1 }, 25000, 'devA', 'projectX');
+  const r = await push([bad]);
+  assert.strictEqual(r.body.rejected[0].code, 'bad_request');
+  assert.strictEqual(r.body.applied.length, 0);
+});
+
+/* ============================================================ 改口令 */
+
+/** 拿一只属于某个账户的票（每次都要现拿 —— 改口令会把旧的全部作废） */
+async function loginAs(name, password) {
+  const r = await api('POST', '/api/auth/login', { body: { name, password } });
+  assert.strictEqual(r.status, 200, `登录 ${name} 失败: ${JSON.stringify(r.body)}`);
+  return r.body.token;
+}
+
+/**
+ * 改口令的三条不变量，一条都不能少：
+ *   1. **截止时间之前签出去的票全部作废** —— 这是改口令最主要的目的
+ *   2. **用户不会被踢出去** —— 响应里带回一只新 token，客户端换上就继续
+ *   3. 没改成的时候**什么都不动**（旧票照旧有效，口令照旧是旧的）
+ *
+ * 这几条**复用 dad / mom**，不注册新账户 —— 注册限速是每 IP 每小时 10 次，
+ * 每个用例新开一个号会在几条之后撞上 429（实测踩过）。
+ * 票也是**每条现拿**：改口令会作废同一个人名下所有旧票，拿上一条留下的
+ * token 当输入会莫名其妙地先 401。
+ */
+test('改口令：改动之前签的票全废，新 token 换上，新口令能登录', async () => {
+  const t0 = await loginAs('妈妈', 'mom-pass-1');
+  const t1 = await loginAs('妈妈', 'mom-pass-1');   // 「另一台设备」
+  assert.strictEqual((await api('GET', '/api/me', { token: t1 })).status, 200, '改之前两台都是好的');
+
+  const r = await api('POST', '/api/auth/password', {
+    token: t0, body: { oldPassword: 'mom-pass-1', newPassword: 'brand-new-99' },
+  });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.ok, true);
+  assert.ok(r.body.token && r.body.token !== t0, '响应里要带一只新 token');
+
+  // 1. 截止时间之前签的票（含请求里用的那一只）全部作废
+  assert.strictEqual((await api('GET', '/api/me', { token: t0 })).status, 401,
+    '改动之前签的票必须全部作废 —— 被偷走的那只就在里面');
+  assert.strictEqual((await api('GET', '/api/me', { token: t1 })).status, 401,
+    '另一台设备的旧票更是要废掉');
+
+  // 2. 换上的那只继续能用 —— 用户感知不到这次替换
+  assert.strictEqual((await api('GET', '/api/me', { token: r.body.token })).status, 200,
+    '换上新 token 之后照常用，不重新登录、不被打断');
+
+  // 新口令能登录，旧口令不行
+  assert.strictEqual((await api('GET', '/api/me', { token: await loginAs('妈妈', 'brand-new-99') })).status, 200);
+  assert.strictEqual((await api('POST', '/api/auth/login', { body: { name: '妈妈', password: 'mom-pass-1' } })).status, 401);
+});
+
+test('改口令：比请求所用那张票更晚签的票也一并作废（按时刻切，不是按 iat）', async () => {
+  // 先登一次，再用**它之后**签的另一张票去改口令 —— 要证的正是
+  // 「晚签的那些也会被作废」。拿 iat 当截止时间的话，这一条会漏过去。
+  const earlier = await loginAs('爸爸', 'family-pass-1');
+  const token = await loginAs('爸爸', 'family-pass-1');
+  const later = await loginAs('爸爸', 'family-pass-1');
+
+  await api('POST', '/api/auth/password', {
+    token, body: { oldPassword: 'family-pass-1', newPassword: 'dad-new-2026' },
+  });
+
+  assert.strictEqual((await api('GET', '/api/me', { token: earlier })).status, 401);
+  assert.strictEqual((await api('GET', '/api/me', { token: later })).status, 401,
+    '比请求所用那张票更晚签的也要作废');
+  assert.strictEqual((await api('GET', '/api/me', { token })).status, 401);
+});
+
+test('改口令：旧密码不对时不改，旧票照旧有效', async () => {
+  const t = await loginAs('妈妈', 'brand-new-99');
+  const r = await api('POST', '/api/auth/password', {
+    token: t, body: { oldPassword: '猜错了', newPassword: 'sneaky-1234' },
+  });
+  assert.strictEqual(r.status, 401);
+
+  // 什么都不能动：票还是那只，口令还是旧的
+  assert.strictEqual((await api('GET', '/api/me', { token: t })).status, 200);
+  assert.strictEqual((await api('POST', '/api/auth/login', { body: { name: '妈妈', password: 'brand-new-99' } })).status, 200);
+  assert.strictEqual((await api('POST', '/api/auth/login', { body: { name: '妈妈', password: 'sneaky-1234' } })).status, 401);
+});
+
+test('改口令：新口令不合规时返回 400，口令不变', async () => {
+  const t = await loginAs('爸爸', 'dad-new-2026');
+  const short = await api('POST', '/api/auth/password', {
+    token: t, body: { oldPassword: 'dad-new-2026', newPassword: '123' },
+  });
+  assert.strictEqual(short.status, 400);
+  assert.strictEqual(short.body.error, '密码至少 6 位');
+
+  // 「全是数字」那一条也走 passwordProblem，别在这里另写一套规则
+  const digits = await api('POST', '/api/auth/password', {
+    token: t, body: { oldPassword: 'dad-new-2026', newPassword: '123456' },
+  });
+  assert.strictEqual(digits.status, 400);
+  assert.ok(digits.body.error.includes('数字'), digits.body.error);
+
+  // 校验不通过就在改之前挡下 —— 口令一个字都不能被改掉
+  assert.strictEqual((await api('POST', '/api/auth/login', { body: { name: '爸爸', password: 'dad-new-2026' } })).status, 200);
+});
+
+test('改口令接口要登录：没带票进不来', async () => {
+  const r = await api('POST', '/api/auth/password', {
+    body: { oldPassword: 'x', newPassword: 'y-y-y-y-y' },
+  });
+  assert.strictEqual(r.status, 401);
+});

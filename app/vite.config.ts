@@ -1,11 +1,21 @@
 import { defineConfig } from 'vite';
+import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+// 版本号从 package.json 读，**不在源码里再抄一份** —— 抄一份的下场是
+// 发版时改了 package.json 忘了改 src，设置页上「关于」那张卡永远停在上一个版本。
+// 用 readFileSync 而不是 `import pkg from './package.json'`：vite.config.ts
+// 不在 tsconfig 的 include 里，走 JSON import 要额外伺候 import assertions。
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 export default defineConfig({
   // 相对路径：产物要跑在 https://…/schedule/ 这个子目录下，
   // 用绝对路径 /assets/… 会指到站点根上去，直接白屏
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), tailwindcss()],
   build: {
     outDir: '../dist',

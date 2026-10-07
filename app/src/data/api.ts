@@ -69,7 +69,10 @@ export function setCachedUser(u: PublicUser | null): void {
   } catch (_) { /* 隐私模式，忽略 */ }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function req<T>(
+  method: string, path: string, body?: unknown,
+  opts: { keepTokenOn401?: boolean } = {},
+): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = 'Bearer ' + token;
@@ -94,8 +97,13 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   }
 
   if (!res.ok) {
-    // token 失效就地清掉，避免后面每个请求都白跑一趟 401
-    if (res.status === 401) setToken(null);
+    // token 失效就地清掉，避免后面每个请求都白跑一趟 401。
+    //
+    // **但「当前密码输错了」那条 401 是例外**：它说的是这一只请求里
+    // 附带的 `oldPassword` 不对，**会话本身好好的**。照这里清掉 token 的话，
+    // 用户手一抖打错一个字就会被自己踢出去，而他要做的只是重输一遍。
+    // 用一个 opt 表达这个例外，而不是在调用点 try/catch —— 后者必然会漏。
+    if (res.status === 401 && !opts.keepTokenOn401) setToken(null);
     const b = data as { error?: string; code?: string } | null;
     throw new ApiError(res.status, (b && b.error) || ('请求失败（' + res.status + '）'), b?.code);
   }
@@ -120,6 +128,23 @@ export const api = {
     req<AuthResult>('POST', 'auth/login', { name, password }),
 
   logout: () => req<{ ok: boolean }>('POST', 'auth/logout', {}),
+
+  /**
+   * 改口令。
+   *
+   * 服务器会**作废掉改动之前签发的所有 token**（包括请求里用的那一只），
+   * 并在响应里带回一只新的 —— 所以这里必须立刻换上，否则下一次请求就 401。
+   * 用户感知不到这个替换：不重新登录、不打断正在进行的操作。
+   */
+  changePassword: async (oldPassword: string, newPassword: string) => {
+    const r = await req<AuthResult>(
+      'POST', 'auth/password', { oldPassword, newPassword },
+      { keepTokenOn401: true },
+    );
+    setToken(r.token);
+    setCachedUser(r.user);
+    return r;
+  },
 
   /** 启动只发这一个请求：我是谁、我有哪些集、谁邀请了我 */
   me: () => req<{ user: PublicUser; cals: Cal[]; invites: Invite[] }>('GET', 'me'),

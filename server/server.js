@@ -107,6 +107,11 @@ function currentUser(req) {
   const payload = auth.verifyToken(m[1], SECRET);
   if (!payload) return null;
   if (db.isRevoked(payload.jti)) return null;      // 已登出
+  // 改口令之后，截止时间之前签发的 token 全部作废。查一次表很便宜 ——
+  // 这是**每一条**鉴权请求都要过的路，别为了省这一下把判断挪进各个 handler。
+  // 没有 iat 的老 token 按 0 算：一旦有人改过口令，它们一起作废。
+  const iat = typeof payload.iat === 'number' ? payload.iat : 0;
+  if (db.pwCutoffOf(payload.sub, auth.TOKEN_TTL_MS) > iat) return null;
   const user = db.findUserById(payload.sub);
   if (!user) return null;
   return { payload, user };
@@ -212,6 +217,56 @@ const handlers = {
   'POST /api/auth/logout': (ctx, me) => {
     db.revokeJti(me.payload.jti, me.payload.exp);
     return { status: 200, body: { ok: true } };
+  },
+
+  /**
+   * 改口令。
+   *
+   * **当前这台保留登录**（用户改完密码不该被自己踢出去），
+   * **其他设备上的旧票全部作废** —— 这是改密码最主要的目的。
+   *
+   * 截止时间 = **这一刻的 `Date.now()`**，不是手上这只票的 `iat`。
+   *
+   * 用 `iat` 会漏票：判据是「截止时间 > iat 才作废」，而「另一台设备在改口令
+   * 之前几毫秒又登了一次」拿到的票，iat 比手上这只**还大**，判据压根管不到它 ——
+   * 而它恰恰是这次要作废的目标。用「这一刻」就把所有**已经签出去**的票
+   * 一网打尽，一个都不漏。
+   *
+   * 手上这只也作废（它的 iat 一定 < 截止时间）。**用户不会被踢出去**：
+   * 响应里带回一只新 token，客户端换上就继续了（`api.changePassword` 里做这一步），
+   * 用户感知不到替换。
+   *
+   * 顺序很要紧：**取截止时间要排在 `issueToken` 之前**，否则新签发的那只
+   * iat 可能 ≤ 截止时间，被自己这一刀砍掉。中间隔着一次 scrypt，正常都是
+   * 差几十毫秒，但靠「正常」不算数。
+   *
+   * `pruneRevoked` 不会把这条记录删掉 —— `expires_at` 是 `cutoff + TOKEN_TTL_MS`，
+   * 不是 cutoff（见 db.revokeBefore）。
+   *
+   * 返回**新 token**：客户端换上就能继续用，不必退出再登录一次。
+   */
+  'POST /api/auth/password': (ctx, me) => {
+    const ip = rl.clientIp(ctx.req);
+    // 改口令要试旧密码，所以限速口径和登录一样（IP + 用户名两头都记）
+    const limited = rl.hitBoth([`pw-ip:${ip}`, `pw:${me.user.id}`], 10, 15 * 60 * 1000);
+    if (!limited.ok) return tooMany(limited);
+
+    const oldPassword = String(ctx.body.oldPassword || '');
+    const newPassword = String(ctx.body.newPassword || '');
+
+    const bad = auth.passwordProblem(newPassword);
+    if (bad) return { status: 400, body: { error: bad } };
+    if (!auth.verifyPassword(oldPassword, me.user.salt, me.user.hash)) {
+      return { status: 401, body: { error: '当前密码不对' } };
+    }
+
+    const { salt, hash } = auth.hashPassword(newPassword);
+    db.updateUserPassword(me.user.id, salt, hash);
+    // 截止时间必须取在 issueToken 之前，顺序反了会把新发的那只一起砍掉
+    const cutoff = Date.now();
+    db.revokeBefore(me.user.id, cutoff, auth.TOKEN_TTL_MS);
+    const u = db.findUserById(me.user.id);
+    return { status: 200, body: { ok: true, token: issueToken(u), user: publicUser(u) } };
   },
 
   /** 客户端启动只发这一个请求就能拿到全部所需：我是谁、我有哪些集、谁邀请了我 */

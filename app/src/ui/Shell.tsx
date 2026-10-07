@@ -10,25 +10,30 @@
  *      `@media (max-width: 900px)` 是同一根线，改一处必须改另一处。
  *   3. **浮层 z-index 必须 > 标签栏的 45**，否则抽屉被标签栏压住一截。
  *
- * 侧栏顺序可拖动：`ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
+ * 导航顺序读 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部组）。
  * `navBottom` 不能用「空则给默认值」的写法 —— 那会把用户主动拖出底部的
  * 垃圾箱又塞回去。必须区分 undefined（从未设置）与 []（有意为之）。
+ *
+ * 写入方在**设置页的「功能区」卡片**（ui/Settings.tsx）：底栏挑哪几项、
+ * 侧栏怎么排。这里只读。2026-10-06 重写时那两个字段一度变成死数据，
+ * 后来在设置页补回 —— 见项目 CLAUDE.md 四、23。
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlarmClock, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
-  Flame, Inbox, Layers, Loader2, LogOut, MailPlus, Moon, MoreHorizontal, Plus,
-  Search, Sparkles, Sun, Trash2, Upload, X, Download, Clock,
+  Flame, FolderKanban, Inbox, Layers, Loader2, MailPlus,
+  MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock,
 } from 'lucide-react';
-import type { LocalState, PublicUser } from '../domain/types.ts';
+import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { counts, liveTasks } from '../domain/model.ts';
+import { counts, liveTasks, CUSTOMIZABLE, quickDefaults } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
-import { useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
-import { IconBtn } from './kit.tsx';
+import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { CalSwitcher } from './Calendars.tsx';
+import { ClockPop } from './Clock.tsx';
+import { MiniCalendar, DatePop } from './DatePop.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -46,16 +51,33 @@ export const NAV: NavDef[] = [
   { key: 'today', label: '今天', icon: <Sun size={16} />, count: 'today' },
   { key: 'overdue', label: '逾期', icon: <AlarmClock size={16} />, count: 'overdue', warn: true },
   { key: 'calendar', label: '日程', icon: <CalendarDays size={16} /> },
+  { key: 'projects', label: '项目', icon: <FolderKanban size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
   { key: 'done', label: '已完成', icon: <CheckCircle2 size={16} /> },
   { key: 'ai', label: 'AI', icon: <Sparkles size={16} /> },
 ];
 
 export const TRASH_NAV: NavDef = { key: 'trash', label: '垃圾箱', icon: <Trash2 size={16} />, count: 'trash' };
-const ALL_NAV = [...NAV, TRASH_NAV];
-const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
 
-const DEFAULT_ORDER = ALL_NAV.map((n) => n.key);
+/**
+ * 设置**不在** `ui.navOrder` 里（见 domain/model.ts 的 CUSTOMIZABLE）：
+ * 它得能被打开，才谈得上改回来。所以它只进这张表，不参加排序。
+ */
+export const SETTINGS_NAV: NavDef = { key: 'settings', label: '设置', icon: <Settings size={16} /> };
+
+const ALL_NAV = [...NAV, TRASH_NAV, SETTINGS_NAV];
+
+/**
+ * 按 nav key 取定义。**导出给设置页用** —— 那边的「功能区」卡片要画同一套
+ * 图标与名字，在这儿另抄一份的下场是改了 label 忘了改那边。
+ *
+ * 认不出的 key 回落到垃圾箱：设置页只可能拿到 CUSTOMIZABLE 里的键，
+ * 但拖拽时 dataTransfer 里塞的是用户数据，宁可画错也不要白屏。
+ */
+export const navDef = (k: string): NavDef => ALL_NAV.find((n) => n.key === k) || TRASH_NAV;
+
+/** 没有 navOrder 时的兜底。取自 domain 的白名单，别在这里另抄一份 */
+const DEFAULT_ORDER: readonly string[] = CUSTOMIZABLE;
 
 /** `>99` 显示 `99+` —— 徽标再宽就挤垮布局了 */
 function badge(n: number): string | null {
@@ -98,15 +120,13 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCal, onInvites }: {
+function Sidebar({ state, onNav, onNew, onManageCal, onInvites }: {
   state: LocalState; onNav: (k: string) => void; onNew: () => void;
-  onExport: () => void; onImport: (f: File) => void; onLogout: () => void;
   onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
   const bottom = state.ui.navBottom;
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // 主区 = 顺序里不属于底部组的；底部组 = 底部数组里的（按底部数组自己的顺序）
   const main = order.filter((k) => !bottom.includes(k));
@@ -121,6 +141,9 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
         className={'nav-item' + (state.ui.nav === k ? ' active' : '')}
         key={k}
         data-nav={k}
+        /* 当前在哪一页：视觉上靠 .active 那点底色，读屏只认这个属性。
+           侧栏和底部标签栏指同一件事（同一份 ui.nav），两处都写。 */
+        aria-current={state.ui.nav === k ? 'page' : undefined}
         onClick={() => onNav(k)}
       >
         <span className="ico">{def.icon}</span>
@@ -152,22 +175,12 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
       <Pulse state={state} />
 
       <div className="sidebar-footer">
-        <button className="ghost-btn" onClick={onExport}><Upload size={13} /> 导出备份</button>
-        <button className="ghost-btn" onClick={() => fileRef.current?.click()}>
-          <Download size={13} /> 导入备份
+        {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事）。
+            导入 / 导出 / 深浅 / 退出登录**只留在设置页一处** —— 这里原先各有一份
+            重复入口，收进设置页之后侧栏底部只留设置这一个动作。 */}
+        <button className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
+          <Settings size={13} /> 设置
         </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/json"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onImport(f);
-            e.target.value = '';
-          }}
-        />
-        <button className="ghost-btn" onClick={onLogout}><LogOut size={13} /> 退出登录</button>
         <div className="tip">数据已同步到服务器，本机也留了一份</div>
       </div>
     </aside>
@@ -176,8 +189,19 @@ function Sidebar({ state, onNav, onNew, onExport, onImport, onLogout, onManageCa
 
 /* ============================== 找日期 ============================== */
 
-function JumpPop({ open, cursor, onPick, onClose }: {
-  open: boolean; cursor: string; onPick: (iso: string) => void; onClose: () => void;
+/** 某天**还没做完**的任务数 —— 面板用它表示「哪天忙」 */
+function jumpLoad(state: LocalState, isoDay: string): number {
+  let n = 0;
+  for (const k in state.tasks) {
+    const t = state.tasks[k];
+    if (t.date === isoDay && !t.deleted && !t.done) n++;
+  }
+  return n;
+}
+
+function JumpPop({ open, cursor, state, onPick, onClose }: {
+  open: boolean; cursor: string; state: LocalState;
+  onPick: (iso: string) => void; onClose: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [month, setMonth] = useState(() => D.monthStart(cursor));
@@ -189,13 +213,10 @@ function JumpPop({ open, cursor, onPick, onClose }: {
 
   if (!open) return null;
 
-  const days = D.monthMatrix(month);
-  const curMonth = D.parseISO(month).getMonth();
-  const today = D.today();
-
   const go = (v: string) => {
-    const p = parse(v);
-    if (p && p.date) { onPick(p.date); return; }
+    // 基准用**面板所在月份**，不是今天 —— 见 domain/date.ts 的 parseDateText
+    const d = D.parseDateText(v, month);
+    if (d) { onPick(d); return; }
     setBad(true);
   };
 
@@ -214,39 +235,15 @@ function JumpPop({ open, cursor, onPick, onClose }: {
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
       </div>
 
-      <div className="jp-head">
-        <button className="jp-nav" title="上个月" onClick={() => setMonth(D.addMonths(month, -1))}>
-          <ChevronLeft size={14} />
-        </button>
-        <span className="jp-label">
-          {D.parseISO(month).getFullYear()} 年 {D.parseISO(month).getMonth() + 1} 月
-        </span>
-        <button className="jp-nav" title="下个月" onClick={() => setMonth(D.addMonths(month, 1))}>
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      <div className="jp-week">
-        <span>一</span><span>二</span><span>三</span><span>四</span>
-        <span>五</span><span>六</span><span>日</span>
-      </div>
-
-      <div className="jp-grid">
-        {days.map((d) => {
-          const out = D.parseISO(d).getMonth() !== curMonth;
-          return (
-            <button
-              // 日期密度用**淡底 + 底部短横**，不用 4px 圆点 ——
-              // 圆点在 1x 屏上几乎看不见（实测截图确认过）
-              className={'jp-day' + (out ? ' out' : '') + (d === today ? ' today' : '')
-                + (d === cursor ? ' sel' : '')}
-              key={d}
-              data-jump={d}
-              onClick={() => onPick(d)}
-            >{D.parseISO(d).getDate()}</button>
-          );
-        })}
-      </div>
+      {/* 月历格子与快速添加的「先选日期」共用同一份 —— 见 ui/DatePop.tsx */}
+      <MiniCalendar
+        month={month}
+        value={cursor}
+        todayIso={D.today()}
+        loadOf={(iso) => jumpLoad(state, iso)}
+        onMonth={setMonth}
+        onPick={onPick}
+      />
 
       {bad && <div className="jp-bad">没看懂这个日期，换个写法试试（例如「10月15日」「下周三」）</div>}
     </div>
@@ -255,23 +252,131 @@ function JumpPop({ open, cursor, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTheme, onSearch }: {
-  state: LocalState; narrow: boolean;
+/** 搜索输入框的共享逻辑：本地状态 + 防抖回调 */
+function useSearchValue(initial: string, onSearch: (kw: string) => void) {
+  const [kw, setKw] = useState(initial);
+  const debounced = useDebounced(kw, 180);
+  useEffect(() => { onSearch(debounced); }, [debounced, onSearch]);
+  return [kw, setKw] as const;
+}
+
+/** 搜索输入框（桌面常驻 / 移动浮条共用） */
+function SearchInput({ kw, setKw, autoFocus }: {
+  kw: string; setKw: (v: string) => void; autoFocus?: boolean;
+}) {
+  return (
+    <div className="search-box">
+      <span className="search-ico"><Search size={14} /></span>
+      <input
+        type="text"
+        value={kw}
+        placeholder="搜索…"
+        aria-label="搜索任务"
+        autoFocus={autoFocus}
+        onChange={(e) => setKw(e.target.value)}
+      />
+      {!!kw && (
+        <button className="clear-search" title="清空" onClick={() => setKw('')}>
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** 移动端搜索浮条：点击搜索图标后弹出 */
+function SearchPop({ open, kw, setKw, onClose }: {
+  open: boolean; kw: string; setKw: (v: string) => void; onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useOutsideClose(box, open, onClose);
+  if (!open) return null;
+  return (
+    <div className="search-pop" ref={box}>
+      <SearchInput kw={kw} setKw={setKw} autoFocus />
+    </div>
+  );
+}
+
+/**
+ * 日程页副header：日期导航 + 视图切换 + 找日期
+ *
+ * 从Topbar抽出来，让顶栏只留标题 + 搜索 + 状态。
+ * 日程页内容多，需要专门的副header来放这些控件。
+ */
+export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor }: {
+  state: LocalState;
+  jump: boolean; setJump: (v: boolean) => void;
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
   onCursor: (iso: string) => void;
-  onTheme: () => void;
+}) {
+  const ui = state.ui;
+  const t0 = D.today();
+  let atToday = ui.cursor === t0;
+  if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
+  else if (ui.view === 'month') {
+    const a = D.parseISO(ui.cursor), b = D.parseISO(t0);
+    atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  }
+
+  return (
+    <div className="cal-subhead">
+      <div className="date-nav">
+        <button className="round-btn" title="上一个" onClick={() => onShift(-1)}>
+          <ChevronLeft size={15} />
+        </button>
+        <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
+          <ChevronRight size={15} />
+        </button>
+        <button
+          className={'text-btn today-btn' + (atToday ? '' : ' away')}
+          title={atToday ? '当前就在今天' : '跳回今天'}
+          onClick={onToday}
+        >{atToday ? '今天' : '回到今天'}</button>
+        <span className="date-range">{D.fmtFull(ui.cursor)}</span>
+        <div className="jump-wrap">
+          <button
+            className={'text-btn jump-btn' + (jump ? ' on' : '')}
+            title="跳到指定日期（快捷键 D）"
+            aria-haspopup="dialog"
+            aria-expanded={jump}
+            onClick={() => setJump(!jump)}
+          >
+            <span className="jb-ico"><CalendarDays size={13} /></span>
+            <span className="jb-txt">找日期</span>
+          </button>
+          <JumpPop
+            open={jump}
+            cursor={ui.cursor}
+            state={state}
+            onPick={(d) => { onCursor(d); setJump(false); }}
+            onClose={() => setJump(false)}
+          />
+        </div>
+      </div>
+      <div className="view-switch">
+        <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
+        <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
+        <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
+      </div>
+    </div>
+  );
+}
+
+export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
+  state: LocalState; narrow: boolean;
+  searchOpen: boolean; setSearchOpen: (v: boolean) => void;
   onSearch: (kw: string) => void;
 }) {
   const ui = state.ui;
   const online = useOnline();
-  const [jump, setJump] = useState(false);
-  const [kw, setKw] = useState(ui.search);
-  const debounced = useDebounced(kw, 180);
+  const [kw, setKw] = useSearchValue(ui.search, onSearch);
 
-  useEffect(() => { onSearch(debounced); }, [debounced, onSearch]);
-
+  // 标题写**具体日期 / 年月**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
+  // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
+  // 月视图的 range 是「第 N 周」—— 满屏六行时，知道自己在第几周比知道月份有用
   let title = '今天';
   let range = D.fmtFull(D.today());
   if (ui.nav === 'inbox') { title = '待办箱'; range = '没有日期的事先放这儿'; }
@@ -280,81 +385,53 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
+  else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
-    title = ui.view === 'day' ? '日' : ui.view === 'week' ? '周' : '月';
-    if (ui.view === 'day') range = D.fmtFull(ui.cursor);
-    else if (ui.view === 'week') range = D.fmtMD(D.weekStart(ui.cursor)) + ' – ' + D.fmtMD(D.addDays(D.weekStart(ui.cursor), 6));
-    else range = D.parseISO(ui.cursor).getFullYear() + ' 年 ' + (D.parseISO(ui.cursor).getMonth() + 1) + ' 月';
+    if (ui.view === 'day') {
+      title = D.fmtMD(ui.cursor);
+      range = D.fmtFull(ui.cursor);
+    } else if (ui.view === 'week') {
+      const s = D.weekStart(ui.cursor);
+      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+      range = D.fmtMD(s) + ' – ' + D.fmtMD(D.addDays(s, 6));
+    } else {
+      title = D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';
+      range = '第 ' + D.weekOfMonth(ui.cursor) + ' 周';
+    }
   }
-
-  const isCal = ui.nav === 'calendar' || ui.nav === 'today';
 
   return (
     // 顶栏**不加** position / z-index / sticky，见文件头注释
     <header className="topbar">
       <div className="topbar-left">
         <h1 className="view-title">{title}</h1>
-        <div className="date-nav">
-          {isCal && (
-            <>
-              <button className="round-btn" title="上一个" onClick={() => onShift(-1)}>
-                <ChevronLeft size={15} />
-              </button>
-              <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
-                <ChevronRight size={15} />
-              </button>
-              <button className="text-btn today-btn" title="回到今天" onClick={onToday}>今天</button>
-            </>
-          )}
-          <span className="date-range">{range}</span>
-          {ui.nav === 'calendar' && (
-            <div className="jump-wrap">
-              <button className="text-btn jump-btn" title="跳到指定日期（快捷键 D）" onClick={() => setJump((v) => !v)}>
-                <span className="jb-ico"><CalendarDays size={13} /></span>
-                <span className="jb-txt">找日期</span>
-              </button>
-              <JumpPop
-                open={jump}
-                cursor={ui.cursor}
-                onPick={(d) => { onCursor(d); setJump(false); }}
-                onClose={() => setJump(false)}
-              />
-            </div>
-          )}
-        </div>
+        {!narrow && <span className="date-range">{range}</span>}
       </div>
 
       <div className="topbar-right">
-        <div className="search-box">
-          <span className="search-ico"><Search size={14} /></span>
-          <input
-            type="text"
-            value={kw}
-            placeholder="搜索…"
-            aria-label="搜索任务"
-            onChange={(e) => setKw(e.target.value)}
-          />
-          {!!kw && (
-            <button className="clear-search" title="清空" onClick={() => setKw('')}>
-              <X size={13} />
+        {narrow ? (
+          <>
+            <button
+              className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
+              title="搜索"
+              aria-label="搜索任务"
+              aria-expanded={searchOpen}
+              onClick={() => setSearchOpen(!searchOpen)}
+            >
+              <Search size={16} />
             </button>
-          )}
-        </div>
-
-        {ui.nav === 'calendar' && (
-          <div className="view-switch">
-            {/* data-view 是给探针用的：这三个按钮原先只能靠文字「日 / 周 / 月」去找，
-                而文字是最不稳的定位方式。全应用其余可点元素都带 data-*，
-                这里补上同一个约定。 */}
-            <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
-            <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
-            <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
-          </div>
+            <SearchPop
+              open={searchOpen}
+              kw={kw}
+              setKw={setKw}
+              onClose={() => setSearchOpen(false)}
+            />
+          </>
+        ) : (
+          <SearchInput kw={kw} setKw={setKw} />
         )}
 
-        <IconBtn label="切换深浅色" onClick={onTheme}>
-          {ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </IconBtn>
+        {/* 深浅快捷按钮已收进设置页（外观卡）—— 顶栏只留状态，不留入口 */}
 
         {/* 离线优先于「正在同步」——断网时那个转圈会一直转下去，
             看起来像卡死了，而这句「改动不会丢」才是用户真正要的信息 */}
@@ -374,31 +451,38 @@ export function Topbar({ state, narrow, onView, onShift, onToday, onCursor, onTh
 
 /* ============================ 底部标签栏 ============================ */
 
-const TABS = [
-  { key: 'today', label: '今天', icon: <Sun size={18} />, count: 'today' as const },
-  { key: 'calendar', label: '日程', icon: <CalendarDays size={18} /> },
-  { key: 'inbox', label: '待办', icon: <Inbox size={18} />, count: 'inbox' as const },
-  // 逾期必须留在底栏 —— 用户重视的功能，不能藏进「更多」
-  { key: 'overdue', label: '逾期', icon: <AlarmClock size={18} />, count: 'overdue' as const, warn: true },
-];
-
+/**
+ * 底栏成员读 `ui.tabs`，顺序也取自它（`normalizeUi` 保证它是 navOrder 的子集，
+ * 所以侧栏拖个序，底栏跟着变 —— 两个列表的顺序没必要让用户各记一套）。
+ *
+ * 「更多」恒占最后一格，所以总格数 ≤ 5。
+ */
 export function Tabbar({ state, onNav, onMore }: {
   state: LocalState; onNav: (k: string) => void; onMore: () => void;
 }) {
   const c = counts(state);
+  const tabs = state.ui.tabs.map(navDef);
   return (
     <nav className="tabbar">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const b = badge(t.count ? (c as unknown as Record<string, number>)[t.count] : 0);
         return (
-          <button className={'tab' + (state.ui.nav === t.key ? ' active' : '')} key={t.key} onClick={() => onNav(t.key)}>
+          <button
+            className={'tab' + (state.ui.nav === t.key ? ' active' : '')}
+            key={t.key}
+            aria-current={state.ui.nav === t.key ? 'page' : undefined}
+            onClick={() => onNav(t.key)}
+          >
             <span className="ti">{t.icon}</span>
             <span className="tn">{t.label}</span>
             {b && <span className={'tb' + (t.warn ? ' warn' : '')}>{b}</span>}
           </button>
         );
       })}
-      <button className="tab" onClick={onMore}>
+      {/* 「更多」在打卡 / 已完成 / 垃圾箱这几页要点亮 —— 那几页只能从这里进，
+          没高亮的话用户看不出自己当前在哪。判据是「当前 nav 不在 ui.tabs 里」，
+          与底栏成员读的是同一份数据，不另立一套常量。 */}
+      <button className={'tab' + (!state.ui.tabs.includes(state.ui.nav) ? ' active' : '')} onClick={onMore}>
         <span className="ti"><MoreHorizontal size={18} /></span>
         <span className="tn">更多</span>
       </button>
@@ -406,16 +490,40 @@ export function Tabbar({ state, onNav, onMore }: {
   );
 }
 
-/** 「更多」抽屉：打卡 / 已完成 / 垃圾箱 / 主题 / 备份 / 退出 */
-export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onImport, onLogout,
-  onManageCal, onInvites, user }: {
+/**
+ * 「更多」抽屉：底栏没放进去的功能项 + 日程集 / 邀请 / 设置。
+ *
+ * 前半截是**差集**（`navOrder` 减去 `ui.tabs`），不是写死哪几项 ——
+ * 底栏那 4 格是用户自己挑的，写死就会出现「底栏有、这里也有」的重复项。
+ *
+ * **深浅 / 导入 / 导出 / 退出登录不在这儿**：它们只有设置页一个入口
+ * （外观卡、数据卡、账户卡）。抽屉里再放一份就是第二套入口，两边迟早说不到一起。
+ */
+export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites }: {
   state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
-  onTheme: () => void; onExport: () => void; onImport: (f: File) => void;
-  onLogout: () => void; onManageCal: () => void; onInvites: () => void;
-  user: PublicUser | null;
+  onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  useFocusTrap(panel, open);
+
+  /* 同 Drawer：焦点送进面板本身（送进控件会弹软键盘），关掉还回去。
+     这个浮层盖着一层遮罩，Tab 能溜到背后的侧栏上 —— 那正是 aria-modal
+     答应读屏「外面别念」之后不能出现的事。 */
+  useEffect(() => {
+    if (!open) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const goto = (k: string) => { onNav(k); onClose(); };
@@ -423,26 +531,42 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
   const cal = state.cals.find((x) => x.id === state.ui.cal) || null;
   const pending = state.invites.length;
 
+  /**
+   * 底栏没放进去的功能项，在这里补一份。
+   *
+   * 顺序跟着 navOrder 走 —— 与侧栏一致，用户扫一眼就知道在哪儿。
+   * 差集而不是「写死哪几项」：底栏那 4 格是用户自己挑的，写死就会
+   * 出现「底栏有、这里也有」的重复项。
+   */
+  const inTabs = new Set(state.ui.tabs);
+  const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
+  const rest = order.filter((k) => !inTabs.has(k)).map(navDef);
+
+  const navTile = (def: NavDef) => {
+    const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
+    const b = badge(n);
+    return (
+      <button className="ms-item" key={def.key} data-nav={def.key} onClick={() => goto(def.key)}>
+        <span className="mi">{def.icon}</span><span className="mt">{def.label}</span>
+        {b && <span className="mc">{b}</span>}
+      </button>
+    );
+  };
+
   return (
     <>
-      <div className="sheet-mask" onClick={onClose} />
-      <div className="more-sheet">
+      <div className="sheet-mask" aria-hidden="true" onClick={onClose} />
+      <div
+        className="more-sheet"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="更多"
+        tabIndex={-1}
+      >
         <div className="ms-grab" />
         <div className="ms-grid">
-          <button className="ms-item" onClick={() => goto('habits')}>
-            <span className="mi"><Flame size={20} /></span><span className="mt">打卡</span>
-            {badge(c.habits) && <span className="mc">{badge(c.habits)}</span>}
-          </button>
-          <button className="ms-item" onClick={() => goto('done')}>
-            <span className="mi"><CheckCircle2 size={20} /></span><span className="mt">已完成</span>
-          </button>
-          <button className="ms-item" onClick={() => goto('ai')}>
-            <span className="mi"><Sparkles size={20} /></span><span className="mt">AI</span>
-          </button>
-          <button className="ms-item" onClick={() => goto('trash')}>
-            <span className="mi"><Trash2 size={20} /></span><span className="mt">垃圾箱</span>
-            {badge(c.trash) && <span className="mc">{badge(c.trash)}</span>}
-          </button>
+          {rest.map(navTile)}
           <button className="ms-item" onClick={() => { onManageCal(); onClose(); }}>
             <span className="mi"><Layers size={20} /></span>
             <span className="mt">{cal ? cal.name : '日程集'}</span>
@@ -453,27 +577,12 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
               <span className="mc">{badge(pending)}</span>
             </button>
           )}
-          <button className="ms-item" onClick={onTheme}>
-            <span className="mi">{state.ui.theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</span>
-            <span className="mt">{state.ui.theme === 'dark' ? '浅色' : '深色'}</span>
-          </button>
-          <button className="ms-item" onClick={onExport}>
-            <span className="mi"><Upload size={20} /></span><span className="mt">导出</span>
-          </button>
-          <button className="ms-item" onClick={() => fileRef.current?.click()}>
-            <span className="mi"><Download size={20} /></span><span className="mt">导入</span>
+          <button className="ms-item" data-nav="settings" onClick={() => goto('settings')}>
+            <span className="mi"><Settings size={20} /></span><span className="mt">设置</span>
           </button>
         </div>
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
         <div className="ms-pulse"><Pulse state={state} /></div>
-        <div className="ms-user">
-          <span>{user ? user.name : ''}</span>
-          <button className="ms-logout" onClick={onLogout}><LogOut size={14} /> 退出登录</button>
-        </div>
-        <input
-          ref={fileRef} type="file" accept="application/json" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
-        />
       </div>
     </>
   );
@@ -481,35 +590,38 @@ export function MoreSheet({ state, open, onClose, onNav, onTheme, onExport, onIm
 
 /* ============================== 快速添加 ============================== */
 
-/** 当前页面决定了「没写日期时默认落到哪」 */
-function defaultDate(state: LocalState): string | null {
-  const ui = state.ui;
-  if (ui.nav === 'inbox') return null;
-  if (ui.nav === 'calendar') return ui.cursor;
-  return D.today();
-}
-
-function placeholderFor(state: LocalState): string {
-  const ui = state.ui;
-  if (ui.nav === 'inbox') return '丢进待办箱，不设日期（写了日期则以写的为准）';
-  if (ui.nav === 'today') return '添加到今天，也可以写「后天上午 给导师发邮件」';
-  if (ui.nav === 'calendar') return '添加到 ' + D.fmtMD(ui.cursor) + '，写了日期就按写的来';
-  return '新建任务，回车保存';
-}
+/** 占位符**不随 tab 变** —— 需求 1B：展开后文本不需要跟着所在的 tab 变。
+    按 tab 写不同文案的代价是「切个 tab，输入框里的话就变了」，用户会以为
+    自己刚才打的东西被吃了。 */
+const QUICK_PLACEHOLDER = '新建任务，回车保存';
 
 export function QuickAdd({ state, onSubmit }: {
   state: LocalState;
   onSubmit: (draft: { title: string; date: string | null; time: string | null; duration?: number; repeat?: unknown }, openDetail: boolean) => void;
 }) {
+  const narrow = useIsNarrow();
   const [text, setText] = useState('');
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [pendingTime, setPendingTime] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // 窄屏默认收起成右下角一个 FAB，点一下展开、再点收起（需求 3C）
+  const [expanded, setExpanded] = useState(!narrow);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [clockOpen, setClockOpen] = useState(false);
+  // 「N」快捷键与 FAB 都要先展开再聚焦 —— 展开是异步的，得等 DOM 更新
+  const focusOnExpand = useRef(false);
+  const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const ui = state.ui;
+  const def = quickDefaults(ui, D.today());
   const parsed: ParseOut | null = text.trim() ? parse(text) : null;
+  // 生效值：picker > 文本解析 > tab 默认。预览画的是生效值，不让人猜
+  const effDate = pendingDate ?? parsed?.date ?? def.date;
+  const effTime = pendingTime ?? parsed?.time ?? def.time;
   const chips: [string, string][] = [];
-  if (parsed?.date) chips.push(['date', D.relLabel(parsed.date)]);
-  if (parsed?.time) chips.push(['time', parsed.time]);
+  if (effDate) chips.push(['date', D.relLabel(effDate)]);
+  if (effTime) chips.push(['time', effTime]);
   if (parsed?.duration) chips.push(['dur', D.fmtDuration(parsed.duration)]);
   if (parsed?.repeat) chips.push(['rep', repeatLabel(parsed.repeat)]);
 
@@ -517,9 +629,10 @@ export function QuickAdd({ state, onSubmit }: {
     const raw = text.trim();
     if (!raw) return;
     const p = parse(raw);
-    const date = p?.date ?? defaultDate(state);
-    const time = p?.time ?? pendingTime;
+    const date = pendingDate ?? p?.date ?? def.date;
+    const time = pendingTime ?? p?.time ?? def.time;
     setText('');
+    setPendingDate(null);
     setPendingTime(null);
     onSubmit({
       title: (p?.title || raw),
@@ -530,89 +643,166 @@ export function QuickAdd({ state, onSubmit }: {
     }, openDetail);
   };
 
-  // 「N」聚焦输入框，跟旧版一致
+  // 「N」聚焦输入框，跟旧版一致。窄屏下先展开再聚焦
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === 'n' || e.key === 'N') { e.preventDefault(); inputRef.current?.focus(); }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        if (narrow && !expanded) { setExpanded(true); focusOnExpand.current = true; }
+        else inputRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);
-  }, []);
+  }, [narrow, expanded]);
+
+  // 展开之后才聚焦 —— 收起的横条是 display:none，聚焦不上去
+  useEffect(() => {
+    if (expanded && focusOnExpand.current) {
+      focusOnExpand.current = false;
+      inputRef.current?.focus();
+    }
+  }, [expanded]);
+
+  const hasWhen = !!(pendingDate || pendingTime);
 
   return (
-    <div className="fast-add" hidden={state.ui.nav === 'trash'}>
-      <span className="fast-plus"><Plus size={15} /></span>
-      <input
-        ref={inputRef}
-        type="text"
-        value={text}
-        placeholder={placeholderFor(state)}
-        aria-label="快速添加"
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
-          if (e.key === 'Escape') { e.currentTarget.blur(); }
-        }}
-      />
-      <button
-        className={'fast-clock' + (pendingTime ? ' on' : '')}
-        type="button"
-        title="选择时间"
-        onClick={() => setPendingTime((t) => (t ? null : D.minToTime(9 * 60)))}
+    <>
+      {/* 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
+      <div
+        className="fast-add"
+        hidden={ui.nav === 'trash' || ui.nav === 'settings' || (narrow && !expanded)}
       >
-        <Clock size={15} />
-        {pendingTime && <span className="fc-time">{pendingTime}</span>}
-      </button>
-      <span className="fast-hint">Ctrl + Enter 打开详细设置</span>
+        <span className="fast-plus"><Plus size={15} /></span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={text}
+          placeholder={QUICK_PLACEHOLDER}
+          aria-label="快速添加"
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
+            if (e.key === 'Escape') { e.currentTarget.blur(); }
+          }}
+        />
+        <button
+          ref={clockBtn}
+          className={'fast-clock' + (hasWhen ? ' on' : '')}
+          type="button"
+          title="选择日期和时间"
+          onClick={() => {
+            // 两层：先选日期、再选时间。已经开着哪层就关哪层
+            if (dateOpen) { setDateOpen(false); return; }
+            if (clockOpen) { setClockOpen(false); return; }
+            setDateOpen(true);
+          }}
+        >
+          <Clock size={15} />
+          {hasWhen && (
+            <span className="fc-time">
+              {pendingDate ? D.fmtMD(pendingDate) : ''}
+              {pendingDate && pendingTime ? ' ' : ''}
+              {pendingTime || ''}
+            </span>
+          )}
+        </button>
+        <DatePop
+          open={dateOpen}
+          anchor={clockBtn.current}
+          value={pendingDate ?? def.date}
+          todayIso={D.today()}
+          loadOf={(iso) => jumpLoad(state, iso)}
+          onPick={(d) => { setPendingDate(d); setDateOpen(false); setClockOpen(true); }}
+          onClear={() => { setPendingDate(null); setDateOpen(false); setClockOpen(true); }}
+          onClose={() => setDateOpen(false)}
+        />
+        <ClockPop
+          open={clockOpen}
+          anchor={clockBtn.current}
+          value={pendingTime}
+          onChange={(v) => { setPendingTime(v); setClockOpen(false); }}
+          onClose={() => setClockOpen(false)}
+        />
+        {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
+            10月20日 15:00」，不然只有那个小胶囊显示，很容易漏看 */}
+        <span className="fast-hint">
+          {hasWhen
+            ? [pendingDate && '日期 ' + D.fmtMD(pendingDate), pendingTime && '时间 ' + pendingTime]
+                .filter(Boolean).join(' · ') + ' · 再点时钟图标可改'
+            : 'Ctrl + Enter 打开详细设置'}
+        </span>
 
-      <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
-        {!!chips.length && (
-          <>
-            <span className="fp-chip k-title">{parsed?.title || text}</span>
-            <span className="fp-arrow">→</span>
-            {chips.map(([k, v]) => <span className={'fp-chip k-' + k} key={k}>{v}</span>)}
-          </>
-        )}
+        <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
+          {!!chips.length && (
+            <>
+              <span className="fp-chip k-title">{parsed?.title || text}</span>
+              <span className="fp-arrow">→</span>
+              {chips.map(([k, v]) => <span className={'fp-chip k-' + k} key={k}>{v}</span>)}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* 窄屏的浮动 + 号：常驻右下角，点了展开横条、再点收起（变成 ×） */}
+      {narrow && (
+        <button
+          className={'fast-fab' + (expanded ? ' open' : '')}
+          type="button"
+          hidden={ui.nav === 'trash' || ui.nav === 'settings'}
+          title={expanded ? '收起快速添加' : '快速添加'}
+          aria-label={expanded ? '收起快速添加' : '快速添加'}
+          aria-expanded={expanded}
+          onClick={() => {
+            if (!expanded) focusOnExpand.current = true;
+            setExpanded((v) => !v);
+          }}
+        >
+          {expanded ? <X size={20} /> : <Plus size={20} />}
+        </button>
+      )}
+    </>
   );
 }
 
 /* ============================== 外壳 ============================== */
 
 export function Shell({
-  state, user, contentRef, onNav, onNew, onExport, onImport, onLogout, onTheme,
-  onManageCal, onInvites, topbar, quickAdd, children,
+  state, contentRef, onNav, onNew,
+  onManageCal, onInvites, more, setMore, topbar, quickAdd, children,
 }: {
-  state: LocalState; user: PublicUser | null;
+  state: LocalState;
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
   onNew: () => void;
-  onExport: () => void;
-  onImport: (f: File) => void;
-  onLogout: () => void;
-  onTheme: () => void;
   onManageCal: () => void;
   onInvites: () => void;
+  /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
+  more: boolean; setMore: (v: boolean) => void;
   topbar: ReactNode;
   quickAdd: ReactNode;
   children: ReactNode;
 }) {
   const narrow = useIsNarrow();
-  const [more, setMore] = useState(false);
+
+  // 抽屉开着时给 body 一个标记：窄屏下 `.tab:active` 要压住，别在抽屉后面乱闪。
+  // 旧版就有这个约定，重构时漏了，连带那条 CSS 规则一起成了死代码
+  useEffect(() => {
+    document.body.classList.toggle('sheet-open', more);
+    return () => document.body.classList.remove('sheet-open');
+  }, [more]);
 
   return (
     <div className="app">
       {!narrow && (
         <Sidebar
           state={state} onNav={onNav} onNew={onNew}
-          onExport={onExport} onImport={onImport} onLogout={onLogout}
           onManageCal={onManageCal} onInvites={onInvites}
         />
       )}
@@ -626,9 +816,7 @@ export function Shell({
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}
       <MoreSheet
         state={state} open={more && narrow} onClose={() => setMore(false)}
-        user={user} onNav={onNav} onTheme={onTheme} onExport={onExport}
-        onImport={onImport} onLogout={onLogout}
-        onManageCal={onManageCal} onInvites={onInvites}
+        onNav={onNav} onManageCal={onManageCal} onInvites={onInvites}
       />
     </div>
   );

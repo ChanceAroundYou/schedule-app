@@ -13,11 +13,13 @@
  * tasks 是几百 KB 的浪费，而 useSyncExternalStore 只需要一个会变的快照值。
  */
 
-import type { Cal, Entity, FieldConflict, Habit, Invite, LocalState, Op, Task, UiPrefs } from '../domain/types.ts';
+import type {
+  Cal, Entity, FieldConflict, Habit, Invite, LocalState, Op, Project, Task, UiPrefs,
+} from '../domain/types.ts';
 import { canWrite } from '../domain/types.ts';
 import {
-  hydrateHabit, hydrateTask, liveHabits, trashedTasks, trashedHabits, roleOf,
-  makeTask, makeHabit, newOpId, normalizeUi, defaultUi, nextOrder, orderCmp,
+  hydrateHabit, hydrateTask, hydrateProject, isGone, liveHabits, trashedTasks, trashedHabits,
+  roleOf, makeTask, makeHabit, makeProject, newOpId, normalizeUi, defaultUi, nextOrder, orderCmp,
 } from '../domain/model.ts';
 import { writeFields } from '../domain/merge.ts';
 import { instanceId, repeatNext, seriesRootOf, toRepeat } from '../domain/repeat.ts';
@@ -30,7 +32,7 @@ const KEY = 'schedule-app-v4';
 
 function blank(): LocalState {
   return {
-    tasks: {}, habits: {}, cals: [], invites: [], cursor: 0, outbox: [],
+    tasks: {}, habits: {}, projects: {}, cals: [], invites: [], cursor: 0, outbox: [],
     ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
     denied: 0, deniedCals: [], conflicts: [],
   };
@@ -80,6 +82,7 @@ export function load(): LocalState {
       state = {
         tasks: p.tasks || {},
         habits: p.habits || {},
+        projects: p.projects || {},
         cals: Array.isArray(p.cals) ? p.cals : [],
         invites: Array.isArray(p.invites) ? p.invites : [],
         cursor: Number(p.cursor) || 0,
@@ -97,6 +100,7 @@ export function load(): LocalState {
       // 磁盘上那份可能是旧版本写的、或者上一轮同步只写了一半的稀疏实体
       for (const t of Object.values(state.tasks)) hydrateTask(t);
       for (const h of Object.values(state.habits)) hydrateHabit(h);
+      for (const j of Object.values(state.projects)) hydrateProject(j);
       resolveCal();
     } catch (_) {
       state = blank();   // 坏数据就当没存过，别让整个应用打不开
@@ -168,6 +172,9 @@ function pruneCals(): void {
   for (const [id, h] of Object.entries(state.habits)) {
     if (h.calId && !ids.has(h.calId)) delete state.habits[id];
   }
+  for (const [id, j] of Object.entries(state.projects)) {
+    if (j.calId && !ids.has(j.calId)) delete state.projects[id];
+  }
 }
 
 export function setCals(cals: Cal[] | undefined): void {
@@ -202,7 +209,7 @@ export function addConflicts(list: FieldConflict[]): void {
   if (!list.length) return;
 
   const kept = state.conflicts.filter((c) => {
-    const bucket = c.entity === 'task' ? state.tasks : state.habits;
+    const bucket = bucketOf(c.entity);
     const e = bucket[c.entityId] as { deleted?: boolean; purged?: boolean } | undefined;
     if (!e || e.purged) return false;
     return !list.some((n) => n.entity === c.entity && n.entityId === c.entityId && n.field === c.field);
@@ -277,8 +284,12 @@ export interface Change {
   calId?: string;
 }
 
-function bucketOf(e: Entity): Record<string, Task> | Record<string, Habit> {
-  return (e === 'task' ? state.tasks : state.habits) as Record<string, Task> | Record<string, Habit>;
+type AnyBucket = Record<string, Task> | Record<string, Habit> | Record<string, Project>;
+
+function bucketOf(e: Entity): AnyBucket {
+  if (e === 'habit') return state.habits;
+  if (e === 'project') return state.projects;
+  return state.tasks;
 }
 
 /**
@@ -343,6 +354,7 @@ export function commitMany(items: Change[]): void {
     e.calId = calId;   // 主键的一部分，跟着实体走，不是可同步字段
     writeFields(e as never, it.fields, ts, dev);
     if (it.entity === 'task') hydrateTask(e as never);
+    else if (it.entity === 'project') hydrateProject(e as never);
     else hydrateHabit(e as never);
 
     const op: Op = {
@@ -407,6 +419,7 @@ export function applyRemote(changes: RemoteChange[]): boolean {
   if (touched) {
     for (const t of Object.values(state.tasks)) hydrateTask(t);
     for (const h of Object.values(state.habits)) hydrateHabit(h);
+    for (const j of Object.values(state.projects)) hydrateProject(j);
     persist();
     emit();
   }
@@ -415,10 +428,18 @@ export function applyRemote(changes: RemoteChange[]): boolean {
 
 /** 把 { tasks: {id: {…}}, habits: {…} } 形式的快照摊平成一串字段变更 */
 export function flattenSnapshot(
-  snap: { tasks: Record<string, Task>; habits: Record<string, Habit> },
+  snap: {
+    tasks: Record<string, Task>;
+    habits: Record<string, Habit>;
+    projects?: Record<string, Project>;
+  },
 ): RemoteChange[] {
   const out: RemoteChange[] = [];
-  for (const [entity, bucket] of [['task', snap.tasks], ['habit', snap.habits]] as const) {
+  // projects 缺省给空桶：老服务的响应落在新客户端上不该炸（见 types.ts 那段）
+  const buckets = [
+    ['task', snap.tasks], ['habit', snap.habits], ['project', snap.projects || {}],
+  ] as const;
+  for (const [entity, bucket] of buckets) {
     for (const e of Object.values(bucket)) {
       const ts = (e._ts || {}) as Record<string, number>;
       const dev = (e._dev || {}) as Record<string, string>;
@@ -637,6 +658,84 @@ export function restoreHabit(id: string): void {
  * 而 `ord` 才是「用户在任意列表里拖出来的顺序」。混用会让用户拖完下次
  * 渲染又弹回原位，看起来就是「拖不动」。打卡没有这个冲突，直接用 order。
  */
+/* ---------------------------------------------------------------- 项目 */
+
+/**
+ * 项目的七个写入通道。
+ *
+ * **全部走 `commitMany()`**，所以权限把关（`canWrite`）、被挡提示（`deny()`）、
+ * 发件箱、冲突记录**自动全都有** —— 这里一个都不重复。这也是为什么它们
+ * 长得都只有两三行：多写一行就是多一处会漏的地方。
+ */
+export function addProject(name: string): string {
+  const p = makeProject(name.trim() || '未命名项目', state.ui.cal || '');
+  commit('project', p.id, dataOf(p));
+  return p.id;
+}
+
+export function patchProject(id: string, fields: Partial<Project>): void {
+  if (!state.projects[id]) return;
+  // 只挑得出 Project 上的键，别把调用方多传的东西一路推到发件箱里
+  const next: Record<string, unknown> = {};
+  for (const k of ['name', 'note', 'status', 'next', 'progress']) {
+    if (k in fields) next[k] = (fields as Record<string, unknown>)[k];
+  }
+  if (!Object.keys(next).length) return;
+  commit('project', id, next);
+}
+
+/**
+ * 删项目 = 打墓碑，**并把挂在它上面的任务的 `projectId` 一并置 null**。
+ *
+ * 「留着悬空引用」也能跑（`tasksOfProject` 按 id 过滤，悬空的就是查不到），
+ * 但那条任务在详情里会显示一个已经不存在的项目名，用户没法把它改回来 ——
+ * 这里顺手断开，比事后解释便宜。
+ */
+export function deleteProject(id: string): void {
+  if (!state.projects[id]) return;
+  const items: Change[] = [{ entity: 'project', id, fields: { deleted: true, deletedAt: Date.now() } }];
+  for (const t of Object.values(state.tasks)) {
+    if (t.projectId === id && !isGone(t)) items.push({ entity: 'task', id: t.id, fields: { projectId: null } });
+  }
+  commitMany(items);
+}
+
+export function restoreProject(id: string): void {
+  if (!state.projects[id]) return;
+  commit('project', id, { deleted: false, deletedAt: null, purged: false });
+}
+
+export function purgeProject(id: string): void {
+  if (!state.projects[id]) return;
+  commit('project', id, { purged: true });
+}
+
+/** 把任务挂到项目上（`null` = 摘下来）。归属**只在详情里改**，拖拽不改它 */
+export function setTaskProject(taskId: string, projectId: string | null): void {
+  if (!state.tasks[taskId]) return;
+  commit('task', taskId, { projectId: projectId || null });
+}
+
+/**
+ * 泳道列之间的移动。`done` 那一列走 `toggleTask`（**不是**直接写 done 字段）——
+ * 重复任务要靠它推进系列，绕过它会让「每週一次」这类任务勾完就不见了。
+ */
+export function setTaskDoing(taskId: string, doing: boolean): void {
+  const t = state.tasks[taskId];
+  if (!t) return;
+  if (t.done) {
+    // 从「已完成」列拖出来：先取消完成，再按目标列决定 doing。
+    // toggleTask 自己会 commit，这里的 doing 跟随其后 —— 两条 op、两个字段，
+    // 顺序无所谓（LWW 是逐字段的，它们不冲突）。
+    toggleTask(taskId);
+    if (doing) commit('task', taskId, { doing: true });
+    return;
+  }
+  commit('task', taskId, { doing });
+}
+
+/* -------------------------------------------------------------- 排序 */
+
 export function reorder(entity: Entity, orderedIds: string[]): void {
   const bucket = rawBucket(entity);
   const field = entity === 'task' ? 'ord' : 'order';
@@ -709,9 +808,16 @@ export function moveUntimed(id: string, date: string | null, refId: string | nul
  * 那就是刚建出来的「我的日程」。已经带归属的（导入一份别人给的备份）原样保留，
  * 但那个集我得有写权限，否则 commitMany 会把它们整批挡下。
  */
-export function loadMigrated(tasks: Task[], habits: Habit[]): number {
+export function loadMigrated(tasks: Task[], habits: Habit[], projects: Project[] = []): number {
   const target = state.ui.cal || '';
   const items: Change[] = [];
+  for (const p of projects) {
+    const calId = p.calId || target;
+    if (!calId) continue;
+    p.calId = calId;
+    state.projects[p.id] = p;
+    items.push({ entity: 'project', id: p.id, calId, fields: dataOf(p) });
+  }
   for (const t of tasks) {
     const calId = t.calId || target;
     if (!calId) continue;
@@ -731,7 +837,7 @@ export function loadMigrated(tasks: Task[], habits: Habit[]): number {
 }
 
 /** 一个实体里属于「数据」的那部分字段（排除 id / calId 与同步元数据） */
-function dataOf(e: Task | Habit): Record<string, unknown> {
+function dataOf(e: Task | Habit | Project): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(e)) {
     if (k === 'id' || k === 'calId' || k === '_ts' || k === '_dev') continue;

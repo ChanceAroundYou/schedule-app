@@ -12,23 +12,31 @@
  */
 
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState,
+  createContext, useCallback, useContext, useEffect, useId, useRef, useState,
   type ReactNode, type ButtonHTMLAttributes, type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cx } from './cx.ts';
-import { useOutsideClose } from './hooks.ts';
+import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
 type Variant = 'primary' | 'ghost' | 'danger' | 'chip';
 
+/* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
+   兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
+   --accent / --card / --line / --chip / --hover / --accent-soft 那一批，
+   而 --accent / --accent-soft / --card / --chip / --hover / --line
+   在 legacy.css 里**一个都没有** —— 于是两套主题下全是写死的颜色，
+   主按钮那个 #4f7cff 压白字只有 3.70:1，暗色也没跟着 --primary 走。
+   没有兜底值时写错名字会当场看得见（声明失效→继承），不会悄悄糊过去。
+   tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-[var(--accent,#4f7cff)] text-white hover:brightness-95 active:brightness-90',
-  ghost: 'bg-transparent text-[var(--text-2,#5b6070)] hover:bg-[var(--hover,rgba(0,0,0,.05))]',
-  danger: 'bg-[var(--danger,#e5484d)] text-white hover:brightness-95',
-  chip: 'bg-[var(--chip,rgba(0,0,0,.05))] text-[var(--text,#1c1f26)] hover:brightness-95',
+  primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
+  ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
+  danger: 'bg-[var(--danger)] text-[var(--on-primary)] hover:brightness-95',
+  chip: 'bg-[var(--panel-3)] text-[var(--text)] hover:brightness-95',
 };
 
 interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -72,7 +80,10 @@ interface SheetProps {
  */
 export function Sheet({ open, onClose, title, children, footer, dismissable = true }: SheetProps) {
   const panel = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  const tid = useId();
   useOutsideClose(panel, open && dismissable, onClose);
+  useFocusTrap(panel, open);
 
   useEffect(() => {
     if (!open) return;
@@ -81,23 +92,44 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose, dismissable]);
 
+  /* 焦点送进面板本身而不是第一个按钮 —— 见 Drawer.tsx 里那段：送进控件
+     会顺手把手机软键盘弹出来。关掉时还回原来那个元素。 */
+  useEffect(() => {
+    if (!open) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-black/40" />
+    // 手机软键盘弹出时把整块顶上去：--kb 是 hooks.ts 量的键盘高度。
+    // 里面那层 max-h 用 min(86dvh, 100%) —— 没键盘时还是原来的 86dvh，
+    // 有键盘时 100% 就是「键盘上沿以上」那点空间，不会把按钮顶出屏幕。
+    <div className="fixed inset-0 z-[70] flex items-end justify-center pb-[var(--kb,0px)] sm:items-center">
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title !== undefined ? tid : undefined}
+        aria-label={title === undefined ? '提示' : undefined}
+        tabIndex={-1}
         className={cx(
-          'relative z-10 w-full max-w-md bg-[var(--card,#fff)] text-[var(--text,#1c1f26)]',
-          'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[86dvh] flex flex-col',
+          'relative z-10 w-full max-w-md bg-[var(--panel)] text-[var(--text)]',
+          'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[min(86dvh,100%)] flex flex-col',
         )}
       >
         {title !== undefined && (
           <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
-            <div className="text-[15px] font-semibold">{title}</div>
+            <div className="text-[15px] font-semibold" id={tid}>{title}</div>
             <Btn variant="ghost" size="sm" onClick={onClose} aria-label="关闭">
               <X size={16} />
             </Btn>
@@ -228,7 +260,9 @@ export function ToastHost() {
           {t.action && (
             <button
               type="button"
-              className="rounded-md px-2 py-0.5 font-medium text-[var(--accent,#8fb0ff)] hover:bg-white/10"
+              /* 写死不跟 --primary：toast 的底是 rgba(24,26,32,.94)，两套主题都深，
+                 所以动作文字必须**恒浅**。跟 --primary 的话亮色那个 #395ef6 压上去只有 3.69。 */
+              className="rounded-md px-2 py-0.5 font-medium text-[#8fb0ff] hover:bg-white/10"
               onClick={() => { t.action!.run(); setList((p) => p.filter((x) => x.id !== t.id)); }}
             >
               {t.action.label}
@@ -257,7 +291,7 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
       {...rest}
       className={cx(
         'inline-flex h-8 w-8 items-center justify-center rounded-full transition',
-        'text-[var(--text-2,#5b6070)] hover:bg-[var(--hover,rgba(0,0,0,.05))]',
+        'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
         'disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}

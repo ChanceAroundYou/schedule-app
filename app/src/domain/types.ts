@@ -68,6 +68,22 @@ export interface Task extends SyncMeta {
   deletedAt?: number;
   /** 从哪个页面删的，只在垃圾箱里显示 */
   trashFrom?: string;
+
+  /**
+   * 属于哪个项目。`null` / 缺失 = 不属于任何项目。
+   *
+   * **可选字段，不是必填** —— 这就是它零迁移的原因：旧任务、旧 op、旧快照
+   * 缺了它一律按「没归属」处理，跟加这个字段之前的行为逐像素相同。
+   */
+  projectId?: string | null;
+  /**
+   * 泳道中间那一列。`true` = 进行中；缺失 = 待办。
+   *
+   * **与 `done` 是两个独立字段，不合并。** `done` 被 `counts()` / 今天页 /
+   * 逾期页 / 重复推进共用，动它会牵动一大片。列判定是
+   * `done → 已完成 / !done && doing → 进行中 / 否则 待办`（`projectColumn`）。
+   */
+  doing?: boolean;
 }
 
 export interface Habit extends SyncMeta {
@@ -82,7 +98,40 @@ export interface Habit extends SyncMeta {
   deletedAt?: number;
 }
 
-export type Entity = 'task' | 'habit';
+export type Entity = 'task' | 'habit' | 'project';
+
+/* ============================== 项目 ============================== */
+
+/**
+ * 项目自己的状态，写在泳道头上。
+ *
+ * **与「关联任务做完没有」是两回事**：任务全做完了项目也可以还是 `active`
+ * （下一个阶段还没开始）。所以它是**手填**的，不由任务推导。
+ */
+export type ProjectStatus = 'active' | 'waiting' | 'paused' | 'done';
+
+/**
+ * 长周期项目。
+ *
+ * 这是 PARA 里 **Area**（持续关注、无结束点）的形态，**不是**有起止日的
+ * Project —— 所以它**没有开始日 / 截止日**，也因此排除了甘特图：
+ * 甘特图强制每根横条有起止日，会逼用户给每个项目编一个假日期。
+ * 面板围绕「多久没动 + 下一步是什么」组织，见 `projectTouchedAt`。
+ */
+export interface Project extends SyncMeta {
+  name: string;
+  note: string;
+  status: ProjectStatus;
+  /** 下一步：一行字，空串 = 还没写 */
+  next: string;
+  /** 手填进度覆盖（0–100）；null = 按关联任务自动算 */
+  progress: number | null;
+  createdAt: number;
+
+  deleted?: boolean;
+  purged?: boolean;
+  deletedAt?: number;
+}
 
 /* ============================== 日程集 ============================== */
 
@@ -198,21 +247,50 @@ export interface SyncResponse {  cursor: number;
   rejected: Rejected[];
   changes?: Change[];
   truncated?: boolean;
-  snapshot?: { tasks: Record<string, Task>; habits: Record<string, Habit> };
+  /**
+   * `projects` 是可选的：前后端**必须同批发布**，但老响应落在新客户端上
+   * 不该炸 —— 缺这一桶就是「还没有任何项目」，与加这个实体之前一样。
+   */
+  snapshot?: {
+    tasks: Record<string, Task>;
+    habits: Record<string, Habit>;
+    projects?: Record<string, Project>;
+  };
   /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
   cals?: Cal[];
   invites?: Invite[];
 }
 
 /** 设备本地偏好。**不进同步** —— 同步过去只会让手机改主题把桌面也改了。 */
+/* ------------------------------------------------------------ 外观三轴 */
+
+/** 深浅。`auto` = 跟随系统，实际生效的那一档由 ui/theme.ts 解析 */
+export type ThemeMode = 'auto' | 'light' | 'dark';
+/** 色板。只改主色族，底色归深浅那一轴 —— 见 legacy.css 的「色板轴」一段 */
+export type AccentKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate';
+/** 风格。几何（圆角 / 阴影）全在 CSS 里，TS 这边只有 label —— 见 legacy.css 的「风格轴」 */
+export type StyleKey = 'soft' | 'flat' | 'notion';
+
 export interface UiPrefs {
   nav: string;
   view: 'day' | 'week' | 'month';
   cursor: string;
-  theme: 'light' | 'dark';
+  theme: ThemeMode;
+  /** 6 套色板之一。`azure` = 换暖纸之前那套靛蓝，留着当退路 */
+  accent: AccentKey;
+  /** 柔和 / 扁平 / notion。`soft` 是空块，等价于「2026-10-06 之前的几何」 */
+  style: StyleKey;
   search: string;
   navOrder: string[];
   navBottom: string[];
+  /**
+   * 移动端底栏成员，1–4 项，顺序同 `navOrder`。
+   *
+   * 「更多」恒占最后一格，所以总格数 ≤ 5 —— 这是 Apple HIG 对 tab bar 的
+   * 2–5 项约束，不是随手定的。**设置不进这个列表**，理由同 `CUSTOMIZABLE`：
+   * 它是唯一能改回这份列表的地方。
+   */
+  tabs: string[];
   tdoneOpen: boolean;
   /** 当前选中的日程集。本地偏好，各设备可以看不同的集 */
   cal: string | null;
@@ -221,6 +299,7 @@ export interface UiPrefs {
 export interface LocalState {
   tasks: Record<string, Task>;
   habits: Record<string, Habit>;
+  projects: Record<string, Project>;
   /** 我加入的日程集。服务器每次同步都会刷新 */
   cals: Cal[];
   /** 待我处理的邀请 */

@@ -22,6 +22,7 @@ import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
+  quickDefaults,
 } from './model.ts';
 import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
 
@@ -35,6 +36,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
   return {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
     habits: {},
+    projects: {},
     cals: [],
     invites: [],
     cursor: 0,
@@ -71,6 +73,76 @@ test('月视图矩阵是 42 天且以周一开头', () => {
   const m = D.monthMatrix('2026-10-06');
   assert.equal(m.length, 42);
   assert.equal(D.weekdayOf(m[0]), 1, '第一格必须是周一');
+});
+
+/* ======================= 「找日期」输入框的片段解析 ======================= */
+
+test('找日期：相对说法', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('今天'), T);
+  assert.equal(p('明天'), '2026-10-07');
+  assert.equal(p('后天'), '2026-10-08');
+  assert.equal(p('大后天'), '2026-10-09');
+  assert.equal(p('昨天'), '2026-10-05');
+  assert.equal(p('前天'), '2026-10-04');
+  assert.equal(p('大前天'), '2026-10-03');
+  assert.equal(p('3天后'), '2026-10-09');
+  assert.equal(p('5天前'), '2026-10-01');
+});
+
+test('找日期：裸周几取下一个，带「本 / 这」才允许落在过去', () => {
+  // T = 2026-10-06 是周二，本周一是 10-05（已过去）
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('周四'), '2026-10-08');
+  assert.equal(p('周一'), '2026-10-12', '裸「周一」必须推到下周，不是两天前');
+  assert.equal(p('周三'), '2026-10-07');
+  assert.equal(p('周二'), T, '就是今天，不该往后推一周');
+  assert.equal(p('周7'), '2026-10-11');   // 周日
+  assert.equal(p('周1'), '2026-10-12');   // 与普通数字归一
+  assert.equal(p('本周一'), '2026-10-05', '说了「本」就按本周算，哪怕是过去');
+  assert.equal(p('这周五'), '2026-10-09');
+  assert.equal(p('下周三'), '2026-10-14');
+  assert.equal(p('下下周 一'), '2026-10-19', '空格要被吃掉');
+
+  // 与 parse.ts 同一个口径：同一句「周三」不该在两个解析器里跳到两个日子
+  const r = parse('周三 开会', T);
+  assert.equal(r?.date, p('周三'));
+});
+
+test('找日期：月份偏移与完整日期', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p('下个月'), '2026-11-01');
+  assert.equal(p('下下个月'), '2026-12-01');
+  assert.equal(p('本月'), '2026-10-01');
+  assert.equal(p('上个月'), '2026-09-01');
+
+  assert.equal(p('2026-10-15'), '2026-10-15');
+  assert.equal(p('2026/10/15'), '2026-10-15');
+  assert.equal(p('2026.10.15'), '2026-10-15');
+  assert.equal(p('2026年10月15日'), '2026-10-15');
+  assert.equal(p('20261015'), '2026-10-15');
+  assert.equal(p('2026-10'), '2026-10-01');
+  assert.equal(p('202610'), '2026-10-01');
+  assert.equal(p('2026'), '2026-01-01', '纯四位数是年份，不能被两位月日那条吃掉');
+});
+
+test('找日期：只给月日时年份沿用**面板所在的年份**，超月天数截到月末', () => {
+  // 12 月翻到面板显示次年 1 月，这时输入「1月5日」要的是明年
+  assert.equal(D.parseDateText('1月5日', '2027-01-15', T), '2027-01-05');
+  assert.equal(D.parseDateText('1月5日', '2026-10-15', T), '2026-01-05');
+  assert.equal(D.parseDateText('1015', '2026-10-15', T), '2026-10-15');
+  assert.equal(D.parseDateText('10', '2026-10-15', T), '2026-10-01');
+  assert.equal(D.parseDateText('2月30日', '2026-10-15', T), '2026-02-28', '不该给用户报错');
+});
+
+test('找日期：认不出就返回 null（不猜）', () => {
+  const p = (s: string) => D.parseDateText(s, T, T);
+  assert.equal(p(''), null);
+  assert.equal(p('   '), null);
+  assert.equal(p('交周报'), null);
+  assert.equal(p('13月5日'), null);
+  assert.equal(p('0月'), null);
+  assert.equal(p('1969'), null, '1970 年之前不接受');
 });
 
 /* ============================== 解析 ============================== */
@@ -373,6 +445,24 @@ test('时间段文案，跨零点标次日', () => {
   assert.equal(timeRange(23 * 60 + 30, 60), '23:30 – 次日 00:30');
 });
 
+test('方向键微调上下沿：底边只改时长，上沿固定底边', () => {
+  // 底边往下 = 变长
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'bottom', 1), { duration: 75 });
+  // 时长下限 15，再往下按不动
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'bottom', -1), { duration: 15 });
+
+  // 上沿往上 = 开始提前、总长变长，**底边 10:00 不动**
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', -1), { time: '08:45', duration: 75 });
+  // 上沿往下 = 开始推迟、总长变短
+  assert.deepEqual(D.nudgeEdge('09:00', 60, 'top', 1), { time: '09:15', duration: 45 });
+  // 上沿不能越过底边（最少留 15 分钟），也不能早于 0:00
+  assert.deepEqual(D.nudgeEdge('09:00', 15, 'top', 1), { time: '09:00', duration: 15 });
+  assert.deepEqual(D.nudgeEdge('00:05', 60, 'top', -1), { time: '00:00', duration: 65 });
+
+  // 跨过整点也要对
+  assert.deepEqual(D.nudgeEdge('09:50', 60, 'top', 1), { time: '10:05', duration: 45 });
+});
+
 /* ============================== 查询口径 ============================== */
 
 test('逾期与今天互不重叠，同一个任务不会被数两次', () => {
@@ -453,6 +543,78 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
     '空数组是用户把垃圾箱拖出底部后的合法状态，不能又塞回去',
   );
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
+});
+
+test('外观三轴：auto 是合法值，不是「没选」', () => {
+  // 写成 `theme !== 'dark' ? 'light'` 的话，用户选的「跟随系统」每次刷新被打回常亮，
+  // 而且是静默的 —— 这一条就是把它钉住
+  assert.equal(normalizeUi({ theme: 'auto' }).theme, 'auto');
+  assert.equal(normalizeUi({ theme: 'dark' }).theme, 'dark');
+  assert.equal(normalizeUi({ theme: 'light' }).theme, 'light');
+  assert.equal(normalizeUi({ theme: 'sepia' as never }).theme, 'light', '认不出的值兜回常亮');
+});
+
+test('外观三轴：缺省与认不出的值', () => {
+  const d = normalizeUi(undefined);
+  assert.equal(d.accent, 'jade');
+  assert.equal(d.style, 'soft', 'soft 是空块 = 与旧版逐像素相同，所以它必须是默认');
+
+  assert.equal(normalizeUi({ accent: 'clay' }).accent, 'clay');
+  assert.equal(normalizeUi({ style: 'notion' }).style, 'notion');
+  assert.equal(normalizeUi({ accent: 'chartreuse' as never }).accent, 'jade');
+  assert.equal(normalizeUi({ style: 'brutalist' as never }).style, 'soft');
+});
+
+test('底栏 tabs：子集 + 顺序跟 navOrder 走 + 空了就回落', () => {
+  // 缺省
+  assert.deepEqual(normalizeUi(undefined).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 只收 CUSTOMIZABLE 里的键 —— 设置不进底栏（它在「更多」里固定有一格）
+  const mixed = normalizeUi({ tabs: ['habits', 'settings', 'inbox'] as string[] });
+  assert.deepEqual(mixed.tabs, ['inbox', 'habits'], '认不出的键被滤掉');
+  assert.ok(!mixed.tabs.includes('settings'), '设置不进底栏');
+
+  // 顺序取自 navOrder，不保留盘上自己的顺序
+  const reordered = normalizeUi({
+    navOrder: ['done', 'inbox', 'today'],
+    tabs: ['inbox', 'done'],
+  });
+  assert.deepEqual(reordered.tabs, ['done', 'inbox'], '按 navOrder 排');
+
+  // 一次操作里过滤后为空 → 回落默认。这里空栏没有合法解释，与 navBottom 不同
+  assert.deepEqual(normalizeUi({ tabs: [] }).tabs, ['inbox', 'today', 'overdue', 'calendar']);
+  assert.deepEqual(normalizeUi({ tabs: ['nope'] as string[] }).tabs,
+    ['inbox', 'today', 'overdue', 'calendar']);
+
+  // 超过上限的砍掉 —— UI 挡不住手改 localStorage
+  const many = normalizeUi({ tabs: ['inbox', 'today', 'overdue', 'calendar', 'habits'] });
+  assert.deepEqual(many.tabs, ['inbox', 'today', 'overdue', 'calendar']);
+});
+
+/* ============================== 快速添加的默认值 ============================== */
+
+test('快速添加默认值：待办箱无日期无时间，其余给今天', () => {
+  const T = '2026-10-06';
+  assert.deepEqual(quickDefaults({ nav: 'inbox' }, T), { date: null, time: null },
+    '待办箱丢进去的就是「还没定哪天做」的事');
+  assert.deepEqual(quickDefaults({ nav: 'today' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'overdue' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'habits' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'done' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'projects' }, T), { date: T, time: null });
+});
+
+test('快速添加默认值：日程页落在当前看的那天（cursor 是今天就是今天）', () => {
+  const T = '2026-10-06';
+  // cursor 是今天 → 今天
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: T }, T), { date: T, time: null });
+  // cursor 是别的那天 → 那天（日 / 周 /月视图都一样，默认落在光标那天）
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-10-20' }, T),
+    { date: '2026-10-20', time: null });
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-11-03', view: 'week' }, T),
+    { date: '2026-11-03', time: null });
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-12-01', view: 'month' }, T),
+    { date: '2026-12-01', time: null });
 });
 
 /* ============================== 迁移 ============================== */

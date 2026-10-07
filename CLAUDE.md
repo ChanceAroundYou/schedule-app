@@ -27,9 +27,11 @@
 │   ├── src/
 │   │   ├── main.tsx        入口：**先拆旧版 Service Worker**，再挂载
 │   │   ├── App.tsx         串起来的那层（约 700 行，见下）
+│   │   ├── vite-env.d.ts   vite/client 的类型（import.meta.env 等）
 │   │   ├── domain/         纯逻辑，零 React / DOM / 网络依赖
 │   │   │   ├── types.ts    LocalState · Task · Habit · Op
 │   │   │   ├── date.ts     today / addDays / weekStart / monthMatrix / fmt* / shortLoad
+│   │   │   │                / parseDateText（「找日期」输入框专用，见四、35 末）
 │   │   │   ├── parse.ts    自然语言解析（规则顺序敏感，见四、35）
 │   │   │   ├── repeat.ts   重复推进 + seriesRootOf + 派生 id
 │   │   │   ├── layout.ts   HOUR_H 等时间轴常量 + layoutOverlap
@@ -37,6 +39,7 @@
 │   │   │   ├── merge.ts    逐字段 LWW 客户端侧合并 + findConflicts（冲突判定）
 │   │   │   ├── ai.ts       AI：SSE 行解析 + 工具调用→人话 + 提案→人话（纯逻辑，见二、AI）
 │   │   │   ├── ai.test.ts
+│   │   │   ├── project.test.ts
 │   │   │   └── domain.test.ts
 │   │   ├── data/
 │   │   │   ├── store.ts    localStorage 持久化 + 增删改查 + ui.* （K = schedule-app-v4）
@@ -50,19 +53,27 @@
 │   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
 │   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
+│   │   │   ├── Settings.tsx  设置页：外观三轴 · 功能区自定义 · 数据备份 · 修改密码
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── AiPanel.tsx  AI 对话面板：气泡 + 动作条 + **提案卡片**（点确认才落库）
 │   │   │   ├── AiSettings.tsx  Base URL / 模型 / key 的设置浮层
+│   │   │   ├── AiHistory.tsx · AiMemory.tsx  AI 的操作历史与记忆库视图
 │   │   │   ├── aiClient.ts  fetch + ReadableStream 读 SSE（带 Authorization）
+│   │   │   ├── ProjectSheet.tsx  项目：建 / 改名 / 删 · 泳道看板
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）
+│   │   │   ├── Clock.tsx   12 小时制时间转盘（快速添加里那个钟表按钮）
+│   │   │   ├── DatePop.tsx  找日期面板（月历格 + 文本输入）
 │   │   │   ├── dragState.ts  模块级「正在拖」标志，给 sync 守卫用
-│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline / useOutsideClose
+│   │   │   ├── hooks.ts    useStoreState / useScopedState / useIsNarrow / useOnline /
+│   │   │   │                useOutsideClose / useKeyboardInset / useFocusTrap
+│   │   │   ├── theme.ts    外观三轴（accent / style / theme）的选项表
 │   │   │   └── cx.ts
 │   │   ├── views/          纯展示，零回调，只出 data-* 属性
 │   │   │   ├── Calendar.tsx  DayView · WeekView · MonthView · useViewLayout
 │   │   │   ├── Lists.tsx     待办箱 · 今天 · 逾期 · 已完成
 │   │   │   ├── Habits.tsx    打卡
+│   │   │   ├── Projects.tsx  项目泳道看板（待办 / 进行中 / 已完成）
 │   │   │   ├── Trash.tsx     垃圾箱
 │   │   │   └── parts.tsx    行/方块等共享小组件
 │   │   └── styles/
@@ -70,7 +81,9 @@
 │   │       └── tailwind.css  样式入口 + 新表面的少量 CSS
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
-│       └── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
+│       ├── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
+│       ├── contrast.mjs       色板 78 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
+│       └── color-scan.mjs     写死的边框宽度 / --border-w 变量扫描
 │
 ├── server/                 后端（Node 22，**只引 AI 那一组依赖**，见六、1）
 │   ├── server.js           路由表 + 处理器 + 鉴权中间件
@@ -91,7 +104,7 @@
 │   │   ├── sse.mjs         SSE 写出
 │   │   └── dates.mjs       服务器侧的几个日期小工具
 │   └── tests/
-│       ├── api.test.js        37 条接口用例
+│       ├── api.test.js        46 条接口用例
 │       ├── migration.test.js  schema 迁移（**唯一会吃掉用户数据的代码**）
 │       ├── ai.test.js         18 条 AI 层用例（假模型，不联网）
 │       └── smoke-share.mjs    真走网络：两个人共用一个集的全流程
@@ -449,13 +462,15 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 ### 测试
 
 ```bash
-cd app          && npm test                     # 77 条（node --test，跑 *.test.ts）
+cd app          && npm test                     # 109 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
+cd app          && node tests/contrast.mjs      # 正文 78 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
 npm test                                        # 根目录：server/tests/ 那三个 node --test 文件
-node server/tests/api.test.js                   # 37 条接口
+node server/tests/api.test.js                   # 46 条接口
 node server/tests/migration.test.js             # 8 条 schema 迁移
 node --test server/tests/ai.test.js             # 18 条 AI 层（假模型，不联网不烧额度）
 node server/tests/smoke-share.mjs               # 两个人共用一个集，真走网络
+cd app          && node tests/browser-smoke.mjs   # 185 条（无头 Chrome + CDP，零 npm 依赖）
 ```
 
 后面两个会**自己起一个临时后端**（临时数据库 + 随机端口），不碰线上那份。
@@ -476,7 +491,8 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 **鼠标拖拽同一套落点** → **被降成只读后提示点名集名** →
 **另一台设备改过同一字段 → 抽屉里那条提示 → 知道了** →
 **AI 提案卡片 → 确认 → 服务器上真有** →
-离线小标 → **把静态服务关掉还能打开**。
+离线小标 → **把静态服务关掉还能打开** → 无障碍点名 → **方向键微调时间轴把手** →
+**软键盘变量 --kb 两端接没接上** → **抽屉的 dialog 语义与焦点圈**。
 全程收集 console 报错，有一条就算失败。
 
 > 之所以不用 `vite preview`：它的代理写死指向 25692，**那是线上后端**，
@@ -537,6 +553,43 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > `HTMLTextAreaElement` 的原型（拿 `HTMLInputElement` 的来 call 会当场
 > `Illegal invocation`）；`snapshot.tasks` 是**按 id 索引的对象**不是数组
 > （见 `server/lib/sync.js` 的 `snapshot`），写 `.some()` 直接 TypeError。
+>
+> 第「十三」节（2026-10-06）专测**时间轴上下沿的键盘通路**：
+> `Tab` 能不能够到那两个把手、方向键有没有按 `data-act` 接到对的那一端。
+> 用 CDP 的 `Input.dispatchKeyEvent` 按**真实焦点**派发（见「四、44」），
+> 不是自己在页面里造一个 target。算式本身（15 分钟一档、上沿固定底边）
+> 在 `domain.test.ts` 的 `nudgeEdge` 用例里，这一节只管接线。
+>
+> 第「十四」节专测**软键盘避让的管道**：`useKeyboardInset` 有没有写 `--kb`、
+> 固定浮层有没有读它。真软键盘无头里造不出来，所以只验这两端（同触屏那条的限度）。
+> 写这两节时连踩了三个**伪装成产品 bug 的探针坑**，见「四、43」。
+>
+> 第「十五」节（2026-10-06）专测**语义与焦点**：抽屉是不是 `[role=dialog]`、
+> 焦点开时进不进面板（要落在面板本身，不是第一个输入框）、Tab 圈不圈得住
+> （从**最后一个**可聚焦元素按，才证得了）、关掉还回不还回原处；
+> 侧栏的 `aria-current`、找日期的 `aria-expanded`；以及 `prefers-reduced-motion`
+> 关掉过渡但放过加载圈。验过它有牙（三处一起改坏，三条当场红）。
+> 四个坑都在「四、45」：`[role=dialog]` 的歧义、上一节留着的抽屉、
+> `getComputedStyle` 的 `1e-05s`。
+>
+> 第「十六」节（2026-10-06）补的是**此前一条断言都没有的三样**：找日期的
+> **文本输入**（不是点格子）、快速添加里那个 12 小时制转盘、侧栏跨组拖拽重排。
+> 转盘那一节顺带量出表盘在弹层里偏右 2px（`.cp-face` 写死 246px，而
+> `.clock-pop` 的 274px 扣掉边框和内边距只剩 242px，`margin: 0 auto` 塌成 0），
+> 见「五、界面约定」里那条宽度。
+> 验过它有牙：把 `parseDateText` 里裸周几那句 `if (!m[1] && d < today)` 改坏、
+> 重新构建，只有「裸周几落在将来」那一条红（差 -1 天）。
+> 三个坑都在「四、46」。
+>
+> 第「十七」节 2026-10-07 又扩了三样（快速添加那三件改动的接线）：
+> 时钟按钮点下去**先出日期面板**（42 格、待办箱默认 0 格高亮）、
+> 选完日期才出转盘、胶囊上日期和时间**同时在**、选的那天真的落库；
+> **占位符在「今天」和「待办箱」两页完全一样**；
+> 以及窄屏的**浮动 `+` 号**（在、默认收起、点开、再点收起）。
+> 窄屏那条靠 `Page.addScriptToEvaluateOnNewDocument` 里一个 `matchMedia` 的
+> Proxy 强行把 `(max-width: 900px)` 判成 true（`sessionStorage.__forceNarrow === '0'`
+> 时放行真实值），绕开无头 Chrome 那个 526px 的下限（见四、34）。
+> 写这几条时踩到 `evalJs` 少了 `return`（见四、39），三条假红。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -779,6 +832,14 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 **逾期必须留在底栏**（用户重视的功能，不能藏进「更多」）。
 浮层 z-index 必须 > 标签栏的 45，否则抽屉被标签栏压住一截（现在用 60 / 61）。
 
+> **浮层的宽度要按「内容盒」算，不是按外框算。** `* { box-sizing: border-box }`
+> （`legacy.css` 第 139 行）意味着 `width` 里已经扣掉了边框和内边距。
+> 时间转盘 `.clock-pop` 原先写 274px，扣掉两条 1px 边框和左右各 15px 内边距
+> 只剩 242px，而里面的 `.cp-face` 是**写死的 246px**（`C = 123` 是它的一半，
+> 见 `ui/Clock.tsx`）—— 表盘比内容盒宽 4px，`margin: 0 auto` 塌成 0，
+> 整个表盘偏右 2px。现在写 278px，内容盒恰好 246。
+> **凡是「里面有个写死宽度的东西」的浮层都要这么对一遍**，别只量外框。
+
 > `styles/legacy.css` 里**另有** `@media (max-width: 820px)` 与 `(max-width: 640px)`
 > 两处，那是排版微调（字号、间距），**不是**响应式断点，别混。
 
@@ -884,10 +945,17 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 「今天」页有可折叠的「今天已完成」区块，状态存 `ui.tdoneOpen`，默认收起。
 在里面取消勾选会让任务自动回到日程页。
 
-**23. 侧栏顺序可拖动，`normalizeUi` 必须区分 undefined 与空数组**
+**23. 侧栏顺序存在 `ui.navOrder` / `ui.navBottom`，`normalizeUi` 必须区分 undefined 与空数组**
 
-状态存 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部 `#navBottom` 组）。
-`#nav` 与 `#navBottom` 是两个容器，垃圾箱可以被拖进主区，反之亦然。
+状态存 `ui.navOrder`（全局顺序）+ `ui.navBottom`（哪些归底部那一组）。
+底部组在窄屏是底部标签栏之外的「更多」抽屉，宽屏是侧栏的下半区。
+
+> ⚠️ **老版本的标题是「侧栏顺序可拖动」，那是过期说法。** React 重写之后
+> `ui.navOrder` / `ui.navBottom` **一度是死数据**：`ui/Shell.tsx` 还在读它们，
+> 但全项目**没有任何调用点写它们**（`grep -rn 'navBottom' app/src` 只有类型、
+> 默认值、`normalizeUi` 和读取处）。所以「拖过一次顺序就记住了」在那一版是假的 ——
+> 看到的永远是默认顺序。写入方在 2026-10-06 的「功能区自定义」里补回，
+> 入口在**设置页**（不复用 `ui/dnd.ts`，那套是给时间轴与让位洞用的）。
 
 处理在 `domain/model.ts` 的 `normalizeUi()`：
 
@@ -896,9 +964,9 @@ var avail = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingB
 > 与「空数组 → 用户有意为之，原样保留」。
 > 代码里就是 `bottom === null ? ['trash'] : bottom`，`domain.test.ts` 有用例锁着。
 
-其他坑：浏览器 `dragend` 后可能补一次 `click`（用 `navJustDragged` 标志 +
-`setTimeout(…, 0)` 吞掉）；侧栏 active 高亮要用统一的 `$$('.nav-item')` 取，
-不能分开写 `#nav` 与 `#navBottom`。
+其他坑：侧栏 active 高亮要用统一的 `$$('.nav-item')` 取，不能分开写 `#nav`
+与 `#navBottom`。（旧版还有一条「`dragend` 后补一次 `click`，用 `navJustDragged`
+吞掉」—— 那个标志在新版代码里**不存在**，别照着找。）
 
 **24. CSS 层叠：同特异度后写的赢，给折叠元素加类要查 display**
 
@@ -1096,6 +1164,18 @@ await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
 > **但只有「整段独立成词」时才这么做**（`if (mi === 0 && !ctx.isolated) return null`）；
 > 带「半 / 刻 / 分」时信号足够强，不需要独立成词。
 
+> **「找日期」那个输入框是另一套解析器，裸周几的口径必须和 `parse()` 一致。**
+> `domain/date.ts` 的 `parseDateText(raw, baseIso, todayIso?)` 是给「找日期」输入框
+> 专用的：它只解析一个日期片段，认得比 `parse()` 深（`1015`、`2026-10`、
+> `上个月` 都认），而且**年份基准是面板所在的月份**，不是今天 —— 12 月翻到面板
+> 显示次年 1 月时输入「1月5日」，要的是明年。
+>
+> 两处**必须一致**的是裸周几：`parse.ts` 里那条日期规则是
+> `if (d < todayIso) d = D.addDays(d, 7)`，`parseDateText` 里也得有同一句。
+> 曾经没有 —— 于是同一句「周三」，在任务标题里跳到下周三、在找日期框里跳到
+> **两天前**。改这块时两个解析器要一起看，`domain.test.ts` 有一条用例
+> 直接拿 `parse()` 的结果和 `parseDateText()` 比，口径一歪就红。
+
 **36. 窄屏的负载文字要用 `shortLoad`，不要用完整时长**
 
 月视图格子窄（53px 宽），完整文案「3小时45分」会**折成三行把日期数字挤扁**。
@@ -1139,6 +1219,15 @@ await waitFor(page, `
 
 > 已经在 `waitFor` 里 `expr.trim()` 掉了，别把这个 trim 当成多余的。
 > 写多行模板时也别把 `? 1 : null` 拆到下一行 —— 那是另一个坑。
+
+> **同一个包装的另一半：`evalJs` 里的表达式必须自己写 `return`。**
+> `waitFor` 会替你补 `return`，`evalJs` **不会** —— 它只是
+> `(async () => { <表达式> })()`，光写一个表达式等于算完就丢，求值恒为
+> `undefined`。断言写成
+> ``ok(await evalJs(page, `!!document.querySelector('.fast-fab')`), …)``
+> 就永远是红的，而页面其实好好的（2026-10-07 加浮动 + 号时三条假红，
+> 诊断行里 `fab: true` 和那条 FAIL 摆在一起才看破）。
+> **规矩：`evalJs` 一律写 `return …;`，`waitFor` 一律不写。**
 
 **40. 探针的合成点击必须连 `pointerdown` 一起补，`el.click()` 不算一次真点击**
 
@@ -1206,6 +1295,78 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 > 只打 `exceptionDetails.text` 的话每个异常都长成一句「Uncaught」，等于没说
 > （这条也踩过）。
 
+**43. 写探针时踩到的三个（都会伪装成「应用坏了」）**
+
+2026-10-06 加「方向键微调时间轴上下沿」那一节时，连着假失败三轮，
+每一轮**指向的都是产品代码，实际全是探针自己的错**：
+
+- **在待办箱里快速添加「9:00 开会」得到的是「有时间、没日期」的任务。**
+  `quickDefaults()` 对 `nav==='inbox'` 返回 `date: null`，而时间轴按 `date` 挑 → 这条
+  任何日视图都不画方块，探针在「等方块」上超时，看着像时间轴渲染坏了。
+  要造一条有时间轴方块的任务，就得在**日程页**（那边 `quickDefaults` 给的是
+  `ui.cursor`）加，或者写字面日期。
+- **`.ev-resize` 会先命中上沿**（上沿的 class 是 `ev-resize ev-resize-top`，
+  DOM 里排在前面）。断言名写着「下沿」、实际查的是上沿 —— 两者形状一样，
+  于是照样绿。要下沿就用 `.ev-resize:not(.ev-resize-top)`。
+- **基准值不能刚保存就读 localStorage**（四、41 的翻版）。新建的任务在
+  `persist()` 防抖落盘之前读不到，`undefined + 15` 是 `NaN`，
+  于是「按了键没反应」。这次是靠失败信息里那句 `目标时长 undefined` 定位的 ——
+  **诊断行要带原始值，不要只写「等不到」**。
+
+> 共同点：**症状全都指向产品，根因全在探针**。上一节（四、40）那段
+> 「先怀疑探针」在这里又应验了三次。加断言时顺手把关键中间量打进失败信息里，
+> 能省掉一整轮 4 分钟的复跑。
+
+**44. 合成方向键要用 CDP 的 `Input.dispatchKeyEvent`**
+
+`el.dispatchEvent(new KeyboardEvent('keydown', …))` 也能让处理器跑起来，
+但那样 `target` 是**我们自己摆上去的**：控件要是压根拿不到焦点（比如漏了
+`tabIndex`），断言照样通过。走 CDP 的 `Input.dispatchKeyEvent` 则按**真实焦点**
+派发 —— 验过它有牙：把下沿那句 `tabIndex={0}` 摘掉重跑，焦点落到 `BODY`，
+「把手真能拿到焦点」当场失败。
+
+```js
+await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 });
+```
+
+`keyDown` 和 `rawKeyDown` 都进得来（实测同效），`keyUp` 要跟着发一个。
+
+**45. 探针里的 `[role="dialog"]` 现在是个歧义选择器**
+
+详情抽屉也变成 `role="dialog"` 之后，第十六节原来那句
+`waitFor('[role="dialog"]' 存在)` 会**先命中抽屉**（它本来就开着）：
+「确认浮层打开」当场假通过，结尾那句「等它关掉」则永远等不到 —— 报的是
+「等不到确认浮层关掉」，指向的是 Sheet 的实现，而真正的问题在选择器。
+
+Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
+或者按文字筛。**加了一个 `role` 就要回头看看有没有别的选择器被它带偏。**
+
+同一条里还有两个同类坑：
+
+- **上一节把抽屉留在打开状态，下一节点一行不会重挂组件**，靠 `[id]` 触发的
+  focus-in `useEffect` 根本不会跑 —— 那一节要验的东西会全体落空
+  （症状：焦点读到的是快速添加框、末尾「还回原处」等不到）。
+  断言的**前置条件**也要自己造，别假设上一节给你留了个干净盘子。
+- **`getComputedStyle` 回的是序列化后的值**：CSS 里写 `0.01ms`，
+  它在 Chrome 里读出来是 `1e-05s`。比字符串会得到假失败，
+  要按单位解析成秒再比大小。
+
+**46. 探针伺服的是 `dist/`，不是源码**
+
+`serveDist()` 读的是 `../dist`，所以**改完前端不 `npm run build` 就等于没改**：
+第十七节第一次跑出来的「裸周几落在将来」是绿的，但那时跑的是上一轮的产物 ——
+它证的是接线，不是刚修的那个 bug。**改完前端先构建，再跑探针。**
+
+同一条里还有两个同类坑：
+
+- **`dragover` 是连续事件，React 会批处理**。在同一个 `evalJs` 里
+  `dispatchEvent(dragover)` 紧接着读 DOM，读到的是**上一帧**的让位线
+  （症状：`no-ins`，看着像事件没进处理器）。要等一拍再读。
+- **断言别写死「应该是什么」，要写「和刚才量到的一致」**。侧栏拖拽那一节
+  我写的是 `navBottom === ['habits']`，而正确值是 `['trash','habits']`
+  —— 垃圾箱**本来就该**留在底部组（`navBottom` 是「哪些归底部」，
+  不是「底部组里只有谁」）。改成和 DOM 里量到的顺序比，才既对又不脆。
+
 ---
 
 ## 五、界面约定
@@ -1235,21 +1396,154 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 > 现在的做法是把三档的 L\* 间距按原比例整体压进达标区间。
 > `app/tests/contrast.mjs` 锁着这条（`node tests/contrast.mjs`，零依赖）。
 
-**亮色的语义色与「快速添加」那组胶囊整体低于 4.5:1，暗色那一套全部达标。**
-这是先天的、没改，脚本只报告不断言：
+**语义色（`--primary` / `--danger` / `--warn` / `--ok`）与「快速添加」那组胶囊
+同样是按对比度算的**，理由一样：它们承载的全是正文 —— 错误提示、危险按钮、
+打卡连续天数、进度数字、解析预览。**亮色那一套原先整体只有 2.66–4.39**
+（`--warn` 2.66 最糟，`--ok` 3.46，三个胶囊 3.88–4.22），已经全部提到 4.5:1 以上。
+**暗色那一套的语义色本身达标**，但「压在它上面的白字」不达标 —— 见下面
+`--on-primary` 那一段。
 
-| 变量 | 用在哪 | 亮色 | 暗色 |
-|---|---|---|---|
-| `--warn` | 打卡连续天数 `.ci-streak` | **2.66** ✗✗ | 7.96 ✓ |
-| `--ok` | 进度数字 `.sp-num b`（16px，不算大字） | **3.46** ✗ | 6.63 ✓ |
-| `--chip-time-fg` | 快速添加的时间胶囊（11.5px） | **3.88** ✗ | 6.90 ✓ |
-| `--danger` | 错误提示、危险按钮 | **4.02** ✗ | 5.56 ✓ |
-| `--chip-rep-fg` | 重复胶囊 | **4.02** ✗ | 7.89 ✓ |
-| `--chip-pri-fg` | 优先级胶囊 | **4.22** ✗ | 6.83 ✓ |
-| `--primary` | 链接文字、主按钮 | **4.39** ✗ | 5.57 ✓ |
+> 语义色比灰阶**多一层约束**：`--primary` / `--danger` **既当文字色、也当底色配字**
+> （`.check-btn.on` / `.chip.active` / `.nav-item .count.warn` / `.btn-primary`…）。
+> 所以每个都要同时满足「对自己的 soft 底」和「`--on-primary` 对自己」，**只往一个方向调
+> 会让另一种用法更糟**。`contrast.mjs` 把这两个方向都断言了。
+>
+> `--warn` 是唯一视觉上明显变了的（橙 → 褐，`#e08b25` → `#a16217`）：
+> 2.66 实在太低，不压到这个深度绕不过去。
+>
+> **13 处光晕原先是写死的 `rgba(74,108,247,…)` / `rgba(223,74,79,…)`** ——
+> 旧 `--primary` (`#4a6cf7`) / `--danger` (`#df4a4f`) 的副本，而这两个颜色现在
+> 全站哪里都没有了。已改成 `color-mix(in srgb, var(--primary) N%, transparent)`：
+> 位移 / 模糊 / 扩散一个字节没动，只有颜色回到当前主题的语义色上，α 原样保留。
+> 暗色下从「一层发灰的旧蓝」变成跟着 `--primary` 走的亮蓝。
+> （`color-mix` 抗得住压缩 —— 构建产物里 13 处都在；另外 19 处是 Tailwind
+> 自己给 `bg-white/10` 那类透明度修饰符生成的，说明这个构建目标本来就用它。）
 
-> 要修的时候注意 `--primary` / `--danger` **既当文字色、也当按钮底色配白字**，
-> 两边的对比度要一起算 —— 只调一个方向会让另一种用法更糟。
+**`--on-primary`：压在语义色上的文字色，亮色 `#fff`、暗色 `#101216`。**
+19 处 `color: #fff` 落在 `--primary` / `--danger` 底上的，一律走 `var(--on-primary)`。
+
+> **为什么暗色必须反过来。** 暗色的 `--primary` (`#6d8bff`) 是个**亮蓝**，白字压上去
+> 只有 **3.09**；`--danger` (`#f0656a`) 同理 3.10。**这不是没调好，是单色无解** ——
+> 枚举过整个色相不变的范围：让 `--primary` 既要在 `#181b22` 上读得清（要够亮）
+> 又扛得住 `#fff` 压上来（要够暗），满足两个条件的取值有 **0 个**。
+> 暗色改用近黑字之后是 **6.1:1**，亮色本来就够深、白字 5.11 —— 两套都过。
+>
+> **两处故意留 `#fff`，改之前先看理由**：`.brand-logo` 是 32×32 的图标字，
+> WCAG 1.4.3 明文豁免 logotype（而且它的渐变第二站 `#7b53d8` 偏深，换深色字
+> 反而掉到 3.66）；`.toast` 的底是写死的深色（两套主题都深），换深色字会看不见。
+>
+> 这两条都在 `legacy.css` 里各留了就地注释，别当成漏改。
+
+### 快速添加：窄屏一个浮动 `+`，日期 / 时间分两层（2026-10-07）
+
+**窄屏（≤900px）默认收起成右下角一个浮动 `+`，点开才展开横条、再点收起（图标变 `×`）。**
+宽屏常驻展开 —— 桌面有地方，多一次点击只是碍事。状态是 `QuickAdd` 里的
+`expanded = useState(!narrow)`，**不落盘**：这是「这一次怎么用」，不是用户偏好。
+`narrow` 用 `useIsNarrow()` 同步初始化，所以首帧就是对的，不会闪一下。
+
+- `.fast-fab` 的 `z-index` 是 **39**：要压住正文，但**必须低于抽屉遮罩的 40** ——
+  抽屉打开时它该被罩住，而不是浮在遮罩上还能点。底部偏移是
+  `calc(56px + env(safe-area-inset-bottom, 0px) + 12px)`（56px = 标签栏高）。
+- 窄屏展开时横条加了 `padding-right: 62px` 给 FAB 让位，别把时钟按钮盖住。
+- 「N」快捷键在窄屏下**先展开再聚焦**。收起的横条是 `display:none`，聚焦不上去，
+  所以展开后要等一次 effect（`focusOnExpand` ref）再 `focus()`。
+- 收起的横条靠 `hidden` 属性藏（Tailwind 4 preflight 的
+  `[hidden] { display: none !important }` 压得住 `legacy.css` 里没分层的
+  `.fast-add { display: flex }`）。**别改成自己加一个 `display:none` 的类** ——
+  那就得跟层叠顺序再斗一次（见四、24）。
+
+**时钟按钮点下去先出日期面板、选完再出时间转盘**（需求 3）。
+顺序是「日期 → 时间」：日期决定这条任务落在哪一天，时间只在有日期时才有意义。
+
+- 日期面板是 `ui/DatePop.tsx` 的 `DatePop`，里面的月历 `MiniCalendar`
+  **与顶栏「找日期」的 `JumpPop` 共用同一份**（`data-jump` / `.jp-*` 那套原样复用，
+  连密度短横的 `loadOf` 都是同一个 `jumpLoad(state, iso)`）。别再写第二份月历。
+- 时间那一层就是原来的 `ClockPop`，一行没改。
+- **默认值由 `domain/model.ts` 的 `quickDefaults(ui, todayIso)` 给**，
+  单测锁着：待办箱 = 无日期无时间；日程页 = 当前 `cursor` 那天（cursor 空就是今天）；
+  其余（今天 / 逾期 / 打卡 / 已完成 / 项目）= 今天。放在领域层而不是 `Shell.tsx`，
+  就是为了能被单测钉住 —— 它只读 `nav` 与 `cursor`，所以收 `Partial<UiPrefs>`。
+- 生效值的优先级是 **面板选的 > 文本解析的 > tab 默认的**。注意时间那一档
+  与旧版**相反**（旧版是「文本解析的 > 面板选的」）—— 用户刚在转盘上点的那一下
+  必须赢过他打的字，否则就是「点了没反应」。
+- 待办箱的默认是**无日期**，所以日期面板必须有「不选日期」这条出口
+  （`.dp-foot` 里，另有「取消」只关面板、保留已选）。否则点开就只能选一个、回不去。
+- 占位符**不随 tab 变**（`QUICK_PLACEHOLDER` 一个常量）。按 tab 换文案会让用户
+  以为「切个 tab 我刚打的话被吃了」；已经打进去的字本来就是 React 状态，
+  切 tab 不卸载 `QuickAdd`，所以不会丢。
+
+
+
+**这一档的分法按「用户能不能操作它」，不按「有没有边框」。**
+
+| 变量 | 亮 | 暗 | 要求 | 谁用 |
+|---|---|---|---|---|
+| `--border` | `#e8eaf0` | `#272c37` | **不要求 3:1** | 装饰分隔线 · 表面轮廓 · 中性填充 |
+| `--input` | `#82889b` | `#71767f` | **≥3:1**（WCAG 1.4.11） | 交互控件描边 |
+
+`--border` 画的是「两块东西挨着」，不是「这里能点」：时间轴刻度、月历格线、
+卡片边、浮层边、进度槽（`.sp-bar` / `.wh-load`）、拖拽抓手（`.ms-grab` /
+`.as-grab`）、置灰的完成胶囊。**一档兼「线」和「填充」是常见做法**
+（Radix 第 6 步、Tailwind 的 `border-gray-200` + `bg-gray-200` 都是同一色值两用）。
+
+`--input` 是输入框 / 下拉 / 勾选圈 / 幽灵按钮 / 视图切换 / 滚动条把手。
+**勾选圈最要紧**：那个 20px 的空圈只有它自己说明「这里能点」，而这个应用
+是给家里长辈用的。旧值亮 1.37 / 暗 1.53，等于没画。
+
+> **旧名字 `--border-2` 和常见范式是反的。** 多数设计系统里带「2」的那个
+> 是**更弱**的（Ant 的 `colorBorderSecondary` 就是），而它实际更强。
+> 现在的名字取自 shadcn 的 `--input` / Material 3 的 `outline` / Primer 的
+> `control-borderColor` —— 按**角色**命名，不按序号。
+> 全仓 39 处引用已全部改名，`--border-2` 一个都不剩。
+
+> **归类只认「能不能操作」，别按「长得像不像框」分。** 这么分过一次，
+> 把提示框（`.conflict-box`）、邀请卡片、发出去的邀请那行虚线、
+> 找日期浮层（`.jump-pop`，本来就带 `--shadow-lg`）全塞进了 `--input` ——
+> 它们都是**表面**，走 `--border`。
+
+**焦点环统一在 `legacy.css` 文件最末那一条 `:focus-visible`，不要再散着写。**
+
+> **为什么必须和 `--input` 一起改。** 以前每处 `:focus` 只把描边染成
+> `--primary`，**不新增任何像素** —— 那时前后对比是 3.73 / 3.64，刚好过
+> WCAG 2.2 SC 2.4.11 要的 3:1。但 `--input` 一提到 3:1，这个对比就掉到
+> **1.45 / 1.48**。**两件事是耦合的，只改一件会把另一件踩烂。**
+>
+> 现在改成画一圈**新增**的 2px `--primary` 外环：那些像素未聚焦时是底色、
+> 聚焦时是 `--primary`，5.11（亮）/ 5.57（暗），且不依赖底色是什么。
+> 各处原来那句「聚焦时描边染成 `--primary`」保留不动 ——
+> **环 + 变色叠加才是常见做法**（Material 3 的文本框、shadcn 的
+> `:focus-visible` 都是这样）。
+>
+> 用 `:focus-visible` 而不是 `:focus`：文本框在鼠标点入时也会命中它（浏览器
+> 自带的判断），按钮则只在键盘走到时命中 —— 鼠标点按钮不该闪一圈蓝。
+> 放在文件最末是为了压过各处零散的 `outline: none`（同特异度后写的赢）。
+> `.view-switch > *` 例外：那个容器自己是 `overflow: hidden`，外环会被裁掉，
+> 所以改成画在里面（`outline-offset: -2px`）。
+
+### 变量名不许写错，也不许给兜底值
+
+**新 surface（登录页 / 浮层 / `Btn`）原先写的是 `var(--accent,#4f7cff)` /
+`var(--card,#fff)` / `var(--line,…)` 这一批，而这 6 个名字
+（`--accent` / `--accent-soft` / `--card` / `--chip` / `--hover` / `--line`）
+在 `legacy.css` 里一个都没定义。** 有兜底值，所以不报错、不白屏 ——
+只是**两套主题下全都在用写死的浅色**：主按钮那个 `#4f7cff` 压白字只有 **3.70:1**，
+暗色也没跟着 `--primary` 走。共 24 处，另有 11 处「名字对但兜底值是旧值」
+（`var(--text-2,#5b6070)` 之类）。**静默降级比直接坏掉难查得多。**
+
+> 现在的约定：`.tsx` 里引用变量**一律不给兜底值**。
+> 写错名字会当场看得见（声明失效 → 继承），不会悄悄糊过去。
+> 两套主题的对照表：`--accent`→`--primary`、`--accent-soft`→`--primary-soft`、
+> `--card`→`--panel`、`--chip`→`--panel-3`、`--line`→`--border`、
+> `--hover`→`--panel-3`、`--border-2`→`--input`（见上一节）。
+>
+> **CSS 里的兜底值不一样**：`var(--cols, 1)` / `var(--week-head-h, 79px)` 是真默认值
+> （那两个变量由 JS 内联设置），保留。
+
+`app/tests/contrast.mjs` 四段都在锁：① 78 对「文字 on 真会落上去的底色」≥ 4.5:1；
+② 8 对**控件描边 ≥ 3:1**（WCAG 1.4.11，**和 4.5 那条是两条不同的线**，
+每行自带 `min`）；③ `src/` 里引用了但 `legacy.css` 没定义的变量；
+④ `.tsx` 里多余的 `var()` 兜底值。四段**都验过有牙**（改坏一处就 FAIL ——
+`--input` 改回旧值会恰好报 4 条）。
 
 **图标一律 lucide，零 emoji。** 弹层一律应用内，零原生 `confirm` / `alert`。
 
@@ -1300,6 +1594,155 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 
 > **别在界面上提「管理员」**，也**别写「第一个人是管理员」** ——
 > 那是上一版的设计，`users.is_admin` 这一列已经没有了。
+
+### 无障碍：三条不变量 + 一个已踩过的坑（2026-10-06）
+
+**1. 每个控件都要有可访问名字。** 四种写法，按场合挑：
+
+| 场合 | 怎么写 | 例子 |
+|---|---|---|
+| 有可见标签的输入框 | `useId()` + `<label htmlFor>` | `Drawer.tsx` 的日期 / 时间 / 时长 / 重复 / 备注 |
+| 下拉框、没有可见标签的框 | `aria-label` | 管理浮层那两个角色 `<select>`、邀请用户名框 |
+| 只有图标的按钮 | `<IconBtn label="…">`（`ui/kit.tsx`） | 抽屉的关闭、各类「删除 / 移出」 |
+| 有文字的按钮 | 什么都不用加 | 可见文字**就是**它的名字 |
+
+> **`placeholder` 不算名字** —— 它输入后就没了，只是最后一档的退化行为。
+> 这一条踩过：探针本来接受 placeholder，于是管理浮层那个「名字」框
+> **整整一轮没被任何断言看过**（它原来是个 `<div>`，不是 `<label>`）。
+> 现在 `browser-smoke.mjs` 的 `nameOf()` 明确不接受 placeholder，别再加回去。
+
+**2. 勾选圈一律走 `views/parts.tsx` 的 `<CheckBtn>`。** 六个调用点原先各写一遍，
+于是各自长歪（月 / 周视图那个是 `<span>`、打卡和时间轴那两个没名字、逾期行的
+标题写死成「标记完成」）。**别再手写 `span.check-btn`。**
+
+**3. 命中区 ≥ 24×24（WCAG 2.5.8），但视觉尺寸不变。**
+`.check-btn` 本体 18px、`.sm` 只有 14px，靠 `::before` 往外撑到 24 ——
+**不是把圆点画大**，画大就毁了列表密度（`legacy.css` 那一段有完整注释）。
+
+> 实测有个取整细节别当成 bug：整数步进的探针（`elementFromPoint` 往外走）
+> 在 24 的边界上会读到 **23**。CSS 声明的尺寸是达标的，别为了这一格去改 CSS。
+>
+> 其余图标按钮本体只有 19–21px，走的是 2.5.8 的**间距豁免**（24px 圆不与
+> 邻居相交即算达标）。要收紧得先量邻居 —— 一刀切加 padding 会撞上
+> `.ci-item` 的 9px 内边距。
+
+**锁在哪**：`app/tests/browser-smoke.mjs` 的**第五节**（管理浮层，联网时跑：
+成员是拉的，断网后角色下拉根本不渲染）和**第十三节**（待办箱 / 抽屉 / 月视图，
+断网后跑）。`a11y(root)` 收一个可选选择器，**扫浮层时一定要传** ——
+不传就扫全文档，侧栏里任意一个没名字的控件都会算到浮层那条断言头上，
+失败信息指错地方（这个探针里栽过一次，见四、40）。
+
+验过它有牙：把 `<CheckBtn>` 换回 `<span>`、或者拿掉一个 `aria-label`，对应那条立刻红。
+
+### 键盘：一档微调，不做全套（2026-10-06 用户裁决）
+
+> 「不需要过分考虑键盘操作，只要最简单的方向键能微调即可，其他的地方也是。」
+
+**时间轴两个把手（`.ev-resize` / `.ev-resize-top`）是页面上仅有的两个
+不可点、只能拖的控件** —— 其余每一个 `data-act` 都是真 `<button>`，Tab 就能到。
+所以键盘支持只需要补这一处：两个 `<span>` 给上 `tabIndex={0}` + `aria-label`
+（`views/Calendar.tsx`），方向键那一段在 `App.tsx` 的键盘委托里，
+算法走 `domain/date.ts` 的 `nudgeEdge()` —— **和鼠标拖拽共用同一份算式**。
+
+- 键位只有 ↑ / ↓。**方向跟着时间轴走**（往下 = `+1`），不是「变长 / 变短」：
+  上沿往上拖是**变长**，跟着时间轴才不会在两边写出相反的符号。
+- 一次一档 **15 分钟**，和拖拽的步进一致。
+- 焦点在把手上时**只有方向键**被截走（`Return` 提前返回），
+  `1/2/3` 切视图、`d/t` 跳页那些不受影响。
+- **别再加别的键位** —— 用户明确说了不要。「其他地方也是」指的是
+  「有没有第二个这样的控件」，查下来没有。
+
+### 移动端软键盘避让：`--kb`（2026-10-06）
+
+`dvh` 跟的是**布局视口**，而软键盘只压小**可视视口** —— 所以 `100dvh` /
+`88dvh` 一个像素都不会躲。**固定定位的那几个面**（详情抽屉、`Sheet`、登录页）
+浏览器也不会替我们滚上来的。所以：
+
+- `ui/hooks.ts` 的 `useKeyboardInset()` 用 `window.visualViewport` 量出
+  被遮的高度，写进 `document.documentElement` 的 **`--kb`**；
+- 消费点三处：`kit.tsx` 的 `Sheet`（`pb-[var(--kb,0px)]`，无条件）、
+  `legacy.css` 里 ≤900px 的 `.drawer`（`padding-bottom`，宽屏是侧栏面板、
+  键盘盖不到）、`ui/Auth.tsx` 的登录卡（`pb-[calc(1.5rem+var(--kb,0px))]`）。
+- 登录卡还额外改成 **可滚 + `my-auto` 居中**，不用 `items-center`：
+  内容比容器高时居中会把顶裁掉且滚不上去。
+
+> **页内正常滚动的输入框不用管** —— 那些浏览器自己会滚。
+> 改了需要避让的固定面板，记得接上 `--kb`，别写死一个 padding。
+
+**锁在哪**：`browser-smoke.mjs` **第十五节**。它只验**管道**（有人写 `--kb`、
+有人读 `--kb`），**验不了**「visualViewport 变化 → 算出多少像素」那一步 ——
+无头里造不出真软键盘（和触屏那条同理，真机手感只能人看）。
+验过它有牙：把 Sheet 那句 `pb-[var(--kb,0px)]` 摘掉重跑，
+「容器读到了 --kb」当场变成 `0px`。
+
+### 浮层的语义与焦点（2026-10-06）
+
+**凡是真的盖住整页的浮层，必须同时做四件事**，少一件就有一句是假话：
+
+| 做什么 | 在哪 | 少了会怎样 |
+|---|---|---|
+| `role="dialog"` + `aria-modal="true"` + 名字 | `Drawer.tsx`（`aria-label="任务详情：<标题>"`）、`kit.tsx` 的 `Sheet`（`aria-labelledby` 指向标题那个 `div`）、`Shell.tsx` 的 `MoreSheet` | 读屏只念到一堆孤立的输入框，不知道它们在一片对话框里 |
+| **`useFocusTrap(panel, open)`** | `ui/hooks.ts`，三个浮层都挂 | `aria-modal` 是对读屏的承诺「外面别念」，Tab 却能走到背后 —— 那句承诺当场变成假的 |
+| 开时把焦点送进**面板本身**（`tabIndex={-1}` + `panel.focus()`） | `Drawer` / `Sheet` / `MoreSheet` | 送进第一个输入框会**当场弹出手机软键盘**，而用户点一行往往只是想看看（用户明确要求过：别抢焦点弹键盘） |
+| 关时 `prevFocus.focus()` 还回原处 | 同上 | 焦点掉到 `body` 上，键盘用户得从页首重新 Tab 一遍 |
+
+两条实现细节：
+
+- **记录「原来那个元素」之前先看焦点在不在浮层里**（`panel.current?.contains(document.activeElement)`）。
+  从一条任务切到另一条时 `id` 变了但组件不卸载，这时 `activeElement` 就是浮层自己，
+  记下来等于把「还回哪」擦掉。
+- 遮罩加 `aria-hidden="true"`：它只是个鼠标目标（键盘走 Escape），别让读屏念一个空 div。
+- `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `legacy.css` 末尾
+  **关掉焦点环** —— 一圈 2px 顺着整个浮层轮廓跑，看着像界面坏了。
+  （必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer` 里，压不过它，见四、27。）
+
+**锁在哪**：`browser-smoke.mjs` **第十六节**。它从**最后一个**可聚焦元素按 Tab
+（从中间按证不了什么 —— 前后都在浮层里，圈不圈都一样），再按 Escape 看焦点有没有
+回到开浮层前那个输入框。验过它有牙：一次把 `useFocusTrap(panel,false)`、
+`panel.focus()`、勾选圈的 `aria-label` 三处同时改坏，
+「焦点落在面板本身」「Tab 绕回抽屉里」「抽屉里每个输入框都有名字」三条当场红。
+
+> **抽屉头上那个勾选圈原先 `display:none`** —— 那是把它从无障碍树里整个摘掉
+> （读屏不知道任务做没做完，键盘也够不着）。现在是「看不见但还在」
+> （1px、透明、出流，视觉零变化），焦点环画在旁边那个可见的圈上，
+> 名字走 `aria-label`（包着它的 `<label>` 里一个字都没有，给不出名字）。
+
+### 状态语义：`aria-current` / `aria-expanded` / `aria-haspopup`（2026-10-06）
+
+这三个各有各的场合，**别混着用**（`aria-expanded` 摆在只是弹浮层的按钮上，
+读屏会念成「已折叠」——那里根本没折叠这回事）：
+
+| 属性 | 用在哪 | 判据 |
+|---|---|---|
+| `aria-current="page"` | 侧栏 `.nav-item`、底部标签栏 `.tab` | 「现在在哪一页」。视觉上靠 `.active` 那点底色，读屏只认这个 |
+| `aria-expanded`（+ `aria-controls`） | 「今天已完成」的 `.td-head`、「找日期」的 `.jump-btn` | **真的是个折叠开关**：按一下展开、再按一下收起 |
+| `aria-haspopup="dialog"` | 管理当前日程集 / 邀请收件箱 / 找日期 | 按下去会弹一个浮层，但开没开是 App 那一层的状态 |
+
+> 后两个的差别就是「开没开这个状态**在谁手里**」。`.td-head` 和 `.jump-btn` 的
+> 开合是组件自己的 `useState`，白送一个 `aria-expanded`；
+> 管理浮层 / 邀请收件箱的开关在 `App.tsx`，两个布尔值要穿两层 props 才到得了
+> 侧栏，而浮层自己已经在开的那一瞬间念出名字了 —— 那里只写静态的 `aria-haspopup`。
+>
+> 锁在**第十六节**最后三条：侧栏有且只有当前项带 `aria-current="page"`
+> （和 `.active` 对得上），`jump-btn` 的 `aria-expanded` 跟着开合 `false → true`。
+
+### 降低动态效果：全站关，只有「正在同步」例外（2026-10-06）
+
+`legacy.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
+通配 `*` + `!important` 把 `animation-duration` / `transition-duration` 压到
+`.01ms`、`scroll-behavior` 复位。
+
+- **为什么不挑几个「大动作」**：会动的地方有十几处（抽屉 / 浮层的 .24s 位移、
+  拖拽让位的 180ms、方块 hover 的位移、各处颜色过渡），挑漏一处就等于没关，
+  而且日后再加一处也不会有人记得回来补。
+- **唯一的例外是 `.animate-spin`**（同步中的加载圈）：它不是动效，是在说
+  「正在同步，别以为卡死了」。停下来传达的正好是相反的意思。
+- 这一条必须**压得过内联 style 和 Tailwind 层**，所以 `!important` 不是偷懒。
+
+**锁在哪**：第十六节先量一遍**没开时**的值当基准，再 `Emulation.setEmulatedMedia`
+切到 `reduce` 量第二遍 —— 不量基准的话「过渡是 0s」可能本来就是（压根没写过渡），
+断言会假通过。注意 `getComputedStyle` 回的是**序列化后**的值：
+写 `0.01ms` 它给你 `1e-05s`，所以按秒解析再比大小，**别比字符串**。
 
 ---
 

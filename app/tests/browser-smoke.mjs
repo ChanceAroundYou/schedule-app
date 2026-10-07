@@ -193,6 +193,20 @@ async function touch(page, type, at) {
   });
 }
 
+/**
+ * 合成一次按键。走 CDP 的 Input.dispatchKeyEvent —— 事件按**真实焦点**
+ * 派发，不是我们自己在页面里指定 target，所以能连带证明「焦点真在它身上」。
+ *
+ * 在页面里 `el.dispatchEvent(new KeyboardEvent('keydown', …))` 也能让
+ * 处理器跑起来，但那样 target 是我们摆上去的：把手要是压根拿不到焦点
+ * （比如忘了 tabIndex），它照样「通过」。这里不行。
+ */
+async function key(page, k, code, vk) {
+  const base = { key: k, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+
 /** 用顶栏的快速输入框加一条任务（走真实 UI，不直接改 store） */
 async function quickAdd(page, text) {
   const n = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
@@ -236,8 +250,10 @@ try {
 
   track(spawn(process.execPath, [path.join(ROOT, 'server/server.js')], {
     env: { ...process.env, PORT: String(API_PORT), SCHEDULE_DATA_DIR: dataDir },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
   }));
+  procs[procs.length - 1].stderr.on('data', (d) => process.stderr.write('[be] ' + d));
+  procs[procs.length - 1].stdout.on('data', (d) => process.stderr.write('[bo] ' + d));
   web = await serveDist();
   procs.push({ kill: () => { if (web && web.listening) web.close(); } });
 
@@ -358,6 +374,18 @@ try {
   ok(sheetText.includes('爸爸'), '成员列表里有自己');
   ok(sheetText.includes('创建者'), '自己的角色显示为「创建者」');
   ok(sheetText.includes('邀请成员'), '创建者能看到发邀请的入口');
+
+  // 浮层里的控件也要有名字。**这一段是补漏**：「每个输入框都有名字」原来只扫了
+  // 抽屉（第十三节），管理浮层的名字框和两个角色下拉一个都没有可访问名字 ——
+  // 它们从来就没被任何断言看过。
+  //
+  // 放在这里而不是第十三节：成员是**联网拉的**，第十三节跑在断网之后，
+  // 那时成员列表是空的、角色下拉根本不渲染，扫过去等于空过（候选数为 0）。
+  const sheetA11y = await evalJs(page, `return { bad: ${a11y('[role="dialog"]')},
+    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select').length };`);
+  ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 两个角色下拉）');
+  ok(sheetA11y.bad.length === 0, '管理浮层里每个控件都有名字'
+    + (sheetA11y.bad.length ? '：\n      ' + sheetA11y.bad.join('\n      ') : ''));
 
   await evalJs(page, `
     const inp = document.querySelector('[data-cal-name]');
@@ -831,9 +859,9 @@ try {
     body: JSON.stringify({ cursor: 0 }),
   }).then((r) => r.json());
 
-  const before = await syncNow();
+  const snapBefore = await syncNow();
   const findBuy = (s) => Object.values(s.snapshot?.tasks || {}).find((t) => t.title === '买菜');
-  ok(!findBuy(before), '确认之前服务器上没有「买菜」');
+  ok(!findBuy(snapBefore), '确认之前服务器上没有「买菜」');
 
   // 点确认
   await clickEl(page, `document.querySelector('.ai-prop button')`);
@@ -894,6 +922,12 @@ try {
   ok(other.length === 0, '离线这一段除了接口连不上，没有别的 console 报错'
     + (other.length ? '：\n      ' + fmt(other) : ''));
 
+  // 静态服务关了之后必须重开 —— 后面几节（尤其十六的改密码）要走 /api/ 代理。
+  // 不重开的话它们会以另一种方式失败：fetch 直接「连不上服务器」，
+  // 看着像网络问题，其实是代理没了。
+  web = await serveDist();
+  procs.push({ kill: () => { if (web && web.listening) web.close(); } });
+
   // 放在最后、且刻意在「关掉静态服务」之后：这一节全是纯 DOM 查询，
   // 不需要网络，而断网那一节已经把服务器关了 —— 插在它前面会被它的
   // closeAllConnections 打乱状态，插在后面则完全不动已有状态。
@@ -909,13 +943,25 @@ try {
   // 验过它有牙：把 CheckBtn 里那个 <button> 换回 <span>，第一条立刻失败。
   // 注意这里**不带 return** —— 它是一段表达式，方便和别的字段拼在一个
   // evalJs 里（下面 scan() 就是这么用的）。
-  const A11Y = `(() => {
+  // 用具名函数而不是 const —— **函数声明会提升**，管理浮层那一节（第五节）
+  // 在定义之前就要用它；const 在 TDZ 里，那样写会当场 ReferenceError。
+  //
+  // 参数 root 是个选择器，**不带就扫全文档**。为什么要能缩范围：第五节的浮层是
+  // 叠在整页上的，扫全文档的话侧栏里任何一个没名字的控件都会算到这条断言头上，
+  // 失败信息就指错了地方 —— 这个文件里已经栽过一次（见上面 waitFor 那段）。
+  function a11y(root) { return `(() => {
     const bad = [];
+    const box = ${root ? `document.querySelector(${JSON.stringify(root)})` : 'document'};
+    if (!box) return ['扫描范围没找到：' + ${JSON.stringify(root || '')}];
     const nameOf = (el) => {
       if (el.getAttribute('aria-label')) return 'aria-label';
       if (el.getAttribute('title')) return 'title';
       if (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) return 'label[for]';
-      if (el.closest('label')) return '包在 label 里';
+      // 包在 label 里**也得 label 里有字**才算有名字：抽屉头上那个勾选圈
+      // 包在一个空 label 里（圈是旁边一个 span），空 label 本身给不出名字 ——
+      // 原先这里不看文字，等于给「没名字」开了个后门。
+      const lab = el.closest('label');
+      if (lab && lab.textContent.trim()) return '包在 label 里';
       // 按钮的可见文字**就是**它的可访问名字，和 aria-label 等价 ——
       // 第一版漏了这一条，把 nav-item / ghost-btn 这些带字的全报成了「没名字」，
       // 是探针自己的 bug（见 CLAUDE.md 四、40：这种症状先怀疑探针）
@@ -932,20 +978,27 @@ try {
     //   否则会把模板当场截断、后面半截漏到 Node 里跑 —— 已经踩过一次）
     const cls = (el) => {
       const own = el.tagName.toLowerCase();
+      // 光看 class 管理浮层那两个框会压成同一条（前缀都是 min-w-0），
+      // 失败信息指不出是哪一个 —— 那一次报的就是这条，白查了一轮。
+      // data-* 最准（探针本来就认 data-cal-name 这些抓手），其次 placeholder。
+      const dk = el.getAttributeNames().find((n) => n.startsWith('data-'));
+      const ph = el.getAttribute('placeholder');
+      const tag = own + (dk ? '[' + dk + ']' : '') + (ph ? '[placeholder=' + ph + ']' : '');
+      if (dk || ph) return tag;
       if (typeof el.className === 'string' && el.className) return own + '.' + el.className.split(' ')[0];
       const p = el.parentElement;
       const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
       return own + ' in .' + pc;
     };
-    for (const el of document.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
-    for (const el of document.querySelectorAll('button,input,select,textarea')) {
+    for (const el of box.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
+    for (const el of box.querySelectorAll('button,input,select,textarea')) {
       if (el.type === 'hidden' || el.disabled) continue;
       // 没渲染出来的不算 —— 导入备份那个 <input type=file> 就是藏起来的，
       // 由旁边那个有名字的按钮触发，是标准做法
       if (!el.getClientRects().length) continue;
       if (!nameOf(el)) bad.push('没名字：' + cls(el));
     }
-    for (const l of document.querySelectorAll('label')) {
+    for (const l of box.querySelectorAll('label')) {
       if (l.htmlFor) {
         if (!document.getElementById(l.htmlFor)) bad.push('label[for] 指向不存在的 id：' + l.htmlFor);
       } else if (!l.querySelector('input,select,textarea')) {
@@ -953,7 +1006,7 @@ try {
       }
     }
     return [...new Set(bad)];
-  })()`;
+  })()`; }
 
   // 先切到待办箱再造一条待查的 —— 断网了，quickAdd 只写本机发件箱，不影响别的断言
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
@@ -970,7 +1023,7 @@ try {
    * `cands` 就是用来堵这个的：候选为 0 时单独报错，而不是装作通过。
    */
   const scan = async () => {
-    const r = await evalJs(page, `return { bad: ${A11Y}, cands: document.querySelectorAll('.task-el').length };`);
+    const r = await evalJs(page, `return { bad: ${a11y()}, cands: document.querySelectorAll('.task-el').length };`);
     return r;
   };
 
@@ -1008,7 +1061,7 @@ try {
       .find((e) => e.textContent.includes('无障碍检查'))
   `) !== 'missing', '点开刚建的那条任务');
   await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
-  const draw = await evalJs(page, `return { bad: ${A11Y},
+  const draw = await evalJs(page, `return { bad: ${a11y()},
     cands: document.querySelectorAll('.drawer.open input, .drawer.open select, .drawer.open textarea').length };`);
   ok(draw.cands >= 5, '抽屉里有 ' + draw.cands + ' 个表单控件可查（日期 / 时间 / 时长 / 重复 / 备注）');
   ok(draw.bad.length === 0, '详情抽屉里每个输入框都有名字、每个 label 都配上了控件'
@@ -1077,6 +1130,888 @@ try {
     + '　诊断：' + JSON.stringify(diag));
   ok(month.bad.length === 0, '月视图格子里的勾选圈也是真按钮'
     + (month.bad.length ? '：\n      ' + month.bad.join('\n      ') : ''));
+
+  console.log('\n十四、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
+  //
+  // 上下沿那两个把手是**页面上仅有的两个不可点、只能拖的控件**（其余 data-act
+  // 全是真 button）。鼠标那条路本来就通，但键盘进来的话它们原先既拿不到焦点、
+  // 也没有名字 —— 这一节守的就是「Tab 能到 + 方向键能微调」这两条。
+  //
+  // 为什么必须用 CDP 的 Input.dispatchKeyEvent 而不是在页面里 dispatchEvent：
+  // 后者 target 是我们自己摆上去的，把手就算没有 tabIndex 也照样"通过"。
+  //
+  // 这里只验**接线**（哪一端改 time、哪一端只改 duration），不含算法 ——
+  // 15 分钟一档、上沿固定底边那些在 domain.test.ts 的 nudgeEdge 用例里锁着。
+
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  // 从**日程页**快速添加，不走 quickAdd 那个 helper：它的等条件是
+  // 「[data-scope="inbox"] 里多出一行」，而这一条**有日期**、根本不在待办箱。
+  // 而日期这一项必须由页面自己给：待办箱的 defaultDate 是 null，加出来的是
+  // 「有时间、没日期」的任务，哪个日视图都不会把它画上时间轴（下方就会一直
+  // 等不到方块）。日程页的 defaultDate 是 ui.cursor，正好是今天。
+  await evalJs(page, `
+    const inp = document.querySelector('.fast-add input');
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(inp, '9:00 微调试试');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  `);
+  const block = await waitFor(page, `
+    (() => {
+      const e = [...document.querySelectorAll('.tl-event')].find((x) => x.textContent.includes('微调试试'));
+      if (!e) return null;
+      // 上沿的 class 是 "ev-resize ev-resize-top"，所以 '.ev-resize' 会**先命中上沿**
+      // （DOM 里它在前面）—— 想拿的是下沿就必须排掉它。
+      // 不排的话断言名写着「下沿」，实际查的是上沿，两条形状一样、于是照样"通过"。
+      const h = e.querySelector('.ev-resize:not(.ev-resize-top)');
+      const th = e.querySelector('.ev-resize-top');
+      return h && th ? {
+        id: h.dataset.id, tab: h.tabIndex, name: h.getAttribute('aria-label'),
+        topTab: th.tabIndex, topName: th.getAttribute('aria-label'),
+      } : null;
+    })()
+  `, '时间轴方块和它的上下两个把手', 8000);
+  ok(block.tab === 0 && block.topTab === 0,
+    '两个把手都能被 Tab 够到（下沿 tabIndex=' + block.tab + '，上沿 ' + block.topTab + '）');
+  ok(!!block.name && !!block.topName && block.name !== block.topName,
+    '两个把手各有名字，且分得清上下：' + JSON.stringify(block.name) + ' / ' + JSON.stringify(block.topName));
+
+  const sel = (act) => `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
+  const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;
+
+  // 真拿焦点（不是造一个 target），并**顺手挂一个按键记录器** ——
+  // 这一条失败的原因无非两种：键没进页面，或者进了但没被接住。记录器
+  // 一次就能分开：`!prevented` 表示 App 那段处理器**跑到了**（它会 preventDefault），
+  // 空数组表示键压根没到。没有它就只能看到一个 null。
+  const focused = await evalJs(page, `
+    window.__keys = [];
+    document.addEventListener('keydown', (e) => {
+      if (window.__keys.length < 5) {
+        window.__keys.push(e.key + '@' + (e.target.className || e.target.tagName)
+          + (e.defaultPrevented ? '!被接住了' : ''));
+      }
+    });
+    const h = ${sel('resize')};
+    if (!h) return 'missing';
+    h.focus();
+    return document.activeElement === h ? 'ok' : ('焦点跑到了 ' + document.activeElement.tagName);
+  `);
+  ok(focused === 'ok', '把手真能拿到焦点，实际 ' + focused);
+
+  // 先把这条任务等**落盘**再读基准值。store.persist() 是防抖的，刚快速添加完
+  // localStorage 里还没有它 —— 直接读会得到 undefined，`undefined + 15` 是 NaN，
+  // 下面那条断言就永远等不到（本节的第一次失败正是这个：按键其实全对，
+  // 诊断里 `目标时长 undefined` 才是真线索）。
+  const t0 = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t ? { duration: t.duration, time: t.time } : null; })()
+  `, '新任务落盘', 8000);
+  const before = t0.duration;
+  ok(before > 0 && t0.time === '09:00', '新任务落盘：09:00 起、' + before + ' 分钟');
+  await key(page, 'ArrowDown', 'ArrowDown', 40);
+  const kdiag = await evalJs(page, `return {
+    keys: window.__keys,
+    active: document.activeElement && (document.activeElement.className || document.activeElement.tagName),
+    dur: (${taskOf} || {}).duration,
+    time: (${taskOf} || {}).time,
+  };`);
+  console.log('    诊断：目标时长 ' + before + ' → ' + JSON.stringify(kdiag)
+    + '（keys 为空 = 按键没进页面；有条目但没有「!被接住了」 = 进了但没被接住）');
+  // 等**落盘**再读：store.persist() 是防抖的，改完立刻读拿到的是上一版（四、41）
+  const nudged = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.duration === ${before} + 15 ? t.duration : null; })()
+  `, '下沿按 ↓ 把时长加了一档', 8000);
+  ok(nudged === before + 15, '下沿按 ↓：时长 ' + before + ' → ' + nudged + '（+15 分钟）');
+
+  // 下沿**不该动 time** —— 这是「哪一端接哪一边」的核心断言
+  ok(await evalJs(page, `return (${taskOf} || {}).time === '09:00';`),
+    '下沿只改时长，开始时间仍是 09:00');
+
+  await key(page, 'ArrowUp', 'ArrowUp', 38);
+  const back = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.duration === ${before} ? t.duration : null; })()
+  `, '↑ 又把它调回来', 8000);
+  ok(back === before, '再按 ↑ 回到 ' + back + '（同一档来回，不会漂）');
+
+  // 换到上沿：固定底边 ⇒ time 变早、duration 变长
+  const topFocused = await evalJs(page, `
+    const h = ${sel('resize-top')};
+    if (!h) return 'missing';
+    h.focus();
+    return document.activeElement === h ? 'ok' : 'no';
+  `);
+  ok(topFocused === 'ok', '上沿把手也能拿到焦点');
+  await key(page, 'ArrowUp', 'ArrowUp', 38);
+  const top = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.time === '08:45' ? { time: t.time, duration: t.duration } : null; })()
+  `, '上沿按 ↑ 把开始时间提前 15 分钟', 8000);
+  ok(top.duration === before + 15, '上沿按 ↑ 时底边固定：开始 09:00 → ' + top.time + '，时长 ' + before + ' → ' + top.duration);
+
+  // 收尾：把这条恢复原样，别给后面的断言留个挪过位置的方块
+  await evalJs(page, `
+    const h = ${sel('resize')};
+    h && h.focus();
+    return true;
+  `);
+  await key(page, 'ArrowDown', 'ArrowDown', 40);
+
+  console.log('\n十五、软键盘避让：--kb 有人写、固定的浮层有人读');
+  //
+  // 无头里造不出真软键盘（真实键盘是 OS 层的，CDP 没有这个开关），
+  // 所以这一节只验**管道**，分两半：
+  //   ① 有没有人在写 --kb（useKeyboardInset 挂上了没有）
+  //   ② 写了之后固定浮层有没有真的让开（消费端接上了没有）
+  // 中间那一步「visualViewport 变化 → 算出多少像素」只能靠真机，和触屏那条一样。
+  //
+  // 为什么值得单列一条：`dvh` 跟的是**布局视口**，软键盘只压小**可视视口** ——
+  // 所以 `100dvh` / `88dvh` 一个字都不会躲，必须靠 visualViewport 算。
+  // 这正是「输入框被键盘挡住」的根因，光看 CSS 是看不出来的。
+
+  const kbVar = await evalJs(page, `return document.documentElement.style.getPropertyValue('--kb').trim();`);
+  // 桌面无头没有软键盘，所以写出来是 0px —— 这里证的是「有人在写」，不是那个 0
+  ok(/^\d+px$/.test(kbVar), 'useKeyboardInset 写上了 --kb，实际 ' + JSON.stringify(kbVar));
+
+  // 打开一个固定定位的浮层，量它的底边。用抽屉里那条删除确认（Sheet），
+  // 它是 `pb-[var(--kb,0px)]` 唯一的无条件消费点。
+  // 抽屉自己那条 --kb 只在 ≤900px 生效（宽屏是侧栏面板，键盘盖不到），
+  // 而这一节跑在桌面视口下 —— 所以这里测的是 Sheet 这条路径。
+  //
+  // **选择器不能只写 `[role="dialog"]`**：详情抽屉现在也是 dialog，而且它就开在
+  // 下面一层 —— 裸选择器会先命中抽屉，于是「确认浮层打开」当场假通过
+  // （抽屉早就在那儿了），末尾那句「等它关掉」则永远等不到（抽屉一直开着）。
+  // Sheet 是 portal 到 body 的：body > 浮层容器 > 面板。
+  const SHEET = `document.querySelector('body > div > div[role="dialog"]')`;
+  await clickEl(page, `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}]')`);
+  await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.drawer.open button')].find((b) => b.textContent.includes('删除任务'))`);
+  await waitFor(page, `${SHEET} ? 1 : null`, '确认浮层打开', 8000);
+
+  // 探针自己把 --kb 顶到 200px（无头里造不出键盘，只能直接写这个变量），
+  // 然后量浮层有没有整体抬上去。**写完立刻量** —— getBoundingClientRect 会
+  // 强制一次样式与布局，同一个同步块里就能读到新值。
+  const avoid = await evalJs(page, `
+    const root = document.documentElement;
+    const prev = root.style.getPropertyValue('--kb');
+    root.style.setProperty('--kb', '200px');
+    const dlg = ${SHEET};
+    if (!dlg) { root.style.setProperty('--kb', prev); return { err: '确认浮层没找到' }; }
+    const r = dlg.getBoundingClientRect();
+    const out = {
+      bottom: Math.round(r.bottom), vh: window.innerHeight,
+      pad: getComputedStyle(dlg.parentElement).paddingBottom,
+    };
+    root.style.setProperty('--kb', prev);
+    return out;
+  `);
+  ok(!avoid.err && avoid.pad === '200px',
+    '确认浮层的容器读到了 --kb（padding-bottom = ' + avoid.pad + '）' + (avoid.err ? '：' + avoid.err : ''));
+  // 上面那条是这一节**唯一有牙**的断言：把 Sheet 外层那句 pb-[var(--kb,0px)]
+  // 摘掉重跑，它当场变成 0px。下面这条是几何自检 —— 在桌面宽度下
+  // （sm 断点起 items-end 换成 items-center）浮层本来就在上半屏，
+  // 摘掉 padding 它照样通过，所以别把它当守卫。
+  // 「贴着键盘上沿」这个位置关系只在 ≤640px 的 items-end 下成立，
+  // 而窄屏无头测不了（四、34），那半截只能靠真机。
+  ok(avoid.bottom <= avoid.vh - 199,
+    '浮层整个在「键盘」之上：底边 ' + avoid.bottom + ' ≤ 视口高 ' + avoid.vh + ' − 200');
+
+  // 取消掉，别真删 —— 这条任务前面几节还要用
+  await clickEl(page, `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.trim() === '取消')`);
+  await waitFor(page, `${SHEET} ? null : 1`, '确认浮层关掉', 8000);
+
+  console.log('\n十六、抽屉是 dialog、焦点进得去出得来；状态语义与降低动效');
+  //
+  // 这一节管的是**语义与焦点**，和别的节不重叠：
+  //   · 抽屉原先没有任何 role，读屏只会念到一堆孤立的输入框，不知道它们在一片
+  //     「对话框」里、也不知道背后那一页此刻是惰性的。标了 aria-modal 之后
+  //     Tab 就**必须真被圈住** —— 圈不住的话那句承诺是假的（读屏照样念背后整页）。
+  //   · 焦点进来时落在**面板本身**，不是第一个输入框：落进输入框会当场弹出
+  //     手机软键盘，而用户点一行往往只是想看看。
+  //   · 焦点出去时要还回原来那个元素，否则键盘用户得从页首重新 Tab 一遍。
+  //   · 降低动效是 WCAG 2.3.3，全站关掉，只有「正在同步」那个转圈例外。
+
+  // 上一节把抽屉留在了打开状态（它只收掉了里面那层确认浮层）。**必须先关掉**：
+  // 抽屉已经开着的时候再点一行只是换了任务、组件不重挂，focus-in 那条 effect
+  // 不会重跑 —— 这一节要验的东西全体落空（第一次跑就是这么假失败的：
+  // 「焦点落在面板本身」读到的是快速添加框，末尾「还回原处」也等不到）。
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '先把上一节留着的抽屉关掉', 8000);
+
+  // 先把光标放到一个真输入框里当「原来那个元素」。合成的 pointerdown 不会移
+  // 焦点（浏览器只对受信任的 mousedown 做默认聚焦），所以点抽屉之前它还在 ——
+  // 正好用来验「关掉之后还回原处」。
+  const RESTORE = '.fast-add input';
+  ok(await evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(RESTORE)});
+    if (!el) return 'missing';
+    el.focus();
+    return document.activeElement === el ? 'ok' : 'no';
+  `) === 'ok', '先把光标放在快速添加框里（关掉抽屉之后要还回这儿）');
+
+  await clickEl(page, `document.querySelector('#content .tl-event, #content .task-row')`);
+  await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
+
+  const sem = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const mask = document.querySelector('.mask.show');
+    const a = document.activeElement;
+    return {
+      role: d.getAttribute('role'),
+      modal: d.getAttribute('aria-modal'),
+      name: d.getAttribute('aria-label'),
+      mask: mask ? mask.getAttribute('aria-hidden') : 'no-mask',
+      active: a === d ? 'panel' : (a === document.body ? 'BODY' : (a.className || a.tagName)),
+    };
+  `);
+  ok(sem.role === 'dialog' && sem.modal === 'true',
+    '抽屉是 [role=dialog][aria-modal=true]，实际 ' + JSON.stringify(sem.role + '/' + sem.modal));
+  ok(/任务详情/.test(String(sem.name)), '抽屉有名字（读屏念得出这片是干什么的），实际 ' + JSON.stringify(sem.name));
+  ok(sem.mask === 'true', '遮罩对读屏是隐藏的（它只是个鼠标目标），实际 ' + JSON.stringify(sem.mask));
+  ok(sem.active === 'panel',
+    '焦点落在面板本身，不是第一个输入框（落进输入框会当场弹软键盘），实际 ' + JSON.stringify(sem.active));
+
+  // Tab 圈住：从**最后一个**可聚焦元素按 Tab，应该绕回抽屉里的第一个。
+  // 从中间按 Tab 证不了什么 —— 前后都在抽屉里，圈不圈都一样。
+  const trap = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const items = [...d.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
+      .filter((el) => el.getClientRects().length);
+    if (items.length < 2) return { n: items.length };
+    items[items.length - 1].focus();
+    return { n: items.length, last: document.activeElement === items[items.length - 1] };
+  `);
+  ok(trap.n >= 2 && trap.last, '抽屉里能数出可聚焦元素，最后一个也拿得到焦点（' + trap.n + ' 个）');
+  await key(page, 'Tab', 'Tab', 9);
+  const afterTab = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const a = document.activeElement;
+    return { inside: !!d && d.contains(a), desc: a === document.body ? 'BODY（跑出去了）' : (a.className || a.tagName) };
+  `);
+  ok(afterTab.inside, '在抽屉最后一个控件上按 Tab 会绕回抽屉里，实际 焦点落在 ' + afterTab.desc);
+
+  // 降低动效：**先量一遍开着的值当基准** —— 不量基准的话「过渡是 0s」可能本来
+  // 就是（压根没写过渡），断言会假通过。
+  const motion = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const spin = document.createElement('div');
+    spin.className = 'animate-spin';
+    document.body.appendChild(spin);
+    const out = { drawer: getComputedStyle(d).transitionDuration, spin: getComputedStyle(spin).animationDuration };
+    spin.remove();
+    return out;
+  `);
+  await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  const reduced = await evalJs(page, `
+    const d = document.querySelector('.drawer.open');
+    const spin = document.createElement('div');
+    spin.className = 'animate-spin';
+    document.body.appendChild(spin);
+    const out = { drawer: getComputedStyle(d).transitionDuration, spin: getComputedStyle(spin).animationDuration };
+    spin.remove();
+    return out;
+  `);
+  await page.send('Emulation.setEmulatedMedia', { features: [] });
+  // getComputedStyle 给的是**序列化后**的值：写 `0.01ms` 它回 `1e-05s`。
+  // 所以按秒解析再比大小，别去比字符串（第一版就是比字符串，报了个假失败）。
+  const secs = (v) => Math.max(...String(v).split(',').map((p) => {
+    const t = p.trim();
+    return parseFloat(t) * (t.endsWith('ms') ? 0.001 : 1);
+  }));
+  ok(secs(motion.drawer) > 0.1,
+    '没开降低动效时抽屉的过渡是真过渡（基准 ' + motion.drawer + '）');
+  ok(secs(reduced.drawer) < 0.01,
+    '开了 prefers-reduced-motion 之后过渡被关掉：' + motion.drawer + ' → ' + reduced.drawer);
+  ok(reduced.spin === '1s',
+    '加载圈是例外，照转不误（它不是动效，是在说「正在同步」）：' + motion.spin + ' → ' + reduced.spin);
+
+  // 关掉抽屉：焦点要还给刚才那个输入框
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '抽屉关掉', 8000);
+  const restored = await waitFor(page, `
+    (() => { const a = document.activeElement; return (a && a.matches(${JSON.stringify(RESTORE)})) ? 'ok' : null; })()
+  `, '焦点还给快速添加框', 8000);
+  ok(restored === 'ok', '关掉之后焦点回到原来那个元素，不是掉在 body 上');
+
+  // 侧栏当前项：视觉上靠 .active 那点底色，读屏只认 aria-current
+  const cur = await evalJs(page, `
+    const items = [...document.querySelectorAll('.nav-item')];
+    const marked = items.filter((e) => e.getAttribute('aria-current') === 'page');
+    const active = items.find((e) => e.className.includes('active'));
+    return {
+      n: items.length,
+      marked: marked.map((e) => e.dataset.nav),
+      activeNav: active ? active.dataset.nav : null,
+      stray: marked.filter((e) => !e.className.includes('active')).map((e) => e.dataset.nav),
+    };
+  `);
+  ok(cur.n > 3 && cur.marked.length === 1 && cur.stray.length === 0 && cur.marked[0] === cur.activeNav,
+    '侧栏只有当前那一项带 aria-current="page"（' + cur.n + ' 项，标的 '
+    + JSON.stringify(cur.marked) + '，当前页 ' + JSON.stringify(cur.activeNav) + '）');
+
+  // 「找日期」是个真的折叠开关：aria-expanded 得跟着开合走
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'calendar')`);
+  await waitFor(page, `document.querySelector('.jump-btn') ? 1 : null`, '切到日程页（找日期按钮在那儿）', 8000);
+  const jumpState = () => evalJs(page, `
+    const b = document.querySelector('.jump-btn');
+    return { exp: b.getAttribute('aria-expanded'), hd: b.getAttribute('aria-haspopup') };
+  `);
+  const j0 = await jumpState();
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'true' ? 1 : null`,
+    '找日期面板打开', 8000);
+  const j1 = await jumpState();
+  ok(j0.exp === 'false' && j1.exp === 'true',
+    '「找日期」的 aria-expanded 跟着开合：' + j0.exp + ' → ' + j1.exp);
+  ok(j0.hd === 'dialog', '「找日期」说了按下去会弹东西（aria-haspopup=dialog），实际 ' + JSON.stringify(j0.hd));
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'false' ? 1 : null`,
+    '找日期面板收起', 8000);
+
+  console.log('\n十七、找日期文本框 / 时间转盘');
+  /* 这三样此前**一条断言都没有**：找日期的文本输入（不是点格子）、快速添加里
+     那个 12 小时制转盘、侧栏跨组拖拽重排。
+     `parseDateText` 的判定逻辑在 domain.test.ts 里有单测，这里证的是**接线**：
+     输入框 → 解析 → 光标真挪过去 → 顶栏真跟着变。
+     转盘和侧栏拖拽全是 DOM 层面的东西，只能在这儿证。 */
+
+  /* ---- 1. 找日期：裸周几必须落在**下一个**，不能是刚刚过去那个 ---- */
+  // 先回到今天，光标位置才是确定的（不然「跳过去」可能压根没变化，等于没测）
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  await new Promise((r) => setTimeout(r, 150));
+
+  const setText = (sel, v) => evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return 'missing';
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(el, ${JSON.stringify(v)});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'ok';
+  `);
+
+  // 「六天后的星期几」= **这周刚刚过去的那一天**（周日转一圈回来）。
+  // 挑它而不是「两天后的」：后者修没修都对得上，等于没测。
+  // 有 bug 的那版返回 weekStart 里的昨天（ahead = -1），修了的返回下周同一日。
+  const dowNow = await evalJs(page, `return new Date().getDay();`);
+  const targetDow = (dowNow + 6) % 7;
+  const cnWord = ['日', '一', '二', '三', '四', '五', '六'][targetDow];
+
+  const cursor0 = await waitFor(page, `
+    (() => { const c = JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cursor; return c || null; })()
+  `, '读到当前光标', 8000);
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板打开', 8000);
+  ok(await setText('.jump-pop input', '周' + cnWord) === 'ok', '往找日期框里打字');
+  await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '点「跳转」后面板收起来', 8000);
+  // persist() 有防抖，落盘要等（CLAUDE.md 四、41）；判据写成「光标与刚才不同」
+  const jumped = await waitFor(page, `
+    (() => {
+      const u = JSON.parse(localStorage.getItem('schedule-app-v4')).ui;
+      if (!u.cursor || u.cursor === ${JSON.stringify(cursor0)}) return null;
+      const d = new Date(u.cursor + 'T00:00:00');
+      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      return { iso: u.cursor, dow: d.getDay(), ahead: Math.round((d - t0) / 86400000) };
+    })()
+  `, '光标跳到新日期', 8000);
+  ok(jumped && jumped.dow === targetDow,
+    '「周' + cnWord + '」解析到那一天，实际 ' + JSON.stringify(jumped));
+  ok(jumped && jumped.ahead >= 1 && jumped.ahead <= 7,
+    '裸周几落在**将来**的一周内（不是刚过去的那一天），实际 差 ' + (jumped && jumped.ahead) + ' 天');
+
+  /* ---- 2. 看不懂的写法要留在原地说一声，不能静默不理 ---- */
+  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板再打开', 8000);
+  await setText('.jump-pop input', '胡说八道');
+  await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
+  const badMsg = await waitFor(page, `
+    (() => {
+      const p = document.querySelector('.jump-pop');
+      if (!p) return null;
+      const b = p.querySelector('.jp-bad');
+      return b ? b.textContent.trim() : null;
+    })()
+  `, '看不懂的日期要给提示', 8000);
+  ok(/没看懂/.test(String(badMsg)), '认不出时面板不关、并给出提示，实际 ' + JSON.stringify(badMsg));
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '找日期面板收起', 8000);
+
+  /* ---- 3. 两层：先选日期、再选时间 ---- */
+  // 换到待办箱：这一节最后要往箱子里加一条带时间的任务，得站在能看见它的页面上
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
+  await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切到待办箱', 8000);
+
+  // 点时钟按钮**先出日期面板**（不是直接出转盘）—— 这是需求 3 的两层
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '先出日期面板', 8000);
+  const dp = await evalJs(page, `
+    const pop = document.querySelector('.date-pop');
+    return {
+      cells: pop.querySelectorAll('.jp-cell').length,
+      cur: pop.querySelectorAll('.jp-cell.cur').length,
+      today: pop.querySelectorAll('.jp-cell.today').length,
+    };
+  `);
+  ok(dp.cells === 42, '日期面板是 6×7 的月历，实际 ' + dp.cells);
+  ok(dp.cur === 0, '待办箱默认无日期 → 面板里没有高亮，实际 ' + dp.cur);
+  ok(dp.today === 1, '今天仍然描边（只是不选中），实际 ' + dp.today);
+
+  // 「不选日期」→ 进第二层（待办箱那条路：保持无日期、只带时间）
+  await clickEl(page, `[...document.querySelectorAll('.date-pop .dp-foot button')].find((b) => b.textContent.trim() === '不选日期')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '再出时间转盘', 8000);
+  const dial = await evalJs(page, `
+    const pop = document.querySelector('.clock-pop');
+    const f = pop.querySelector('.cp-face').getBoundingClientRect();
+    const p = pop.getBoundingClientRect();
+    return {
+      left: +(f.left - p.left).toFixed(1),
+      right: +(p.right - f.right).toFixed(1),
+      pad: getComputedStyle(pop).paddingLeft,
+      nums: pop.querySelectorAll('.cp-num').length,
+      ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
+    };
+  `);
+  ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
+  ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
+  ok(Math.abs(dial.left - dial.right) < 1,
+    '表盘在弹层里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right + '（弹层内边距 ' + dial.pad + '）');
+
+  // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
+  const tip = await evalJs(page, `return document.querySelector('.cp-tip').textContent.trim();`);
+  ok(/分钟/.test(tip), '选完小时自动进分钟档，实际 ' + JSON.stringify(tip));
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
+  const shown = await evalJs(page, `return document.querySelector('.cp-display').textContent.trim();`);
+  ok(shown === '12:30', '表盘上写的是 12 小时制的 12:30，实际 ' + JSON.stringify(shown));
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
+  const pill = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
+  ok(pill === '00:30', '选完换算成 24 小时制的 00:30 显示在胶囊上，实际 ' + JSON.stringify(pill));
+
+  // 时间要真跟着任务落库 —— 只断言胶囊是「选中了但没带上」的假通过
+  const n0 = await evalJs(page, `return document.querySelectorAll('[data-scope="inbox"] .task-el').length;`);
+  await setText('.fast-add input', '转盘定时');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  await waitFor(page, `document.querySelectorAll('[data-scope="inbox"] .task-el').length > ${n0}`, '带时间的任务出现', 8000);
+  const dialMade = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '转盘定时');
+      return t ? { time: t.time } : null;
+    })()
+  `, '带时间的任务落盘', 8000);
+  ok(dialMade && dialMade.time === '00:30',
+    '转盘选的时间跟着任务一起落库（不是只显示在胶囊上），实际 ' + JSON.stringify(dialMade && dialMade.time));
+
+  /* ---- 4. 两层一起用：选日期 + 选时间 ---- */
+  // 换到「今天」页：默认日期是今天，面板里应该高亮今天
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'today')`);
+  // 今天页的列表作用域是 `day:<日期>`（见 views/Lists.tsx），**没有** `today` ——
+  // 别照待办箱的 `inbox` 类推。作用域是拖动排序的分组键，改成 `today` 会把
+  // 「按天分组」拆掉，所以是探针写错了、不是应用少了这个属性。
+  await waitFor(page, `document.querySelector('[data-scope^="day:"]') ? 1 : null`, '切到今天页', 8000);
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '今天页先出日期面板', 8000);
+  const dp2 = await evalJs(page, `
+    const pop = document.querySelector('.date-pop');
+    const t = new Date();
+    const iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    return { cur: pop.querySelectorAll('.jp-cell.cur').length, label: pop.querySelector('.jp-label').textContent.trim(), iso };
+  `);
+  ok(dp2.cur === 1, '今天页默认高亮今天，实际高亮 ' + dp2.cur + ' 格');
+  // 点今天那一格 → 进第二层
+  await clickEl(page, `document.querySelector('.date-pop .jp-cell.cur')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '选完日期出转盘', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '3')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
+  const pill2 = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
+  ok(/月.*日 15:00/.test(pill2 || ''), '胶囊上同时显示日期和时间，实际 ' + JSON.stringify(pill2));
+
+  const n1 = await evalJs(page, `return document.querySelectorAll('[data-scope^="day:"] .task-el').length;`);
+  await setText('.fast-add input', '两层一起');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  await waitFor(page, `document.querySelectorAll('[data-scope^="day:"] .task-el').length > ${n1}`, '带日期时间的任务出现', 8000);
+  const made2 = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '两层一起');
+      return t ? { date: t.date, time: t.time } : null;
+    })()
+  `, '带日期时间的任务落盘', 8000);
+  ok(made2 && made2.time === '15:00',
+    '选的时间跟着任务落库，实际 ' + JSON.stringify(made2));
+  ok(made2 && /^\d{4}-\d{2}-\d{2}$/.test(made2.date || ''),
+    '选的日期跟着任务落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made2));
+
+  /* ---- 5. 占位符不随 tab 变（需求 1B） ---- */
+  const phToday = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
+  await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切回待办箱', 8000);
+  const phInbox = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  ok(phToday === phInbox,
+    '占位符不随 tab 变，实际 今天=' + JSON.stringify(phToday) + ' 待办箱=' + JSON.stringify(phInbox));
+
+  console.log('\n十八、功能区自定义：底栏挑哪几项、设置页调序都记得住');
+
+  // 这一节守的是两条**曾经是死数据**的字段（见 CLAUDE.md 四、23）：
+  // `ui.navOrder` / `ui.navBottom` 被 Shell 读着、却一度没有任何写入方，
+  // 「拖过一次顺序就记住了」在那一版是假的。功能区自定义补回了写入方。
+  //
+  // 底栏（`.tabbar`）只在窄屏渲染，而无头 Chrome 的**真实**窗口宽度压不到
+  // 那个断点（CLAUDE.md 四、34）。所以这里在 React 挂载之前把
+  // `matchMedia('(max-width: 900px)')` 那一路改成 `matches: true`。
+  // 用 Proxy 而不是 Object.assign：后者会把 MediaQueryList 压成普通对象，
+  // 丢掉原型上的 addEventListener —— hooks.ts 里那一句会当场抛异常。
+  //
+  // 这验的是「narrow 为真时底栏与「更多」抽屉有没有被接出来」这条**接线**，
+  // 不是真实窄屏下的排版 —— 后者在无头里造不出来，只能手工在真机上看。
+  //
+  // 2026-10-07 起设置页的「功能区」卡片**按设备分屏**：窄屏只渲染底栏胶囊
+  // （data-tab），宽屏只渲染侧栏列表（data-nav-row）。所以这一节拆成两半 ——
+  // 前半伪窄屏测底栏、后半真宽屏测侧栏拖拽。开关放 sessionStorage 而不是内存：
+  // 注入的脚本每次导航都会重跑，内存开关会被重置。
+  await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    (() => {
+      const orig = window.matchMedia.bind(window);
+      window.matchMedia = (q) => {
+        const r = orig(q);
+        if (!/max-width:\\s*900px/.test(String(q))) return r;
+        if (sessionStorage.getItem('__forceNarrow') === '0') return r;
+        return new Proxy(r, {
+          get(t, k) {
+            if (k === 'matches') return true;
+            const v = t[k];
+            return typeof v === 'function' ? v.bind(t) : v;
+          },
+        });
+      };
+    })();
+  ` });
+  /** 伪窄屏 ↔ 真宽屏之间切换，靠 sessionStorage 开关 + 重新导航 */
+  const reloadAs = async (forceNarrow, what) => {
+    await evalJs(page, `sessionStorage.${forceNarrow ? "removeItem('__forceNarrow')" : "setItem('__forceNarrow', '0')"}; return 1;`);
+    await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+    await waitFor(page, `!!document.querySelector('${forceNarrow ? '.tabbar' : '.sidebar'}')`, what, 15000);
+  };
+  await reloadAs(true, '窄屏模式下底栏渲染出来了');
+
+  const tabsNow = () => evalJs(page, `
+    return [...document.querySelectorAll('.tabbar .tab')].map((x) => x.textContent.replace(/\\d+/g, '').trim());
+  `);
+  const uiNow = () => evalJs(page, `return JSON.parse(localStorage.getItem('schedule-app-v4')).ui;`);
+  /** 等防抖落盘：persist() 是 250ms 防抖，改完立刻读会读到上一版 */
+  const waitForUi = (what, expr) => waitFor(page, expr, what, 8000);
+
+  /* ---------- 半段一：窄屏只显示底栏设置 ---------- */
+  ok((await tabsNow()).length === 5, '底栏是 4 项 + 「更多」，实际 ' + JSON.stringify(await tabsNow()));
+  ok((await tabsNow())[4] === '更多', '「更多」恒占最后一格');
+
+  // 进设置页：窄屏下侧栏是收起的，入口在「更多」抽屉里
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
+  await waitFor(page, `!!document.querySelector('[data-tab]')`, '设置页的底栏胶囊');
+  // 分屏：窄屏设置页**不**渲染侧栏那列 —— 侧栏在窄屏根本不存在，摆出来只会让人困惑
+  ok(await evalJs(page, `return !document.querySelector('[data-nav-row]');`),
+    '窄屏设置页不显示侧栏列表（按设备分屏）');
+
+  const tabSel = (k) => `document.querySelector('[data-tab="${k}"]')`;
+  ok(await clickEl(page, tabSel('inbox')) !== 'missing', '设置页里点得动底栏那排胶囊');
+
+  // 关掉一项 → 底栏少一格
+  await waitForUi('关掉待办箱之后落盘', `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.tabs.length === 3 ? 1 : null`);
+  ok((await tabsNow()).length === 4, '关掉一项后底栏是 3 项 + 更多，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 再开一项
+  await clickEl(page, tabSel('habits'));
+  await waitForUi('开回打卡之后落盘', `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.tabs.length === 4 ? 1 : null`);
+  ok((await tabsNow()).length === 5, '开满 4 项后底栏又回到 5 格，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 满 4 格之后第 5 个开不动 —— UI 挡一道，normalizeUi 再钳一道
+  await clickEl(page, tabSel('done'));
+  await new Promise((r) => setTimeout(r, 300));
+  ok((await tabsNow()).length === 5, '满 4 项后再点一个开不动，实际 ' + JSON.stringify(await tabsNow()));
+
+  // 刷新之后还在 —— 这两条字段曾经是死数据，「记得住」是这次真正要证的
+  await reloadAs(true, '刷新后底栏还在');
+  await new Promise((r) => setTimeout(r, 800));
+  ok((await uiNow()).tabs.length === 4, '刷新后底栏还是 4 项');
+  ok((await tabsNow()).length === 5, '刷新后底栏画出来还是 5 格');
+
+  /* ---------- 半段二：宽屏只显示侧栏设置 ---------- */
+  await reloadAs(false, '宽屏侧栏渲染出来了');
+  await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
+  await waitFor(page, `!!document.querySelector('[data-nav-row]')`, '设置页的侧栏列表');
+  ok(await evalJs(page, `return !document.querySelector('[data-tab]');`),
+    '宽屏设置页不显示底栏胶囊（按设备分屏）');
+
+  // 设置页调序：dragstart / dragover / drop 必须**分开的 tick** ——
+  // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的 dragKey 仍是 null
+  // （加探针时踩过，症状是「拖了但完全没反应」，看着像产品坏了）
+  const navRow = (k) => `[...document.querySelectorAll('[data-nav-row]')].find((x) => x.dataset.navRow === ${JSON.stringify(k)})`;
+  await evalJs(page, `
+    return (() => {
+      const el = ${navRow('trash')};
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const el = ${navRow('today')};
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const dst = ${navRow('today')};
+      const src = ${navRow('trash')};
+      dst.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
+      src.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await waitForUi('设置页调序落盘',
+    `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.navOrder.indexOf('trash') === 1 ? 1 : null`);
+  ok((await uiNow()).navOrder.indexOf('trash') === 1,
+    '设置页调序真的落库了（trash 挪到了第 2 位），实际 ' + JSON.stringify((await uiNow()).navOrder));
+
+  await reloadAs(false, '刷新后宽屏还在');
+  await new Promise((r) => setTimeout(r, 800));
+  ok((await uiNow()).navOrder.indexOf('trash') === 1, '刷新后顺序还在');
+
+  // 恢复伪窄屏给后面几节（十九、二十都在窄屏下跑）
+  await reloadAs(true, '恢复窄屏模式');
+
+  console.log('\n十九、项目泳道：建项目 → 挂任务 → 拖卡片换列 → 刷新还在');
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('.pj-wrap')`, '项目页挂上');
+  ok(await evalJs(page, `return document.querySelector('#content').textContent.includes('还没有项目');`),
+    '空态说话，不是一片白');
+
+  await clickEl(page, `document.querySelector('.pj-top .text-btn')`);
+  await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
+  const setField = (sel, val) => evalJs(page, `
+    return (() => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!el) return 'missing';
+      const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(val)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  ok(await setField('.field input', '星星包') === 'ok', '填项目名字');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '创建')`);
+  await waitFor(page, `!!document.querySelector('[data-lane]')`, '泳道出现');
+  ok((await evalJs(page, `return [...document.querySelectorAll('[data-lane] .pj-col-h')].map((x) => x.textContent.replace(/\\d/g, '').trim());`)).join() === '待办,进行中,已完成',
+    '三列：待办 / 进行中 / 已完成');
+
+  // 加一条任务，并在详情抽屉里挂到项目上。
+  // 走**底栏**而不是「更多」抽屉：上一节把「今天」留在了底栏里，而抽屉只画
+  // 差集（底栏没有的那些）—— 从抽屉里找 today 找不到，clickEl 只会返回
+  // 'missing' 不报错，症状是「任务出现」等不到、看着像快速添加坏了。
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.replace(/\\d+/g, '').trim() === '今天')`);
+
+  /* ---- 窄屏的浮动 + 号（需求 1A / 3C） ---- */
+  // 窄屏默认收起成 FAB、点一下展开、再点收起。切 tab 文本不丢由 React 状态保证
+  // （QuickAdd 不随 tab 切换卸载，横条只是 display:none），这里证的是收起 / 展开这条接线。
+  //
+  // ⚠️ `evalJs` 把表达式包成 `(async () => { <表达式> })()` —— **必须自己写 `return`**，
+  // 光写一个表达式会得到 undefined，断言就永远是假（这几条第一次就是这么假红的）。
+  // `waitFor` 会替我们补 `return`，所以它那几行不用写。
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`), '窄屏下右下角有浮动 + 号');
+  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display === 'none';`),
+    '窄屏下横条默认收起');
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display !== 'none'`, '点 + 号展开横条', 8000);
+  ok(await evalJs(page, `return document.querySelector('.fast-fab').getAttribute('aria-expanded') === 'true';`),
+    '展开后 FAB 变成 ×（aria-expanded=true）');
+  // 再点收起
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '再点收起横条', 8000);
+  // 重新展开，继续后面几节
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add input')`, '重新展开');
+
+  await setField('.fast-add input', '写方案');
+  await evalJs(page, `
+    return (() => {
+      const i = document.querySelector('.fast-add input');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
+  await clickEl(page, `[...document.querySelectorAll('.task-el')].find((x) => x.textContent.includes('写方案'))`);
+  await waitFor(page, `!!document.querySelector('select[id$="-proj"]')`, '抽屉里的项目下拉');
+  const optVal = await evalJs(page, `
+    return (() => {
+      const s = document.querySelector('select[id$="-proj"]');
+      const o = [...s.options].find((x) => x.textContent.trim() === '星星包');
+      return o ? o.value : null;
+    })();
+  `);
+  ok(!!optVal, '项目下拉里列得到这个项目');
+  await evalJs(page, `
+    return (() => {
+      const s = document.querySelector('select[id$="-proj"]');
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+      set.call(s, ${JSON.stringify(optVal)});
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 250));
+  await clickEl(page, `document.querySelector('.drawer-foot button:last-child')`);
+  await new Promise((r) => setTimeout(r, 300));
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('.pj-card')`, '卡片出现在泳道里');
+  ok((await evalJs(page, `return document.querySelectorAll('.pj-col[data-scope$=":todo"] .pj-card').length;`)) === 1,
+    '任务落在「待办」列');
+
+  // 拖卡片换列：同样是分开的 tick（见上一节的说明）
+  await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('.pj-col[data-scope$=":todo"] .pj-card');
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b');
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 70));
+  await evalJs(page, `
+    return (() => {
+      document.querySelector('.pj-col[data-scope$=":doing"] .pj-col-b')
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }));
+      return 'ok';
+    })();
+  `);
+  await new Promise((r) => setTimeout(r, 250));
+  // 按标题找**这一条**，不能拿 `Object.values(tasks)[0]` —— 前面几节
+  // （十～十三）也加了任务，[0] 是它们中的某一条，doing 当然是 undefined
+  await waitForUi('doing 落库',
+    `(() => { const s = JSON.parse(localStorage.getItem('schedule-app-v4'));
+      const t = Object.values(s.tasks).find((x) => x.title === '写方案');
+      return t && t.doing === true ? 1 : null; })()`);
+  const projCols = await evalJs(page, `
+    return [...document.querySelectorAll('[data-lane] .pj-col')].map((c) => c.querySelectorAll('.pj-card').length);
+  `);
+  ok(JSON.stringify(projCols) === JSON.stringify([0, 1, 0]),
+    '卡片挪到了「进行中」列，实际 ' + JSON.stringify(projCols));
+  ok(await evalJs(page, `return !document.querySelector('.pj-col[data-scope$=":doing"] .pj-card.done');`),
+    'done 没被顺手改掉 —— 做/没做和做没做完是两回事');
+
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.tabbar')`, '刷新后底栏还在');
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="projects"]')`);
+  await waitFor(page, `!!document.querySelector('[data-lane]')`, '刷新后泳道还在');
+  ok((await evalJs(page, `return document.querySelector('[data-lane] .pj-name').textContent.trim();`)) === '星星包',
+    '刷新后项目还在');
+  ok((await evalJs(page, `return document.querySelector('[data-lane] .pj-col[data-scope$=":doing"] .pj-card') ? 1 : null;`)) === 1,
+    '刷新后卡片还在「进行中」列');
+
+  console.log('\n二十、修改密码：改完还登录着，别的设备被踢出去');
+
+  // 先确认后端还活着 —— 后端 stdio 是 ignore，死了会静默，
+  // 症状是「连不上服务器」，看着像网络问题其实是进程没了
+  let health = 'node-side fetch failed';
+  try {
+    const hr = await fetch(`http://127.0.0.1:${API_PORT}/api/health`);
+    health = String(hr.status);
+  } catch (e) { health = 'node fetch failed: ' + e.message; }
+  ok(health === '200', '后端还活着（node health=' + health + '）');
+
+  await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+  await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
+  // 用「关于」卡当设置页挂上的判据，别再用 [data-nav-row] —— 功能区卡片按设备
+  // 分屏之后，窄屏下那列根本不渲染（见第十八节）。关于卡两档都在。
+  await waitFor(page, `!!document.querySelector('[data-about="version"]')`, '设置页挂上');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改密码')`);
+  await waitFor(page, `!!document.querySelector('input[type="password"]')`, '改口令浮层打开');
+  ok((await evalJs(page, `return document.querySelectorAll('input[type="password"]').length;`)) === 3,
+    '三个框：当前 / 新 / 再输一遍 —— 没有「找回口令」这回事，手一抖打错就没了');
+
+  const setPw = (sel, v) => evalJs(page, `
+    return (() => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!el) return 'missing';
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(v)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })();
+  `);
+
+  // 先喂一个错的当前密码 —— 提示要说人话，而且**不能把人踢出去**
+  await setPw('input[id$="-c"]', 'not-the-real-password');
+  await setPw('input[id$="-n"]', 'brand-new-99');
+  await setPw('input[id$="-a"]', 'brand-new-99');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改')`);
+  await waitFor(page, `!!document.querySelector('[role="alert"]')`, '报错出现');
+  const alertText = await evalJs(page, `return document.querySelector('[role="alert"]').textContent;`);
+  ok(alertText.includes('当前密码'), '提示说「当前密码不对」，实际：' + alertText);
+  ok(await evalJs(page, `return !!document.querySelector('input[type="password"]');`),
+    '报错之后浮层还开着 —— 关掉了等于什么也没说');
+
+  // 再喂对的（第二节注册时用的就是 pw123456）。
+  // 先把当前那只 token 存下来 —— 等下要证它**被作废了**。
+  const oldTok = await evalJs(page, `return localStorage.getItem('schedule-app-token');`);
+  await setPw('input[id$="-c"]', 'pw123456');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改')`);
+  await waitFor(page, `document.querySelector('input[type="password"]') ? null : 1`, '浮层关掉了', 8000);
+  await new Promise((r) => setTimeout(r, 400));
+
+  // **最要紧那一条**：改完还登录着。服务器会作废掉改动之前签的那只票
+  //（含请求里用的那只），所以客户端必须换上响应里带回的那只 ——
+  // 换了之后刷新还在，用户感知不到。
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('#nav') || !!document.querySelector('.tabbar')`, '刷新后主界面挂上');
+  await new Promise((r) => setTimeout(r, 1500));
+  // 窄屏下侧栏不渲染（`{!narrow && <Sidebar/>}`），`.brand-name` 不存在 ——
+  // 用 `.tabbar` 代替，它在两种模式下都在
+  ok(await evalJs(page, `return !document.querySelector('[data-act="login"]') && !!document.querySelector('.tabbar');`),
+    '改完密码刷新后**还登录着**（没有被自己踢出去）');
+  const newTok = await evalJs(page, `return localStorage.getItem('schedule-app-token');`);
+  ok(newTok && newTok !== oldTok, '本机存的 token 已经换成了新的那只');
+
+  // 服务器上真换了，而且改动之前签的那只确实被作废了
+  const pwCheck = await evalJs(page, `
+    const me = await fetch('./api/me', { headers: { authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } });
+    const old = await fetch('./api/me', { headers: { authorization: 'Bearer ' + ${JSON.stringify(oldTok)} } });
+    return { me: me.status, old: old.status };
+  `);
+  ok(pwCheck.me === 200, '换上的那只 token 在服务器上是好的，实际 ' + JSON.stringify(pwCheck));
+  ok(pwCheck.old === 401, '改动之前签的那只被作废了（别人手里的旧票失效），实际 ' + JSON.stringify(pwCheck));
 
   page.close();
 } catch (e) {

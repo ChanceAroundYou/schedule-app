@@ -13,11 +13,14 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Trash2, Check, Repeat, History } from 'lucide-react';
+import { Trash2, Check, Repeat, History, Clock } from 'lucide-react';
+import { ClockPop } from './Clock.tsx';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { REPEAT_UNITS, repeatLabel, toRepeat } from '../domain/repeat.ts';
+import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
+import { liveProjects } from '../domain/model.ts';
 import { Btn, useConfirm } from './kit.tsx';
+import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
 
@@ -69,16 +72,31 @@ function showVal(field: string, v: unknown): string {
   return String(v);
 }
 
-export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflict }: {
+export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDismissConflict }: {
   state: LocalState;
   id: string | null;
   onClose: () => void;
   onPatch: (id: string, fields: Partial<Task>) => void;
+  /**
+   * 勾选完成。**必须走 `store.toggleTask()`，不能自己 patch `done`。**
+   *
+   * 差别只在重复任务上：勾完一条「每天」的任务，要由 toggleTask 派生出下一个
+   * 实例，否则下一次永远不会出现 —— 这条曾经在抽屉里被写成 `onPatch({done})`，
+   * 于是「在抽屉里勾掉重复任务 = 这个系列到此为止」，而且没有任何提示。
+   */
+  onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onDismissConflict: (entityId: string, field: string) => void;
 }) {
   const confirm = useConfirm();
   const task = id ? state.tasks[id] : null;
+  const panel = useRef<HTMLElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  useFocusTrap(panel, !!task);
+  // 归属跨集选不了：项目是**按集**的（跟日程 / 打卡 / 已完成一样），
+  // 所以这里列的是当前这个集里的项目 —— 挂到别的集的项目上，
+  // 那条泳道在那边会凭空多出一张卡，而用户从没在那边建过它
+  const projs = liveProjects(state);
   /** 每个字段的 label / 控件配对用的 id 前缀。
    *  `.field label` 是**兄弟**关系且没有 htmlFor —— 点 label 不会聚焦控件，
    *  读屏也念不出这个框是干什么的。用 useId 配上，别写死字符串（同页面
@@ -89,6 +107,8 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const lastId = useRef<string | null>(null);
+  const [clockOpen, setClockOpen] = useState(false);
+  const clockBtn = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!task) return;
@@ -105,10 +125,42 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
     return () => document.removeEventListener('keydown', onKey);
   }, [id, onClose]);
 
+  /**
+   * 开的时候把焦点送进来、关的时候还回去。
+   *
+   * **送进来的是抽屉本身，不是第一个输入框** —— 送进输入框会当场弹出手机软键盘，
+   * 挡住半个屏幕，而用户点一行只是想「看看」。所以面板吃 tabIndex={-1}，
+   * Tab 从它开始往第一个真控件走（读屏会先念出 aria-label 那句）。
+   *
+   * 还回去的是**原来那一行**：不还的话焦点掉到 body 上，键盘用户得从页首
+   * 重新 Tab 一遍才能回到刚才那一行旁边。
+   *
+   * 记录前先看焦点在不在抽屉里 —— 从一条任务直接切到另一条时 id 变了、
+   * 抽屉不卸载，这时 activeElement 就是抽屉自己，记下来等于把「还回哪」擦掉。
+   */
+  useEffect(() => {
+    if (!id) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
+  }, [id]);
+
   if (!task) return null;
 
   const patch = (fields: Partial<Task>) => onPatch(task.id, fields);
   const rep: RepeatRule = task.repeat;
+
+  /**
+   * 下一次落在哪天。**实时算给用户看** —— 重复规则是「每周三 + 隔 2 周 + 到某天为止」
+   * 这种组合，光看几个下拉框想象不出结果。
+   */
+  const nextOcc = rep.unit !== 'none' ? repeatNext(task, task.date || D.today()) : null;
 
   const remove = async () => {
     const ok = await confirm({
@@ -122,14 +174,25 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
 
   return (
     <>
-      <div className="mask show" onClick={onClose} />
-      <aside className="drawer open">
+      {/* 遮罩是纯鼠标目标（键盘走 Escape），对读屏没有意义，别让它念出一个空 div */}
+      <div className="mask show" aria-hidden="true" onClick={onClose} />
+      <aside
+        className="drawer open"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={'任务详情：' + task.title}
+        tabIndex={-1}
+      >
         <div className="drawer-head">
           <label className="check-wrap">
             <input
               type="checkbox"
               checked={!!task.done}
-              onChange={() => onPatch(task.id, { done: !task.done, doneAt: !task.done ? Date.now() : null })}
+              /* 包着它的 <label> 里一个字都没有，所以它自己没有名字 ——
+                 名字只能从这儿给。措辞和 parts.tsx 的 <CheckBtn> 对齐。 */
+              aria-label={task.done ? '取消完成' : '标记完成'}
+              onChange={() => onToggle(task.id)}
             />
             <span className="check-circle" />
           </label>
@@ -165,13 +228,34 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
             </div>
             <div className="field">
               <label htmlFor={fid + '-time'}>时间 <span className="sub">（可留空）</span></label>
-              <input
-                id={fid + '-time'}
-                type="time"
-                value={task.time || ''}
-                step={900}
-                onChange={(e) => patch({ time: e.target.value || null })}
-              />
+              {/* 原生输入框留着（可以直接敲、读屏也认），旁边补一个表盘入口。
+                  重构时只留了原生框，把表盘整个丢了 —— 而「把 9 点挪到 10 点」
+                  这种一格的事，点两下表盘比开系统控件快得多 */}
+              <div className="field-inline">
+                <input
+                  id={fid + '-time'}
+                  type="time"
+                  value={task.time || ''}
+                  step={900}
+                  onChange={(e) => patch({ time: e.target.value || null })}
+                />
+                <button
+                  ref={clockBtn}
+                  className={'fast-clock' + (task.time ? ' on' : '')}
+                  type="button"
+                  title="用表盘选择时间"
+                  onClick={() => setClockOpen((v) => !v)}
+                >
+                  <Clock size={14} />
+                </button>
+                <ClockPop
+                  open={clockOpen}
+                  anchor={clockBtn.current}
+                  value={task.time || null}
+                  onChange={(v) => { patch({ time: v }); setClockOpen(false); }}
+                  onClose={() => setClockOpen(false)}
+                />
+              </div>
             </div>
           </div>
 
@@ -225,6 +309,28 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                     })}
                   </div>
                 )}
+                {/* 「每月 N 号」这一格重构时漏了，而 repeat.ts 一直在读
+                    `monthday` —— 值照旧生效，只是用户看不到、也改不了。
+                    任务改期之后 monthday 还停在旧日期，就成了没法解释的行为 */}
+                {rep.unit === 'month' && (
+                  <div className="rp-row">
+                    <span>每月</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={rep.monthday || 1}
+                      aria-label="每月几号"
+                      onChange={(e) => patch({
+                        repeat: {
+                          ...rep,
+                          monthday: Math.max(1, Math.min(31, +e.target.value || 1)),
+                        },
+                      })}
+                    />
+                    <span className="sub">号，当月没这天就取最后一天</span>
+                  </div>
+                )}
                 <div className="rp-row">
                   <span>结束</span>
                   <select
@@ -259,8 +365,26 @@ export function Drawer({ state, id, onClose, onPatch, onDelete, onDismissConflic
                     />
                   )}
                 </div>
+                {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
               </div>
             )}
+          </div>
+
+          {/*
+            项目归属**只在这一处改**，拖拽不改它。
+            拖进泳道列只换「哪一列」，搬归属是这条下拉的职责 ——
+            拖动顺手把「搬家」也做掉，比什么都不做更让人措手不及。
+          */}
+          <div className="field">
+            <label htmlFor={fid + '-proj'}>项目</label>
+            <select
+              id={fid + '-proj'}
+              value={task.projectId || ''}
+              onChange={(e) => onPatch(task.id, { projectId: e.target.value || null })}
+            >
+              <option value="">不属于任何项目</option>
+              {projs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
 
           <div className="field">

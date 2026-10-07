@@ -123,9 +123,18 @@ function zoneKey(zone: HTMLElement): string {
  *
  * `kind === 'habit'` 决定取 `[data-habit]` 还是 `[data-untimed="1"]`：
  * **打卡列表也走这套排序**，别以为只有任务列表能拖。
+ *
+ * 项目的泳道列取 `[data-card]` —— 那些卡片**同时也是 `.task-el`**（否则
+ * `onDragStart` 认不出它们，拖都拖不起来）。两个 data 属性各管一头：
+ * `.task-el` 管「能不能拖」，`data-card` 管「在这个容器里算哪一格」。
  */
+const KIND_SEL: Record<string, string> = {
+  habit: '[data-habit]',
+  project: '[data-card]',
+};
+
 function zoneCells(zone: HTMLElement): Cell[] {
-  const sel = zone.dataset.kind === 'habit' ? '[data-habit]' : '[data-untimed="1"]';
+  const sel = KIND_SEL[zone.dataset.kind ?? ''] || '[data-untimed="1"]';
   const cells: Cell[] = Array.from(zone.querySelectorAll<HTMLElement>(sel))
     .map((el) => ({ el, id: el.dataset.id || '', rect: el.getBoundingClientRect() }));
 
@@ -413,6 +422,12 @@ function weekGuideMin(zone: HTMLElement, e: { clientY: number }): number {
  *
  * 习惯和任务是两套实体，交叉拖放会写坏数据（习惯没有 date 字段等），
  * 所以直接判掉，不给任何视觉反馈 —— 让用户以为是拖不动。
+ *
+ * **最后那一行不要改成 `zone.dataset.kind === dragKind`。** 泳道列的
+ * `data-kind` 是 `'project'`（说的是「这一格装的是项目泳道里的卡片」），
+ * 而**被拖的是任务**（`dragKind === 'task'`）—— 那样写会把「拖进泳道列」
+ * 整个判掉，正是这个功能本身。现在这个「两边是不是 habit」的写法
+ * 恰好是对的：project 区收 task、不收 habit。
  */
 function zoneAccepts(zone: HTMLElement): boolean {
   const kind = zone.dataset.drop;
@@ -445,6 +460,24 @@ function commitDrop(zone: HTMLElement, e: { clientX: number; clientY: number }):
   }
 
   const baseOrder = zoneCells(zone).map((c) => c.id);
+
+  /* 泳道列：拖进来 = 换列。**不改归属**（归属在任务详情里选）——
+     与下面那条「拖动只改顺序、不改日期」同源：拖动顺手把「搬家」也做掉，
+     比什么都不做更让人措手不及。 */
+  if (kind === 'proj') {
+    const col = (zone.dataset.scope || '').split(':')[2];
+    if (col === 'done') {
+      // **不是直接写 done 字段**：重复任务要靠 toggleTask 推进系列
+      if (task && !task.done) store.toggleTask(id);
+    } else {
+      // setTaskDoing 自己认得「从已完成拖出来」（先取消完成再置 doing）
+      store.setTaskDoing(id, col === 'doing');
+    }
+    const label = col === 'done' ? '已完成' : col === 'doing' ? '进行中' : '待办';
+    toast(`已移到「${label}」`);
+    return;
+  }
+
   let refId = dropRef?.id ?? null;
   // dropRef 是拖动过程中缓存的，容器重排后它可能已经不在序列里 ——
   // 那样就会退化成「插到最后」，看着像没生效
@@ -496,9 +529,10 @@ function applyDropAt(zone: HTMLElement, pt: { clientX: number; clientY: number }
   }
 
   clearDropUI();
-  // 已定时的任务拖到别处只改日期，不参与排序
+  // 已定时的任务拖到别处只改日期，不参与排序（泳道列例外：那里换的是**列**，
+  // 与有没有时间无关 —— 挡掉的话带时间的任务在泳道里根本拖不动）
   const t = store.get().tasks[dragId!];
-  if (dragKind === 'task' && t?.time) { dropRef = null; return; }
+  if (dragKind === 'task' && t?.time && kind !== 'proj') { dropRef = null; return; }
 
   dragProbe = { clientX: pt.clientX, clientY: pt.clientY };
   dragProbeZone = zone;
@@ -755,10 +789,20 @@ export function useDragLayer(
 
     snapshotLayout(el);
     document.body.classList.add('dragging-active');
+    // 被拖的那一行加 .dragging（抬起 / 压暗的反馈）。**finishDrag 会清掉它** ——
+    // 所以这里只管加，不用自己配对
+    el.classList.add('dragging');
     setDragging(true);
     e.dataTransfer.effectAllowed = 'move';
     // Firefox 不设 data 就不启动拖拽
     e.dataTransfer.setData('text/plain', id);
+
+    // 不要浏览器自带的半透明拖影：落点已经由让位洞 / 时间轴引导线表达了，
+    // 再挂一个跟着鼠标的残影是两套互相打架的指示。用一张 1×1 透明图顶掉它
+    const blank = document.createElement('canvas');
+    blank.width = 1;
+    blank.height = 1;
+    e.dataTransfer.setDragImage(blank, 0, 0);
 
     // 拖走的那个时间段底纹先收起来，避免和落点线打架
     const src = document.querySelector<HTMLElement>(`.tl-event[data-id="${id}"]`);
