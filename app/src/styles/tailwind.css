@@ -167,7 +167,7 @@
 .ai-props { display: flex; flex-direction: column; gap: 6px; }
 .ai-prop {
   display: flex; align-items: center; gap: 8px;
-  border: 1px solid var(--border-2); border-radius: 10px;
+  border: 1px solid var(--border); border-radius: 10px;
   background: var(--panel-2); padding: 6px 8px 6px 10px;
 }
 .ai-prop-text {
@@ -180,7 +180,7 @@
 .ai-prop-edit {
   flex: 1; min-width: 0;
   font-size: 12px; color: var(--text);
-  background: var(--panel); border: 1px solid var(--border-2);
+  background: var(--panel); border: 1px solid var(--input);
   border-radius: 8px; padding: 4px 8px;
 }
 .ai-prop-edit:focus { outline: none; border-color: var(--primary); }
@@ -204,7 +204,7 @@
 .ai-history-item {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 6px 8px; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--border-2);
+  background: var(--panel-2); border: 1px solid var(--border);
 }
 .ai-history-icon {
   flex-shrink: 0; margin-top: 1px;
@@ -239,7 +239,7 @@
 .ai-auth-item select,
 .ai-auth-item input[type="time"] {
   font-size: 12px; color: var(--text);
-  background: var(--panel); border: 1px solid var(--border-2);
+  background: var(--panel); border: 1px solid var(--input);
   border-radius: 8px; padding: 4px 8px;
 }
 .ai-memory-list {
@@ -248,7 +248,7 @@
 .ai-memory-item {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--border-2);
+  background: var(--panel-2); border: 1px solid var(--border);
 }
 .ai-memory-type {
   flex-shrink: 0; font-size: 11px; color: var(--text-3);
@@ -278,7 +278,7 @@
 .ai-sessions-list {
   position: absolute; top: 100%; right: 0; z-index: 50;
   min-width: 160px; max-height: 300px; overflow-y: auto;
-  background: var(--panel); border: 1px solid var(--border-2);
+  background: var(--panel); border: 1px solid var(--border);
   border-radius: 10px; padding: 4px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
@@ -295,7 +295,7 @@
 
 .ai-onboarding {
   margin: 10px 12px; padding: 14px;
-  background: var(--panel-2); border: 1px solid var(--border-2);
+  background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 12px;
 }
 .ai-onboarding-title {
@@ -310,7 +310,7 @@
 .ai-banner {
   display: flex; align-items: center; gap: 8px;
   font-size: 12.5px; color: var(--text-2);
-  background: var(--warn-soft); border: 1px solid var(--border-2);
+  background: var(--warn-soft); border: 1px solid var(--border);
   border-radius: 10px; padding: 8px 10px;
 }
 
@@ -325,7 +325,7 @@
 }
 .ai-examples { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
 .ai-example {
-  border: 1px solid var(--border-2); background: var(--panel); color: var(--text-2);
+  border: 1px solid var(--input); background: var(--panel); color: var(--text-2);
   border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
 }
 .ai-example:hover { border-color: var(--primary); color: var(--text); }
@@ -338,7 +338,7 @@
 }
 .ai-input {
   flex: 1; resize: none; line-height: 1.6; max-height: 140px;
-  border: 1px solid var(--border-2); border-radius: 10px;
+  border: 1px solid var(--input); border-radius: 10px;
   background: var(--panel); padding: 8px 11px;
 }
 .ai-input:focus { outline: none; border-color: var(--primary); }
@@ -350,7 +350,7 @@
 .ai-field { display: flex; flex-direction: column; gap: 5px; }
 .ai-field-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .ai-field input {
-  border: 1px solid var(--border-2); border-radius: 9px;
+  border: 1px solid var(--input); border-radius: 9px;
   background: var(--panel); padding: 8px 10px;
 }
 .ai-field input:focus { outline: none; border-color: var(--primary); }

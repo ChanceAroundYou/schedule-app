@@ -82,7 +82,7 @@
 │   └── tests/
 │       ├── smoke.mjs          端到端冒烟（无头 Chromium + CDP，零 npm 依赖）
 │       ├── browser-smoke.mjs  新界面照一遍：注册 → 切集 → 改名 → 接受邀请 → 触屏/鼠标拖拽 → 断网
-│       ├── contrast.mjs       色板 78 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
+│       ├── contrast.mjs       色板 82 对 ≥4.5:1 · 控件描边 8 对 ≥3:1 · 变量名写错 / 兜底值扫描
 │       └── color-scan.mjs     写死的边框宽度 / --border-w 变量扫描
 │
 ├── server/                 后端（Node 22，**只引 AI 那一组依赖**，见六、1）
@@ -464,7 +464,7 @@ ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules
 ```bash
 cd app          && npm test                     # 109 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
-cd app          && node tests/contrast.mjs      # 正文 78 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
+cd app          && node tests/contrast.mjs      # 文字 74 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
 npm test                                        # 根目录：server/tests/ 那三个 node --test 文件
 node server/tests/api.test.js                   # 46 条接口
 node server/tests/migration.test.js             # 8 条 schema 迁移
@@ -1539,7 +1539,7 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 > **CSS 里的兜底值不一样**：`var(--cols, 1)` / `var(--week-head-h, 79px)` 是真默认值
 > （那两个变量由 JS 内联设置），保留。
 
-`app/tests/contrast.mjs` 四段都在锁：① 78 对「文字 on 真会落上去的底色」≥ 4.5:1；
+`app/tests/contrast.mjs` 四段都在锁：① 74 对「文字 on 真会落上去的底色」≥ 4.5:1；
 ② 8 对**控件描边 ≥ 3:1**（WCAG 1.4.11，**和 4.5 那条是两条不同的线**，
 每行自带 `min`）；③ `src/` 里引用了但 `legacy.css` 没定义的变量；
 ④ `.tsx` 里多余的 `var()` 兜底值。四段**都验过有牙**（改坏一处就 FAIL ——

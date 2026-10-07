@@ -35,7 +35,7 @@ const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 /**
  * 描边走 **真令牌 `--border`**，不给兜底值。
  *
- * 老 surface（Calendars / Auth / kit）写的是 `var(--line,rgba(...))`，而
+ * 老 surface（Calendars / Auth / kit）写的是 `--line` 带一个 rgba 兜底值，而
  * `--line` 在 legacy.css 里**根本没定义** —— 有兜底值所以不报错、不白屏，
  * 只是两套主题下都在用写死的浅色。**静默降级比直接坏掉难查得多。**
  * 这个文件是新的，别把这个坏习惯带过来。

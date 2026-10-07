@@ -54,7 +54,7 @@ const BANNED = [
   // （那是分隔线，不跟风格轴走），所以这里只盯 `border:` 这个全边简写
   ['写死的边框宽度', /\bborder:\s*([^;{}]*)/g,
     (v) => /\b1px\s+solid/.test(v) && !v.includes('transparent'), '全边边框改 var(--border-w)'],
-  ['主色上的白字', /\bcolor:\s*#fff\b/gi, null, '改 color: var(--primary-fg)'],
+  ['主色上的白字', /\bcolor:\s*#fff\b/gi, null, '改 color: var(--on-primary)'],
   ['旧主色的 RGB', /rgba\(74,\s*108,\s*247/g, null, '改用 rgb(from var(--primary) r g b / a)'],
   ['写死的紫', /#7b53d8/gi, null, '改 var(--purple)'],
   ['写死的暗色占用底纹', /#1a1f2b/gi, null, '停掉那条覆盖，.tl-busy 用 var(--primary-pale)'],
@@ -63,7 +63,7 @@ const BANNED = [
 /** 令牌块里必须存在的变量 */
 const REQUIRED = [
   '--r-xs', '--r-sm', '--r-md', '--r-lg', '--r-xl', '--r-pill',
-  '--primary-fg', '--danger-fg', '--toast-bg', '--toast-fg', '--toast-link',
+  '--on-primary', '--input', '--toast-bg', '--toast-fg', '--toast-link',
   '--font', '--shadow-up', '--shadow-up-sm', '--shadow-sticky', '--border-w',
 ];
 
