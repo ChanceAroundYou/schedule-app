@@ -1698,6 +1698,9 @@ try {
       apmOff: +((((apm.left + apm.right) / 2) - ((ampm.left + ampm.right) / 2))).toFixed(1),
       // 「现在」在下午右边多少（需求 5）
       nowGap: +(now.left - pm.right).toFixed(1),
+      // 「现在」两个字横排还是竖排（需求 3）：竖排会高出一行
+      nowW: +now.width.toFixed(1),
+      nowH: +now.height.toFixed(1),
       dot: pop.querySelector('.cp-dot') ? pop.querySelector('.cp-dot').textContent.trim() : null,
     };
   `);
@@ -1712,6 +1715,11 @@ try {
   ok(dial.nowParent === 'cp-apm', '「现在」在上午 / 下午那一行里，实际 ' + JSON.stringify(dial.nowParent));
   ok(dial.nowText === '现在', '「现在」两个字还在，实际 ' + JSON.stringify(dial.nowText));
   ok(dial.nowGap > 0 && dial.nowGap < 20, '「现在」紧贴下午按钮，实际间距 ' + dial.nowGap);
+  // 需求 3：「现在」两个字**横着排**。它的包含块是 `.cp-apm`，而 left 超出
+  // 包含块宽度 → 绝对定位的可用宽度算成负数 → 被压到一个汉字宽、竖成两行。
+  // 横排时高度就是一行
+  ok(dial.nowH < 30,
+    '「现在」两个字横着排，不是竖成两行（需求 3），实际 ' + dial.nowW + '×' + dial.nowH);
   ok(Math.abs(dial.apmOff) < 1,
     '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
   ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
@@ -2328,6 +2336,11 @@ try {
     '窄屏下横条常渲染（收起时只露圆钮）');
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
     '收起时那个圆里是 +');
+  // 收起态的圆钮位置 —— 展开后要**一模一样**（需求 1：开关固定在某个位置不动）
+  const fabCollapsed = await evalJs(page, `
+    const f = document.querySelector('.fast-fab').getBoundingClientRect();
+    return { right: +f.right.toFixed(1), bottom: +f.bottom.toFixed(1) };
+  `);
 
   await clickEl(page, `document.querySelector('.fast-fab')`);
   // 窄屏横条**常渲染**（收起时只露圆钮），所以「展开」要看 `.open` 这个类，
@@ -2336,35 +2349,59 @@ try {
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-x');`),
     '展开后 + 号**原地**变成 ×（需求 1）');
 
-  /* 圆钮在横条内（需求 2）—— 横条延伸到屏幕最右，圆钮在横条右端。 */
+  /* 圆钮**钉在横条右下角**（需求 1、2）—— 绝对定位，不参与 flex。
+     它以前是普通 flex 子元素：收起时 `.fast-add-body` / `.fast-side` 都
+     display:none，只剩它一个，默认 justify-content:flex-start 就把它甩到
+     **左边**；展开时又跟着内容跑。 */
   const barBox = await evalJs(page, `
     const bar = document.querySelector('.fast-add');
     const fab = document.querySelector('.fast-fab');
     const b = bar.getBoundingClientRect(), f = fab.getBoundingClientRect();
-    const s = getComputedStyle(bar);
+    const s = getComputedStyle(bar), fs = getComputedStyle(fab);
     return {
       pos: s.position,
+      fabPos: fs.position,
       // 横条延伸到屏幕最右（right: 0）
       rightGap: +(window.innerWidth - b.right).toFixed(1),
-      // 圆钮在横条内（flexbox 居中）
+      // 圆钮在横条内（DOM 上仍是子节点）
       fabInBar: bar.contains(fab),
-      // 圆钮和横条竖直居中
-      centerOff: +((((b.top + b.bottom) / 2) - ((f.top + f.bottom) / 2))).toFixed(1),
-      // 出问题时用得上的原始数
+      // 圆钮贴横条右端 / 底端 —— 就是横条的内边距（右 13、底 9）
+      fabRightGap: +(b.right - f.right).toFixed(1),
+      fabBottomGap: +(b.bottom - f.bottom).toFixed(1),
+      // 圆钮在屏幕上的绝对位置，展开前后要一样
+      fabRight: +f.right.toFixed(1),
+      fabBottom: +f.bottom.toFixed(1),
       dbg: { n: document.querySelectorAll('.fast-add').length,
-        barH: +b.height.toFixed(1), barBottom: +(window.innerHeight - b.bottom).toFixed(1),
-        fabBottom: +(window.innerHeight - f.bottom).toFixed(1), fabH: +f.height.toFixed(1),
+        barH: +b.height.toFixed(1), fabH: +f.height.toFixed(1),
         kids: [...bar.children].map((c) => c.className + ':' + Math.round(c.getBoundingClientRect().height)) },
     };
   `);
   ok(barBox.pos === 'fixed',
     '窄屏的横条是 fixed 定位（贴着圆钮、不占正文流），实际 ' + barBox.pos);
+  ok(barBox.fabPos === 'absolute',
+    '圆钮是绝对定位（不参与 flex，才不会被甩到左边 / 被内容带着跑），实际 ' + barBox.fabPos);
   ok(barBox.rightGap < 2,
     '横条延伸到屏幕最右（right: 0），实际间距 ' + barBox.rightGap);
   ok(barBox.fabInBar,
-    '圆钮在横条内（需求 2）');
-  ok(Math.abs(barBox.centerOff) < 2,
-    '圆钮和横条竖直居中（需求 2），实际偏 ' + barBox.centerOff + 'px');
+    '圆钮在横条内（DOM 上仍是子节点）');
+  ok(Math.abs(barBox.fabRightGap - 13) < 1.5,
+    '圆钮贴横条右端（横条内边距 13px），实际 ' + barBox.fabRightGap);
+  ok(Math.abs(barBox.fabBottomGap - 9) < 1.5,
+    '圆钮贴横条底端（横条内边距 9px），实际 ' + barBox.fabBottomGap);
+  // 需求 1 的正面：+ / × 换图标时，圆钮自己在屏幕上不挪窝
+  ok(Math.abs(barBox.fabRight - fabCollapsed.right) < 1
+     && Math.abs(barBox.fabBottom - fabCollapsed.bottom) < 1,
+    '展开前后圆钮位置不动（需求 1）：收起 右 ' + fabCollapsed.right + ' 底 ' + fabCollapsed.bottom
+     + '，展开 右 ' + barBox.fabRight + ' 底 ' + barBox.fabBottom);
+  // 需求 2：圆钮让出的那点空间里，时间 / 保存按钮靠到右端、没被圆钮压住
+  const sideBox = await evalJs(page, `
+    const fab = document.querySelector('.fast-fab');
+    const side = document.querySelector('.fast-add .fast-side');
+    const f = fab.getBoundingClientRect(), s = side.getBoundingClientRect();
+    return { gapToFab: +(f.left - s.right).toFixed(1) };
+  `);
+  ok(sideBox.gapToFab > 0,
+    '时间 / 保存按钮在圆钮左边、没被压住（需求 2），实际间距 ' + sideBox.gapToFab);
 
   // 输入框固定两行，超过可内部滚动（需求 1）
   const h2 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
