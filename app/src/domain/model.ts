@@ -594,6 +594,32 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   return ui;
 }
 
+/* -------------------------------------------------------- 快速添加的默认值 */
+
+/**
+ * 快速添加的默认日期 / 时间 —— 由**当前所在 tab** 决定。
+ *
+ * 抽成纯函数是为了能被单测锁住：这张表是「界面偏好 → 新任务默认值」的映射，
+ * 留在 Shell.tsx 里就只能靠浏览器探针测。
+ *
+ * `todayIso` 注入而不是内部取 `D.today()` —— 测试要能固定「今天」。
+ */
+export interface QuickDefaults {
+  date: string | null;
+  time: string | null;
+}
+
+/* 只读 `nav` 与 `cursor`，所以收 `Partial<UiPrefs>` —— 单测可以只摆这两样，
+   不必为了测一张映射表去凑齐 theme / accent / tabs 那一串无关字段。 */
+export function quickDefaults(ui: Partial<UiPrefs>, todayIso: string): QuickDefaults {
+  // 待办箱：默认**无日期、无时间** —— 丢进去的就是「还没定哪天做」的事
+  if (ui.nav === 'inbox') return { date: null, time: null };
+  // 日程页：默认落在**当前看的那天**（cursor 是今天就是今天，否则 cursor）
+  if (ui.nav === 'calendar') return { date: ui.cursor || todayIso, time: null };
+  // 今天 / 逾期 / 打卡 / 已完成 / 项目：默认今天
+  return { date: todayIso, time: null };
+}
+
 /* -------------------------------------------------------- v3 → v4 迁移 */
 
 interface V3Task {

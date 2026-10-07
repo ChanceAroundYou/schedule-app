@@ -22,6 +22,7 @@ import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
+  quickDefaults,
 } from './model.ts';
 import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
 
@@ -588,6 +589,32 @@ test('底栏 tabs：子集 + 顺序跟 navOrder 走 + 空了就回落', () => {
   // 超过上限的砍掉 —— UI 挡不住手改 localStorage
   const many = normalizeUi({ tabs: ['inbox', 'today', 'overdue', 'calendar', 'habits'] });
   assert.deepEqual(many.tabs, ['inbox', 'today', 'overdue', 'calendar']);
+});
+
+/* ============================== 快速添加的默认值 ============================== */
+
+test('快速添加默认值：待办箱无日期无时间，其余给今天', () => {
+  const T = '2026-10-06';
+  assert.deepEqual(quickDefaults({ nav: 'inbox' }, T), { date: null, time: null },
+    '待办箱丢进去的就是「还没定哪天做」的事');
+  assert.deepEqual(quickDefaults({ nav: 'today' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'overdue' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'habits' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'done' }, T), { date: T, time: null });
+  assert.deepEqual(quickDefaults({ nav: 'projects' }, T), { date: T, time: null });
+});
+
+test('快速添加默认值：日程页落在当前看的那天（cursor 是今天就是今天）', () => {
+  const T = '2026-10-06';
+  // cursor 是今天 → 今天
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: T }, T), { date: T, time: null });
+  // cursor 是别的那天 → 那天（日 / 周 /月视图都一样，默认落在光标那天）
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-10-20' }, T),
+    { date: '2026-10-20', time: null });
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-11-03', view: 'week' }, T),
+    { date: '2026-11-03', time: null });
+  assert.deepEqual(quickDefaults({ nav: 'calendar', cursor: '2026-12-01', view: 'month' }, T),
+    { date: '2026-12-01', time: null });
 });
 
 /* ============================== 迁移 ============================== */
