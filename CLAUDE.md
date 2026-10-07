@@ -358,12 +358,12 @@ SCHEDULE_DATA_DIR=/tmp/x node server/server.js   # 换数据目录（跑测试�
 ### 测试
 
 ```bash
-cd app          && npm test                     # 68 条（node --test，跑 *.test.ts）
+cd app          && npm test                     # 94 条（node --test，跑 *.test.ts）
 cd app          && npm run typecheck
 cd app          && node tests/contrast.mjs      # 正文 78 对 ≥4.5 · 描边 8 对 ≥3 · 变量名两段，零依赖
 node server/tests/api.test.js                   # 31 条接口
 node server/tests/smoke-share.mjs               # 两个人共用一个集，真走网络
-cd app          && node tests/browser-smoke.mjs   # 144 条（无头 Chrome + CDP，零 npm 依赖）
+cd app          && node tests/browser-smoke.mjs   # 177 条（无头 Chrome + CDP，零 npm 依赖）
 ```
 
 后面两个会**自己起一个临时后端**（临时数据库 + 随机端口），不碰线上那份。
@@ -459,6 +459,16 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 验过它有牙：把 `parseDateText` 里裸周几那句 `if (!m[1] && d < today)` 改坏、
 > 重新构建，只有「裸周几落在将来」那一条红（差 -1 天）。
 > 三个坑都在「四、46」。
+>
+> 第「十七」节 2026-10-07 又扩了三样（快速添加那三件改动的接线）：
+> 时钟按钮点下去**先出日期面板**（42 格、待办箱默认 0 格高亮）、
+> 选完日期才出转盘、胶囊上日期和时间**同时在**、选的那天真的落库；
+> **占位符在「今天」和「待办箱」两页完全一样**；
+> 以及窄屏的**浮动 `+` 号**（在、默认收起、点开、再点收起）。
+> 窄屏那条靠 `Page.addScriptToEvaluateOnNewDocument` 里一个 `matchMedia` 的
+> Proxy 强行把 `(max-width: 900px)` 判成 true（`sessionStorage.__forceNarrow === '0'`
+> 时放行真实值），绕开无头 Chrome 那个 526px 的下限（见四、34）。
+> 写这几条时踩到 `evalJs` 少了 `return`（见四、39），三条假红。
 
 `app/tests/smoke.mjs` 是更早那份冒烟脚本，头部写死了本机 Chromium 路径
 （`CHROME` 可覆盖，默认 `/home/xiaokubao/.local/bin/chromium`）。
@@ -1087,6 +1097,15 @@ await waitFor(page, `
 > 已经在 `waitFor` 里 `expr.trim()` 掉了，别把这个 trim 当成多余的。
 > 写多行模板时也别把 `? 1 : null` 拆到下一行 —— 那是另一个坑。
 
+> **同一个包装的另一半：`evalJs` 里的表达式必须自己写 `return`。**
+> `waitFor` 会替你补 `return`，`evalJs` **不会** —— 它只是
+> `(async () => { <表达式> })()`，光写一个表达式等于算完就丢，求值恒为
+> `undefined`。断言写成
+> ``ok(await evalJs(page, `!!document.querySelector('.fast-fab')`), …)``
+> 就永远是红的，而页面其实好好的（2026-10-07 加浮动 + 号时三条假红，
+> 诊断行里 `fab: true` 和那条 FAIL 摆在一起才看破）。
+> **规矩：`evalJs` 一律写 `return …;`，`waitFor` 一律不写。**
+
 **40. 探针的合成点击必须连 `pointerdown` 一起补，`el.click()` 不算一次真点击**
 
 这个应用的点击委托是 **pointerdown 驱动**的（长按状态机就挂在
@@ -1159,9 +1178,9 @@ await waitFor(page, `(() => { const x = …; return x ? 1 : null; })()`, '…');
 每一轮**指向的都是产品代码，实际全是探针自己的错**：
 
 - **在待办箱里快速添加「9:00 开会」得到的是「有时间、没日期」的任务。**
-  `defaultDate()` 对 `nav==='inbox'` 返回 `null`，而时间轴按 `date` 挑 → 这条
+  `quickDefaults()` 对 `nav==='inbox'` 返回 `date: null`，而时间轴按 `date` 挑 → 这条
   任何日视图都不画方块，探针在「等方块」上超时，看着像时间轴渲染坏了。
-  要造一条有时间轴方块的任务，就得在**日程页**（那边 `defaultDate` 是
+  要造一条有时间轴方块的任务，就得在**日程页**（那边 `quickDefaults` 给的是
   `ui.cursor`）加，或者写字面日期。
 - **`.ev-resize` 会先命中上沿**（上沿的 class 是 `ev-resize ev-resize-top`，
   DOM 里排在前面）。断言名写着「下沿」、实际查的是上沿 —— 两者形状一样，
@@ -1292,7 +1311,45 @@ Sheet 是 portal 到 body 的，用 `body > div > div[role="dialog"]`；
 >
 > 这两条都在 `legacy.css` 里各留了就地注释，别当成漏改。
 
-### 边框只有两档 + 一条焦点环（2026-10-06 统一）
+### 快速添加：窄屏一个浮动 `+`，日期 / 时间分两层（2026-10-07）
+
+**窄屏（≤900px）默认收起成右下角一个浮动 `+`，点开才展开横条、再点收起（图标变 `×`）。**
+宽屏常驻展开 —— 桌面有地方，多一次点击只是碍事。状态是 `QuickAdd` 里的
+`expanded = useState(!narrow)`，**不落盘**：这是「这一次怎么用」，不是用户偏好。
+`narrow` 用 `useIsNarrow()` 同步初始化，所以首帧就是对的，不会闪一下。
+
+- `.fast-fab` 的 `z-index` 是 **39**：要压住正文，但**必须低于抽屉遮罩的 40** ——
+  抽屉打开时它该被罩住，而不是浮在遮罩上还能点。底部偏移是
+  `calc(56px + env(safe-area-inset-bottom, 0px) + 12px)`（56px = 标签栏高）。
+- 窄屏展开时横条加了 `padding-right: 62px` 给 FAB 让位，别把时钟按钮盖住。
+- 「N」快捷键在窄屏下**先展开再聚焦**。收起的横条是 `display:none`，聚焦不上去，
+  所以展开后要等一次 effect（`focusOnExpand` ref）再 `focus()`。
+- 收起的横条靠 `hidden` 属性藏（Tailwind 4 preflight 的
+  `[hidden] { display: none !important }` 压得住 `legacy.css` 里没分层的
+  `.fast-add { display: flex }`）。**别改成自己加一个 `display:none` 的类** ——
+  那就得跟层叠顺序再斗一次（见四、24）。
+
+**时钟按钮点下去先出日期面板、选完再出时间转盘**（需求 3）。
+顺序是「日期 → 时间」：日期决定这条任务落在哪一天，时间只在有日期时才有意义。
+
+- 日期面板是 `ui/DatePop.tsx` 的 `DatePop`，里面的月历 `MiniCalendar`
+  **与顶栏「找日期」的 `JumpPop` 共用同一份**（`data-jump` / `.jp-*` 那套原样复用，
+  连密度短横的 `loadOf` 都是同一个 `jumpLoad(state, iso)`）。别再写第二份月历。
+- 时间那一层就是原来的 `ClockPop`，一行没改。
+- **默认值由 `domain/model.ts` 的 `quickDefaults(ui, todayIso)` 给**，
+  单测锁着：待办箱 = 无日期无时间；日程页 = 当前 `cursor` 那天（cursor 空就是今天）；
+  其余（今天 / 逾期 / 打卡 / 已完成 / 项目）= 今天。放在领域层而不是 `Shell.tsx`，
+  就是为了能被单测钉住 —— 它只读 `nav` 与 `cursor`，所以收 `Partial<UiPrefs>`。
+- 生效值的优先级是 **面板选的 > 文本解析的 > tab 默认的**。注意时间那一档
+  与旧版**相反**（旧版是「文本解析的 > 面板选的」）—— 用户刚在转盘上点的那一下
+  必须赢过他打的字，否则就是「点了没反应」。
+- 待办箱的默认是**无日期**，所以日期面板必须有「不选日期」这条出口
+  （`.dp-foot` 里，另有「取消」只关面板、保留已选）。否则点开就只能选一个、回不去。
+- 占位符**不随 tab 变**（`QUICK_PLACEHOLDER` 一个常量）。按 tab 换文案会让用户
+  以为「切个 tab 我刚打的话被吃了」；已经打进去的字本来就是 React 状态，
+  切 tab 不卸载 `QuickAdd`，所以不会丢。
+
+
 
 **这一档的分法按「用户能不能操作它」，不按「有没有边框」。**
 

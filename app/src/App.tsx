@@ -24,7 +24,7 @@ import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { useDragLayer } from './ui/dnd.ts';
 import { HOUR_H, DAY_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
-import { Shell, Topbar, QuickAdd } from './ui/Shell.tsx';
+import { Shell, Topbar, CalSubheader, QuickAdd } from './ui/Shell.tsx';
 import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
 import { ProjectSheet } from './ui/ProjectSheet.tsx';
 import { Drawer } from './ui/Drawer.tsx';
@@ -61,6 +61,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   /** 找日期面板与「更多」抽屉的开关放在这里 —— Esc 要按一个固定顺序逐层关 */
   const [jumpOpen, setJumpOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** 搜索浮条（移动端）的开关 —— Esc 关闭顺序：actSheet → more → search → jump → drawer */
+  const [searchOpen, setSearchOpen] = useState(false);
   /** 项目浮层：`'new'` = 新建，`{ id }` = 编辑那个项目，`null` = 关着。
    *  用一个状态而不是两个布尔 —— 两开两关必然有一条路径忘了关另一个。 */
   const [pjSheet, setPjSheet] = useState<'new' | { id: string } | null>(null);
@@ -437,10 +439,11 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       const tag = (e.target as HTMLElement | null)?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === 'Escape') {
-        // 逐层关闭，一次只关一层：操作层 → 更多抽屉 → 找日期面板 → 抽屉。
+        // 逐层关闭，一次只关一层：操作层 → 更多抽屉 → 搜索浮条 → 找日期面板 → 抽屉。
         // 顺序跟旧版一致。一次全关会让用户不知道自己刚关掉了什么
         if (actId) setActId(null);
         else if (moreOpen) setMoreOpen(false);
+        else if (searchOpen) setSearchOpen(false);
         else if (jumpOpen) setJumpOpen(false);
         else if (openId) setOpenId(null);
         return;
@@ -636,20 +639,25 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
           <Topbar
             state={state}
             narrow={narrow}
-            jump={jumpOpen}
-            setJump={setJumpOpen}
-            onView={(v) => store.setUi({ view: v })}
-            onShift={shift}
-            onToday={() => {
-              // 光标拉回今天；不在日程页时顺带回「今天」清单页。
-              // 找日期面板也要关掉 —— 否则跳完它还挂在那儿挡着
-              const stay = store.get().ui.nav === 'calendar';
-              store.setUi(stay ? { cursor: D.today() } : { cursor: D.today(), nav: 'today' });
-              setJumpOpen(false);
-            }}
-            onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
+            searchOpen={searchOpen}
+            setSearchOpen={setSearchOpen}
             onSearch={(kw) => { if (kw !== store.get().ui.search) store.setUi({ search: kw }); }}
           />
+          {state.ui.nav === 'calendar' && (
+            <CalSubheader
+              state={state}
+              jump={jumpOpen}
+              setJump={setJumpOpen}
+              onView={(v) => store.setUi({ view: v })}
+              onShift={shift}
+              onToday={() => {
+                const stay = store.get().ui.nav === 'calendar';
+                store.setUi(stay ? { cursor: D.today() } : { cursor: D.today(), nav: 'today' });
+                setJumpOpen(false);
+              }}
+              onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
+            />
+          )}
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
               时用户完全不知道为什么内容不变 */}
           {!!state.lastError && (

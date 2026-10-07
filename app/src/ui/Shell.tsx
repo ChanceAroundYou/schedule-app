@@ -26,12 +26,13 @@ import {
 } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { counts, liveTasks, CUSTOMIZABLE } from '../domain/model.ts';
+import { counts, liveTasks, CUSTOMIZABLE, quickDefaults } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { repeatLabel } from '../domain/repeat.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { CalSwitcher } from './Calendars.tsx';
 import { ClockPop } from './Clock.tsx';
+import { MiniCalendar, DatePop } from './DatePop.tsx';
 
 /* ============================== 导航表 ============================== */
 
@@ -210,10 +211,6 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
 
   if (!open) return null;
 
-  const days = D.monthMatrix(month);
-  const curMonth = D.parseISO(month).getMonth();
-  const today = D.today();
-
   const go = (v: string) => {
     // 基准用**面板所在月份**，不是今天 —— 见 domain/date.ts 的 parseDateText
     const d = D.parseDateText(v, month);
@@ -236,43 +233,15 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
       </div>
 
-      <div className="jp-head">
-        <button className="jp-nav" title="上个月" onClick={() => setMonth(D.addMonths(month, -1))}>
-          <ChevronLeft size={14} />
-        </button>
-        <span className="jp-label">
-          {D.parseISO(month).getFullYear()} 年 {D.parseISO(month).getMonth() + 1} 月
-        </span>
-        <button className="jp-nav" title="下个月" onClick={() => setMonth(D.addMonths(month, 1))}>
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      <div className="jp-week">
-        <span>一</span><span>二</span><span>三</span><span>四</span>
-        <span>五</span><span>六</span><span>日</span>
-      </div>
-
-      <div className="jp-grid">
-        {days.map((d) => {
-          const out = D.parseISO(d).getMonth() !== curMonth;
-          const n = jumpLoad(state, d);
-          // 类名对不上等于没写：CSS 里是 `.jp-cell`，不是 `.jp-day`
-          return (
-            <button
-              // 日期密度用**淡底 + 底部短横**，不用圆点 —— 圆点在 1x 屏上几乎看不见
-              className={'jp-cell' + (out ? ' out' : '')
-                + (d === today ? ' today' : '')
-                + (d === cursor ? ' cur' : '')
-                + (n ? ' has' + (n >= 6 ? ' lv3' : n >= 3 ? ' lv2' : '') : '')}
-              key={d}
-              data-jump={d}
-              title={D.fmtFull(d) + ' · ' + (n ? n + ' 项待办' : '空闲')}
-              onClick={() => onPick(d)}
-            >{D.parseISO(d).getDate()}</button>
-          );
-        })}
-      </div>
+      {/* 月历格子与快速添加的「先选日期」共用同一份 —— 见 ui/DatePop.tsx */}
+      <MiniCalendar
+        month={month}
+        value={cursor}
+        todayIso={D.today()}
+        loadOf={(iso) => jumpLoad(state, iso)}
+        onMonth={setMonth}
+        onPick={onPick}
+      />
 
       {bad && <div className="jp-bad">没看懂这个日期，换个写法试试（例如「10月15日」「下周三」）</div>}
     </div>
@@ -281,21 +250,127 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday, onCursor, onSearch }: {
-  state: LocalState; narrow: boolean;
+/** 搜索输入框的共享逻辑：本地状态 + 防抖回调 */
+function useSearchValue(initial: string, onSearch: (kw: string) => void) {
+  const [kw, setKw] = useState(initial);
+  const debounced = useDebounced(kw, 180);
+  useEffect(() => { onSearch(debounced); }, [debounced, onSearch]);
+  return [kw, setKw] as const;
+}
+
+/** 搜索输入框（桌面常驻 / 移动浮条共用） */
+function SearchInput({ kw, setKw, autoFocus }: {
+  kw: string; setKw: (v: string) => void; autoFocus?: boolean;
+}) {
+  return (
+    <div className="search-box">
+      <span className="search-ico"><Search size={14} /></span>
+      <input
+        type="text"
+        value={kw}
+        placeholder="搜索…"
+        aria-label="搜索任务"
+        autoFocus={autoFocus}
+        onChange={(e) => setKw(e.target.value)}
+      />
+      {!!kw && (
+        <button className="clear-search" title="清空" onClick={() => setKw('')}>
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** 移动端搜索浮条：点击搜索图标后弹出 */
+function SearchPop({ open, kw, setKw, onClose }: {
+  open: boolean; kw: string; setKw: (v: string) => void; onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useOutsideClose(box, open, onClose);
+  if (!open) return null;
+  return (
+    <div className="search-pop" ref={box}>
+      <SearchInput kw={kw} setKw={setKw} autoFocus />
+    </div>
+  );
+}
+
+/**
+ * 日程页副header：日期导航 + 视图切换 + 找日期
+ *
+ * 从Topbar抽出来，让顶栏只留标题 + 搜索 + 状态。
+ * 日程页内容多，需要专门的副header来放这些控件。
+ */
+export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor }: {
+  state: LocalState;
   jump: boolean; setJump: (v: boolean) => void;
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
   onCursor: (iso: string) => void;
+}) {
+  const ui = state.ui;
+  const t0 = D.today();
+  let atToday = ui.cursor === t0;
+  if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
+  else if (ui.view === 'month') {
+    const a = D.parseISO(ui.cursor), b = D.parseISO(t0);
+    atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  }
+
+  return (
+    <div className="cal-subhead">
+      <div className="date-nav">
+        <button className="round-btn" title="上一个" onClick={() => onShift(-1)}>
+          <ChevronLeft size={15} />
+        </button>
+        <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
+          <ChevronRight size={15} />
+        </button>
+        <button
+          className={'text-btn today-btn' + (atToday ? '' : ' away')}
+          title={atToday ? '当前就在今天' : '跳回今天'}
+          onClick={onToday}
+        >{atToday ? '今天' : '回到今天'}</button>
+        <span className="date-range">{D.fmtFull(ui.cursor)}</span>
+        <div className="jump-wrap">
+          <button
+            className={'text-btn jump-btn' + (jump ? ' on' : '')}
+            title="跳到指定日期（快捷键 D）"
+            aria-haspopup="dialog"
+            aria-expanded={jump}
+            onClick={() => setJump(!jump)}
+          >
+            <span className="jb-ico"><CalendarDays size={13} /></span>
+            <span className="jb-txt">找日期</span>
+          </button>
+          <JumpPop
+            open={jump}
+            cursor={ui.cursor}
+            state={state}
+            onPick={(d) => { onCursor(d); setJump(false); }}
+            onClose={() => setJump(false)}
+          />
+        </div>
+      </div>
+      <div className="view-switch">
+        <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
+        <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
+        <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
+      </div>
+    </div>
+  );
+}
+
+export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
+  state: LocalState; narrow: boolean;
+  searchOpen: boolean; setSearchOpen: (v: boolean) => void;
   onSearch: (kw: string) => void;
 }) {
   const ui = state.ui;
   const online = useOnline();
-  const [kw, setKw] = useState(ui.search);
-  const debounced = useDebounced(kw, 180);
-
-  useEffect(() => { onSearch(debounced); }, [debounced, onSearch]);
+  const [kw, setKw] = useSearchValue(ui.search, onSearch);
 
   // 标题写**具体日期 / 年月**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
   // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
@@ -322,97 +397,35 @@ export function Topbar({ state, narrow, jump, setJump, onView, onShift, onToday,
     }
   }
 
-  /**
-   * **只有日程页**才显示日期导航。
-   *
-   * 这里踩过一次：重构时写成了 `calendar || today`，于是「今天」页左上角凭空
-   * 多出 ‹ › 和一个多余的「今天」按钮 —— 那个页面本来就只能看今天，给它一组
-   * 「翻到下一天」的控件是没有意义的。
-   */
-  const isCal = ui.nav === 'calendar';
-
-  /* 「今天」按钮跟着光标走：在今天 / 本周 / 本月时只是一个安静的灰字标签，
-     离开之后才亮起来变成「回到今天」—— 免得「已经挪到周五了，按钮还写着今天」 */
-  const t0 = D.today();
-  let atToday = ui.cursor === t0;
-  if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
-  else if (ui.view === 'month') {
-    const a = D.parseISO(ui.cursor), b = D.parseISO(t0);
-    atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
-  }
-
   return (
     // 顶栏**不加** position / z-index / sticky，见文件头注释
     <header className="topbar">
       <div className="topbar-left">
         <h1 className="view-title">{title}</h1>
-        <div className="date-nav">
-          {isCal && (
-            <>
-              <button className="round-btn" title="上一个" onClick={() => onShift(-1)}>
-                <ChevronLeft size={15} />
-              </button>
-              <button className="round-btn" title="下一个" onClick={() => onShift(1)}>
-                <ChevronRight size={15} />
-              </button>
-              <button
-                className={'text-btn today-btn' + (atToday ? '' : ' away')}
-                title={atToday ? '当前就在今天' : '跳回今天'}
-                onClick={onToday}
-              >{atToday ? '今天' : '回到今天'}</button>
-            </>
-          )}
-          <span className="date-range">{range}</span>
-          {ui.nav === 'calendar' && (
-            <div className="jump-wrap">
-              <button
-                className={'text-btn jump-btn' + (jump ? ' on' : '')}
-                title="跳到指定日期（快捷键 D）"
-                aria-haspopup="dialog"
-                aria-expanded={jump}
-                onClick={() => setJump(!jump)}
-              >
-                <span className="jb-ico"><CalendarDays size={13} /></span>
-                <span className="jb-txt">找日期</span>
-              </button>
-              <JumpPop
-                open={jump}
-                cursor={ui.cursor}
-                state={state}
-                onPick={(d) => { onCursor(d); setJump(false); }}
-                onClose={() => setJump(false)}
-              />
-            </div>
-          )}
-        </div>
+        {!narrow && <span className="date-range">{range}</span>}
       </div>
 
       <div className="topbar-right">
-        <div className="search-box">
-          <span className="search-ico"><Search size={14} /></span>
-          <input
-            type="text"
-            value={kw}
-            placeholder="搜索…"
-            aria-label="搜索任务"
-            onChange={(e) => setKw(e.target.value)}
-          />
-          {!!kw && (
-            <button className="clear-search" title="清空" onClick={() => setKw('')}>
-              <X size={13} />
+        {narrow ? (
+          <>
+            <button
+              className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
+              title="搜索"
+              aria-label="搜索任务"
+              aria-expanded={searchOpen}
+              onClick={() => setSearchOpen(!searchOpen)}
+            >
+              <Search size={16} />
             </button>
-          )}
-        </div>
-
-        {ui.nav === 'calendar' && (
-          <div className="view-switch">
-            {/* data-view 是给探针用的：这三个按钮原先只能靠文字「日 / 周 / 月」去找，
-                而文字是最不稳的定位方式。全应用其余可点元素都带 data-*，
-                这里补上同一个约定。 */}
-            <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
-            <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
-            <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
-          </div>
+            <SearchPop
+              open={searchOpen}
+              kw={kw}
+              setKw={setKw}
+              onClose={() => setSearchOpen(false)}
+            />
+          </>
+        ) : (
+          <SearchInput kw={kw} setKw={setKw} />
         )}
 
         {/* 深浅快捷按钮已收进设置页（外观卡）—— 顶栏只留状态，不留入口 */}
@@ -574,37 +587,38 @@ export function MoreSheet({ state, open, onClose, onNav, onManageCal, onInvites 
 
 /* ============================== 快速添加 ============================== */
 
-/** 当前页面决定了「没写日期时默认落到哪」 */
-function defaultDate(state: LocalState): string | null {
-  const ui = state.ui;
-  if (ui.nav === 'inbox') return null;
-  if (ui.nav === 'calendar') return ui.cursor;
-  return D.today();
-}
-
-function placeholderFor(state: LocalState): string {
-  const ui = state.ui;
-  if (ui.nav === 'inbox') return '丢进待办箱，不设日期（写了日期则以写的为准）';
-  if (ui.nav === 'today') return '添加到今天，也可以写「后天上午 给导师发邮件」';
-  if (ui.nav === 'calendar') return '添加到 ' + D.fmtMD(ui.cursor) + '，写了日期就按写的来';
-  return '新建任务，回车保存';
-}
+/** 占位符**不随 tab 变** —— 需求 1B：展开后文本不需要跟着所在的 tab 变。
+    按 tab 写不同文案的代价是「切个 tab，输入框里的话就变了」，用户会以为
+    自己刚才打的东西被吃了。 */
+const QUICK_PLACEHOLDER = '新建任务，回车保存';
 
 export function QuickAdd({ state, onSubmit }: {
   state: LocalState;
   onSubmit: (draft: { title: string; date: string | null; time: string | null; duration?: number; repeat?: unknown }, openDetail: boolean) => void;
 }) {
+  const narrow = useIsNarrow();
   const [text, setText] = useState('');
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [pendingTime, setPendingTime] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // 窄屏默认收起成右下角一个 FAB，点一下展开、再点收起（需求 3C）
+  const [expanded, setExpanded] = useState(!narrow);
+  const [dateOpen, setDateOpen] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
+  // 「N」快捷键与 FAB 都要先展开再聚焦 —— 展开是异步的，得等 DOM 更新
+  const focusOnExpand = useRef(false);
   const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const ui = state.ui;
+  const def = quickDefaults(ui, D.today());
   const parsed: ParseOut | null = text.trim() ? parse(text) : null;
+  // 生效值：picker > 文本解析 > tab 默认。预览画的是生效值，不让人猜
+  const effDate = pendingDate ?? parsed?.date ?? def.date;
+  const effTime = pendingTime ?? parsed?.time ?? def.time;
   const chips: [string, string][] = [];
-  if (parsed?.date) chips.push(['date', D.relLabel(parsed.date)]);
-  if (parsed?.time) chips.push(['time', parsed.time]);
+  if (effDate) chips.push(['date', D.relLabel(effDate)]);
+  if (effTime) chips.push(['time', effTime]);
   if (parsed?.duration) chips.push(['dur', D.fmtDuration(parsed.duration)]);
   if (parsed?.repeat) chips.push(['rep', repeatLabel(parsed.repeat)]);
 
@@ -612,9 +626,10 @@ export function QuickAdd({ state, onSubmit }: {
     const raw = text.trim();
     if (!raw) return;
     const p = parse(raw);
-    const date = p?.date ?? defaultDate(state);
-    const time = p?.time ?? pendingTime;
+    const date = pendingDate ?? p?.date ?? def.date;
+    const time = pendingTime ?? p?.time ?? def.time;
     setText('');
+    setPendingDate(null);
     setPendingTime(null);
     onSubmit({
       title: (p?.title || raw),
@@ -625,70 +640,131 @@ export function QuickAdd({ state, onSubmit }: {
     }, openDetail);
   };
 
-  // 「N」聚焦输入框，跟旧版一致
+  // 「N」聚焦输入框，跟旧版一致。窄屏下先展开再聚焦
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === 'n' || e.key === 'N') { e.preventDefault(); inputRef.current?.focus(); }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        if (narrow && !expanded) { setExpanded(true); focusOnExpand.current = true; }
+        else inputRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);
-  }, []);
+  }, [narrow, expanded]);
+
+  // 展开之后才聚焦 —— 收起的横条是 display:none，聚焦不上去
+  useEffect(() => {
+    if (expanded && focusOnExpand.current) {
+      focusOnExpand.current = false;
+      inputRef.current?.focus();
+    }
+  }, [expanded]);
+
+  const hasWhen = !!(pendingDate || pendingTime);
 
   return (
-    // 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了
-    <div className="fast-add" hidden={state.ui.nav === 'trash' || state.ui.nav === 'settings'}>
-      <span className="fast-plus"><Plus size={15} /></span>
-      <input
-        ref={inputRef}
-        type="text"
-        value={text}
-        placeholder={placeholderFor(state)}
-        aria-label="快速添加"
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
-          if (e.key === 'Escape') { e.currentTarget.blur(); }
-        }}
-      />
-      <button
-        ref={clockBtn}
-        className={'fast-clock' + (pendingTime ? ' on' : '')}
-        type="button"
-        title="选择时间"
-        onClick={() => setClockOpen((v) => !v)}
+    <>
+      {/* 设置页没有「往这儿加一条任务」这回事 —— 留着会让人以为加进设置里了 */}
+      <div
+        className="fast-add"
+        hidden={ui.nav === 'trash' || ui.nav === 'settings' || (narrow && !expanded)}
       >
-        <Clock size={15} />
-        {pendingTime && <span className="fc-time">{pendingTime}</span>}
-      </button>
-      <ClockPop
-        open={clockOpen}
-        anchor={clockBtn.current}
-        value={pendingTime}
-        onChange={(v) => { setPendingTime(v); setClockOpen(false); }}
-        onClose={() => setClockOpen(false)}
-      />
-      {/* 选了时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上 15:00」，
-          不然只有那个小胶囊显示，很容易漏看 */}
-      <span className="fast-hint">
-        {pendingTime ? `时间 ${pendingTime} · 再点时钟图标可改` : 'Ctrl + Enter 打开详细设置'}
-      </span>
+        <span className="fast-plus"><Plus size={15} /></span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={text}
+          placeholder={QUICK_PLACEHOLDER}
+          aria-label="快速添加"
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
+            if (e.key === 'Escape') { e.currentTarget.blur(); }
+          }}
+        />
+        <button
+          ref={clockBtn}
+          className={'fast-clock' + (hasWhen ? ' on' : '')}
+          type="button"
+          title="选择日期和时间"
+          onClick={() => {
+            // 两层：先选日期、再选时间。已经开着哪层就关哪层
+            if (dateOpen) { setDateOpen(false); return; }
+            if (clockOpen) { setClockOpen(false); return; }
+            setDateOpen(true);
+          }}
+        >
+          <Clock size={15} />
+          {hasWhen && (
+            <span className="fc-time">
+              {pendingDate ? D.fmtMD(pendingDate) : ''}
+              {pendingDate && pendingTime ? ' ' : ''}
+              {pendingTime || ''}
+            </span>
+          )}
+        </button>
+        <DatePop
+          open={dateOpen}
+          anchor={clockBtn.current}
+          value={pendingDate ?? def.date}
+          todayIso={D.today()}
+          loadOf={(iso) => jumpLoad(state, iso)}
+          onPick={(d) => { setPendingDate(d); setDateOpen(false); setClockOpen(true); }}
+          onClear={() => { setPendingDate(null); setDateOpen(false); setClockOpen(true); }}
+          onClose={() => setDateOpen(false)}
+        />
+        <ClockPop
+          open={clockOpen}
+          anchor={clockBtn.current}
+          value={pendingTime}
+          onChange={(v) => { setPendingTime(v); setClockOpen(false); }}
+          onClose={() => setClockOpen(false)}
+        />
+        {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
+            10月20日 15:00」，不然只有那个小胶囊显示，很容易漏看 */}
+        <span className="fast-hint">
+          {hasWhen
+            ? [pendingDate && '日期 ' + D.fmtMD(pendingDate), pendingTime && '时间 ' + pendingTime]
+                .filter(Boolean).join(' · ') + ' · 再点时钟图标可改'
+            : 'Ctrl + Enter 打开详细设置'}
+        </span>
 
-      <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
-        {!!chips.length && (
-          <>
-            <span className="fp-chip k-title">{parsed?.title || text}</span>
-            <span className="fp-arrow">→</span>
-            {chips.map(([k, v]) => <span className={'fp-chip k-' + k} key={k}>{v}</span>)}
-          </>
-        )}
+        <div className={'fast-parse' + (chips.length && (focused || !!text) ? ' show' : '')}>
+          {!!chips.length && (
+            <>
+              <span className="fp-chip k-title">{parsed?.title || text}</span>
+              <span className="fp-arrow">→</span>
+              {chips.map(([k, v]) => <span className={'fp-chip k-' + k} key={k}>{v}</span>)}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* 窄屏的浮动 + 号：常驻右下角，点了展开横条、再点收起（变成 ×） */}
+      {narrow && (
+        <button
+          className={'fast-fab' + (expanded ? ' open' : '')}
+          type="button"
+          hidden={ui.nav === 'trash' || ui.nav === 'settings'}
+          title={expanded ? '收起快速添加' : '快速添加'}
+          aria-label={expanded ? '收起快速添加' : '快速添加'}
+          aria-expanded={expanded}
+          onClick={() => {
+            if (!expanded) focusOnExpand.current = true;
+            setExpanded((v) => !v);
+          }}
+        >
+          {expanded ? <X size={20} /> : <Plus size={20} />}
+        </button>
+      )}
+    </>
   );
 }
 

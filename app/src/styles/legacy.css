@@ -471,7 +471,29 @@ b, strong { font-variant-numeric: tabular-nums; }
   transition: background .14s, color .14s;
 }
 .view-switch button:hover { background: var(--panel-3); }
-.view-switch button.active { background: var(--primary); color: var(--primary-fg); }
+.view-switch button.on { background: var(--primary); color: var(--primary-fg); }
+
+/* ================= 日程副header ================= */
+
+.cal-subhead {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 22px; border-bottom: 1px solid var(--border);
+  background: var(--panel); gap: 12px;
+}
+.cal-subhead .date-nav { flex: 1 1 auto; min-width: 0; }
+.cal-subhead .view-switch { flex: 0 0 auto; }
+
+/* ================= 搜索浮条（移动端） ================= */
+
+.search-toggle.on { color: var(--primary); border-color: var(--primary); }
+.search-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: min(300px, calc(100vw - 20px));
+  background: var(--panel); border: var(--border-w) solid var(--border-2);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 10px;
+}
+.search-pop .search-box { width: 100%; }
+.search-pop .search-box input { width: 100%; }
 
 /* ================= 内容区 ================= */
 
@@ -1102,6 +1124,38 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .fp-chip.k-rep { background: var(--chip-rep-bg); color: var(--chip-rep-fg); }
 .fp-arrow { color: var(--text-3); }
 
+/* ================= 快速添加的浮动 + 号（窄屏） ================= */
+
+/* z-index 取 39 是**故意的**：压得住正文，但**低于抽屉遮罩的 40** ——
+   抽屉打开时 FAB 该被罩住，而不是浮在遮罩上还能点。
+   它和标签栏（45）不重叠：bottom 已经抬到 56px 的标签栏之上。 */
+.fast-fab {
+  position: fixed; right: 16px; bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 39;
+  width: 48px; height: 48px; border: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary); color: var(--primary-fg);
+  box-shadow: var(--shadow-lg);
+  transition: transform .16s, background .16s;
+}
+.fast-fab:hover { filter: brightness(1.06); }
+.fast-fab:active { transform: scale(.94); }
+.fast-fab.open { background: var(--panel-2); color: var(--text-2); }
+
+/* ================= 快速添加的「先选日期」面板 ================= */
+
+/* 定位与宽度跟 .jump-pop 一致（里面那套 .jp-* 格子是共用的），
+   只是 position 改成 fixed —— 它要贴着横条上的时钟按钮出现，不是贴着顶栏 */
+.date-pop {
+  position: fixed; z-index: 70;
+  width: 268px; padding: 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border-2);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: fadeUp .14s ease;
+}
+.dp-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.dp-foot .grow { flex: 1; }
+
 /* ================= 时钟时间选择器 ================= */
 
 .time-trigger {
@@ -1292,7 +1346,7 @@ input, select, textarea { font-size: max(14px, 16px); }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
   .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--border-2); color: var(--text-2); }
   .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
-  .view-switch button.active:hover { background: var(--primary); }
+  .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
@@ -1434,25 +1488,31 @@ body.sheet-open .tab:active { background: none; }
   .fast-add { margin: 4px 13px 12px; padding: 9px 13px; }
   .list-view, .habits-view { max-width: none; }
 
-  /* 顶栏分两行：第一行标题 + 右侧图标，第二行整行放日期导航与视图切换 */
+  /* 顶栏单行：标题 + 搜索图标 + 状态 */
   /* 顶栏绝对不能加 position/z-index（sticky 也算）：
      那会生成层叠上下文，把里面的找日期面板困住、导致被下方内容盖住。
      窄屏下顶栏随内容一起滚反而省出垂直空间，标签栏本来就常驻底部。 */
   .topbar {
-    flex-direction: column; align-items: stretch; gap: 8px;
+    flex-direction: row; align-items: center; gap: 8px;
     padding: 9px 13px 10px;
   }
   .topbar-left, .topbar-right { gap: 8px; min-width: 0; }
   .topbar-left { flex-wrap: nowrap; }
   .topbar-right { justify-content: flex-end; }
   .view-title { font-size: 17px; white-space: nowrap; }
-  /* 第二行：把日期导航整块换行下来，视图切换跟在它后面同一行 */
-  .date-nav {
-    order: 9; flex: 1 1 auto; min-width: 0;
+  .date-range { display: none; }
+
+  /* 日程副header：日期导航 + 视图切换 */
+  .cal-subhead {
+    padding: 8px 13px;
+    flex-wrap: wrap; row-gap: 6px;
+  }
+  .cal-subhead .date-nav {
+    flex: 1 1 auto; min-width: 0;
     justify-content: flex-start; flex-wrap: wrap; row-gap: 6px;
   }
-  .date-range { display: none; }
-  .search-box input { width: 88px; }
+  .cal-subhead .view-switch { flex: 0 0 auto; }
+
   /* 触控目标太小，点不准 */
   .round-btn { width: 36px; height: 36px; }
   .text-btn { padding: 8px 12px; }
@@ -1461,6 +1521,8 @@ body.sheet-open .tab:active { background: none; }
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
   .jump-pop { left: auto; right: 0; width: min(300px, calc(100vw - 20px)); }
+  /* 「先选日期」面板与找日期同一套格子，宽度口径一致 */
+  .date-pop { width: min(300px, calc(100vw - 20px)); }
   .jp-cell { height: 34px; line-height: 28px; font-size: 13.5px; }
   .jp-cell.has::after { bottom: 4px; }
   .jp-cell.has.lv2::after { width: 16px; }
@@ -1481,6 +1543,8 @@ body.sheet-open .tab:active { background: none; }
   .fast-hint { display: none; }
   .fast-add input { font-size: 16px; }
   .fast-clock { padding: 8px 11px; }
+  /* 横条展开后给右下角的 FAB 让位，别把时钟按钮盖住 */
+  .fast-add { padding-right: 62px; }
 
   /* 列表分组间距收一点 */
   .list-group { margin-bottom: 18px; }
@@ -1525,11 +1589,9 @@ body.sheet-open .tab:active { background: none; }
 /* 640px 以下：手机常见的窄屏，进一步收 */
 @media (max-width: 640px) {
   .view-title { font-size: 16px; }
-  .search-box { padding: 7px 9px; }
-  .search-box input { width: 64px; }
-  .view-switch button { padding: 8px 12px; }
+  .cal-subhead .view-switch button { padding: 8px 12px; }
   /* 日期组和视图切换可能还是挤，允许换行 */
-  .date-nav { flex-wrap: wrap; }
+  .cal-subhead .date-nav { flex-wrap: wrap; }
   .today-btn { margin-left: 2px; }
   .list-group { margin-bottom: 15px; }
   .group-title { padding-bottom: 7px; }

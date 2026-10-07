@@ -1441,13 +1441,29 @@ try {
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '找日期面板收起', 8000);
 
-  /* ---- 3. 时间转盘 ---- */
+  /* ---- 3. 两层：先选日期、再选时间 ---- */
   // 换到待办箱：这一节最后要往箱子里加一条带时间的任务，得站在能看见它的页面上
   await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
   await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切到待办箱', 8000);
 
+  // 点时钟按钮**先出日期面板**（不是直接出转盘）—— 这是需求 3 的两层
   await clickEl(page, `document.querySelector('.fast-clock')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '时间转盘打开', 8000);
+  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '先出日期面板', 8000);
+  const dp = await evalJs(page, `
+    const pop = document.querySelector('.date-pop');
+    return {
+      cells: pop.querySelectorAll('.jp-cell').length,
+      cur: pop.querySelectorAll('.jp-cell.cur').length,
+      today: pop.querySelectorAll('.jp-cell.today').length,
+    };
+  `);
+  ok(dp.cells === 42, '日期面板是 6×7 的月历，实际 ' + dp.cells);
+  ok(dp.cur === 0, '待办箱默认无日期 → 面板里没有高亮，实际 ' + dp.cur);
+  ok(dp.today === 1, '今天仍然描边（只是不选中），实际 ' + dp.today);
+
+  // 「不选日期」→ 进第二层（待办箱那条路：保持无日期、只带时间）
+  await clickEl(page, `[...document.querySelectorAll('.date-pop .dp-foot button')].find((b) => b.textContent.trim() === '不选日期')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '再出时间转盘', 8000);
   const dial = await evalJs(page, `
     const pop = document.querySelector('.clock-pop');
     const f = pop.querySelector('.cp-face').getBoundingClientRect();
@@ -1495,6 +1511,60 @@ try {
   `, '带时间的任务落盘', 8000);
   ok(made && made.time === '00:30',
     '转盘选的时间跟着任务一起落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made && made.time));
+
+  /* ---- 4. 两层一起用：选日期 + 选时间 ---- */
+  // 换到「今天」页：默认日期是今天，面板里应该高亮今天
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'today')`);
+  // 今天页的列表作用域是 `day:<日期>`（见 views/Lists.tsx），**没有** `today` ——
+  // 别照待办箱的 `inbox` 类推。作用域是拖动排序的分组键，改成 `today` 会把
+  // 「按天分组」拆掉，所以是探针写错了、不是应用少了这个属性。
+  await waitFor(page, `document.querySelector('[data-scope^="day:"]') ? 1 : null`, '切到今天页', 8000);
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.date-pop') ? 1 : null`, '今天页先出日期面板', 8000);
+  const dp2 = await evalJs(page, `
+    const pop = document.querySelector('.date-pop');
+    const t = new Date();
+    const iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    return { cur: pop.querySelectorAll('.jp-cell.cur').length, label: pop.querySelector('.jp-label').textContent.trim(), iso };
+  `);
+  ok(dp2.cur === 1, '今天页默认高亮今天，实际高亮 ' + dp2.cur + ' 格');
+  // 点今天那一格 → 进第二层
+  await clickEl(page, `document.querySelector('.date-pop .jp-cell.cur')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '选完日期出转盘', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '3')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
+  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
+  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '转盘收起', 8000);
+  const pill2 = await evalJs(page, `const e = document.querySelector('.fast-clock .fc-time'); return e ? e.textContent.trim() : null;`);
+  ok(/月.*日 15:00/.test(pill2 || ''), '胶囊上同时显示日期和时间，实际 ' + JSON.stringify(pill2));
+
+  const n1 = await evalJs(page, `return document.querySelectorAll('[data-scope^="day:"] .task-el').length;`);
+  await setText('.fast-add input', '两层一起');
+  await evalJs(page, `
+    document.querySelector('.fast-add input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 1;
+  `);
+  await waitFor(page, `document.querySelectorAll('[data-scope^="day:"] .task-el').length > ${n1}`, '带日期时间的任务出现', 8000);
+  const made2 = await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '两层一起');
+      return t ? { date: t.date, time: t.time } : null;
+    })()
+  `, '带日期时间的任务落盘', 8000);
+  ok(made2 && made2.time === '15:00',
+    '选的时间跟着任务落库，实际 ' + JSON.stringify(made2));
+  ok(made2 && /^\d{4}-\d{2}-\d{2}$/.test(made2.date || ''),
+    '选的日期跟着任务落库（不是只显示在胶囊上），实际 ' + JSON.stringify(made2));
+
+  /* ---- 5. 占位符不随 tab 变（需求 1B） ---- */
+  const phToday = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
+  await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切回待办箱', 8000);
+  const phInbox = await evalJs(page, `return document.querySelector('.fast-add input').placeholder;`);
+  ok(phToday === phInbox,
+    '占位符不随 tab 变，实际 今天=' + JSON.stringify(phToday) + ' 待办箱=' + JSON.stringify(phInbox));
 
   console.log('\n十八、功能区自定义：底栏挑哪几项、设置页调序都记得住');
 
@@ -1663,7 +1733,28 @@ try {
   // 差集（底栏没有的那些）—— 从抽屉里找 today 找不到，clickEl 只会返回
   // 'missing' 不报错，症状是「任务出现」等不到、看着像快速添加坏了。
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.replace(/\\d+/g, '').trim() === '今天')`);
-  await waitFor(page, `!!document.querySelector('.fast-add input')`, '今天页挂上');
+
+  /* ---- 窄屏的浮动 + 号（需求 1A / 3C） ---- */
+  // 窄屏默认收起成 FAB、点一下展开、再点收起。切 tab 文本不丢由 React 状态保证
+  // （QuickAdd 不随 tab 切换卸载，横条只是 display:none），这里证的是收起 / 展开这条接线。
+  //
+  // ⚠️ `evalJs` 把表达式包成 `(async () => { <表达式> })()` —— **必须自己写 `return`**，
+  // 光写一个表达式会得到 undefined，断言就永远是假（这几条第一次就是这么假红的）。
+  // `waitFor` 会替我们补 `return`，所以它那几行不用写。
+  ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`), '窄屏下右下角有浮动 + 号');
+  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display === 'none';`),
+    '窄屏下横条默认收起');
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display !== 'none'`, '点 + 号展开横条', 8000);
+  ok(await evalJs(page, `return document.querySelector('.fast-fab').getAttribute('aria-expanded') === 'true';`),
+    '展开后 FAB 变成 ×（aria-expanded=true）');
+  // 再点收起
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '再点收起横条', 8000);
+  // 重新展开，继续后面几节
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add input')`, '重新展开');
+
   await setField('.fast-add input', '写方案');
   await evalJs(page, `
     return (() => {
