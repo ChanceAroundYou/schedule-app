@@ -579,7 +579,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onExport={exportBackup}
         onImport={importBackup}
         onLogout={onLogout}
-        onManageCal={() => setCalOpen(true)}
         onInvites={() => setInvOpen(true)}
       />
     );

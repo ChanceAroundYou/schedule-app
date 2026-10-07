@@ -11,6 +11,12 @@
  *      不是只看用户手动挑没挑过。
  *   3. **在日期层点中某天 → 自动收起日期层、切到时间层。** 挑完日期下一步
  *      几乎总是挑时间，让用户再点一次标题行纯属多余。
+ *      **时间已经定过的话就直接收起整个面板** —— 两样都齐了，没有下一步了。
+ *   4. **分钟一落定，整个面板自己收起**（需求 5）。`ClockBody` 的 `onMinutePick`
+ *      就是为这个加的：选小时只是半截，选到分钟才算选完。
+ *   5. **「不设置」拆成两个，贴着各自的标题行**（需求 3）：日期、时间各点各的。
+ *      文案跟着状态走 —— 有值写「清空」、没值写「跳过」，见 `actOf`。
+ *      底部因此不再有那个共用的出口，只剩一个「收起」。
  *
  * **不做「最近用过的日期」快捷推荐**：这个面板里再塞一行 chips 就放不下了，
  * 而且这是个日程管理软件 —— 日期是**选出来**的，不是**猜出来**的。
@@ -107,27 +113,23 @@ export interface WhenPopProps {
   time: string | null;
   todayIso: string;
   loadOf: (iso: string) => number;
-  /** 点了某天 → 面板自己收日期层、开时间层 */
-  onDate: (iso: string) => void;
-  /** 拨表盘 → 实时回传 'HH:MM' */
-  onTime: (t: string) => void;
-  /** 时间层的「清除时间」：只清时间、留着日期 */
-  onTimeClear: () => void;
-  /** 底部的「不设置」：日期与时间都清空，并收起面板 */
-  onClearAll: () => void;
-  /** 点外 / Esc / 「完成」→ 收起面板（已选的值留着） */
+  /** 点某天 → 面板自己收日期层、开时间层。传 `null` = 把日期清成未设置 */
+  onDate: (v: string | null) => void;
+  /** 拨表盘 → 实时回传 'HH:MM'。传 `null` = 把时间清成未设置 */
+  onTime: (v: string | null) => void;
+  /** 点外 / Esc / 「收起」/ 选完 → 收起面板（已选的值留着） */
   onClose: () => void;
 }
 
 export function WhenPop({
   open, anchor, date, time, todayIso, loadOf,
-  onDate, onTime, onTimeClear, onClearAll, onClose,
+  onDate, onTime, onClose,
 }: WhenPopProps) {
   const box = useRef<HTMLDivElement>(null);
   const [layer, setLayer] = useState<'date' | 'time' | null>(null);
   const [month, setMonth] = useState(() => D.monthStart(date || todayIso));
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  // 「清除时间」要把表盘一起复位，但表盘的状态在它自己肚子里 ——
+  // 清掉时间之后要把表盘一起复位，但表盘的状态在它自己肚子里 ——
   // 换 key 让它重新挂载是唯一的办法（不能拿 time 当 key：每拨一下都会重挂，
   // 用户刚切到的分钟档会被弹回小时档）
   const [dialKey, setDialKey] = useState(0);
@@ -185,19 +187,50 @@ export function WhenPop({
 
   if (!open) return null;
 
-  const row = (key: 'date' | 'time', label: string, value: string | null, text: string) => (
-    <button
-      className={'wp-row' + (layer === key ? ' open' : '')}
-      type="button"
-      aria-expanded={layer === key}
-      data-layer={key}
-      onClick={() => setLayer((v) => (v === key ? null : key))}
-    >
-      <span className="wp-k">{label}</span>
-      <span className={'wp-v' + (value ? '' : ' none')}>{value ? text : '未设置'}</span>
-      <ChevronDown size={14} className="wp-cv" />
-    </button>
-  );
+  /* 标题行右边那个按钮**就是「不设置」，只是按当前状态换个说法**（需求 3）：
+     它贴着开合箭头放，日期、时间各点各的，不再共用一个底部出口。
+
+       - 已经有值 → 「清空」：把这个字段清成未设置，**面板留着**（多半是想重选）。
+         清时间要连表盘一起复位，见上面 dialKey 那段。
+       - 还没有值 → 「跳过」：没什么可清的，那就往前走一步 ——
+         日期行跳去时间层，时间行直接收起面板。
+
+     两种状态下点下去都有明确后果，不留一个点了没反应的死按钮。 */
+  const actOf = (key: 'date' | 'time') => {
+    const has = key === 'date' ? !!date : !!time;
+    if (has) {
+      return {
+        label: '清空',
+        run: () => {
+          if (key === 'date') onDate(null);
+          else { onTime(null); setDialKey((k) => k + 1); }
+        },
+      };
+    }
+    return { label: '跳过', run: () => setLayer(key === 'date' ? 'time' : null) };
+  };
+
+  const row = (key: 'date' | 'time', label: string, value: string | null, text: string) => {
+    const act = actOf(key);
+    return (
+      <div className={'wp-row' + (layer === key ? ' open' : '')}>
+        {/* 开合键和「清空 / 跳过」必须是**两个** button —— 嵌套 button 是非法
+            HTML，浏览器会把里层那个甩到外面去，点起来完全不是看到的样子 */}
+        <button
+          className="wp-head"
+          type="button"
+          aria-expanded={layer === key}
+          data-layer={key}
+          onClick={() => setLayer((v) => (v === key ? null : key))}
+        >
+          <span className="wp-k">{label}</span>
+          <span className={'wp-v' + (value ? '' : ' none')}>{value ? text : '未设置'}</span>
+          <ChevronDown size={14} className="wp-cv" />
+        </button>
+        <button className="wp-act" type="button" onClick={act.run}>{act.label}</button>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -219,7 +252,12 @@ export function WhenPop({
             todayIso={todayIso}
             loadOf={loadOf}
             onMonth={setMonth}
-            onPick={(d) => { onDate(d); setLayer('time'); }}
+            onPick={(d) => {
+              onDate(d);
+              // 时间已经定了 → 日期时间两样都齐，直接收起（需求 5）；
+              // 还缺时间 → 切到时间层接着选
+              if (time) onClose(); else setLayer('time');
+            }}
           />
         </div>
       )}
@@ -227,25 +265,21 @@ export function WhenPop({
       {row('time', '时间', time, time || '')}
       {layer === 'time' && (
         <div className="wp-body wp-clock">
-          <ClockBody key={dialKey} value={time} face={FACE} onChange={onTime} />
-          {!!time && (
-            <div className="wp-clear">
-              <button
-                className="ghost-btn"
-                onClick={() => { onTimeClear(); setDialKey((k) => k + 1); }}
-              >清除时间</button>
-            </div>
-          )}
+          {/* 分钟一落定就算选完 → 面板自己收起（需求 5）。
+              这里不需要「清除时间」了：它挪到标题行右边，见上面 actOf */}
+          <ClockBody
+            key={dialKey}
+            value={time}
+            face={FACE}
+            onChange={onTime}
+            onMinutePick={onClose}
+          />
         </div>
       )}
 
       <div className="wp-foot">
-        {/* 「不设置」是**独立的出口**，不是「取消」：取消是「我刚才白点了」，
-            不设置是「这一条就是没有日期也没有时间」——后者在待办箱里是常态，
-            在「今天」页上更是唯一能把默认的今天摘掉的路 */}
-        <button className="ghost-btn" onClick={onClearAll}>不设置</button>
         <span className="grow" />
-        <button className="primary-btn" onClick={onClose}>完成</button>
+        <button className="ghost-btn" onClick={onClose}>收起</button>
       </div>
     </div>
   );

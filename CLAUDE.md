@@ -49,7 +49,7 @@
 │   │   │   ├── Calendars.tsx  日程集：侧栏切换条 · 管理浮层 · 邀请收件箱
 │   │   │   ├── Drawer.tsx  抽屉（详情 + 编辑 + 「另一台设备也改过」那条提示）
 │   │   │   ├── ActSheet.tsx  长按操作层（触屏专用，在「提起后原地松手」时出现，见四、14）
-│   │   │   ├── Settings.tsx  设置页：外观三轴 · 功能区自定义 · 数据备份 · 修改密码
+│   │   │   ├── Settings.tsx  设置页：tab 布局（外观 · 账户安全 · 同步备份 · 日程集 · 关于）
 │   │   │   ├── Auth.tsx    登录 / 注册（开放注册，无管理员）
 │   │   │   ├── kit.tsx     Btn · IconBtn · useConfirm · ConfirmProvider · ToastHost
 │   │   │   ├── dnd.ts      **让位洞**拖拽层 + 触屏那条 pointer 通路（最易踩坑的一块，见四、8 与四、14）

@@ -32,6 +32,9 @@
  * 3. **分钟只给 12 格（每 5 分钟）**，不做逐分钟：这个应用的时间轴最小步进是
  *    15 分钟（拖拽、拉伸都按这个档），给到 1 分钟的精度没有意义，
  *    只会让用户在上面戳半天。
+ * 4. **表盘下面不写说明文字。** 原先有一行 `.cp-tip`，内容是「选小时（12 在顶部）」
+ *    这类话 —— 表盘自己就画着 12 在顶部，用户看得见；写出来只是把人当不会看。
+ *    现在那行的位置留空，靠 `.cp-cell` 的 `active` 态表达「现在在拨小时还是分钟」。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -55,9 +58,13 @@ export interface ClockBodyProps {
   face?: number;
   /** 每次拨动**立刻**回调 'HH:MM'（不是等「确定」）—— 调用方要的就是实时 */
   onChange: (v: string) => void;
+  /** 点了**分钟**那圈之后回调一次 —— 到这里一次选择就算走完了。
+   *  快速添加那层面板拿它自动收起（需求 5）；抽屉里那个浮层不传，
+   *  它有自己的「确定 / 取消」，不能自己关。 */
+  onMinutePick?: () => void;
 }
 
-export function ClockBody({ value, face = FACE_POP, onChange }: ClockBodyProps) {
+export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: ClockBodyProps) {
   const init = D.timeToMin(value);
   const [mode, setMode] = useState<'h' | 'm'>('h');
   // 没有值时给**当前整点**而不是 09:00 ——「新建一件现在要做的事」比
@@ -95,6 +102,7 @@ export function ClockBody({ value, face = FACE_POP, onChange }: ClockBodyProps) 
       const mi = k * 5;        // 顶端那格（标签写 60）就是 0 分
       setMinute(mi);
       emit(hour, mi);
+      onMinutePick?.();        // 分钟落定 = 这次选择走完了
     }
   };
 
@@ -125,6 +133,9 @@ export function ClockBody({ value, face = FACE_POP, onChange }: ClockBodyProps) 
         <button className={'cp-cell' + (!isHour ? ' active' : '')} onClick={() => setMode('m')}>
           {D.pad(minute)}
         </button>
+        {/* 「现在」挪到时间旁边：它拨的就是上面这两个数，离得近才像同一个控件。
+            原先它孤零零挂在表盘下面，和「清除时间」并排，两个都像出口。 */}
+        <button className="cp-now" onClick={now}>现在</button>
       </div>
 
       <div className="cp-face" style={{ width: face + 'px', height: face + 'px' }}>
@@ -141,18 +152,6 @@ export function ClockBody({ value, face = FACE_POP, onChange }: ClockBodyProps) 
             >{labelOf(k)}</button>
           );
         })}
-      </div>
-
-      <div className="cp-tip">
-        {isHour
-          ? (isAm ? '选小时（12 在顶部）' : '选小时（下午这圈直接写 12–23）')
-          : '选分钟，每格 5 分钟（顶端 60 就是 0 分）'}
-      </div>
-
-      {/* 「现在」跟着表盘走（它拨的是表盘上的针），所以放在本体里；
-          「清除 / 取消 / 确定」是这一层的出口，留给外面那个浮层 */}
-      <div className="cp-quick">
-        <button className="chip tiny" onClick={now}>现在</button>
       </div>
     </>
   );

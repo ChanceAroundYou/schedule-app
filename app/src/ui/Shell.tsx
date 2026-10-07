@@ -715,6 +715,27 @@ export function QuickAdd({ state, onSubmit }: {
             </span>
           )}
         </button>
+        {/* 「保存」：不用回车也能交（需求 6）。没写字的时候**禁用** ——
+            一个点下去没反应的按钮，比没有按钮更让人犯嘀咕 */}
+        <button
+          className="fast-save"
+          type="button"
+          disabled={!text.trim()}
+          title="保存这条任务"
+          onClick={() => submit(false)}
+        >保存</button>
+        {/* 窄屏展开后的收起键就摆在横条里（需求 1）。原先它是右下角那个浮动的
+            圆钮：48px 的圆比横条还高 6px，贴在横条右端时上下都探出去一截，
+            看着像「× 掉出了输入框」。横条里的按钮就该是横条的一部分。 */}
+        {narrow && (
+          <button
+            className="fast-collapse"
+            type="button"
+            title="收起快速添加"
+            aria-label="收起快速添加"
+            onClick={() => { setWhenOpen(false); setExpanded(false); }}
+          ><X size={16} /></button>
+        )}
         <WhenPop
           open={whenOpen}
           anchor={clockBtn.current}
@@ -724,16 +745,16 @@ export function QuickAdd({ state, onSubmit }: {
           loadOf={(iso) => jumpLoad(state, iso)}
           onDate={setPendingDate}
           onTime={setPendingTime}
-          onTimeClear={() => setPendingTime(null)}
-          onClearAll={() => { setPendingDate(null); setPendingTime(null); setWhenOpen(false); }}
           onClose={() => setWhenOpen(false)}
         />
         {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
-            10月20日 15:00」，不然只有那个小按钮显示，很容易漏看 */}
+            10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
+            句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
+            用户看得见（需求 7）。 */}
         <span className="fast-hint">
           {hasWhen
             ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
-                .filter(Boolean).join(' · ') + ' · 再点时钟图标可改'
+                .filter(Boolean).join(' · ')
             : 'Ctrl + Enter 打开详细设置'}
         </span>
 
@@ -748,24 +769,20 @@ export function QuickAdd({ state, onSubmit }: {
         </div>
       </div>
 
-      {/* 窄屏的浮动 + 号：常驻右下角，点了展开横条、再点收起（变成 ×） */}
-      {narrow && (
+      {/* 窄屏的浮动 + 号：**只在收起时**才存在。展开之后收起键搬进横条里
+          （见上面 `.fast-collapse`）—— 一个浮在横条外面的圆钮和横条抢同一块
+          位置，怎么摆都会探出边。 */}
+      {narrow && !expanded && (
         <button
-          className={'fast-fab' + (expanded ? ' open' : '')}
+          className="fast-fab"
           type="button"
           hidden={ui.nav === 'trash' || ui.nav === 'settings'}
-          title={expanded ? '收起快速添加' : '快速添加'}
-          aria-label={expanded ? '收起快速添加' : '快速添加'}
-          aria-expanded={expanded}
-          onClick={() => {
-            if (!expanded) focusOnExpand.current = true;
-            // 收起横条时把日期 / 时间面板一起收掉 —— 它的锚点就是横条上那个按钮，
-            // 横条没了它还浮在那儿，点都点不着
-            else setWhenOpen(false);
-            setExpanded((v) => !v);
-          }}
+          title="快速添加"
+          aria-label="快速添加"
+          aria-expanded={false}
+          onClick={() => { focusOnExpand.current = true; setExpanded(true); }}
         >
-          {expanded ? <X size={20} /> : <Plus size={20} />}
+          <Plus size={20} />
         </button>
       )}
     </>

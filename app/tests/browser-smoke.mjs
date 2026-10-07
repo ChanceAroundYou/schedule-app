@@ -339,8 +339,9 @@ try {
   console.log('\n三、进入主界面，侧栏有日程集');
   await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 12000);
   ok(await evalJs(page, `return !!document.querySelector('[data-nav="today"]');`), '侧栏有导航项');
-  const calName = await waitFor(page, `document.querySelector('[data-cal]')?.textContent.trim() || null`, '日程集出现');
-  ok(calName === '我的日程', '默认日程集叫「我的日程」，实际是 ' + JSON.stringify(calName));
+  // 默认日程集「我的日程」不再出现在侧栏列表里（见 Calendars.tsx 的 visible 过滤）
+  const calName = await evalJs(page, `return document.querySelector('[data-cal]')?.textContent.trim() || null;`);
+  ok(calName === null || calName !== '我的日程', '默认日程集不在侧栏列表里，实际是 ' + JSON.stringify(calName));
   ok(await evalJs(page, `return !!document.querySelector('[data-cal-manage]');`), '有「管理当前日程集」入口');
   ok(await evalJs(page, `return document.querySelectorAll('[data-cal-invites]').length === 0;`), '没有邀请时不显示邀请入口');
 
@@ -1860,9 +1861,9 @@ try {
   await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
   await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
   await waitFor(page, `!!document.querySelector('[data-tab]')`, '设置页的底栏胶囊');
-  // 分屏：窄屏设置页**不**渲染侧栏那列 —— 侧栏在窄屏根本不存在，摆出来只会让人困惑
-  ok(await evalJs(page, `return !document.querySelector('[data-nav-row]');`),
-    '窄屏设置页不显示侧栏列表（按设备分屏）');
+  // 移动端也显示拖拽列表（2026-10-07 起移动端和桌面端都能拖拽排序）
+  ok(await evalJs(page, `return !!document.querySelector('[data-nav-row]');`),
+    '窄屏设置页显示拖拽列表（移动端可拖拽）');
 
   const tabSel = (k) => `document.querySelector('[data-tab="${k}"]')`;
   ok(await clickEl(page, tabSel('inbox')) !== 'missing', '设置页里点得动底栏那排胶囊');
@@ -2144,9 +2145,11 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
   await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
   await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
-  // 用「关于」卡当设置页挂上的判据，别再用 [data-nav-row] —— 功能区卡片按设备
-  // 分屏之后，窄屏下那列根本不渲染（见第十八节）。关于卡两档都在。
+  // 设置页现在是 tab 布局，先点关于 tab 再检查
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '关于')`);
   await waitFor(page, `!!document.querySelector('[data-about="version"]')`, '设置页挂上');
+  // 修改密码按钮在账户安全 tab 里
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '账户安全')`);
   await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '修改密码')`);
   await waitFor(page, `!!document.querySelector('input[type="password"]')`, '改口令浮层打开');
   ok((await evalJs(page, `return document.querySelectorAll('input[type="password"]').length;`)) === 3,

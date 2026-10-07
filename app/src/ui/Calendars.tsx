@@ -69,6 +69,10 @@ export function CalSwitcher({ state, onManage, onInvites }: {
     } catch (e) { toast(say(e)); }
   }, [onManage]);
 
+  /** 默认日程集（「我的日程」）不进列表 —— 它是注册时自动建的，
+   *  用户不需要在列表里看到它，也不能删除或退出。 */
+  const visible = state.cals.filter((c) => !(c.name === '我的日程' && c.role === 'owner'));
+
   return (
     <div className="mb-2 flex flex-col gap-[2px]">
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
@@ -84,7 +88,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         </button>
       </div>
 
-      {state.cals.map((c) => (
+      {visible.map((c) => (
         <button
           type="button"
           key={c.id}
