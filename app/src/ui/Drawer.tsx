@@ -19,7 +19,7 @@ import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/type
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { liveProjects } from '../domain/model.ts';
-import { Btn, useConfirm } from './kit.tsx';
+import { Btn, IconBtn, Input, Select, Textarea, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
@@ -196,7 +196,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             />
             <span className="check-circle" />
           </label>
-          <input
+          <Input
             type="text"
             className="drawer-title"
             placeholder="任务名称"
@@ -205,9 +205,9 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { const v = title.trim() || '未命名任务'; setTitle(v); if (v !== task.title) patch({ title: v }); }}
           />
-          <button className="icon-btn" title="关闭" onClick={onClose}>
+          <IconBtn label="关闭" className="icon-btn" onClick={onClose}>
             <Check size={16} />
-          </button>
+          </IconBtn>
         </div>
 
         <div className="drawer-body">
@@ -219,7 +219,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
           <div className="field-row">
             <div className="field">
               <label htmlFor={fid + '-date'}>日期</label>
-              <input
+              <Input
                 id={fid + '-date'}
                 type="date"
                 value={task.date || ''}
@@ -232,7 +232,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                   重构时只留了原生框，把表盘整个丢了 —— 而「把 9 点挪到 10 点」
                   这种一格的事，点两下表盘比开系统控件快得多 */}
               <div className="field-inline">
-                <input
+                <Input
                   id={fid + '-time'}
                   type="time"
                   value={task.time || ''}
@@ -261,14 +261,14 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
 
           <div className="field">
             <label htmlFor={fid + '-dur'}>时长</label>
-            <select id={fid + '-dur'} value={task.duration || 60} onChange={(e) => patch({ duration: +e.target.value })}>
+            <Select id={fid + '-dur'} value={task.duration || 60} onChange={(e) => patch({ duration: +e.target.value })}>
               {DURATIONS.map((m) => <option value={m} key={m}>{D.fmtDuration(m)}</option>)}
-            </select>
+            </Select>
           </div>
 
           <div className="field">
             <label htmlFor={fid + '-rep'}>重复</label>
-            <select
+            <Select
               id={fid + '-rep'}
               value={rep.unit}
               onChange={(e) => {
@@ -277,7 +277,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
               }}
             >
               {REPEAT_UNITS.map((u) => <option value={u.value} key={u.value}>{u.label}</option>)}
-            </select>
+            </Select>
             {rep.unit !== 'none' && (
               <div className="repeat-panel">
                 <div className="rp-row">
@@ -333,7 +333,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                 )}
                 <div className="rp-row">
                   <span>结束</span>
-                  <select
+                  <Select
                     value={rep.end?.type || 'never'}
                     aria-label="重复结束方式"
                     onChange={(e) => {
@@ -351,15 +351,15 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                     <option value="never">不限</option>
                     <option value="date">到某天</option>
                     <option value="count">重复几次</option>
-                  </select>
+                  </Select>
                   {rep.end?.type === 'date' && (
-                    <input
+                    <Input
                       type="date" value={rep.end.date}
                       onChange={(e) => patch({ repeat: { ...rep, end: { type: 'date', date: e.target.value } } })}
                     />
                   )}
                   {rep.end?.type === 'count' && (
-                    <input
+                    <Input
                       type="number" min={1} max={999} value={rep.end.count}
                       onChange={(e) => patch({ repeat: { ...rep, end: { type: 'count', count: Math.max(1, +e.target.value || 1) } } })}
                     />
@@ -377,19 +377,19 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
           */}
           <div className="field">
             <label htmlFor={fid + '-proj'}>项目</label>
-            <select
+            <Select
               id={fid + '-proj'}
               value={task.projectId || ''}
               onChange={(e) => onPatch(task.id, { projectId: e.target.value || null })}
             >
               <option value="">不属于任何项目</option>
               {projs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            </Select>
           </div>
 
           <div className="field">
             <label htmlFor={fid + '-note'}>备注</label>
-            <textarea
+            <Textarea
               id={fid + '-note'}
               rows={5}
               placeholder="补充说明…"

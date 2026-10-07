@@ -23,7 +23,7 @@ import { chatStream } from './aiClient.ts';
 import { AiSettingsSheet } from './AiSettings.tsx';
 import { AiHistory } from './AiHistory.tsx';
 import { AiMemory } from './AiMemory.tsx';
-import { Btn, IconBtn, toast } from './kit.tsx';
+import { Btn, IconBtn, Textarea, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
@@ -414,7 +414,7 @@ export function AiPanel({ state, onConfirmed }: {
       </div>
 
       <div className="ai-compose">
-        <textarea
+        <Textarea
           className="ai-input"
           value={text}
           rows={narrow ? 1 : 2}
