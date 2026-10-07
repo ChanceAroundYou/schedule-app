@@ -18,9 +18,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import {
   Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
   Pencil, Upload, Download, Trash2, UserRound, Plus, Settings, Crown, Eye, UserMinus,
-  UserPlus, Users, X, AlertTriangle,
+  UserPlus, Users, X, AlertTriangle, ChevronDown,
 } from 'lucide-react';
-import type { AccentKey, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
+import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
