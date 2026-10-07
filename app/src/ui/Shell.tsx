@@ -31,7 +31,8 @@ import { counts, liveTasks, CUSTOMIZABLE, quickDefaults } from '../domain/model.
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
 import { CalSwitcher } from './Calendars.tsx';
-import { MiniCalendar, WhenPop } from './WhenPop.tsx';
+import { MiniCalendar } from './MiniCalendar.tsx';
+import { WhenPop } from './WhenPop.tsx';
 
 /* ============================== 导航表 ============================== */
 
