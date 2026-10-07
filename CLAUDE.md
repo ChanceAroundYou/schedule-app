@@ -500,6 +500,22 @@ Chrome profile），然后像人一样走：**第一趟就查缓存里有没有�
 > 探针会往生产库里写账号。隔离是这里的第一要求。
 > 浏览器路径用 `CHROME` 环境变量覆盖，默认 `/opt/google/chrome/chrome`。
 
+> **跑完测试必须收干净，否则下一轮会假失败。** 三条，都是踩过的：
+>
+> - **Chrome 进程**：`browser-smoke.mjs` 起的无头 Chrome 被 kill / OOM 之后会残留，
+>   实测一次能攒到 30 多个，把 12 GB 内存吃到见底，下一轮直接被 SIGKILL
+>   （exit 137，报在「等不到侧栏渲染」上，看着像产品 bug）。跑完
+>   `pkill -x chrome`（`chrome_crashpad_handler` 一并），再
+>   `ps aux | grep -c '[c]hrome'` 确认归零。
+> - **测试服务进程**：`browser-smoke.mjs` 的静态服务（5198）与临时后端（25701）、
+>   `smoke-share.mjs` 的后端，被中断后都还留在监听。跑完
+>   `ss -ltnp | grep -E '5198|25701'` 找出 pid `kill` 掉，确认端口空了再跑下一轮。
+>   顺带清掉临时库 `rm -rf /tmp/sched-browser-*`。
+> - **端口避让**：要连着跑多个测试（或同时跑）之前，先确认 5198 / 25701 / 25692
+>   都没人占。`browser-smoke.mjs` 的 `API_PORT` / `WEB_PORT` 是写死的，撞了就是
+>   `EADDRINUSE`；更坑的是**新起的那个会静默失败、探针转去连上一个残留的旧
+>   后端**，报出来的错（实测是注册 409）完全指错地方。要并行就把两个端口错开。
+
 > **第八节（触屏）和第九节（鼠标）测的是同一件事的两个入口。**
 > 两条路共用 `applyDropAt` / `finishDrag` / `commitDrop`，所以第八节证的是
 > 「手势对不对」，第九节证的是「鼠标这条**接线**还通着」——
@@ -1532,6 +1548,27 @@ CSS 媒体块里清掉不够：媒体查询按**真实**视口宽度走，而探
 > 同任务里紧接着派发 `keydown` 会命中上一次渲染那个 `send` 闭包（`text` 还是空串，
 > `if (!q) return` 静默返回）。**实测不成立** —— `input` 派发后同一个任务内发送键
 > 就已经可点，React 对离散事件是同步 flush 的。别照这个假设去改代码。
+
+**52. 无头 Chrome 被 kill / OOM 之后会残留，把内存吃到下一轮跑不动**
+
+`browser-smoke.mjs` 起的 Chrome 进程在探针被中断后不会跟着走，实测一次能攒到
+30 多个。12 GB 的机器被吃到见底，下一轮直接被 SIGKILL（exit 137），报在
+「等不到侧栏渲染」上 —— 看着像产品 bug，其实是内存不够。
+
+跑完必须 `pkill -x chrome`（`chrome_crashpad_handler` 一并），再
+`ps aux | grep -c '[c]hrome'` 确认归零。
+
+**53. 测试服务进程被中断后还留在监听，下一轮 EADDRINUSE，而且报错指错地方**
+
+`browser-smoke.mjs` 的静态服务（`WEB_PORT = 5198`）与临时后端（`API_PORT = 25701`）、
+`smoke-share.mjs` 的后端，被 kill 后都还占着端口。下一轮 `EADDRINUSE`；更坑的是
+**新起的那个会静默失败、探针转去连上一个残留的旧后端**，于是报出来的错完全指错地方
+（实测是 `/api/auth/register` 409 —— 旧库里已经有那个用户了）。
+
+跑完 `ss -ltnp | grep -E '5198|25701'` 找出 pid `kill` 掉，顺带
+`rm -rf /tmp/sched-browser-*`。**要连着跑多个测试（或同时跑）之前，先确认
+5198 / 25701 / 25692 都没人占**；要并行就把 `API_PORT` / `WEB_PORT` 错开 ——
+这两个是写死的，撞了没有自动避让。
 
 ---
 
