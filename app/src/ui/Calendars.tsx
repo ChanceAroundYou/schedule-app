@@ -82,7 +82,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
           title="新建日程集"
           data-cal-new="1"
           onClick={create}
-          className="rounded p-1 text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]"
+          className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]"
         >
           <Plus size={13} />
         </button>
@@ -95,7 +95,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
           data-cal={c.id}
           onClick={() => store.setActiveCal(c.id)}
           className={
-            'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] transition '
+            'flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-left text-[13px] transition '
             + (c.id === active
               ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
               : 'text-[var(--text-2)] hover:bg-[var(--panel-3)]')
@@ -103,7 +103,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         >
           <span className="min-w-0 flex-1 truncate">{c.name}</span>
           {c.role !== 'owner' && (
-            <span className="shrink-0 rounded bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+            <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
               {ROLE_LABEL[c.role]}
             </span>
           )}
@@ -120,7 +120,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
              两个布尔值要穿过两层 props 才传得到这儿，而浮层自己已经在开的那一瞬间
              念出名字了 —— 多这一层线不值得。 */
           aria-haspopup="dialog"
-          className="mx-1 mt-1 flex items-center gap-2 rounded-lg bg-[var(--primary-soft)]
+          className="mx-1 mt-1 flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--primary-soft)]
                      px-2.5 py-1.5 text-left text-[12.5px] text-[var(--primary)]"
         >
           <MailPlus size={13} className="shrink-0" />
@@ -134,7 +134,7 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         disabled={!active}
         data-cal-manage="1"
         aria-haspopup="dialog"
-        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] text-[var(--text-3)]
+        className="flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-[12.5px] text-[var(--text-3)]
                    hover:bg-[var(--panel-3)] hover:text-[var(--text)] disabled:opacity-40"
       >
         <Settings size={13} /> 管理当前日程集
@@ -245,7 +245,7 @@ export function ManageSheet({ state, open, onClose }: {
             data-cal-name="1"
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-            className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
+            className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                        bg-transparent px-3 py-1.5 text-sm outline-none
                        focus:border-[var(--primary)] disabled:opacity-60"
           />
@@ -264,7 +264,7 @@ export function ManageSheet({ state, open, onClose }: {
         </div>
         <div className="flex flex-col gap-1.5">
           {members.map((m) => (
-            <div key={m.id} className="flex items-center gap-2 rounded-lg bg-[var(--panel-3)] px-2.5 py-1.5">
+            <div key={m.id} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] px-2.5 py-1.5">
               <span className="shrink-0">
                 {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
                   : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
@@ -281,7 +281,7 @@ export function ManageSheet({ state, open, onClose }: {
                       await api.setRole(calId, m.id, e.target.value as Role);
                       toast('权限已更新');
                     })}
-                    className="rounded-md border border-[var(--input)] bg-transparent
+                    className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
                                px-1.5 py-1 text-[12px] outline-none"
                   >
                     {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -300,7 +300,7 @@ export function ManageSheet({ state, open, onClose }: {
                       await api.kick(calId, m.id);
                       toast('已移出');
                     })}
-                    className="rounded p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                    className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
                   >
                     <UserMinus size={13} />
                   </button>
@@ -328,14 +328,14 @@ export function ManageSheet({ state, open, onClose }: {
               spellCheck={false}
               onChange={(e) => setInviteName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-              className="min-w-0 flex-1 rounded-lg border border-[var(--input)]
+              className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                          bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
             />
             <select
               value={inviteRole}
               aria-label="邀请的权限"
               onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-lg border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
+              className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
             >
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
@@ -348,7 +348,7 @@ export function ManageSheet({ state, open, onClose }: {
           {!!sent.length && (
             <div className="mt-3 flex flex-col gap-1.5">
               {sent.map((i) => (
-                <div key={i.id} className="flex items-center gap-2 rounded-lg border border-dashed
+                <div key={i.id} className="flex items-center gap-2 rounded-[var(--r-md)] border border-dashed
                                            border-[var(--border)] px-2.5 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
                     {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
@@ -361,7 +361,7 @@ export function ManageSheet({ state, open, onClose }: {
                       await api.revokeInvite(i.id);
                       toast('已撤回');
                     })}
-                    className="rounded p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                    className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
                   >
                     <X size={13} />
                   </button>
@@ -378,7 +378,7 @@ export function ManageSheet({ state, open, onClose }: {
           <button
             type="button"
             onClick={() => void remove()}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px]
+            className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
                        text-[var(--danger)] hover:bg-[var(--danger-soft)]"
           >
             <Trash2 size={13} /> 删除日程集
@@ -387,7 +387,7 @@ export function ManageSheet({ state, open, onClose }: {
           <button
             type="button"
             onClick={() => void leave()}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px]
+            className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
                        text-[var(--danger)] hover:bg-[var(--danger-soft)]"
           >
             <LogOut size={13} /> 退出日程集
@@ -449,7 +449,7 @@ export function InviteSheet({ state, open, onClose }: {
       )}
       <div className="flex flex-col gap-2">
         {state.invites.map((i) => (
-          <div key={i.id} className="rounded-xl border border-[var(--border)] p-3">
+          <div key={i.id} className="rounded-[var(--r-lg)] border border-[var(--border)] p-3">
             <div className="text-[13.5px]">
               <b>{i.fromName || '有人'}</b> 邀请你加入「{i.calName}」
             </div>

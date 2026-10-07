@@ -124,7 +124,7 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
         tabIndex={-1}
         className={cx(
           'relative z-10 w-full max-w-md bg-[var(--panel)] text-[var(--text)]',
-          'rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[min(86dvh,100%)] flex flex-col',
+          'rounded-t-[var(--r-xl)] sm:rounded-[var(--r-xl)] shadow-xl max-h-[min(86dvh,100%)] flex flex-col',
         )}
       >
         {title !== undefined && (
@@ -253,7 +253,7 @@ export function ToastHost() {
         <div
           key={t.id}
           role="status"
-          className="flex items-center gap-3 rounded-xl bg-[rgba(24,26,32,.94)] px-4 py-2.5
+          className="flex items-center gap-3 rounded-[var(--r-md)] bg-[rgba(24,26,32,.94)] px-4 py-2.5
                      text-sm text-white shadow-lg backdrop-blur"
         >
           <span>{t.text}</span>
@@ -262,7 +262,7 @@ export function ToastHost() {
               type="button"
               /* 写死不跟 --primary：toast 的底是 rgba(24,26,32,.94)，两套主题都深，
                  所以动作文字必须**恒浅**。跟 --primary 的话亮色那个 #395ef6 压上去只有 3.69。 */
-              className="rounded-md px-2 py-0.5 font-medium text-[#8fb0ff] hover:bg-white/10"
+              className="rounded-[var(--r-sm)] px-2 py-0.5 font-medium text-[#8fb0ff] hover:bg-white/10"
               onClick={() => { t.action!.run(); setList((p) => p.filter((x) => x.id !== t.id)); }}
             >
               {t.action.label}
