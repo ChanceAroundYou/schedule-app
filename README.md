@@ -174,9 +174,12 @@ cd app && npm run build && npm run preview   # :5199，同样代理 /api
 ### 测试
 
 ```bash
-cd app && npm test              # 前端单元测试：node --test，51 条
+cd app && npm test                        # 前端单元测试：node --test，110 条
 cd app && npm run typecheck
-node server/tests/api.test.js   # 后端接口测试：31 条
+cd app && node tests/contrast.mjs         # 配色 / 描边对比度
+node server/tests/api.test.js             # 后端接口测试：46 条
+node server/tests/migration.test.js       # schema 迁移：8 条
+node --test server/tests/ai.test.js       # AI 层：18 条（假模型，不联网）
 ```
 
 端到端（真实网络 / 真实 Chrome，零 npm 依赖）：
@@ -241,7 +244,8 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 ├── dist/                  构建产物（生成物，勿手改；nginx 只伺服这里）
 ├── deploy/                nginx conf + systemd 单元的本地副本
 ├── legacy/                旧版纯静态应用，冻结存档（可回滚，见 DEPLOY.md）
-├── docs/重构路线.md        这次重写的决策记录
+├── docs/                  接口.md · 重构路线.md · 踩坑.md · 测试.md
+│                          业务模型.md · 界面约定.md
 ├── package.json           后端依赖（只有 AI 那一组，见「技术栈」）
 ├── CLAUDE.md              给 AI 编码助手
 ├── DEPLOY.md              部署与运维
@@ -303,7 +307,9 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 
 ## 给 AI 编码助手
 
-业务模型的技术细节、代码约定、踩过的坑 → **[CLAUDE.md](CLAUDE.md)**
+**往哪走**（结构、数据模型不变量、界面硬规则）→ [CLAUDE.md](CLAUDE.md)
+**别踩哪**（40 条坑，改代码前先读）→ [docs/踩坑.md](docs/踩坑.md)
+**怎么验**（跑哪些测试）→ [docs/测试.md](docs/测试.md)
 
 那里的约束都是踩坑换来的，改代码前请先读。
 
@@ -312,5 +318,9 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 | 文件 | 读者 | 内容 |
 |---|---|---|
 | `README.md` | 人 | 网址、怎么用、数据在哪、快捷键、故障排查 |
-| `CLAUDE.md` | AI 编码助手 | 数据模型、代码约定、界面约定、踩坑记录 |
+| [CLAUDE.md](CLAUDE.md) | AI 编码助手 | 往哪走：结构、数据模型不变量、界面硬规则、最容易翻车的十条 |
+| [docs/踩坑.md](docs/踩坑.md) | AI 编码助手 | 别踩哪：40 条坑（**改代码前先读**） |
+| [docs/测试.md](docs/测试.md) | AI 编码助手 | 怎么验：跑哪些测试、每个探针节在验什么 |
+| [docs/业务模型.md](docs/业务模型.md) | AI 编码助手 | 完整字段表、重复规则、逾期、冲突提示 |
+| [docs/界面约定.md](docs/界面约定.md) | AI 编码助手 | 顶栏 / 周视图 / 快速添加 / 软键盘 各功能的约定 |
 | `DEPLOY.md` | 人 + AI | nginx 怎么操作、conf 怎么写、发布流程、回滚 |

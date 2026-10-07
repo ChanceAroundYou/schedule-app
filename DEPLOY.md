@@ -90,7 +90,7 @@ systemctl --user start schedule-backend
 **后端不再是零依赖了。** AI 那一组（`@earendil-works/pi-agent-core` +
 `@earendil-works/pi-ai`）是唯一允许的例外 —— 用户明确推翻了原来的「零依赖」约束，
 理由是与其手搓 agent 的工具循环，不如接生态里现成的框架。完整的边界写在
-`CLAUDE.md` 六、1：**只许引 AI 这一组，加别的仍然要先问。**
+`CLAUDE.md` 五、1：**只许引 AI 这一组，加别的仍然要先问。**
 
 依赖**不落在工程目录里**，因为那是 CIFS/SMB（理由同 1.2：NAS 上成千上万个小文件
 正是丢文件的高风险场景）。装到本机磁盘，工程根目录放一个软链接指过去：
@@ -711,7 +711,7 @@ cat 本地文件 | ssh ubuntu "cat > 目标路径"
 
 **新版没有窄屏 / 触屏的自动化覆盖** —— `app/tests/smoke.mjs` 只跑一个
 1440×900 的桌面视口，≤900px 的标签栏、长按操作层只能手工在真机上看。
-其余测试坑见 [CLAUDE.md](CLAUDE.md) 「四、33」。
+其余测试坑见 [docs/踩坑.md](docs/踩坑.md) 第 33 条。
 
 ---
 
@@ -740,7 +740,9 @@ cat 本地文件 | ssh ubuntu "cat > 目标路径"
 
 | 文件 | 内容 |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | 数据模型、代码约定、踩坑记录（**改代码前先读**） |
+| [CLAUDE.md](CLAUDE.md) | **往哪走**：结构、数据模型不变量、界面硬规则、最容易翻车的十条 |
+| [docs/踩坑.md](docs/踩坑.md) | **改代码前先读**：40 条坑 |
+| [docs/测试.md](docs/测试.md) | 怎么验：跑哪些测试 |
 | [README.md](README.md) | 怎么用、数据在哪、日常命令 |
 | [docs/接口.md](docs/接口.md) | HTTP 接口一览 |
 | [docs/重构路线.md](docs/重构路线.md) | 这次前后端分离重写的决策记录 |
