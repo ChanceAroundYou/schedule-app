@@ -30,7 +30,8 @@ import { TAB_MAX, resolveDefaultCal } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Card, Chips, Field, InlineRename, Input, MiniIconBtn, Row, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Card, Chips, Dropdown, Field, InlineRename, Input, MiniIconBtn, Row, Sheet, useConfirm, toast } from './kit.tsx';
+import type { DropdownOption } from './kit.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
@@ -275,7 +276,10 @@ function say(e: unknown): string {
 
 /* ============================ 日视图时间窗 ============================ */
 
-const HOUR_LABELS: string[] = Array.from({ length: 25 }, (_, h) => (h + ':00'));
+/** 0:00 … 24:00。**24 是合法的结束值**（「一直到今天结束」），不是笔误 ——
+ *  `windowOf()` 会把它乘成 1440。 */
+const HOUR_OPTIONS: DropdownOption<number>[] =
+  Array.from({ length: 25 }, (_, h) => ({ value: h, label: h + ':00' }));
 
 /**
  * 日视图只看哪几个小时。
@@ -285,29 +289,35 @@ const HOUR_LABELS: string[] = Array.from({ length: 25 }, (_, h) => (h + ':00'));
  * 于是这一档既是「隐藏夜里的任务」，也是「让白天的时间块读得清」。
  *
  * 下限由 normalizeUi 兜（MIN_SPAN 小时），这里不重复判断。
+ *
+ * **两个都是 `Dropdown`，不是原生 `<select>`**（项目硬规则：`.tsx` 里零原生
+ * select，`color-scan.mjs` 锁着）。为什么不用 `ClockBody` 那只转盘：这里的值域是
+ * **0–24 的整点**，而 `ui.dayFrom` / `ui.dayTo` 在领域里就是**小时数**
+ * （`windowOf()` 做 `Math.round(dayFrom) * 60`，`domain.test.ts` 直接比
+ * `{dayFrom: 7, dayTo: 23} → {from: 420, to: 1380}`）。转盘给的是 `HH:MM`
+ * 且画不出 **24:00**（它最上面是 0 点）—— 换转盘就得连领域和它的用例一起改，
+ * 还会把「结束 = 24:00」这个值弄丢。25 个固定整点正是 `Dropdown` 的场合。
  */
 function DayWindowCard({ ui }: { ui: UiPrefs }) {
-  const fromId = useId();
-  const toId = useId();
   return (
     <Card icon={<Clock size={14} />} title="日视图">
       <Field label="只看这段时间">
         <Row>
-          <select
-            id={fromId} value={ui.dayFrom} data-day-win="from"
-            onChange={(e) => store.setUi({ dayFrom: Number(e.target.value) })}
-            className="h-[30px] rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-2 text-[12.5px] text-[var(--text)] outline-none focus:border-[var(--primary)]"
-          >
-            {HOUR_LABELS.map((l, h) => <option key={h} value={h}>{l}</option>)}
-          </select>
+          <Dropdown
+            value={ui.dayFrom}
+            label="时间窗从几点开始"
+            size="sm"
+            options={HOUR_OPTIONS}
+            onPick={(h) => store.setUi({ dayFrom: h })}
+          />
           <span className="text-[12.5px] text-[var(--text-2)]">到</span>
-          <select
-            id={toId} value={ui.dayTo} data-day-win="to"
-            onChange={(e) => store.setUi({ dayTo: Number(e.target.value) })}
-            className="h-[30px] rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-2 text-[12.5px] text-[var(--text)] outline-none focus:border-[var(--primary)]"
-          >
-            {HOUR_LABELS.map((l, h) => <option key={h} value={h}>{l}</option>)}
-          </select>
+          <Dropdown
+            value={ui.dayTo}
+            label="时间窗到几点结束"
+            size="sm"
+            options={HOUR_OPTIONS}
+            onPick={(h) => store.setUi({ dayTo: h })}
+          />
         </Row>
       </Field>
     </Card>
@@ -553,7 +563,12 @@ function CalItem({ cal, active, isDefault, open, onToggle }: {
         /* data-cal-body 是探针抓手：它量的是「标题行下面那块」的位置，
            用来盯住「切进行内改名时下面不许动」这条约定（见 kit.tsx 的
            InlineRename）。给它一个锚点，探针就不用去猜哪个元素是正文。 */
-        <div data-cal-body="1" className="flex flex-col gap-3.5 pt-3.5">
+        // 横向留白**照抄标题条**（`pl-3 pr-2` = 10.5 / 7）：正文原先顶着卡片
+        // 内容盒的两端画，于是每一行都比标题条的内容盒**宽出一截** ——
+        // 左边超出 10.5px（成员行那个角色图标比名字还靠左）、右边超出 7px
+        // （移出钮比折叠箭头还靠右）。用户报的就是这个。两处留白写在一起，
+        // 改一处时不会漏另一处（探针第五节量这两条边）。
+        <div data-cal-body="1" className="flex flex-col gap-3.5 pt-3.5 pl-3 pr-2">
           {/* 成员 / 邀请：走和「管理日程集」浮层**同一份** MembersSection。
               这里原先自己抄了一遍成员行、角色选择器、邀请行、撤回按钮，
               两份只有缩进不同 —— 角色一处用 Chips 一处用 Dropdown，
