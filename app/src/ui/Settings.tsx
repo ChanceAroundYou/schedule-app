@@ -29,7 +29,7 @@ import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Chips, Input, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Card, Chips, Field, Input, Row, Sheet, useConfirm, toast } from './kit.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
@@ -48,91 +48,46 @@ const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
  * 只是两套主题下都在用写死的浅色。**静默降级比直接坏掉难查得多。**
  * 这个文件是新的，别把这个坏习惯带过来。
  */
-const LINE = 'border-[length:var(--border-w)] border-[var(--border)]';
 const HOVER = 'hover:bg-[var(--panel-3)]';
 
 /* ============================== 小组件 ============================== */
 
-/**
- * 一张卡 = 一个主题。卡内一律由 `Field` 组成。
- *
- * 边框走 `--border-w` 而不是 Tailwind 的 `border`（写死 1px）：切到 flat 时
- * 全应用的线都变 2px，只有这里还是 1px，看着就像「这一块没跟上风格」。
- */
-function Card({ icon, title, children, hint }: {
-  icon: React.ReactNode; title: string; children: React.ReactNode; hint?: React.ReactNode;
-}) {
-  return (
-    <section className={'mb-4 rounded-[var(--r-lg)] p-4 ' + LINE}>
-      <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold">
-        <span className="text-[var(--text-3)]">{icon}</span> {title}
-      </h2>
-      <div className="flex flex-col gap-3.5">{children}</div>
-      {hint && <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">{hint}</div>}
-    </section>
-  );
-}
-
-/**
- * 一个小节：**标题在上，内容在下**。设置页里每一组控件都走这个。
- *
- * 之前「安全」那半是左右分布（左边用户名、右边两个按钮），而「外观」是
- * 标题 + 内容 —— 同一页两套排法，看着像两个人做的。统一成这一种之后，
- * 「哪一行是标题、哪个是控件」在四个 tab 里都是同一个读法。
- *
- * `htmlFor` 传了才渲染成 `<label>`：设置页的小节标题大多是**一组控件的名字**
- * 而不是某一个控件的名字（色板 / 风格 / 深浅），那种该是 `div` —— 用 label
- * 去套一组按钮，读屏会念成一个不存在的表单控件。真的是单个输入框时
- * （日程集名字）才传 `htmlFor`，让它成为真正的 `<label>`。
- */
-function Field({ label, htmlFor, icon, children, hint }: {
-  label: string;
-  htmlFor?: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-  hint?: React.ReactNode;
-}) {
-  const head = 'mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]';
-  return (
-    <div>
-      {htmlFor
-        ? <label htmlFor={htmlFor} className={head}>{icon}{label}</label>
-        : <div className={head}>{icon}{label}</div>}
-      {children}
-      {hint && <div className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">{hint}</div>}
-    </div>
-  );
-}
-
-/** 一行控件：flex 换行 + 统一间距。按钮排、输入框 + 按钮都走它 */
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-2">{children}</div>;
-}
+/* `Card` / `Field` / `Row` 现在在 `kit.tsx`（组件库的「布局原语」那一段）——
+   `Members.tsx` 也要用同一套（成员 / 邀请两块在两个地方渲染），放在这个文件里
+   它就得自己再抄一份标题样式。**没有第二套**。 */
 
 /* ============================ 功能区自定义 ============================ */
 
 /**
- * 功能区自定义：一个可拖拽 + 可打勾的胶囊列表。
+ * 功能区自定义：一格一个功能项，**点一下切换显示 / 隐藏，拖一下排序**。
  *
- * 每个胶囊一行：左边抓手、中间名字、右边打勾。**点一下打勾**（选中/取消），
- * **拖一下排序**。选择和排序是同一件事的两面 —— 用户要的就是「这几项按这个
- * 顺序排」，拆成两段反而要来回切。
+ * 勾选的含义在两种设备上是同一个：**勾上 = 在这个设备的功能区里显示**。
+ *   宽屏 · 功能区 = 侧栏那一列   → 不勾 = 藏起来（`ui.navHidden`）
+ *   窄屏 · 功能区 = 底栏那 4 格   → 不勾 = 不进底栏，在「更多」抽屉里
  *
- * 拖拽走 @dnd-kit：MouseSensor 处理鼠标输入（mousedown/mousemove/mouseup）。
- * 移动 8px 才开始拖 —— 轻点（不移动）不会触发拖，所以「点一下打勾」不受影响。
+ * 原先宽屏那一半的勾选框管的是 `navBottom`（「挪到侧栏下面那一组」），
+ * 于是点一下打勾，这一项就从侧栏主列里**消失**、跑到下面去了 —— 用户看到的是
+ * 「勾选时消失，未勾选时显示」，正好反着。而且它的名字（勾）说的是「要不要它」，
+ * 干的事却是「换个位置」，两回事。现在勾就是显示，位置只由拖拽决定。
+ *
+ * 为什么藏起来要用 `navHidden` 而不是把它从 `navOrder` 里删掉：`normalizeUi`
+ * 会把缺的键补回 `navOrder`（老用户本地那份顺序里没有新页），删了刷新就回来。
+ *
+ * 拖拽走 @dnd-kit：MouseSensor 处理鼠标输入。移动 8px 才开始拖 ——
+ * 轻点（不移动）不会触发拖，所以「点一下切换」不受影响。
  */
 function NavCard({ state }: { state: LocalState }) {
   const ui = state.ui;
   const order = ui.navOrder;
   const tabs = new Set(ui.tabs);
-  const bottom = new Set(ui.navBottom);
+  const hidden = new Set(ui.navHidden);
   const narrow = useIsNarrow();
 
   const [rows, setRows] = useState<string[]>(order);
   useEffect(() => setRows(order), [order]);
 
-  /** 选中口径跟着设备走：窄屏是底栏那几项，宽屏是侧栏下半区那几项 */
-  const isOn = (k: string) => (narrow ? tabs.has(k) : bottom.has(k));
+  /** 勾选口径跟着设备走：窄屏是底栏那几项，宽屏是侧栏里没被藏起来的那些 */
+  const isOn = (k: string) => (narrow ? tabs.has(k) : !hidden.has(k));
 
   const toggle = (k: string) => {
     if (narrow) {
@@ -144,10 +99,11 @@ function NavCard({ state }: { state: LocalState }) {
         store.setUi({ tabs: order.filter((x) => tabs.has(x) || x === k) });
       }
     } else {
-      const next = bottom.has(k)
-        ? ui.navBottom.filter((x) => x !== k)
-        : [...ui.navBottom, k];
-      store.setUi({ navBottom: next });
+      store.setUi({
+        navHidden: hidden.has(k)
+          ? ui.navHidden.filter((x) => x !== k)
+          : [...ui.navHidden, k],
+      });
     }
   };
 
@@ -166,16 +122,15 @@ function NavCard({ state }: { state: LocalState }) {
   };
 
   return (
-    <Card icon={<PanelTop size={14} />} title="功能区"
-      hint={narrow
-        ? '底栏最多 ' + TAB_MAX + ' 项，「更多」恒占最后一格。点一下打勾，拖抓手排序。'
-        : '侧栏那列可以直接拖，也可以在这儿拖 —— 两边改的是同一份顺序。'}>
-      <Field label={narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}>
+    <Card icon={<PanelTop size={14} />} title="功能区">
+      <Field label={narrow ? `底栏 · 最多 ${TAB_MAX} 项（点选 + 拖拽）` : '侧栏 · 点选 + 拖拽'}>
         <DndScope onDragEnd={onDragEnd}>
           <SortableContext items={rows} strategy={rectSortingStrategy}>
-            <ul className="flex flex-col gap-1">
+            {/* 三列网格而不是每项一行：九项一行一个要占 280px 高，一屏就没了。
+                网格还有个好处 —— 每格等宽，拖拽时让位的落点是规则的。 */}
+            <ul className="grid grid-cols-3 gap-1.5">
               {rows.map((k) => (
-                <SortableNavRow key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
+                <SortableNavChip key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
               ))}
             </ul>
           </SortableContext>
@@ -185,8 +140,14 @@ function NavCard({ state }: { state: LocalState }) {
   );
 }
 
-/** 功能区里一行可排序的导航项 */
-function SortableNavRow({ id, on, narrow, onToggle }: {
+/**
+ * 功能区里一格可排序的导航项。
+ *
+ * `data-nav-row` / `.cursor-grab` / dnd-kit 的 `attributes`（带 `role="button"`）
+ * 三样都是探针认的锚点，别改。`data-tab` 只在窄屏出 —— 探针靠它证明
+ * 「宽屏设置页不渲染底栏胶囊」。
+ */
+function SortableNavChip({ id, on, narrow, onToggle }: {
   id: string;
   on: boolean;
   narrow: boolean;
@@ -210,19 +171,19 @@ function SortableNavRow({ id, on, narrow, onToggle }: {
       onClick={() => onToggle(id)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
       className={cx(
-        'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px] transition',
+        'flex cursor-pointer select-none items-center gap-1 rounded-[var(--r-md)] px-1.5 py-1 text-[12.5px] transition',
         'border-[length:var(--border-w)]',
         isDragging && 'opacity-40',
         on
-          ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-          : 'text-[var(--text-2)] border-[var(--border)] ' + HOVER,
+          ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
+          : 'border-[var(--border)] text-[var(--text-3)] ' + HOVER,
       )}
     >
       <span {...listeners} className="shrink-0 cursor-grab text-[var(--text-3)]">
-        <GripVertical size={13} />
+        <GripVertical size={12} />
       </span>
       <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>
-      {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
+      {on && <Check size={12} className="shrink-0" />}
     </li>
   );
 }
@@ -340,7 +301,19 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
   };
 
   return (
-    <Card icon={<Layers size={14} />} title="我的日程集">
+    <Card
+      icon={<Layers size={14} />}
+      title="日程集管理"
+      /* 邀请收件箱是**全局**的（别人邀请我，跟哪个日程集无关），所以放在卡头，
+         不塞在某个日程集的展开面板里。原先它占展开面板里整整一行，而且按钮
+         文字就叫「邀请」—— 和上面「邀请成员」那个提交按钮重名，两个按钮
+         一个发邀请、一个看收件箱，点错是常事。 */
+      extra={!!state.invites.length && (
+        <Btn variant="chip" size="sm" onClick={onInvites}>
+          <MailPlus size={13} /> 邀请收件箱 {state.invites.length}
+        </Btn>
+      )}
+    >
       <div className="flex flex-col gap-1.5">
         {state.cals.map((c) => (
           <CalItem
@@ -348,12 +321,10 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
             cal={c}
             active={c.id === active}
             open={openId === c.id}
-            invites={state.invites}
             onToggle={() => {
               store.setActiveCal(c.id);
               setOpenId((v) => (v === c.id ? null : c.id));
             }}
-            onInvites={onInvites}
           />
         ))}
       </div>
@@ -369,13 +340,11 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
 }
 
 /** 一个日程集：收起是一行，展开是它的全部设置 */
-function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
+function CalItem({ cal, active, open, onToggle }: {
   cal: Cal;
   active: boolean;
   open: boolean;
-  invites: Invite[];
   onToggle: () => void;
-  onInvites: () => void;
 }) {
   const confirm = useConfirm();
   const [members, setMembers] = useState<Member[]>([]);
@@ -447,22 +416,23 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
   };
 
   return (
-    <div className={cx(
-      'rounded-[var(--r-md)] border-[length:var(--border-w)] transition',
-      open ? 'border-[var(--border)] bg-[var(--panel-3)]' : 'border-transparent',
-    )}>
+    /* 整块**始终**有描边，标题行**始终**有底色 —— 收起时也看得出这里是一个
+       可展开的块。原先收起态是 `border-transparent`、底色挂在整块上（开的时候
+       连正文一起染色），于是「展开」的视觉信号是「整块变灰」，正文跟着一起灰。
+       用户要的是：正文不要底色，只有标题行有底色 + 边缘。 */
+    <div className="overflow-hidden rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--border)]">
       <button
         type="button"
         data-cal={cal.id}
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-[var(--r-md)] px-3 py-2 text-left text-[13px] transition"
+        className="flex w-full items-center gap-2 bg-[var(--panel-3)] px-3 py-2 text-left text-[13px] transition hover:brightness-95"
       >
         <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium text-[var(--primary)]' : 'text-[var(--text-2)]')}>
           {cal.name}
         </span>
         {cal.role !== 'owner' && (
-          <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+          <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
             {ROLE_LABEL[cal.role]}
           </span>
         )}
@@ -470,7 +440,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
       </button>
 
       {open && (
-        <div className="flex flex-col gap-4 px-3 pb-3">
+        <div className="flex flex-col gap-4 p-3">
           {/* 改名 */}
           <Field
             label="名字"
@@ -508,18 +478,9 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
             run={(fn) => void run(fn)}
           />
 
-          {/* 邀请入口 */}
-          <Field label="邀请">
-            <Row>
-              <Btn variant="chip" size="sm" onClick={onInvites}>
-                <MailPlus size={13} /> 邀请{invites.length ? `（${invites.length}）` : ''}
-              </Btn>
-            </Row>
-          </Field>
-
           {/* 危险区：和设置页别处的危险操作走同一个 variant，不再手写一套
               「红字 + hover 淡红底」。 */}
-          <div className="border-t border-[var(--border)] pt-3.5">
+          <div className="border-t-[length:var(--border-w)] border-[var(--border)] pt-3.5">
             <Field label="危险区">
               <Row>
                 {manage ? (
@@ -554,7 +515,7 @@ type SettingsTab = 'appearance' | 'security' | 'cals' | 'about';
 const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'appearance', label: '外观' },
   { key: 'security', label: '安全' },
-  { key: 'cals', label: '日程' },
+  { key: 'cals', label: '日程集' },
   { key: 'about', label: '关于' },
 ];
 

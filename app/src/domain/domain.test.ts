@@ -545,6 +545,27 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
 });
 
+test('navHidden：藏起来是显式黑名单，不会被 navOrder 的补全逻辑吃掉', () => {
+  // 关键区别：navOrder 会把缺的键**补回来**，所以「从 navOrder 里删掉」表达不了
+  // 「用户不要它」—— 刷新一次它就自己回来了。navHidden 才表达得了。
+  const hidden = normalizeUi({ navHidden: ['projects', 'ai'] });
+  assert.deepEqual(hidden.navHidden, ['projects', 'ai']);
+  assert.ok(hidden.navOrder.includes('projects'),
+    '被藏的项仍在 navOrder 里 —— 藏是渲染时过滤，不是从顺序里删');
+
+  // 一个都没藏是合法状态，不能写成「空则给默认」
+  assert.deepEqual(normalizeUi(undefined).navHidden, [], '没设置过 → 一个都没藏');
+  assert.deepEqual(normalizeUi({ navHidden: [] }).navHidden, []);
+
+  // 认不出的键滤掉。**「不在 navOrder 里的键」这一种构造不出来** ——
+  // 补全逻辑在过滤之前跑，normalizeUi 出来的 navOrder 永远含全部 CUSTOMIZABLE，
+  // 所以 navHidden 里也不可能出现顺序外的键。这条断言钉的是「只认 CUSTOMIZABLE」。
+  assert.deepEqual(normalizeUi({ navHidden: ['nope', 'settings'] as string[] }).navHidden, [],
+    '设置不进功能区，也藏不了');
+  assert.deepEqual(normalizeUi({ navHidden: ['trash', 'projects'] }).navHidden, ['trash', 'projects'],
+    '垃圾箱也能藏（它同样在 CUSTOMIZABLE 里）');
+});
+
 test('外观三轴：auto 是合法值，不是「没选」', () => {
   // 写成 `theme !== 'dark' ? 'light'` 的话，用户选的「跟随系统」每次刷新被打回常亮，
   // 而且是静默的 —— 这一条就是把它钉住

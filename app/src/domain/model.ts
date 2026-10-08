@@ -538,6 +538,7 @@ export function defaultUi(): UiPrefs {
     search: '',
     navOrder: CUSTOMIZABLE.slice(),
     navBottom: ['trash'],
+    navHidden: [],
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     cal: null,
@@ -582,6 +583,14 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
     ? ui.navBottom.filter((k) => order.indexOf(k) >= 0)
     : null;
   ui.navBottom = bottom === null ? ['trash'] : bottom;
+
+  // navHidden = 宽屏侧栏里用户主动藏起来的项。**空数组就是合法状态**（一个都没藏），
+  // 所以和 navBottom 一样要区分 undefined 与 []，不能写「空则给默认」。
+  // 过滤口径和 navOrder 完全一致：只认 CUSTOMIZABLE 里的键，且必须真在 order 里
+  //（藏一个压根不在顺序里的键没有意义，留着只会在别处被当成「有效项」）。
+  ui.navHidden = Array.isArray(ui.navHidden)
+    ? ui.navHidden.filter((k) => order.indexOf(k) >= 0)
+    : [];
 
   // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
   // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，

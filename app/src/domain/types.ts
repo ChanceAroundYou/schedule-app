@@ -293,6 +293,19 @@ export interface UiPrefs {
   navOrder: string[];
   navBottom: string[];
   /**
+   * 宽屏侧栏里**用户主动藏起来**的功能项，`navOrder` 的子集。
+   *
+   * 为什么需要单独一个字段，而不是「从 `navOrder` 里删掉」：`normalizeUi` 会把
+   * `CUSTOMIZABLE` 里缺的键**补回** `navOrder`（老用户本地那份顺序里没有新页，
+   * 不补他们就永远看不见新功能）。所以「不在 navOrder 里」表达不了「用户不要它」，
+   * 只有这个显式的黑名单表达得了。
+   *
+   * 只影响**宽屏侧栏**：窄屏那套是 `tabs`（底栏 4 格 + 「更多」抽屉），
+   * 没进底栏的项在「更多」里照样进得去，不存在「藏起来」这回事。
+   * 藏起来的项仍然能从 设置 → 外观 → 功能区 勾回来，所以不会变成死角。
+   */
+  navHidden: string[];
+  /**
    * 移动端底栏成员，1–4 项，顺序同 `navOrder`。
    *
    * 「更多」恒占最后一格，所以总格数 ≤ 5 —— 这是 Apple HIG 对 tab bar 的

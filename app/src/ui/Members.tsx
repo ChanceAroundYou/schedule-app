@@ -13,7 +13,7 @@ import { Crown, Eye, Pencil, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useState } from 'react';
 import { api } from '../data/api.ts';
 import { ROLE_HINT, ROLE_LABEL, ROLES, type Invite, type Member, type Role } from '../domain/types.ts';
-import { Btn, Dropdown, Input, MiniIconBtn, toast, useConfirm } from './kit.tsx';
+import { Btn, Dropdown, Field, Input, MiniIconBtn, Row, toast, useConfirm } from './kit.tsx';
 
 interface MembersSectionProps {
   calId: string;
@@ -40,11 +40,10 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
 
   return (
     <>
-      {/* 成员 */}
-      <div className="mb-5">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
-          <Users size={13} /> 成员（{members.length}）
-        </div>
+      {/* 成员。标题走 kit 的 `Field` —— 原先这里把 Field 的标题样式
+          `mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]`
+          **逐字抄了两遍**（成员、邀请成员各一份），抄出来的第二套一定会漂。 */}
+      <Field label={`成员（${members.length}）`} icon={<Users size={13} />}>
         <div className="flex flex-col gap-1.5">
           {members.map((m) => (
             <div key={m.id} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] px-2.5 py-1.5">
@@ -95,15 +94,13 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
             </div>
           ))}
         </div>
-      </div>
+      </Field>
 
-      {/* 发邀请 */}
+      {/* 发邀请。`mb-5` 去掉了 —— 父容器（设置页的展开面板、管理浮层）自己
+          有 `gap`，这里再叠一层就是双倍间距，两块之间空 36px 而块内只有 14px。 */}
       {manage && (
-        <div className="mb-5">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
-            <UserPlus size={13} /> 邀请成员
-          </div>
-          <div className="flex gap-2">
+        <Field label="邀请成员" icon={<UserPlus size={13} />}>
+          <Row>
             <Input
               value={inviteName}
               placeholder="对方的用户名"
@@ -122,8 +119,10 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               options={ROLES.map((role) => ({ value: role, label: ROLE_LABEL[role] }))}
               onPick={setInviteRole}
             />
-            <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
-          </div>
+            {/* 「邀请」是**发出**邀请；收件箱那个在日程集卡的卡头，叫「邀请收件箱」。
+                原先两个都叫「邀请」，一个发一个收，点错是常事。 */}
+            <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>发出邀请</Btn>
+          </Row>
           <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
             {ROLE_HINT[inviteRole]}。对方<b>接受之后</b>才生效。
           </div>
@@ -151,7 +150,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               ))}
             </div>
           )}
-        </div>
+        </Field>
       )}
     </>
   );

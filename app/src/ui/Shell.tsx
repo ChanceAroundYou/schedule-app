@@ -127,10 +127,15 @@ function Sidebar({ state, onNav, onManageCal, onInvites }: {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
   const bottom = state.ui.navBottom;
+  /* 用户主动藏起来的项（设置 → 外观 → 功能区 取消勾选）。**在渲染这一层过滤**，
+     不从 `navOrder` 里删 —— 那个字段每次 normalizeUi 都会把缺的键补回来
+     （老用户看不到新页），所以「不在 navOrder 里」表达不了「不要它」。 */
+  const hidden = new Set(state.ui.navHidden);
+  const shown = order.filter((k) => !hidden.has(k));
 
   // 主区 = 顺序里不属于底部组的；底部组 = 底部数组里的（按底部数组自己的顺序）
-  const main = order.filter((k) => !bottom.includes(k));
-  const bottoms = bottom.map(navDef);
+  const main = shown.filter((k) => !bottom.includes(k));
+  const bottoms = bottom.filter((k) => !hidden.has(k)).map(navDef);
 
   const item = (k: string) => {
     const def = navDef(k);

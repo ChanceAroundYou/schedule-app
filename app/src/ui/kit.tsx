@@ -34,6 +34,11 @@ import { useFocusTrap, useOutsideClose } from './hooks.ts';
    `chip` / `chipOn` 是一对，`Chips` 在这两档之间切。两者**边框都在**，
    选中只换颜色不换几何 —— 少一圈边框会让选中的那个缩 2px，一排胶囊
    点一下整体抖一下。
+   **选中档不填充底色，只把描边和文字换成主色。** 原来填的是
+   `bg-[var(--primary)]`，于是色板那一行的色点（它画的就是 `--primary`）
+   整个消失在主色底上 —— 用户的原话是「颜色圆点完全看不见」。
+   不填充之后色点在 `--panel` 上正常显色，选中态靠主色描边 + 主色文字，
+   和 `normal` 是同一个形状（有描边、有底色面），只是换成主色。
    分成两档而不是给 chip 叠一层 className：Tailwind 里同特异度的工具类
    谁赢只看生成顺序，叠 className 会在某个值上静默失效，症状正是
    「切风格时这个按钮和别的不一致」。
@@ -55,7 +60,7 @@ const VARIANT: Record<Variant, string> = {
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
   danger: 'border-[length:var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
   chip: 'border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
-  chipOn: 'border-[length:var(--border-w)] border-[var(--primary)] bg-[var(--primary)] text-[var(--on-primary)]',
+  chipOn: 'border-[length:var(--border-w)] border-[var(--primary)] bg-[var(--panel)] font-medium text-[var(--primary)]',
 };
 
 type Size = 'sm' | 'md' | 'lg';
@@ -392,6 +397,14 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
  *
  * 24px 是 WCAG 2.5.8 的下限 —— **别再往小改**（18px 的点按不准）。
  * `danger` 给「移出 / 撤回」这类会改变关系的操作。
+ *
+ * ⚠️ **尺寸必须写 `h-[24px] w-[24px]`，不能写 `h-6 w-6`。**
+ * Tailwind 的间距刻度是「0.25rem × n」，而本项目 `html { font-size: 14px }`
+ * （tokens.css），于是 `1rem = 14px`、一档 = **3.5px** —— `h-6` 是 **21px**，
+ * 比 24 差 3px。
+ * 这个差不是「小一点无所谓」：21 < 24 就是没达到下限，而且肉眼看不出来。
+ * 同一条也适用于别处写 `h-6` 当 24px 用的地方（本文件 `IconBtn` 的 `h-8`
+ * 是 28px，达标，所以没暴露这个问题）。
  */
 export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger?: boolean }>(
   function MiniIconBtn({ label, danger = false, children, className, ...rest }, ref) {
@@ -403,7 +416,7 @@ export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger
         title={label}
         {...rest}
         className={cx(
-          'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--r-sm)] transition',
+          'inline-flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-[var(--r-sm)] transition',
           'disabled:cursor-not-allowed disabled:opacity-40',
           danger
             ? 'text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]'
@@ -541,7 +554,13 @@ export function Dropdown<K extends string | number>({
           role="listbox"
           aria-label={label}
           className={cx(
-            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 min-w-full overflow-y-auto rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
+            // `w-max` 而不是只 `min-w-full`：面板是绝对定位的，宽度走
+            // shrink-to-fit —— 触发按钮窄的时候（成员行那个角色选择器只有
+            // 78px），面板会被压到触发按钮那么窄，于是「可编辑」竖着断成
+            // 两行（实测 option 高 53px = 两行）。`w-max` 让它按内容撑开，
+            // 再 `min-w-full` 保证不比触发按钮窄。选项文字同时加
+            // `whitespace-nowrap`，双保险。
+            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 w-max min-w-full overflow-y-auto rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
             menuClassName,
           )}
         >
@@ -565,7 +584,7 @@ export function Dropdown<K extends string | number>({
                   'disabled:cursor-not-allowed disabled:opacity-40',
                 )}
               >
-                <span className="min-w-0 flex-1">{renderOption ? renderOption(option, selected) : option.label}</span>
+                <span className="min-w-0 flex-1 whitespace-nowrap">{renderOption ? renderOption(option, selected) : option.label}</span>
                 {selected && <Check size={14} aria-hidden="true" />}
               </button>
             );
@@ -675,4 +694,77 @@ export function SheetPicker<K extends string>({ value, options, onPick, label, l
       </Sheet>
     </>
   );
+}
+
+/* ============================== 布局原语 ============================== */
+
+/*
+ * `Card` / `Field` / `Row` —— 设置页那种「一张卡 = 一个主题，卡内一组小节，
+ * 小节标题在上、内容在下」的排法。
+ *
+ * 为什么放在组件库而不是设置页里：这套排法 `Settings.tsx` 和 `Members.tsx`
+ * 都要用（成员 / 邀请那两块在两个地方渲染），而 `Members.tsx` 原先是把标题
+ * 那一行 `mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]`
+ * **逐字抄了两遍**。抄出来的第二套一定会漂 —— 这正是这次要修的那类问题。
+ *
+ * 描边走 `--border-w` 而不是 Tailwind 的 `border`（写死 1px）：切到 flat 时
+ * 全应用的线都变 2px，只有这里还是 1px，看着就像「这一块没跟上风格」。
+ */
+
+/** 一张卡 = 一个主题。卡内一律由 `Field` 组成 */
+export function Card({ icon, title, children, hint, extra }: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+  hint?: ReactNode;
+  /** 标题右边那一小块（比如「邀请收件箱」入口）。它是全局的，不属于卡里任何一个 Field */
+  extra?: ReactNode;
+}) {
+  return (
+    <section className="mb-4 rounded-[var(--r-lg)] border-[length:var(--border-w)] border-[var(--border)] p-4">
+      <div className="mb-3 flex items-center gap-1.5">
+        {/* 标题是 h2，`extra` 是它的**兄弟**而不是子节点 —— 里面可能是个按钮，
+            交互内容套在标题里读屏会念成一团 */}
+        <h2 className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] font-semibold">
+          <span className="shrink-0 text-[var(--text-3)]">{icon}</span>
+          <span className="min-w-0 truncate">{title}</span>
+        </h2>
+        {extra}
+      </div>
+      <div className="flex flex-col gap-3.5">{children}</div>
+      {hint && <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">{hint}</div>}
+    </section>
+  );
+}
+
+/**
+ * 一个小节：**标题在上，内容在下**。设置页与成员区里每一组控件都走这个。
+ *
+ * `htmlFor` 传了才渲染成 `<label>`：小节标题大多是**一组控件的名字**
+ * （色板 / 风格 / 深浅），那种该是 `div` —— 用 label 去套一组按钮，
+ * 读屏会念成一个不存在的表单控件。真的是单个输入框时（日程集名字）才传
+ * `htmlFor`，让它成为真正的 `<label>`。
+ */
+export function Field({ label, htmlFor, icon, children, hint }: {
+  label: string;
+  htmlFor?: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  hint?: ReactNode;
+}) {
+  const head = 'mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]';
+  return (
+    <div>
+      {htmlFor
+        ? <label htmlFor={htmlFor} className={head}>{icon}{label}</label>
+        : <div className={head}>{icon}{label}</div>}
+      {children}
+      {hint && <div className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">{hint}</div>}
+    </div>
+  );
+}
+
+/** 一行控件：flex 换行 + 统一间距。按钮排、输入框 + 按钮都走它 */
+export function Row({ children }: { children: ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2">{children}</div>;
 }
