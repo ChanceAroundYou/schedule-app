@@ -8,30 +8,31 @@
  * 所以这里不导出任何原生对话框的包装 —— 要确认就走 useConfirm() 的 Promise，
  * 要提示就走 toast()。全应用没有第二套。
  *
- * 另一个约束：不用 emoji，全部走 lucide 图标。
+ * 不再把原生 `<select>` 当作组件库基础。所有选择控件使用 `Dropdown`、`Chips` 或 `SheetPicker`。
  */
 
 import {
   createContext, useCallback, useContext, useEffect, useId, useRef, useState,
   type ReactNode, type ButtonHTMLAttributes, type RefObject,
-  type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes,
+  type InputHTMLAttributes, type TextareaHTMLAttributes,
   forwardRef,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import { cx } from './cx.ts';
 import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
-/* 四种固定 variant，覆盖全应用所有按钮场景：
+/* 五种固定 variant，覆盖全应用所有按钮场景：
    primary  主操作（保存、确认、跳转）
     normal  普通操作（导航、切换、取消）
     ghost   极轻操作（关闭、清空）
     danger  危险操作（删除、退出）
+    chip    标签式操作（筛选、选择）
    新增 variant 必须先在这里加，再在 legacy.css 里加对应样式 —— 别在
    .tsx 里写死颜色，那等于把设计令牌绕过去。 */
-type Variant = 'primary' | 'normal' | 'ghost' | 'danger';
+type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
 
 /* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
    兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
@@ -46,12 +47,13 @@ const VARIANT: Record<Variant, string> = {
   normal: 'border-[var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
   danger: 'border-[var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
+  chip: 'border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
 };
 
 type Size = 'sm' | 'md' | 'lg';
 
 const SIZE: Record<Size, string> = {
-  sm: 'h-[30px] px-2.5 text-[12.5px]',
+  sm: 'h-7 px-2.5 text-[13px]',
   md: 'h-9 px-3.5 text-sm',
   lg: 'h-11 px-5 text-[15px]',
 };
@@ -61,11 +63,6 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
-/**
- * `ref` 要能拿到那个真 `<button>`：浮层的 outside-close 得知道「开合键自己」
- * 是哪个节点，好把它当例外（见 ui/hooks.ts 的 useOutsideClose）。
- * 不 forward 的话 `ref` 只会进 `...rest` 里被 React 丢掉。
- */
 export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
   { variant = 'normal', size = 'md', className, ...rest },
   ref,
@@ -76,10 +73,6 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
       type="button"
       {...rest}
       className={cx(
-        /* `btn` 是给测试与 legacy.css 留的**稳定钩子**：探针要量「日期导航那四个
-           控件高度一致」，靠的是 `.date-nav .btn`；而 legacy.css 里
-           `.cal-subhead .date-nav .btn { height: 34px }` 这条也只有它才接得到。
-           没有这个类名，那两处都是对空选择器说话。 */
         'btn inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
         'disabled:cursor-not-allowed disabled:opacity-50',
         SIZE[size],
@@ -92,88 +85,48 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
 
 /* ================================ 表单控件 ================================ */
 
-/* 输入框 / 下拉框 / 文本域统一走这三个组件。
+/* 输入框 / 文本域统一走这两个组件。
    样式全部引用 legacy.css 的设计令牌（--input / --border-w / --r-md /
    --panel-2 / --primary），不在 .tsx 里写死颜色。
    需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
-
-/* 三个控件的共同外观只写一份 —— 改边框 / 底色 / 焦点 / 禁用时只改这里。
-   （legacy.css 里 `.field input` 那一组是同一套视觉的历史副本，
-   带 @layer 的 Tailwind 工具类压不过它，两边要保持一致。） */
-const CONTROL = [
-  'rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
-  'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-  'disabled:cursor-not-allowed disabled:opacity-50',
-].join(' ');
-
-/* 两种占位：默认是整行字段（`.field` 里那种，宽度撑满）；`dense` 是**行内**
-   控件 —— 宽度跟着内容走、高度对齐 Btn 的 sm 档。AI 面板那几行「标签 + 下拉」
-   用整行会把一行撑破，用 dense 才排得下。
-   不叫 `size`：那是 `<select>` 的原生属性（可见行数），遮掉会出岔子。 */
-const CONTROL_BOX = {
-  full: 'w-full px-3 py-2 text-sm',
-  dense: 'w-auto h-[30px] px-2 text-[12.5px]',
-} as const;
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   dense?: boolean;
 }
 
 export function Input({ dense, className, ...rest }: InputProps) {
-  return <input {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
-}
-
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  dense?: boolean;
-  options?: { value: string; label: string }[];
-}
-
-export function Select({ dense, options, className, children, ...rest }: SelectProps) {
   return (
-    <select {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)}>
-      {options
-        ? options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
-        : children}
-    </select>
+    <input
+      {...rest}
+      className={cx(
+        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+        dense && 'h-[30px] w-auto px-2 text-[12.5px]',
+        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+    />
   );
 }
 
-interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
-  dense?: boolean;
-}
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ dense, className, ...rest }, ref) => {
-    return <textarea ref={ref} {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
+  ({ className, ...rest }, ref) => {
+    return (
+      <textarea
+        ref={ref}
+        {...rest}
+        className={cx(
+          'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+          'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          className,
+        )}
+      />
+    );
   }
 );
-
-/* 字段外壳：label + 控件 + 提示 / 错误。
-   只统一「结构」—— 校验逻辑、必填判定留在调用方。
-   错误用 role="alert" 播报，不依赖调用方再补 aria-describedby。 */
-interface FieldProps {
-  label: ReactNode;
-  /** 控件的 id，和 label 关联。控件自己也要给同一个 id */
-  htmlFor?: string;
-  /** 常驻的辅助说明（格式示例等） */
-  hint?: ReactNode;
-  /** 校验错误。有值时顶掉 hint */
-  error?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}
-
-export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
-  return (
-    <div className={cx('field', className)}>
-      <label htmlFor={htmlFor}>{label}</label>
-      {children}
-      {error
-        ? <div className="field-error" role="alert">{error}</div>
-        : hint && <div className="field-hint">{hint}</div>}
-    </div>
-  );
-}
 
 /* =============================== 底部浮层 =============================== */
 
@@ -422,3 +375,257 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
 
 /** 给外部（比如在 effect 里）用的遮罩层元素引用类型别名 */
 export type ElRef = RefObject<HTMLElement | null>;
+
+/* ============================ 自定义下拉选择器 ============================ */
+
+export interface DropdownOption<K extends string | number> {
+  value: K;
+  label: string;
+  disabled?: boolean;
+}
+
+/**
+ * 自定义下拉选择器：不用原生 <select>，也不依赖浏览器默认菜单。
+ *
+ * 适合需要节省横向空间、但选项数量不适合铺成 Chips 的场合。
+ * `renderValue` / `renderOption` 可插入色点、图标等内容，`className`、
+ * `menuClassName` 留给调用方接入同一套令牌下的尺寸和强调色。
+ */
+export function Dropdown<K extends string | number>({
+  value,
+  options,
+  onPick,
+  label,
+  labelledBy,
+  placeholder = '选择…',
+  disabled = false,
+  size = 'md',
+  className,
+  menuClassName,
+  renderValue,
+  renderOption,
+}: {
+  value: K | null;
+  options: readonly DropdownOption<K>[];
+  onPick: (value: K) => void;
+  label: string;
+  labelledBy?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  size?: Size;
+  className?: string;
+  menuClassName?: string;
+  renderValue?: (option: DropdownOption<K>) => ReactNode;
+  renderOption?: (option: DropdownOption<K>, selected: boolean) => ReactNode;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const current = options.find((o) => o.value === value);
+  const enabled = options
+    .map((option, index) => ({ option, index }))
+    .filter(({ option }) => !option.disabled);
+
+  useOutsideClose(root, open, () => setOpen(false));
+
+  useEffect(() => {
+    if (!open) return;
+    const selected = options.findIndex((option) => option.value === value && !option.disabled);
+    setActive(selected >= 0 ? selected : (enabled[0]?.index ?? -1));
+  }, [open, options, value]);
+
+  const pick = (option: DropdownOption<K>) => {
+    if (option.disabled) return;
+    onPick(option.value);
+    setOpen(false);
+    button.current?.focus({ preventScroll: true });
+  };
+
+  const move = (direction: 1 | -1) => {
+    if (!enabled.length) return;
+    const currentIndex = enabled.findIndex(({ index }) => index === active);
+    const next = enabled[(currentIndex + direction + enabled.length) % enabled.length];
+    setActive(next.index);
+  };
+
+  return (
+    <div ref={root} className="relative inline-block min-w-0">
+      <button
+        ref={button}
+        type="button"
+        disabled={disabled}
+        aria-label={label}
+        aria-labelledby={labelledBy}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!open) setOpen(true);
+            move(event.key === 'ArrowDown' ? 1 : -1);
+          } else if (event.key === 'Enter' || event.key === ' ') {
+            if (open && active >= 0) {
+              event.preventDefault();
+              const option = options[active];
+              if (option) pick(option);
+            }
+          } else if (event.key === 'Escape' && open) {
+            event.preventDefault();
+            setOpen(false);
+          }
+        }}
+        className={cx(
+          'inline-flex min-w-0 items-center justify-between gap-2 rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
+          'hover:border-[var(--primary)] focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          SIZE[size],
+          className,
+        )}
+      >
+        <span className="min-w-0 truncate text-left">
+          {current ? (renderValue ? renderValue(current) : current.label) : placeholder}
+        </span>
+        <ChevronDown size={14} aria-hidden="true" className={cx('shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          className={cx(
+            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 min-w-full overflow-y-auto rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
+            menuClassName,
+          )}
+        >
+          {options.map((option, index) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={String(option.value)}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                disabled={option.disabled}
+                onMouseEnter={() => !option.disabled && setActive(index)}
+                onClick={() => pick(option)}
+                className={cx(
+                  'flex w-full items-center justify-between gap-3 rounded-[var(--r-sm)] px-2.5 py-2 text-left text-[13px] transition',
+                  selected
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
+                    : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
+                  active === index && !selected && 'bg-[var(--panel-3)]',
+                  'disabled:cursor-not-allowed disabled:opacity-40',
+                )}
+              >
+                <span className="min-w-0 flex-1">{renderOption ? renderOption(option, selected) : option.label}</span>
+                {selected && <Check size={14} aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ 胶囊选择器 ============================ */
+
+/**
+ * 一排二选一 / 多选一的胶囊。
+ *
+ * **不是 `<select>`**：原生 select 在 PWA 里样式不可控、和项目设计系统不一致，
+ * 且移动端体验差。小选项集（≤ 7 个固定选项）一律用这个。
+ *
+ * 全局原则见 CLAUDE.md「三、界面约定」末尾。
+ */
+export function Chips<K extends string | number>({ value, options, onPick, render, labelOf, label, labelledBy }: {
+  value: K;
+  options: readonly K[];
+  onPick: (k: K) => void;
+  /** 色板那一轴要在胶囊里画一个色点 */
+  render?: (k: K) => ReactNode;
+  /** 把选项 key 显示成什么文字。不传就用 key 本身 */
+  labelOf?: (k: K) => string;
+  /** 这组控件的无障碍名字（没有可见标签时用） */
+  label?: string;
+  /** 有可见标签时，指向那个标签元素的 id —— 比 label 更准，且不用把文字写两遍 */
+  labelledBy?: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={label} aria-labelledby={labelledBy}>
+      {options.map((k) => {
+        const on = k === value;
+        return (
+          <button
+            key={String(k)}
+            type="button"
+            data-pick={k}
+            aria-pressed={on}
+            onClick={() => onPick(k)}
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
+              on
+                ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+                : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] border-[var(--border)]',
+            )}
+          >
+            {render?.(k)}
+            {labelOf ? labelOf(k) : k}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================ Sheet 选择器 ============================ */
+
+/**
+ * 动态 / 大选项集的选择器：一个按钮，点开是 Sheet 浮层。
+ *
+ * 用于选项数量不固定（如项目列表）或选项较多的场合。
+ * 小选项集（≤ 7 个固定选项）用 Chips 更直接。
+ */
+export function SheetPicker<K extends string>({ value, options, onPick, label, labelledBy }: {
+  value: K;
+  options: readonly { value: K; label: string }[];
+  onPick: (v: K) => void;
+  label: string;
+  /** 有可见标签时指向那个标签元素的 id（浮层标题仍用 label） */
+  labelledBy?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value);
+  return (
+    <>
+      <Btn variant="chip" onClick={() => setOpen(true)} aria-label={label} aria-labelledby={labelledBy}>
+        {current?.label || '选择…'}
+        <ChevronDown size={14} />
+      </Btn>
+      <Sheet open={open} onClose={() => setOpen(false)} title={label}>
+        <div className="flex flex-col gap-1">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onPick(o.value); setOpen(false); }}
+              className={cx(
+                'flex items-center justify-between rounded-[var(--r-md)] px-3 py-2.5 text-left text-[13.5px] transition',
+                o.value === value
+                  ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
+                  : 'text-[var(--text-2)] hover:bg-[var(--panel-3)]',
+              )}
+            >
+              {o.label}
+              {o.value === value && <Check size={14} />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
+  );
+}

@@ -13,7 +13,7 @@ import { Crown, Eye, Pencil, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useState } from 'react';
 import { api } from '../data/api.ts';
 import { ROLE_HINT, ROLE_LABEL, ROLES, type Invite, type Member, type Role } from '../domain/types.ts';
-import { Btn, toast, useConfirm } from './kit.tsx';
+import { Btn, Dropdown, toast, useConfirm } from './kit.tsx';
 
 interface MembersSectionProps {
   calId: string;
@@ -56,19 +56,18 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
               {manage ? (
                 <>
-                  <select
+                  <Dropdown
                     value={m.role}
                     disabled={busy}
-                    aria-label={`「${m.name}」的权限`}
-                    onChange={(e) => void run(async () => {
-                      await api.setRole(calId, m.id, e.target.value as Role);
+                    aria-labelledby={`member-role-${m.id}`}
+                    label={`「${m.name}」的权限`}
+                    size="sm"
+                    options={ROLES.map((role) => ({ value: role, label: ROLE_LABEL[role] }))}
+                    onPick={(role) => void run(async () => {
+                      await api.setRole(calId, m.id, role);
                       toast('权限已更新');
                     })}
-                    className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                               px-1.5 py-1 text-[12px] outline-none"
-                  >
-                    {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
+                  />
                   {/* 成员行是**紧凑行**（高度由 13px 的内容撑），IconBtn 的 32px
                       会把整行顶高 11px —— 这种行内小图标按钮保持原样 */}
                   <button
@@ -116,14 +115,14 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
                          bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
             />
-            <select
+            <Dropdown
               value={inviteRole}
               aria-label="邀请的权限"
-              onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
-            >
-              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>
+              label="邀请的权限"
+              size="sm"
+              options={ROLES.map((role) => ({ value: role, label: ROLE_LABEL[role] }))}
+              onPick={setInviteRole}
+            />
             <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
           </div>
           <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">

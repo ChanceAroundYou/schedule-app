@@ -21,7 +21,7 @@ import { readLegacy } from './data/legacy.ts';
 import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset, LONG_PRESS_MS } from './ui/hooks.ts';
 import * as T from './ui/theme.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
-import { useDragLayer } from './ui/dnd.ts';
+import { DndProvider, useTimelineDrag } from './ui/dndkit.tsx';
 import { HOUR_H, DAY_H } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, CalSubheader, QuickAdd } from './ui/Shell.tsx';
@@ -91,8 +91,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   useViewLayout(contentRef, key, state.ui.nav, state.ui.view, state.ui.cursor);
 
   /* -------- 拖放 -------- */
-  // 触屏「提起后原地松手」= 长按本来的意思，弹操作层。打卡行没有操作层，忽略
-  const drag = useDragLayer(contentRef, (id, kind) => { if (kind === 'task') setActId(id); });
+  const timelineDrag = useTimelineDrag();
+  // 长按定时器与 dnd-kit 拖拽的协调：拖拽开始时取消长按
+  const dragStartedRef = useRef(false);
 
   /* -------- 导航 -------- */
   const nav = useCallback((k: string) => {
@@ -168,6 +169,35 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; x: number; y: number }>(
     { timer: null, fired: false, x: 0, y: 0 });
   const clearLp = () => { if (lp.current.timer) { clearTimeout(lp.current.timer); lp.current.timer = null; } };
+  const handleDragStart = useCallback(() => {
+    dragStartedRef.current = true;
+    clearLp();
+  }, []);
+  const pointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse' && lp.current.fired && !dragStartedRef.current) {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el');
+      const id = el?.dataset.id;
+      if (id) setActId(id);
+    }
+    dragStartedRef.current = false;
+    clearLp();
+  };
+
+  /* 抬手那一下浏览器会补一整套兼容鼠标事件（mousedown / mouseup / click）。
+     长按之后这套必须整串掐掉 —— 操作层这时已经盖在手指底下，那记 click
+     会打在遮罩上、把刚弹出的操作层当场关掉。
+     **只能在 touchend 上掐**：Chrome 补的兼容鼠标事件不看 pointerup 的
+     preventDefault，原 dnd.ts 的 swallowCompat 就是挂在 touchend 上的。
+     条件是 `lp.current.fired`（只有长按过才为真），所以普通轻点不受影响。 */
+  useEffect(() => {
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!lp.current.fired) return;
+      lp.current.fired = false;      // 读一次就清掉，只在这一个时刻有用
+      if (e.cancelable) e.preventDefault();  // 不可取消的（滚动中）拦不了，拦了会报 console 错
+    };
+    window.addEventListener('touchend', onTouchEnd, { passive: false });
+    return () => window.removeEventListener('touchend', onTouchEnd);
+  }, []);
   const pointerDown = (e: React.PointerEvent) => {
     /* **这一行必须排在鼠标那次 return 之前。** 它清的是「吞掉抬手补的那记
        click」的标志，而标志只有非鼠标长按会设上 —— 于是鼠标这条路原来直接
@@ -198,9 +228,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       // 认不出 userActivation 的老浏览器（`!ua`）维持原样。
       const ua = navigator.userActivation;
       if ((!ua || ua.hasBeenActive) && typeof navigator.vibrate === 'function') navigator.vibrate(12);
-      // 「提起」= 进入拖拽待命态；接下来要么拖走，要么原地松手弹操作层
-      // （由 dnd 的 onTapHold 回调决定，见那边文件头）
-      if (!drag.beginTouch(el, id, lp.current.x, lp.current.y)) setActId(id);
+      // 长按触发：dnd-kit 的 PointerSensor 会在移动时自动开始拖拽
+      // 原地松手时由 onPointerUp 弹操作层
     }, LONG_PRESS_MS);
   };
 
@@ -581,6 +610,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onExport={exportBackup}
         onImport={importBackup}
         onLogout={onLogout}
+        onInvites={() => setInvOpen(true)}
       />
     );
   } else if (!state.cals.length) {
@@ -630,6 +660,12 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   }, []);
 
   return (
+    <DndProvider
+      onDragStart={handleDragStart}
+      onDragOver={timelineDrag.onDragOver}
+      onDragEnd={timelineDrag.onDragEnd}
+      onDragCancel={timelineDrag.onDragCancel}
+    >
     <Shell
       state={state}
       contentRef={contentRef}
@@ -689,14 +725,9 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onClick={onClick}
         onPointerDown={pointerDown}
         onPointerMove={clearLp}
-        onPointerUp={clearLp}
+        onPointerUp={pointerUp}
         onPointerCancel={clearLp}
         onPointerLeave={clearLp}
-        onDragStart={drag.onDragStart}
-        onDragOver={drag.onDragOver}
-        onDragLeave={drag.onDragLeave}
-        onDrop={drag.onDrop}
-        onDragEnd={drag.onDragEnd}
         style={{ display: 'contents' }}
       >
         {body}
@@ -732,6 +763,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         />
       )}
     </Shell>
+    </DndProvider>
   );
 }
 

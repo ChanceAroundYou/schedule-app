@@ -16,21 +16,24 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
-  Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, Palette, PanelTop,
-  Upload, Download, Trash2, UserRound, Plus, AlertTriangle, ChevronDown,
+  Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
+  Pencil, Upload, Download, Trash2, UserRound, Plus, Crown, Eye, UserMinus,
+  UserPlus, Users, X, AlertTriangle, ChevronDown,
 } from 'lucide-react';
-import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode } from '../domain/types.ts';
+import { DndContext, MouseSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Chips, Input, Sheet, useConfirm, toast } from './kit.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
 import { cx } from './cx.ts';
-import { MembersSection } from './Members.tsx';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
 const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
@@ -62,48 +65,6 @@ function Card({ icon, title, children, hint }: {
   );
 }
 
-/**
- * 一排二选一 / 三选一的胶囊。
- *
- * **不是 `<select>`**：这三轴一共 6+3+3 个选项，是用户会反复来回试的东西，
- * 每次都要展开一次下拉等于把「试」这件事的摩擦拉满。
- */
-function Chips<K extends string>({ value, options, onPick, render }: {
-  value: K;
-  options: readonly K[];
-  onPick: (k: K) => void;
-  /** 色板那一轴要在胶囊里画一个色点，那个色点得跟着这一轴自己的取值走 */
-  render?: (k: K) => React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map((k) => {
-        const on = k === value;
-        return (
-          <button
-            key={k}
-            type="button"
-            data-pick={k}
-            aria-pressed={on}
-            onClick={() => onPick(k)}
-            className={cx(
-              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
-              on
-                ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                : 'text-[var(--text-2)] ' + HOVER + ' ' + LINE,
-            )}
-          >
-            {render?.(k)}
-            {(T.ACCENTS as Record<string, { label: string }>)[k as unknown as string]?.label
-              || (T.THEMES as Record<string, { label: string }>)[k as unknown as string]?.label
-              || (T.STYLES as Record<string, { label: string }>)[k as unknown as string]?.label || k}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ============================ 功能区自定义 ============================ */
 
 /**
@@ -113,13 +74,8 @@ function Chips<K extends string>({ value, options, onPick, render }: {
  * **拖一下排序**。选择和排序是同一件事的两面 —— 用户要的就是「这几项按这个
  * 顺序排」，拆成两段反而要来回切。
  *
- * 拖拽两条路，按输入方式分开：
- *  - 桌面端 HTML5 drag（`draggable` + onDragStart/Over/Drop/End）
- *  - 移动端 pointer 通路，**只挂在抓手上**（`touch-none`）—— 抓手之外的区域
- *    仍能正常滚动页面，不会「想滚页却拖动了顺序」。
- *
- * **不接 `ui/dnd.ts`**，这是有意的。那套是为任务/打卡的时间轴与让位洞设计的，
- * 套到一个 7 行的静态列表上属于杀鸡用牛刀。
+ * 拖拽走 @dnd-kit：MouseSensor 处理鼠标输入（mousedown/mousemove/mouseup）。
+ * 移动 8px 才开始拖 —— 轻点（不移动）不会触发拖，所以「点一下打勾」不受影响。
  */
 function NavCard({ state }: { state: LocalState }) {
   const ui = state.ui;
@@ -129,11 +85,7 @@ function NavCard({ state }: { state: LocalState }) {
   const narrow = useIsNarrow();
 
   const [rows, setRows] = useState<string[]>(order);
-  const [dragKey, setDragKey] = useState<string | null>(null);
-  const [overKey, setOverKey] = useState<string | null>(null);
   useEffect(() => setRows(order), [order]);
-
-  const label = (k: string) => navDef(k).label;
 
   /** 选中口径跟着设备走：窄屏是底栏那几项，宽屏是侧栏下半区那几项 */
   const isOn = (k: string) => (narrow ? tabs.has(k) : bottom.has(k));
@@ -155,59 +107,22 @@ function NavCard({ state }: { state: LocalState }) {
     }
   };
 
-  /** 桌面端：拖到 `k` 上跟它换一格 */
-  const onDragOver = (k: string) => (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!dragKey || dragKey === k) return;
-    const next = rows.slice();
-    const i = next.indexOf(dragKey);
-    const j = next.indexOf(k);
-    if (i < 0 || j < 0) return;
-    next[i] = k;
-    next[j] = dragKey;
-    setRows(next);
-    setOverKey(k);
-  };
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+  );
 
-  const endDrag = () => {
-    if (dragKey && rows.join() !== order.join()) store.setUi({ navOrder: rows });
-    setDragKey(null);
-    setOverKey(null);
-  };
-
-  /* ---- 移动端：抓手上的 pointer 拖拽 ---- */
-  const touch = useRef<{ startY: number; from: number; moved: boolean } | null>(null);
-
-  const gripDown = (e: React.PointerEvent, idx: number) => {
-    if (e.pointerType === 'mouse') return;   // 鼠标走 HTML5 那条
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    touch.current = { startY: e.clientY, from: idx, moved: false };
-  };
-  const gripMove = (e: React.PointerEvent) => {
-    const t = touch.current;
-    if (!t) return;
-    if (!t.moved && Math.abs(e.clientY - t.startY) > 8) {
-      t.moved = true;
-      setDragKey(rows[t.from]);
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setRows((prev) => {
+        const oldIndex = prev.indexOf(String(active.id));
+        const newIndex = prev.indexOf(String(over.id));
+        if (oldIndex < 0 || newIndex < 0) return prev;
+        const next = arrayMove(prev, oldIndex, newIndex);
+        store.setUi({ navOrder: next });
+        return next;
+      });
     }
-    if (!t.moved) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nav-row]');
-    const k = el?.getAttribute('data-nav-row');
-    if (!k) return;
-    const j = rows.indexOf(k);
-    if (j < 0 || j === t.from) return;
-    const next = rows.slice();
-    const [moved] = next.splice(t.from, 1);
-    next.splice(j, 0, moved);
-    setRows(next);
-    t.from = j;
-    setOverKey(k);
-  };
-  const gripUp = () => {
-    const t = touch.current;
-    touch.current = null;
-    if (t?.moved) endDrag();
   };
 
   return (
@@ -218,54 +133,56 @@ function NavCard({ state }: { state: LocalState }) {
       <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
         {narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}
       </div>
-      <ul className="flex flex-col gap-1">
-        {rows.map((k, idx) => {
-          const on = isOn(k);
-          return (
-            <li
-              key={k}
-              data-nav-row={k}
-              data-tab={narrow ? k : undefined}
-              role="button"
-              tabIndex={0}
-              aria-pressed={on}
-              draggable
-              onDragStart={(e) => {
-                setDragKey(k);
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', k);
-              }}
-              onDragOver={onDragOver(k)}
-              onDrop={(e) => { e.preventDefault(); endDrag(); }}
-              onDragEnd={endDrag}
-              onClick={() => toggle(k)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(k); } }}
-              className={cx(
-                'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-1.5 text-[12.5px] transition',
-                dragKey === k && 'opacity-40',
-                overKey === k && dragKey !== k
-                  ? 'border-[var(--primary)] ' + LINE
-                  : on
-                    ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                    : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
-              )}
-            >
-              <span
-                className="shrink-0 cursor-grab touch-none text-[var(--text-3)]"
-                onPointerDown={(e) => gripDown(e, idx)}
-                onPointerMove={gripMove}
-                onPointerUp={gripUp}
-                onPointerCancel={gripUp}
-              >
-                <GripVertical size={13} />
-              </span>
-              <span className="min-w-0 flex-1 truncate">{label(k)}</span>
-              {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
-            </li>
-          );
-        })}
-      </ul>
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <SortableContext items={rows} strategy={verticalListSortingStrategy}>
+          <ul className="flex flex-col gap-1">
+            {rows.map((k) => (
+              <SortableNavRow key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
     </Card>
+  );
+}
+
+/** 功能区里一行可排序的导航项 */
+function SortableNavRow({ id, on, narrow, onToggle }: {
+  id: string;
+  on: boolean;
+  narrow: boolean;
+  onToggle: (k: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      data-nav-row={id}
+      data-tab={narrow ? id : undefined}
+      onClick={() => onToggle(id)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
+      className={cx(
+        'flex cursor-pointer items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-1.5 text-[12.5px] transition',
+        isDragging && 'opacity-40',
+        on
+          ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
+          : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
+      )}
+    >
+      <span {...listeners} className="shrink-0 cursor-grab touch-none text-[var(--text-3)]">
+        <GripVertical size={13} />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>
+      {on && <Check size={13} className="shrink-0 text-[var(--primary)]" />}
+    </li>
   );
 }
 
@@ -310,17 +227,17 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-3">
         <div className="field">
           <label htmlFor={fid + '-c'}>当前密码</label>
-          <input id={fid + '-c'} type="password" autoComplete="current-password" value={cur}
+          <Input id={fid + '-c'} type="password" autoComplete="current-password" value={cur}
             onChange={(e) => setCur(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor={fid + '-n'}>新密码</label>
-          <input id={fid + '-n'} type="password" autoComplete="new-password" value={next}
+          <Input id={fid + '-n'} type="password" autoComplete="new-password" value={next}
             onChange={(e) => setNext(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor={fid + '-a'}>再输一遍</label>
-          <input id={fid + '-a'} type="password" autoComplete="new-password" value={again}
+          <Input id={fid + '-a'} type="password" autoComplete="new-password" value={again}
             onChange={(e) => setAgain(e.target.value)} />
         </div>
 
@@ -345,6 +262,15 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
 
 /* ============================ 日程集管理 ============================ */
 
+const ROLES: Role[] = ['owner', 'editor', 'viewer'];
+
+/** 角色一句话解释，选权限时直接写清楚会怎样 */
+const ROLE_HINT: Record<Role, string> = {
+  owner: '能改内容，也能改名、加人、删日程集',
+  editor: '能增删改任务和打卡，管不了成员',
+  viewer: '只能看',
+};
+
 function say(e: unknown): string {
   return e instanceof ApiError ? e.message : '操作失败，请重试';
 }
@@ -363,7 +289,7 @@ async function refreshCals(): Promise<void> {
  *
  * 默认日程集（「我的日程」）不能删除、不能退出、不能改名成空。
  */
-function CalsTab({ state }: { state: LocalState }) {
+function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => void }) {
   const active = state.ui.cal;
   const [openId, setOpenId] = useState<string | null>(active);
 
@@ -386,10 +312,12 @@ function CalsTab({ state }: { state: LocalState }) {
             cal={c}
             active={c.id === active}
             open={openId === c.id}
+            invites={state.invites}
             onToggle={() => {
               store.setActiveCal(c.id);
               setOpenId((v) => (v === c.id ? null : c.id));
             }}
+            onInvites={onInvites}
           />
         ))}
       </div>
@@ -406,16 +334,20 @@ function CalsTab({ state }: { state: LocalState }) {
 }
 
 /** 一个日程集：收起是一行，展开是它的全部设置 */
-function CalItem({ cal, active, open, onToggle }: {
+function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
   cal: Cal;
   active: boolean;
   open: boolean;
+  invites: Invite[];
   onToggle: () => void;
+  onInvites: () => void;
 }) {
   const confirm = useConfirm();
   const [members, setMembers] = useState<Member[]>([]);
   const [sent, setSent] = useState<Invite[]>([]);
   const [name, setName] = useState(cal.name);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRole, setInviteRole] = useState<Role>('editor');
   const [busy, setBusy] = useState(false);
   const fid = useId();
 
@@ -451,6 +383,14 @@ function CalItem({ cal, active, open, onToggle }: {
     if (!n || n === cal.name) return;
     await api.renameCal(calId, n);
     toast('已改名');
+  });
+
+  const invite = () => run(async () => {
+    const who = inviteName.trim();
+    if (!who) { toast('填一下对方的用户名'); return; }
+    await api.invite(calId, who, inviteRole);
+    setInviteName('');
+    toast('邀请已发出，等对方确认');
   });
 
   const leave = async () => {
@@ -510,19 +450,17 @@ function CalItem({ cal, active, open, onToggle }: {
           <div>
             <label htmlFor={fid + '-name'} className="mb-1.5 block text-[12px] text-[var(--text-2)]">名字</label>
             <div className="flex gap-2">
-              <input
+              <Input
                 id={fid + '-name'}
                 value={name}
                 disabled={!manage}
                 data-cal-name="1"
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-                className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
-                           bg-transparent px-3 py-1.5 text-sm outline-none
-                           focus:border-[var(--primary)] disabled:opacity-60"
+                className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5 disabled:opacity-60"
               />
               {manage && (
-                <Btn variant="normal" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
+                <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
                   保存
                 </Btn>
               )}
@@ -534,25 +472,144 @@ function CalItem({ cal, active, open, onToggle }: {
             )}
           </div>
 
-          <MembersSection
-            calId={calId}
-            members={members}
-            sent={sent}
-            manage={manage}
-            busy={busy}
-            run={run}
-          />
+          {/* 成员 */}
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
+              <Users size={13} /> 成员（{members.length}）
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] px-2.5 py-1.5">
+                  <span className="shrink-0">
+                    {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
+                      : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
+                        : <Pencil size={14} className="text-[var(--text-3)]" />}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
+                  {manage ? (
+                    <>
+                      <Chips<Role>
+                        value={m.role}
+                        options={ROLES}
+                        onPick={(r) => void run(async () => {
+                          await api.setRole(calId, m.id, r);
+                          toast('权限已更新');
+                        })}
+                        labelOf={(r) => ROLE_LABEL[r]}
+                        label={`「${m.name}」的权限`}
+                      />
+                      <button
+                        type="button"
+                        title="移出日程集"
+                        disabled={busy}
+                        onClick={() => void run(async () => {
+                          const ok = await confirm({
+                            title: `把「${m.name}」移出？`,
+                            body: '他马上就会看不到这个日程集，之后可以重新邀请。',
+                            confirmText: '移出', danger: true,
+                          });
+                          if (!ok) return;
+                          await api.kick(calId, m.id);
+                          toast('已移出');
+                        })}
+                        className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                      >
+                        <UserMinus size={13} />
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11.5px] text-[var(--text-3)]">{ROLE_LABEL[m.role]}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 发邀请 */}
+          {manage && (
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
+                <UserPlus size={13} /> 邀请成员
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={inviteName}
+                  placeholder="对方的用户名"
+                  aria-label="对方的用户名"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
+                  className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5"
+                />
+                <Chips<Role>
+                  value={inviteRole}
+                  options={ROLES}
+                  onPick={(r) => setInviteRole(r)}
+                  labelOf={(r) => ROLE_LABEL[r]}
+                  label="邀请的权限"
+                />
+                <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
+              </div>
+              <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                {ROLE_HINT[inviteRole]}。对方<b>接受之后</b>才生效。
+              </div>
+
+              {!!sent.length && (
+                <div className="mt-3 flex flex-col gap-1.5">
+                  {sent.map((i) => (
+                    <div key={i.id} className="flex items-center gap-2 rounded-[var(--r-md)] border border-dashed
+                                        border-[var(--border)] px-2.5 py-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
+                        {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
+                      </span>
+                      <button
+                        type="button"
+                        title="撤回邀请"
+                        disabled={busy}
+                        onClick={() => void run(async () => {
+                          await api.revokeInvite(i.id);
+                          toast('已撤回');
+                        })}
+                        className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 邀请入口 */}
+          <div>
+            <Btn variant="chip" size="sm" onClick={onInvites}>
+              <MailPlus size={13} /> 邀请{invites.length ? `（${invites.length}）` : ''}
+            </Btn>
+          </div>
 
           {/* 危险区 */}
           <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
             {manage ? (
-              <Btn variant="danger" size="sm" disabled={isDefault} onClick={() => void remove()}>
+              <button
+                type="button"
+                disabled={isDefault}
+                onClick={() => void remove()}
+                className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
+                           text-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:opacity-40"
+              >
                 <Trash2 size={13} /> 删除日程集
-              </Btn>
+              </button>
             ) : (
-              <Btn variant="danger" size="sm" onClick={() => void leave()}>
+              <button
+                type="button"
+                onClick={() => void leave()}
+                className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
+                           text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+              >
                 <LogOut size={13} /> 退出日程集
-              </Btn>
+              </button>
             )}
           </div>
 
@@ -580,7 +637,7 @@ const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'about', label: '关于' },
 ];
 
-export function SettingsView({ state, user, theme, onExport, onImport, onLogout }: {
+export function SettingsView({ state, user, theme, onExport, onImport, onLogout, onInvites }: {
   state: LocalState;
   user: PublicUser | null;
   /** **实际生效**的那一档（auto 已解析）。色点要靠它才画得出暗色档的颜色 */
@@ -588,6 +645,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
   onExport: () => void;
   onImport: (f: File) => void;
   onLogout: () => void;
+  onInvites: () => void;
 }) {
   const ui = state.ui;
   const confirm = useConfirm();
@@ -649,6 +707,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
                   value={ui.accent}
                   options={['jade', 'azure', 'clay', 'plum', 'gold', 'slate']}
                   onPick={(k) => store.setUi({ accent: k })}
+                  labelOf={(k) => T.ACCENTS[k].label}
                   // 色点在**自己身上**带 data-accent + data-theme，于是它拿到的
                   // --primary 就是选中那套（含暗色档那组提亮过的值）。
                   // 不在 TS 里再存一份十六进制 —— 那两份一定会漂。
@@ -670,6 +729,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
                     value={ui.style}
                     options={['soft', 'flat', 'notion']}
                     onPick={(k) => store.setUi({ style: k })}
+                    labelOf={(k) => T.STYLES[k].label}
                   />
                 </div>
               </div>
@@ -683,6 +743,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
                   value={ui.theme}
                   options={['auto', 'light', 'dark']}
                   onPick={(k) => store.setUi({ theme: k })}
+                  labelOf={(k) => T.THEMES[k].label}
                 />
               </div>
             </div>
@@ -694,7 +755,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
         <Card icon={<UserRound size={14} />} title="安全">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
-            <Btn variant="normal" size="sm" onClick={() => setPwOpen(true)}>
+            <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
               <KeyRound size={13} /> 修改密码
             </Btn>
             <Btn variant="ghost" size="sm" onClick={onLogout}>
@@ -707,10 +768,10 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
               <Database size={13} /> 同步与备份
             </div>
             <div className="flex flex-wrap gap-2">
-              <Btn variant="normal" size="sm" onClick={onExport}>
+              <Btn variant="chip" size="sm" onClick={onExport}>
                 <Upload size={13} /> 导出备份
               </Btn>
-              <Btn variant="normal" size="sm" onClick={() => fileRef.current?.click()}>
+              <Btn variant="chip" size="sm" onClick={() => fileRef.current?.click()}>
                 <Download size={13} /> 导入备份
               </Btn>
               <Btn variant="ghost" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>
@@ -731,7 +792,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout 
         </Card>
       )}
 
-      {tab === 'cals' && <CalsTab state={state} />}
+      {tab === 'cals' && <CalsTab state={state} onInvites={onInvites} />}
 
       {tab === 'about' && (
         <Card icon={<Info size={14} />} title="关于">

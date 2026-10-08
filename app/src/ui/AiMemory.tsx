@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { api } from '../data/api.ts';
 import type { AiAuthorizations, AiMemory } from '../domain/ai.ts';
-import { Input, Select } from './kit.tsx';
+import { Dropdown, Input } from './kit.tsx';
 
 const TYPE_LABEL: Record<string, string> = {
   preference: '偏好',
@@ -72,47 +72,43 @@ export function AiMemory() {
           <div className="ai-auth-grid">
             <label className="ai-auth-item">
               <span>任务增删改</span>
-              <Select
-                dense
+              <Dropdown
                 value={auth.taskCrud}
-                onChange={(e) => void saveAuth({ taskCrud: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </Select>
+                options={[{ value: 'free', label: '免确认' }, { value: 'confirm', label: '需确认' }]}
+                onPick={(value) => void saveAuth({ taskCrud: value })}
+                label="任务增删改"
+                size="sm"
+              />
             </label>
             <label className="ai-auth-item">
               <span>打卡</span>
-              <Select
-                dense
+              <Dropdown
                 value={auth.habitCheckin}
-                onChange={(e) => void saveAuth({ habitCheckin: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </Select>
+                options={[{ value: 'free', label: '免确认' }, { value: 'confirm', label: '需确认' }]}
+                onPick={(value) => void saveAuth({ habitCheckin: value })}
+                label="打卡"
+                size="sm"
+              />
             </label>
             <label className="ai-auth-item">
               <span>日程集管理</span>
-              <Select
-                dense
+              <Dropdown
                 value={auth.calendarMgmt}
-                onChange={(e) => void saveAuth({ calendarMgmt: e.target.value })}
-              >
-                <option value="free">免确认</option>
-                <option value="confirm">需确认</option>
-              </Select>
+                options={[{ value: 'free', label: '免确认' }, { value: 'confirm', label: '需确认' }]}
+                onPick={(value) => void saveAuth({ calendarMgmt: value })}
+                label="日程集管理"
+                size="sm"
+              />
             </label>
             <label className="ai-auth-item">
               <span>晚间汇报</span>
-              <Select
-                dense
+              <Dropdown
                 value={auth.eveningReportEnabled ? 'on' : 'off'}
-                onChange={(e) => void saveAuth({ eveningReportEnabled: e.target.value === 'on' })}
-              >
-                <option value="off">关闭</option>
-                <option value="on">开启</option>
-              </Select>
+                options={[{ value: 'off', label: '关闭' }, { value: 'on', label: '开启' }]}
+                onPick={(value) => void saveAuth({ eveningReportEnabled: value === 'on' })}
+                label="晚间汇报"
+                size="sm"
+              />
             </label>
             {auth.eveningReportEnabled && (
               <label className="ai-auth-item">

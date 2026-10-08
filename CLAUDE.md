@@ -35,7 +35,7 @@
 │   ├── src/domain/    纯逻辑，**零 React / DOM / 网络**
 │   ├── src/data/      localStorage + 接口封装 + 旧数据导入
 │   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
-│   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽 / 日程集 / AI 面板
+│   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽（`dndkit.tsx`，@dnd-kit）/ 日程集 / AI 面板
 │   ├── src/views/     纯展示，**零回调**，只出 data-* 属性
 │   ├── src/styles/    legacy.css（设计系统，**不带 @layer**）+ tailwind.css
 │   └── public/ · tests/
@@ -54,6 +54,27 @@
 **三层状态别混**：领域模型（`state.tasks` / `state.habits`，**按 id 索引的对象**，不是数组）
 → localStorage `schedule-app-v4`（离线副本）→ SQLite `~/.local/share/schedule/schedule.db`
 （**权威**）。排查「数据不对」**先看服务器**，浏览器那份只是副本。
+
+它是**唯一知道「全部状态」的地方**，所以这几样必须有全局视野的东西都放这儿：
+
+1. **渲染调度**：`useStoreState()` 订阅 `store`，`renderAll` 对应一次重渲染。
+2. **点击事件委托**：`#content` 上挂**一个** `onClick`，靠 `data-act` /
+   `data-nav` / `data-jump` / `data-id` 分派。
+   > **不是「懒得拆」，是必须这样。** 行是 React 渲染的，拖拽重排、同步落地
+   > 都会把它们换掉，挂在行上的 handler 会跟着丢。容器级 handler 永远在。
+   > 代价：`views/` 里全是纯展示组件，**零回调**。
+3. **拖拽 / 拉伸**：`DndProvider`（@dnd-kit）+ `.ev-resize` 的 mousedown。
+4. **长按提起 + 触屏拖拽 / 长按操作层**（触屏）、**快捷键**、**导出 / 导入**。
+
+### 三层状态，别混
+
+| 层 | 在哪 | 谁是真相 |
+|---|---|---|
+| 领域模型 | `state.tasks` / `state.habits`（**按 id 索引的对象**，不是数组） | ← |
+| 本地存储 | localStorage `schedule-app-v4` | 离线副本 |
+| 服务端 | SQLite `~/.local/share/schedule/schedule.db` | **权威** |
+
+> 排查「数据不对」**先看服务器**。浏览器那份只是副本。
 
 **怎么跑起来**：
 
@@ -199,6 +220,8 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 `denied` +1，弹一次提示，**别让写操作静默失败**）。记录只有 `store.ts` 的 `deny()` 一个
 入口；**提示要点名是哪个集**（`deniedCals`）—— 今天 / 逾期 / 待办箱是跨集的。
 
+### 变量名不许写错，也不许给兜底值
+
 **断网时界面也必须说话**：顶栏显示 ☁︎ 划掉配「离线，改动先存在本机」，**不是**那个一直转的
 加载圈。来源是 `useOnline()`，**不是**「上次请求成不成功」。**有登录，但没有密码找回、
 没有邮箱、没有第三方登录，也没有管理员。别在界面上提「管理员」**（`users.is_admin` 已经
@@ -236,8 +259,101 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 > 写出来只是把人当不会看（理由在该文件头第 5 条）。这条规范是把那个决定从
 > 「一个控件」推广到**全站文案**。
 
-**placeholder 只给格式示例**（如「10月15日」「学英语」），**不当可访问名字**——
-可访问名字靠 label / aria-label / 可见文字，见上面「无障碍」。
+**断网时界面也必须说话。** 顶栏 `.sync-dot` 的位置**离线优先**：断网时显示一个
+☁︎ 划掉（`CloudOff`）配 title「离线，改动先存在本机，联网后自动同步」，
+而不是那个会一直转下去的加载圈 —— 一直转看起来就是卡死了。
+来源是 `ui/hooks.ts` 的 `useOnline()`，**不是**「上一次请求成不成功」。
+
+**没有登录？有登录。** 但**没有密码找回、没有邮箱、没有第三方登录**。
+**也没有管理员** —— 平等多用户、开放注册，注册完自动有一个「我的日程」。
+> **别在界面上提「管理员」**，也**别写「第一个人是管理员」** —— `users.is_admin`
+> 这一列已经没有了。
+
+### 无障碍：三条不变量 + 一个已踩过的坑（2026-10-06）
+
+**1. 每个控件都要有可访问名字。** 四种写法，按场合挑：
+
+| 场合 | 怎么写 | 例子 |
+|---|---|---|
+| 有可见标签的输入框 | `useId()` + `<label htmlFor>` | `Drawer.tsx` 的日期 / 时间 / 时长 / 重复 / 备注 |
+| 没有可见标签的控件（`Chips` / `SheetPicker` 这类按钮组） | `aria-label` 或 `aria-labelledby` | 管理浮层那两个角色 `Chips`、抽屉的「项目」`SheetPicker`、邀请用户名框 |
+| 只有图标的按钮 | `<IconBtn label="…">`（`ui/kit.tsx`） | 抽屉的关闭、各类「删除 / 移出」 |
+| 有文字的按钮 | 什么都不用加 | 可见文字**就是**它的名字 |
+
+> **`placeholder` 不算名字** —— 它输入后就没了。这一条踩过：探针本来接受
+> placeholder，于是管理浮层那个「名字」框**整整一轮没被任何断言看过**。
+> 现在 `browser-smoke.mjs` 的 `nameOf()` 明确不接受 placeholder，别再加回去。
+> `placeholder` 只给格式示例（如「10月15日」「学英语」），**不当可访问名字**。
+
+**2. 勾选圈一律走 `views/parts.tsx` 的 `<CheckBtn>`。** 六个调用点原先各写一遍，
+于是各自长歪。**别再手写 `span.check-btn`。**
+
+**3. 命中区 ≥ 24×24（WCAG 2.5.8），但视觉尺寸不变。**
+`.check-btn` 本体 18px、`.sm` 只有 14px，靠 `::before` 往外撑到 24 ——
+**不是把圆点画大**，画大就毁了列表密度。
+
+> 实测有个取整细节别当成 bug：整数步进的探针在 24 的边界上会读到 **23**。
+> CSS 声明的尺寸是达标的，别为了这一格去改 CSS。
+
+### 键盘：一档微调，不做全套（2026-10-06 用户裁决）
+
+> 「不需要过分考虑键盘操作，只要最简单的方向键能微调即可，其他的地方也是。」
+
+**时间轴两个把手（`.ev-resize` / `.ev-resize-top`）是页面上仅有的两个
+不可点、只能拖的控件** —— 其余每一个 `data-act` 都是真 `<button>`，Tab 就能到。
+所以键盘支持只需要补这一处：两个 `<span>` 给上 `tabIndex={0}` + `aria-label`
+（`views/Calendar.tsx`），方向键那一段在 `App.tsx` 的键盘委托里，
+算法走 `domain/date.ts` 的 `nudgeEdge()` —— **和鼠标拖拽共用同一份算式**。
+
+- 键位只有 ↑ / ↓。**方向跟着时间轴走**（往下 = `+1`），不是「变长 / 变短」。
+- 一次一档 **15 分钟**，和拖拽的步进一致。
+- 焦点在把手上时**只有方向键**被截走，`1/2/3` 切视图、`d/t` 跳页那些不受影响。
+- **别再加别的键位** —— 用户明确说了不要。
+
+### 浮层的语义与焦点（2026-10-06）
+
+**凡是真的盖住整页的浮层，必须同时做四件事**，少一件就有一句是假话：
+
+| 做什么 | 在哪 | 少了会怎样 |
+|---|---|---|
+| `role="dialog"` + `aria-modal="true"` + 名字 | `Drawer.tsx`、`kit.tsx` 的 `Sheet`、`Shell.tsx` 的 `MoreSheet` | 读屏只念到一堆孤立的输入框 |
+| **`useFocusTrap(panel, open)`** | `ui/hooks.ts`，三个浮层都挂 | `aria-modal` 承诺「外面别念」，Tab 却能走到背后 |
+| 开时把焦点送进**面板本身**（`tabIndex={-1}` + `panel.focus()`） | 同上 | 送进第一个输入框会**当场弹出手机软键盘**（用户明确要求过：别抢焦点弹键盘） |
+| 关时 `prevFocus.focus()` 还回原处 | 同上 | 焦点掉到 `body` 上，键盘用户得从页首重新 Tab 一遍 |
+
+> **记录「原来那个元素」之前先看焦点在不在浮层里**（`panel.current?.contains(document.activeElement)`）。
+> 从一条任务切到另一条时 `id` 变了但组件不卸载，这时 `activeElement` 就是浮层自己，
+> 记下来等于把「还回哪」擦掉。
+>
+> 遮罩加 `aria-hidden="true"`：它只是个鼠标目标（键盘走 Escape）。
+> `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `legacy.css` 末尾
+> **关掉焦点环** —— 必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer`
+> 里，压不过它（见[踩坑 17](docs/踩坑.md)）。
+
+### 状态语义：`aria-current` / `aria-expanded` / `aria-haspopup`（2026-10-06）
+
+这三个各有各的场合，**别混着用**（`aria-expanded` 摆在只是弹浮层的按钮上，
+读屏会念成「已折叠」—— 那里根本没折叠这回事）：
+
+| 属性 | 用在哪 | 判据 |
+|---|---|---|
+| `aria-current="page"` | 侧栏 `.nav-item`、底部标签栏 `.tab` | 「现在在哪一页」 |
+| `aria-expanded`（+ `aria-controls`） | 「今天已完成」的 `.td-head`、「找日期」的 `.jump-btn` | **真的是个折叠开关** |
+| `aria-haspopup="dialog"` | 管理当前日程集 / 邀请收件箱 / 找日期 | 按下去会弹一个浮层，但开没开是 App 那一层的状态 |
+
+> 后两个的差别就是「开没开这个状态**在谁手里**」。
+
+### 降低动态效果：全站关，只有「正在同步」例外（2026-10-06）
+
+`legacy.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
+通配 `*` + `!important` 把 `animation-duration` / `transition-duration` 压到
+`.01ms`、`scroll-behavior` 复位。
+
+- **为什么不挑几个「大动作」**：会动的地方有十几处，挑漏一处就等于没关，
+  而且日后再加一处也不会有人记得回来补。
+- **唯一的例外是 `.animate-spin`**（同步中的加载圈）：它不是动效，是在说
+  「正在同步，别以为卡死了」。停下来传达的正好是相反的意思。
+- 这一条必须**压得过内联 style 和 Tailwind 层**，所以 `!important` 不是偷懒。
 
 ---
 
@@ -253,9 +369,10 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
    （[踩坑 3](docs/踩坑.md)）
 3. **拖动排序用「让位洞」模型，不是插入线**。位置一律按 dragstart 量的 `rawLayout`，
    **不能用实时坐标**（让位是加在元素上的 `transform`）。（[踩坑 6](docs/踩坑.md)）
-4. **触屏与鼠标两条路完全分开，只共用落点**。改落点逻辑两条路一起变，这是故意的。
-   抬手那一下必须把浏览器补的鼠标事件整串掐掉，否则「长按完什么也没发生」。
-   （[踩坑 12](docs/踩坑.md)）
+4. **拖拽统一走 @dnd-kit 的 PointerSensor**（[踩坑 12](docs/踩坑.md)）
+   鼠标和触摸由 `PointerSensor` 统一处理，不再需要两条输入通路。
+   `activationConstraint: { distance: 8 }` 替代了原来的 `TOUCH_SLOP`。
+   长按 → ActSheet 流程保留在 App.tsx，与 dnd-kit 的 `onDragStart` 协调。
 5. **CSS 层叠两条**：同特异度后写的赢（给折叠元素加类要查 `display`）；Tailwind 4 全在
    `@layer` 里，**没有层的作者样式永远赢** —— 代价是 legacy 覆盖过的元素上工具类
    **不生效**。（[踩坑 17](docs/踩坑.md)）

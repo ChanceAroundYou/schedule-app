@@ -25,6 +25,7 @@ import {
 } from '../domain/model.ts';
 import type { LocalState, Project, Task } from '../domain/types.ts';
 import { fmtMD } from '../domain/date.ts';
+import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
 import { Btn } from '../ui/kit.tsx';
 import { Empty } from './parts.tsx';
 
@@ -39,21 +40,46 @@ const COLS = [
 
 /**
  * 卡片刻意**同时**带上 `.task-el` 与 `data-card`：
- *  - `.task-el` 是 `dnd.ts` 的 `onDragStart` 认的类（少了它卡片根本拖不起来）
- *  - `data-card` 是泳道列的 `zoneCells` 认的属性（少了它让位洞不会画）
+ *  - `.task-el` 是 dnd-kit 的 `useDraggableEvent` 认的类
+ *  - `data-card` 是泳道列的标识属性
  * 两个各管一头，不是重复。
  */
-function Card({ t }: { t: Task }) {
+function ProjCard({ t }: { t: Task }) {
+  const drag = useDraggableEvent(t.id);
   return (
     <div
       className={'task-el pj-card' + (t.done ? ' done' : '')}
       data-card
       data-id={t.id}
-      draggable
+      ref={drag.ref}
+      style={drag.style}
+      {...drag.attributes}
+      {...drag.listeners}
       title={t.title}
     >
       <span className="pj-card-t">{t.title}</span>
       {t.date && <span className="pj-card-d">{fmtMD(t.date)}</span>}
+    </div>
+  );
+}
+
+function ProjColumn({ state, p, c }: { state: LocalState; p: Project; c: { key: string; label: string } }) {
+  const zone = useDroppableZone(`proj:${p.id}:${c.key}`);
+  const items = tasksOfProject(state, p.id).filter((t) => projectColumn(t) === c.key);
+  return (
+    <div
+      className="pj-col"
+      ref={zone.ref}
+      data-zone-id={`proj:${p.id}:${c.key}`}
+      data-kind="project"
+      data-scope={'proj:' + p.id + ':' + c.key}
+    >
+      <div className="pj-col-h">
+        <span>{c.label}</span><b>{items.length}</b>
+      </div>
+      <div className="pj-col-b">
+        {items.map((t) => <ProjCard key={t.id} t={t} />)}
+      </div>
     </div>
   );
 }
@@ -131,28 +157,9 @@ function Lane({ state, p, onNext, onEdit }: {
 
       {open && (
         <div className="pj-cols">
-          {COLS.map((c) => {
-            const items = list.filter((t) => projectColumn(t) === c.key);
-            return (
-              <div
-                className="pj-col" key={c.key}
-                /* `data-drop="proj"` 而不是 `"list"`：列的语义是「状态桶」不是
-                   有序表（换列才提交，桶内顺序不动）。但让位洞那一套
-                   （drop-hole / shiftCells）是按 `data-kind` + 格子选择器走的，
-                   所以落点反馈白拿一份 —— 拖起来看得见自己要放哪儿。 */
-                data-drop="proj"
-                data-kind="project"
-                data-scope={'proj:' + p.id + ':' + c.key}
-              >
-                <div className="pj-col-h">
-                  <span>{c.label}</span><b>{items.length}</b>
-                </div>
-                <div className="pj-col-b">
-                  {items.map((t) => <Card key={t.id} t={t} />)}
-                </div>
-              </div>
-            );
-          })}
+          {COLS.map((c) => (
+            <ProjColumn key={c.key} state={state} p={p} c={c} />
+          ))}
         </div>
       )}
     </section>

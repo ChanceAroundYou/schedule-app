@@ -21,6 +21,7 @@ import * as D from '../domain/date.ts';
 import { DAY_H, HOUR_H, layoutOverlap, timeRange, type Slot } from '../domain/layout.ts';
 import { dayLoad, tasksOn, untimedOn } from '../domain/model.ts';
 import { CheckBtn, TaskPill, loadLevel } from './parts.tsx';
+import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
 
 /* ============================== 小工具 ============================== */
 
@@ -31,6 +32,43 @@ function hours24(): number[] {
 }
 
 /* ============================== 日视图 ============================== */
+
+type LayoutEvent = { item: Task; start: number; end: number; col: number; cols: number };
+
+function TimelineEvent({ e, isToday, nowMin }: { e: LayoutEvent; isToday: boolean; nowMin: number }) {
+  const drag = useDraggableEvent(e.item.id);
+  const t = e.item;
+  const top = e.start / 1440 * DAY_H;
+  const hgt = Math.max(24, (e.end - e.start) / 1440 * DAY_H);
+  const w = 100 / e.cols;
+  const live = isToday && nowMin >= e.start && nowMin < e.end;
+  const roomy = hgt >= 46;
+  return (
+    <div
+      className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '')}
+      ref={drag.ref}
+      style={{ ...drag.style, top, height: hgt, left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
+      {...drag.attributes}
+      {...drag.listeners}
+      data-id={t.id}
+      title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
+    >
+      <div className="ev-head">
+        <CheckBtn id={t.id} on={!!t.done} sm />
+        <span className="ev-title">{t.title}</span>
+      </div>
+      {roomy && <span className="ev-time">{timeRange(e.start, e.end - e.start)}</span>}
+      <span
+        className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
+        tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
+      />
+      <span
+        className="ev-resize" data-act="resize" data-id={t.id}
+        tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
+      />
+    </div>
+  );
+}
 
 function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const tasks = tasksOn(state, iso);
@@ -49,17 +87,20 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
   // 未定时任务多时排两列，省得把下面的时间轴挤出屏幕
   const cols = allday.length > 3 ? 2 : 1;
 
+  const timelineZone = useDroppableZone(`timeline:${iso}`);
+  const alldayZone = useDroppableZone(`allday:${iso}`);
+
   return (
     <>
-      <div className="allday-zone" data-drop="allday" data-date={iso}>
+      <div className="allday-zone" ref={alldayZone.ref} data-zone-id={`allday:${iso}`} data-date={iso}>
         <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
-          {allday.map((t) => <TaskPill key={t.id} task={t} />)}
+          {allday.map((t) => <TaskPill key={t.id} task={t} draggable={false} />)}
           {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
         </div>
       </div>
 
       <div className="tl-wrap">
-        <div className="timeline" data-date={iso} data-drop="timeline" style={{ height: DAY_H }}>
+        <div className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`} data-date={iso} style={{ height: DAY_H }}>
           {hours24().map((h) => (
             <div className="tl-hour" key={h} style={{ top: h * HOUR_H }}>
               <span className="tl-label">{pad2(h)}:00</span>
@@ -93,42 +134,9 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
           )}
 
           <div className="tl-events">
-            {events.map((e) => {
-              const t = e.item;
-              const top = e.start / 1440 * DAY_H;
-              const hgt = Math.max(24, (e.end - e.start) / 1440 * DAY_H);
-              const w = 100 / e.cols;
-              const live = isToday && nowMin >= e.start && nowMin < e.end;
-              // 方框不到两行高时省掉时间行，只留标题，避免挤成两半
-              const roomy = hgt >= 46;
-              return (
-                <div
-                  className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '')}
-                  key={t.id}
-                  data-id={t.id}
-                  draggable
-                  title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
-                  style={{ top, height: hgt, left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
-                >
-                  <div className="ev-head">
-                    <CheckBtn id={t.id} on={!!t.done} sm />
-                    <span className="ev-title">{t.title}</span>
-                  </div>
-                  {roomy && <span className="ev-time">{timeRange(e.start, e.end - e.start)}</span>}
-                  {/* 两个把手平时是 opacity:0，靠 :hover 才显形。键盘也要够得着，
-                      所以给 tabIndex，方向键那一段在 App.tsx 的键盘委托里
-                      （views/ 一律零回调，见 CLAUDE.md 一）。 */}
-                  <span
-                    className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
-                    tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
-                  />
-                  <span
-                    className="ev-resize" data-act="resize" data-id={t.id}
-                    tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
-                  />
-                </div>
-              );
-            })}
+            {events.map((e) => (
+              <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} />
+            ))}
           </div>
         </div>
       </div>
@@ -144,6 +152,49 @@ function weekEvents(state: LocalState, iso: string) {
     return { item: t, start, end: start + (t.duration || 60) };
   });
   return layoutOverlap(slots);
+}
+
+function WeekEvent({ e }: { e: LayoutEvent }) {
+  const drag = useDraggableEvent(e.item.id);
+  const t = e.item;
+  const w = 100 / e.cols;
+  return (
+    <div
+      className={'wk-event task-el' + (t.done ? ' done' : '')}
+      ref={drag.ref}
+      style={{ ...drag.style, top: e.start / 1440 * DAY_H, height: Math.max(20, (e.end - e.start) / 1440 * DAY_H), left: `${e.col * w}%`, width: `calc(${w}% - 3px)` }}
+      {...drag.attributes}
+      {...drag.listeners}
+      data-id={t.id}
+      title={`${t.title} ${t.time} · ${D.fmtDuration(t.duration || 60)}`}
+    >
+      <span className="wk-time">{t.time}</span>
+      <span className="wk-title">{t.title}</span>
+    </div>
+  );
+}
+
+function WeekColumn({ state, d, today }: { state: LocalState; d: string; today: string }) {
+  const zone = useDroppableZone(`week:${d}`);
+  return (
+    <div className={'week-col' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`week:${d}`} data-date={d}>
+      {weekEvents(state, d).map((e) => (
+        <WeekEvent key={e.item.id} e={e} />
+      ))}
+    </div>
+  );
+}
+
+function WunCell({ state, d, today }: { state: LocalState; d: string; today: string }) {
+  const zone = useDroppableZone(`allday:${d}`);
+  const un = untimedOn(state, d);
+  return (
+    <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}>
+      {un.length
+        ? un.map((t) => <TaskPill key={t.id} task={t} draggable={false} />)
+        : <span className="wun-empty" />}
+    </div>
+  );
 }
 
 function WeekView({ state, iso }: { state: LocalState; iso: string }) {
@@ -174,16 +225,9 @@ function WeekView({ state, iso }: { state: LocalState; iso: string }) {
       <div className="week-un-row">
         <div className="week-un-gutter">未定时</div>
         <div className="week-un-cols">
-          {days.map((d) => {
-            const un = untimedOn(state, d);
-            return (
-              <div className={'wun-cell' + (d === today ? ' today' : '')} key={d} data-drop="allday" data-date={d}>
-                {un.length
-                  ? un.map((t) => <TaskPill key={t.id} task={t} />)
-                  : <span className="wun-empty" />}
-              </div>
-            );
-          })}
+          {days.map((d) => (
+            <WunCell key={d} state={state} d={d} today={today} />
+          ))}
         </div>
       </div>
 
@@ -197,30 +241,7 @@ function WeekView({ state, iso }: { state: LocalState; iso: string }) {
         </div>
         <div className="week-cols">
           {days.map((d) => (
-            <div className={'week-col' + (d === today ? ' today' : '')} key={d} data-drop="week" data-date={d}>
-              {weekEvents(state, d).map((e) => {
-                const t = e.item;
-                const w = 100 / e.cols;
-                return (
-                  <div
-                    className={'wk-event task-el' + (t.done ? ' done' : '')}
-                    key={t.id}
-                    data-id={t.id}
-                    draggable
-                    title={`${t.title} ${t.time} · ${D.fmtDuration(t.duration || 60)}`}
-                    style={{
-                      top: e.start / 1440 * DAY_H,
-                      height: Math.max(20, (e.end - e.start) / 1440 * DAY_H),
-                      left: `${e.col * w}%`,
-                      width: `calc(${w}% - 3px)`,
-                    }}
-                  >
-                    <span className="wk-time">{t.time}</span>
-                    <span className="wk-title">{t.title}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <WeekColumn key={d} state={state} d={d} today={today} />
           ))}
         </div>
       </div>
@@ -231,6 +252,48 @@ function WeekView({ state, iso }: { state: LocalState; iso: string }) {
 /* ============================== 月视图 ============================== */
 
 const MONTH_CELL_MAX = 8;
+
+function MonthCell({ state, d, curMonth, today }: { state: LocalState; d: string; curMonth: number; today: string }) {
+  const zone = useDroppableZone(`day:${d}`);
+  const dt = D.parseISO(d);
+  const out = dt.getMonth() !== curMonth;
+  const ts = tasksOn(state, d);
+  const more = ts.length - Math.min(ts.length, MONTH_CELL_MAX);
+  const load = dayLoad(state, d);
+  const lv = loadLevel(load.mins);
+  return (
+    <div
+      className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '') + (lv ? ' lv' + lv : '')}
+      ref={zone.ref}
+      data-zone-id={`day:${d}`}
+      data-date={d}
+    >
+      <div className="cell-head">
+        <span
+          className={'cell-date' + (load.count ? ' busy' : '')}
+          data-jump={d}
+          title="看这一天的日程"
+        >{dt.getDate()}</span>
+        {d === today && <span className="cell-today">今天</span>}
+        {!!load.mins && (
+          <span className="cell-load" title={'已排 ' + D.fmtDuration(load.mins)}>
+            {D.shortLoad(load.mins)}
+          </span>
+        )}
+      </div>
+      <div className="cell-tasks">
+        {ts.slice(0, MONTH_CELL_MAX).map((t) => (
+          <TaskPill key={t.id} task={t} showTime draggable={false} />
+        ))}
+        {more > 0 && (
+          <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>
+            还有 {more} 项 ›
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function MonthView({ state, iso }: { state: LocalState; iso: string }) {
   const days = D.monthMatrix(iso);
@@ -245,46 +308,9 @@ function MonthView({ state, iso }: { state: LocalState; iso: string }) {
         ))}
       </div>
       <div className="month-grid">
-        {days.map((d) => {
-          const dt = D.parseISO(d);
-          const out = dt.getMonth() !== curMonth;
-          const ts = tasksOn(state, d);
-          const more = ts.length - Math.min(ts.length, MONTH_CELL_MAX);
-          const load = dayLoad(state, d);
-          const lv = loadLevel(load.mins);
-          return (
-            <div
-              className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '') + (lv ? ' lv' + lv : '')}
-              key={d}
-              data-date={d}
-              data-drop="day"
-            >
-              <div className="cell-head">
-                <span
-                  className={'cell-date' + (load.count ? ' busy' : '')}
-                  data-jump={d}
-                  title="看这一天的日程"
-                >{dt.getDate()}</span>
-                {d === today && <span className="cell-today">今天</span>}
-                {!!load.mins && (
-                  <span className="cell-load" title={'已排 ' + D.fmtDuration(load.mins)}>
-                    {D.shortLoad(load.mins)}
-                  </span>
-                )}
-              </div>
-              <div className="cell-tasks">
-                {ts.slice(0, MONTH_CELL_MAX).map((t) => (
-                  <TaskPill key={t.id} task={t} showTime />
-                ))}
-                {more > 0 && (
-                  <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>
-                    还有 {more} 项 ›
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {days.map((d) => (
+          <MonthCell key={d} state={state} d={d} curMonth={curMonth} today={today} />
+        ))}
       </div>
     </div>
   );

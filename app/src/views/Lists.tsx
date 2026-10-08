@@ -18,7 +18,9 @@ import {
   doneTasks, liveHabits, overdueCount, overdueTasks, todayDoneTasks, todayTasks, inboxTasks,
 } from '../domain/model.ts';
 import { Caret, CheckBtn, CheckinStrip, Empty, TaskRow } from './parts.tsx';
+import { SortableList } from '../ui/dndkit.tsx';
 import { Btn } from '../ui/kit.tsx';
+import * as store from '../data/store.ts';
 
 /* ============================== 待办箱 ============================== */
 
@@ -35,9 +37,13 @@ export function InboxView({ state }: { state: LocalState }) {
   // 只显示任务本身：不要分组标题、不要右侧快捷日期、不要「未定日期」标注
   return (
     <div className="list-view">
-      <div className="group-items mc" data-drop="list" data-scope="inbox">
-        {list.map((t) => <TaskRow key={t.id} task={t} bare />)}
-      </div>
+      <SortableList
+        items={list.map((t) => t.id)}
+        onReorder={(newOrder) => store.reorder('task', newOrder)}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} bare draggable={false} />}
+        className="group-items mc"
+        scope="inbox"
+      />
     </div>
   );
 }
@@ -77,9 +83,13 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
         </button>
       )}
 
-      <div className="mc" data-drop="list" data-scope={'day:' + today}>
-        {list.map((t) => <TaskRow key={t.id} task={t} />)}
-      </div>
+      <SortableList
+        items={list.map((t) => t.id)}
+        onReorder={(newOrder) => store.reorder('task', newOrder)}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} draggable={false} />}
+        className="mc"
+        scope={'day:' + today}
+      />
 
       {/* 今天已完成的收口：日程页不再显示它们，这里随时能回看、也能反悔取消 */}
       {!!doneToday.length && (
@@ -97,9 +107,13 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
             <span className="td-title">今天已完成</span>
             <span className="td-count">{doneToday.length}</span>
           </button>
-          <div className="td-body mc" data-drop="list" data-scope={'done:' + today}>
-            {doneToday.map((t) => <TaskRow key={t.id} task={t} showDoneAt />)}
-          </div>
+          <SortableList
+            items={doneToday.map((t) => t.id)}
+            onReorder={(newOrder) => store.reorder('task', newOrder)}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt draggable={false} />}
+            className="td-body mc"
+            scope={'done:' + today}
+          />
         </div>
       )}
     </div>
@@ -112,7 +126,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
 function OverdueRow({ task: t, days }: { task: Task; days: number }) {
   const t0 = D.today();
   return (
-    <div className="task-row task-el od-row" data-id={t.id} data-untimed="1" draggable>
+    <div className="task-row task-el od-row" data-id={t.id} data-untimed="1">
       <CheckBtn id={t.id} on={!!t.done} />
       <div className="row-main">
         <div className="row-title">{t.title}</div>
@@ -166,9 +180,13 @@ export function OverdueView({ state }: { state: LocalState }) {
             </div>
             {/* 每个日期组是独立排序作用域：组内随便拖，跨组只改顺序不搬家 ——
                 搬家会改变逾期天数，那是「改期」的语义，不该由拖动顺手做掉 */}
-            <div className="mc" data-drop="list" data-scope={'day:' + d}>
-              {items.map((t) => <OverdueRow key={t.id} task={t} days={days} />)}
-            </div>
+            <SortableList
+              items={items.map((t) => t.id)}
+              onReorder={(newOrder) => store.reorder('task', newOrder)}
+              renderItem={(id) => <OverdueRow task={state.tasks[id]} days={days} />}
+              className="mc"
+              scope={'day:' + d}
+            />
           </div>
         );
       })}
@@ -200,9 +218,13 @@ export function DoneView({ state }: { state: LocalState }) {
             <span className="group-count">{groups.get(d)!.length}</span>
           </div>
           {/* 按完成日分组，每组独立排序：组内可以拖，跨组不搬家 */}
-          <div className="mc" data-drop="list" data-scope={'done:' + d}>
-            {groups.get(d)!.map((t) => <TaskRow key={t.id} task={t} showDoneAt />)}
-          </div>
+          <SortableList
+            items={groups.get(d)!.map((t) => t.id)}
+            onReorder={(newOrder) => store.reorder('task', newOrder)}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt draggable={false} />}
+            className="mc"
+            scope={'done:' + d}
+          />
         </div>
       ))}
     </div>
