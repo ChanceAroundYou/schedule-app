@@ -180,14 +180,9 @@
 /* 集名是限定词，不是主角 —— 用户要看的是「改什么」，集名只是告诉他别改错地方 */
 .ai-prop-cal { color: var(--text-3); }
 /* 编辑输入框：让用户在确认前修改提案 */
-.ai-prop-edit {
-  flex: 1; min-width: 0;
-  font-size: 12px; color: var(--text);
-  background: var(--panel); border: var(--border-w) solid var(--input);
-  border-radius: var(--r-md); padding: 4px 8px;
-}
-.ai-prop-edit:focus { outline: none; border-color: var(--primary); }
-.ai-prop-edit::placeholder { color: var(--text-3); }
+/* 提案编辑框的外观走 kit 的 <Input dense>，这里只管**布局**（在 .ai-prop 那行
+   flex 里占满剩余宽度） */
+.ai-prop-edit { flex: 1; min-width: 0; }
 
 /* -------- 操作历史 -------- */
 
@@ -196,6 +191,8 @@
   display: flex; align-items: center; gap: 10px;
   margin-bottom: 8px;
 }
+/* 原生的勾选框用 accent-color 跟上调色板 —— 默认那个蓝在 6 色板里都不对 */
+.ai-history-filter input[type="checkbox"] { accent-color: var(--primary); }
 .ai-history-filter {
   display: flex; align-items: center; gap: 6px;
   font-size: 12.5px; color: var(--text-2);
@@ -348,11 +345,7 @@
 .ai-set-load { font-size: 12.5px; color: var(--text-3); padding: 10px 0; }
 .ai-field { display: flex; flex-direction: column; gap: 5px; }
 .ai-field-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
-.ai-field input {
-  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
-  background: var(--panel); padding: 8px 10px;
-}
-.ai-field input:focus { outline: none; border-color: var(--primary); }
+/* 输入框走 kit 的 <Input>（同一份 CONTROL 常量），这里不再单写一套 */
 .ai-field-tip { font-size: 11.5px; line-height: 1.6; color: var(--text-3); }
 .ai-field-tip code { background: var(--panel-3); border-radius: var(--r-xs); padding: 0 4px; }
 .ai-set-err {

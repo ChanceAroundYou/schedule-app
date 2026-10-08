@@ -152,11 +152,12 @@ export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean
 
 /* ============================== 空状态 ============================== */
 
-export function Empty({ text, icon }: { text: string; icon: ReactNode }) {
+export function Empty({ text, sub, icon }: { text: string; sub?: string; icon?: ReactNode }) {
   return (
     <div className="empty">
-      <div className="empty-ico" aria-hidden="true">{icon}</div>
+      {icon && <div className="empty-ico" aria-hidden="true">{icon}</div>}
       <div>{text}</div>
+      {sub && <div className="empty-sub">{sub}</div>}
     </div>
   );
 }

@@ -347,7 +347,6 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
           <Btn
             variant="normal"
             size="sm"
-            className="jump-btn"
             aria-expanded={jump}
             title="跳到指定日期（快捷键 D）"
             aria-haspopup="dialog"

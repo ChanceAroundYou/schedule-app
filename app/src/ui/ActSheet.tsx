@@ -8,7 +8,7 @@
  * `date` 撞车，靠 `+slice(1) > 0` 去猜必然误伤到别的动作上。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeftRight, ArrowDown, ArrowUp, CalendarDays, CalendarPlus,
   ChevronLeft, ChevronRight, Clock, Moon, Timer, Trash2,
@@ -16,6 +16,7 @@ import {
 import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { Btn } from './kit.tsx';
+import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
 
@@ -43,6 +44,31 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
   useEffect(() => {
     document.body.classList.toggle('sheet-open', !!id);
     return () => document.body.classList.remove('sheet-open');
+  }, [id]);
+
+  const panel = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  useFocusTrap(panel, !!id);
+
+  /**
+   * 开的时候把焦点送进来、关的时候还回去 —— 与 Drawer 同一套（见那边的注释：
+   * 送进来的是**面板本身**，送进第一个控件会当场弹手机软键盘）。
+   *
+   * 长按弹层有个 Drawer 没有的坑：`durOpen` 切到时长档时**不关浮层**，
+   * 这时 id 没变、这个 effect 不重跑，所以「还回哪儿」不能被擦掉 ——
+   * 判据和 Drawer 一样，先看焦点在不在面板里。
+   */
+  useEffect(() => {
+    if (!id) return;
+    if (!panel.current?.contains(document.activeElement)) {
+      prevFocus.current = document.activeElement as HTMLElement | null;
+    }
+    panel.current?.focus({ preventScroll: true });
+    return () => {
+      const el = prevFocus.current;
+      prevFocus.current = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+    };
   }, [id]);
 
   const task = id ? state.tasks[id] : null;
@@ -99,7 +125,14 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
   return (
     <>
       <div className="sheet-mask open" onClick={onClose} />
-      <div className="act-sheet open">
+      <div
+        className="act-sheet open"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={durOpen ? '选择时长' : '任务操作：' + task.title}
+        tabIndex={-1}
+      >
         <div className="as-grab" />
         <div className="as-title">
           {durOpen ? '时长 · ' + t.title : t.title}

@@ -26,6 +26,7 @@ import {
 import type { LocalState, Project, Task } from '../domain/types.ts';
 import { fmtMD } from '../domain/date.ts';
 import { Btn } from '../ui/kit.tsx';
+import { Empty } from './parts.tsx';
 
 /** 三列。顺序就是板子上的顺序 —— `projectColumn` 的返回值要对得上 */
 const COLS = [
@@ -175,12 +176,7 @@ export function ProjectsView({ state, onNew, onEdit, onNext }: {
         <Btn variant="normal" size="sm" type="button" onClick={onNew}>＋ 新建项目</Btn>
       </div>
 
-      {!list.length && (
-        <div className="empty">
-          <div>还没有项目</div>
-          <div className="empty-sub">长周期的事放这儿。</div>
-        </div>
-      )}
+      {!list.length && <Empty text="还没有项目" sub="长周期的事放这儿。" />}
 
       {list.map((p) => <Lane key={p.id} state={state} p={p} onNext={onNext} onEdit={onEdit} />)}
     </div>

@@ -88,24 +88,36 @@ export function Btn({ variant = 'normal', size = 'md', className, ...rest }: Btn
    （legacy.css 里 `.field input` 那一组是同一套视觉的历史副本，
    带 @layer 的 Tailwind 工具类压不过它，两边要保持一致。） */
 const CONTROL = [
-  'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+  'rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
   'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
   'disabled:cursor-not-allowed disabled:opacity-50',
 ].join(' ');
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {}
+/* 两种占位：默认是整行字段（`.field` 里那种，宽度撑满）；`dense` 是**行内**
+   控件 —— 宽度跟着内容走、高度对齐 Btn 的 sm 档。AI 面板那几行「标签 + 下拉」
+   用整行会把一行撑破，用 dense 才排得下。
+   不叫 `size`：那是 `<select>` 的原生属性（可见行数），遮掉会出岔子。 */
+const CONTROL_BOX = {
+  full: 'w-full px-3 py-2 text-sm',
+  dense: 'w-auto h-[30px] px-2 text-[12.5px]',
+} as const;
 
-export function Input({ className, ...rest }: InputProps) {
-  return <input {...rest} className={cx(CONTROL, className)} />;
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  dense?: boolean;
+}
+
+export function Input({ dense, className, ...rest }: InputProps) {
+  return <input {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
 }
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  dense?: boolean;
   options?: { value: string; label: string }[];
 }
 
-export function Select({ options, className, children, ...rest }: SelectProps) {
+export function Select({ dense, options, className, children, ...rest }: SelectProps) {
   return (
-    <select {...rest} className={cx(CONTROL, className)}>
+    <select {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)}>
       {options
         ? options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
         : children}
@@ -113,11 +125,13 @@ export function Select({ options, className, children, ...rest }: SelectProps) {
   );
 }
 
-interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  dense?: boolean;
+}
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...rest }, ref) => {
-    return <textarea ref={ref} {...rest} className={cx(CONTROL, className)} />;
+  ({ dense, className, ...rest }, ref) => {
+    return <textarea ref={ref} {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
   }
 );
 

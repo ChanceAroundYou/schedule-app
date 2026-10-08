@@ -35,6 +35,7 @@ import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
 import { ProjectsView } from './views/Projects.tsx';
+import { Empty } from './views/parts.tsx';
 import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
@@ -587,10 +588,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
     // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集
     body = (
-      <div className="empty">
-        <div>还没拿到你的日程集</div>
-        <div className="empty-sub">正在连接服务器，稍等一下；断网时本地内容照常显示</div>
-      </div>
+      <Empty text="还没拿到你的日程集" sub="正在连接服务器，稍等一下；断网时本地内容照常显示" />
     );
   } else {
     switch (state.ui.nav) {

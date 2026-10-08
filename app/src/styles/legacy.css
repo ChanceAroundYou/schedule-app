@@ -486,6 +486,8 @@ b, strong { font-variant-numeric: tabular-nums; }
   gap: 10px; padding: 70px 0; color: var(--text-3); font-size: 13px;
 }
 .empty-ico { font-size: 34px; opacity: .55; }
+/* 第二行只比第一行**小一点**，不再降一档颜色 —— --text-3 已经是最淡的那档 */
+.empty-sub { font-size: 12px; }
 
 /* ================= 日视图 ================= */
 
@@ -1404,9 +1406,16 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .field-hint { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
 .field-error { font-size: 11.5px; color: var(--danger); margin-top: 5px; }
 .field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
-.field input[type="date"], .field input[type="time"], .field select, .field textarea {
+/* 输入框 / 下拉框 / 文本域。**选择器必须覆盖所有 type** —— 原先只写了
+   [type="date"] / [type="time"]，于是 `.field` 里的 text / number / password
+   三个都是没样式的原生控件（系统灰边、不跟深色模式、没有圆角），而同一行
+   旁边的 select 和 textarea 是设计过的 —— 一个浮层里两种视觉。
+   勾选框除外：它们有自己的命中区与勾选圈，套上输入框的边框会变形。
+   数字与字号显式写上：原生 input 不总是继承父级的 color / font-size。 */
+.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
   width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--input);
   border-radius: var(--r-md); background: var(--panel-2); outline: none;
+  color: var(--text); font-size: 13px;
   transition: border-color .14s, background .14s;
 }
 .field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }

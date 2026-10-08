@@ -1193,7 +1193,7 @@ try {
   await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
   await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
   // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
-  await clickEl(page, `document.querySelector('.today-btn')`);
+  await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
   // 从**日程页**快速添加，不走 quickAdd 那个 helper：它的等条件是
   // 「[data-scope="inbox"] 里多出一行」，而这一条**有日期**、根本不在待办箱。
   // 而日期这一项必须由页面自己给：待办箱的 defaultDate 是 null，加出来的是
@@ -1499,21 +1499,21 @@ try {
 
   // 「找日期」是个真的折叠开关：aria-expanded 得跟着开合走
   await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'calendar')`);
-  await waitFor(page, `document.querySelector('.jump-btn') ? 1 : null`, '切到日程页（找日期按钮在那儿）', 8000);
+  await waitFor(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]') ? 1 : null`, '切到日程页（找日期按钮在那儿）', 8000);
   const jumpState = () => evalJs(page, `
-    const b = document.querySelector('.jump-btn');
+    const b = document.querySelector('.date-nav [aria-haspopup="dialog"]');
     return { exp: b.getAttribute('aria-expanded'), hd: b.getAttribute('aria-haspopup') };
   `);
   const j0 = await jumpState();
-  await clickEl(page, `document.querySelector('.jump-btn')`);
-  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'true' ? 1 : null`,
+  await clickEl(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]')`);
+  await waitFor(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]').getAttribute('aria-expanded') === 'true' ? 1 : null`,
     '找日期面板打开', 8000);
   const j1 = await jumpState();
   ok(j0.exp === 'false' && j1.exp === 'true',
     '「找日期」的 aria-expanded 跟着开合：' + j0.exp + ' → ' + j1.exp);
   ok(j0.hd === 'dialog', '「找日期」说了按下去会弹东西（aria-haspopup=dialog），实际 ' + JSON.stringify(j0.hd));
   await key(page, 'Escape', 'Escape', 27);
-  await waitFor(page, `document.querySelector('.jump-btn').getAttribute('aria-expanded') === 'false' ? 1 : null`,
+  await waitFor(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]').getAttribute('aria-expanded') === 'false' ? 1 : null`,
     '找日期面板收起', 8000);
 
   console.log('\n十七、找日期文本框 / 时间转盘');
@@ -1525,7 +1525,7 @@ try {
 
   /* ---- 1. 找日期：裸周几必须落在**下一个**，不能是刚刚过去那个 ---- */
   // 先回到今天，光标位置才是确定的（不然「跳过去」可能压根没变化，等于没测）
-  await clickEl(page, `document.querySelector('.today-btn')`);
+  await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
   await new Promise((r) => setTimeout(r, 150));
 
   /* 快速添加那个框现在是 `<textarea>`（需求 2：默认一行、多了自己撑开），
@@ -1556,7 +1556,7 @@ try {
   const cursor0 = await waitFor(page, `
     (() => { const c = JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cursor; return c || null; })()
   `, '读到当前光标', 8000);
-  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await clickEl(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]')`);
   await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板打开', 8000);
   ok(await setText('.jump-pop input', '周' + cnWord) === 'ok', '往找日期框里打字');
   await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
@@ -1577,7 +1577,7 @@ try {
     '裸周几落在**将来**的一周内（不是刚过去的那一天），实际 差 ' + (jumped && jumped.ahead) + ' 天');
 
   /* ---- 2. 看不懂的写法要留在原地说一声，不能静默不理 ---- */
-  await clickEl(page, `document.querySelector('.jump-btn')`);
+  await clickEl(page, `document.querySelector('.date-nav [aria-haspopup="dialog"]')`);
   await waitFor(page, `document.querySelector('.jump-pop') ? 1 : null`, '找日期面板再打开', 8000);
   await setText('.jump-pop input', '胡说八道');
   await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
@@ -2227,23 +2227,23 @@ try {
   ok(/^\d{1,2}月\d{1,2}日$/.test(dayTitle), '日视图顶栏标题是具体某天，实际 ' + dayTitle);
 
   // 副header 的三件控件：今天只留一个「今」字、找日期只留图标、上一/下一个有图标
-  ok(await evalJs(page, `return document.querySelector('.today-btn').textContent;`) === '今',
+  ok(await evalJs(page, `return document.querySelector('.date-nav [aria-pressed]').textContent;`) === '今',
     '「今天」按钮只留一个「今」字，实际 '
-    + await evalJs(page, `return document.querySelector('.today-btn').textContent;`));
+    + await evalJs(page, `return document.querySelector('.date-nav [aria-pressed]').textContent;`));
   // 需求 6：就在今天时「今」键亮起（原先反了：不在今天才亮）。
   // 点「今」跳回今天 → 这个键变成选中态，和日 / 周 / 月三个视图档同一个语义。
-  await clickEl(page, `document.querySelector('.today-btn')`);
+  await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
   await new Promise((r) => setTimeout(r, 200));
-  ok(await evalJs(page, `return document.querySelector('.today-btn').classList.contains('on');`),
+  ok(await evalJs(page, `return document.querySelector('.date-nav [aria-pressed]').getAttribute('aria-pressed') === 'true';`),
     '回到今天之后「今」按钮是选中态（需求 6）');
-  ok(await evalJs(page, `return !document.querySelector('.jump-btn').textContent.trim();`),
+  ok(await evalJs(page, `return !document.querySelector('.date-nav [aria-haspopup="dialog"]').textContent.trim();`),
     '「找日期」只留图标、没有文字');
-  ok(await evalJs(page, `return !!document.querySelector('.date-nav .round-btn svg');`),
+  ok(await evalJs(page, `return !!document.querySelector('.date-nav .btn svg');`),
     '上一/下一个按钮里是图标');
 
   // 上一/下一个的**功能**跟着视图走：日 = 换一天 · 周 = 切一周 · 月 = 切一月。
   // 判据是顶栏标题（那唯一一份日期），不是游标 —— 用户看的就是它。
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelectorAll('.date-nav .btn')[1]`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(dayTitle)} ? 1 : null`,
     '日视图按「下一个」标题变了', 8000);
   ok(await evalJs(page, `return document.querySelector('.topbar .view-title').textContent;`) !== dayTitle,
@@ -2254,7 +2254,7 @@ try {
   const weekTitle = await topTitle();
   ok(/^\d{1,2}月\d{1,2}日 – \d{1,2}月\d{1,2}日$/.test(weekTitle),
     '周视图顶栏标题是这一周的起止，实际 ' + weekTitle);
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelectorAll('.date-nav .btn')[1]`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(weekTitle)} ? 1 : null`,
     '周视图按「下一个」标题变了', 8000);
   const weekTitle2 = await topTitle();
@@ -2264,7 +2264,7 @@ try {
   await waitFor(page, `document.querySelector('[data-view="month"].on') ? 1 : null`, '切到月视图', 8000);
   const monthTitle = await topTitle();
   ok(/^\d{4}年\d{1,2}月$/.test(monthTitle), '月视图顶栏标题是年月，实际 ' + monthTitle);
-  await clickEl(page, `document.querySelectorAll('.date-nav .round-btn')[1]`);
+  await clickEl(page, `document.querySelectorAll('.date-nav .btn')[1]`);
   await waitFor(page, `document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(monthTitle)} ? 1 : null`,
     '月视图按「下一个」标题变了', 8000);
   ok(await topTitle() !== monthTitle, '月视图按「下一个」切了一月，实际 ' + await topTitle());
@@ -2323,7 +2323,7 @@ try {
   ok(await evalJs(page, `return document.querySelector('#content').textContent.includes('还没有项目');`),
     '空态说话，不是一片白');
 
-  await clickEl(page, `document.querySelector('.pj-top .text-btn')`);
+  await clickEl(page, `document.querySelector('.pj-top .btn')`);
   await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
   const setField = (sel, val) => evalJs(page, `
     return (() => {
@@ -2950,9 +2950,9 @@ try {
       return el ? Math.round(el.getBoundingClientRect().height * 10) / 10 : null;
     };
     return {
-      prev: pick('.date-nav .round-btn'),
-      today: pick('.today-btn'),
-      jump: pick('.jump-btn'),
+      prev: pick('.date-nav .btn'),
+      today: pick('.date-nav [aria-pressed]'),
+      jump: pick('.date-nav [aria-haspopup="dialog"]'),
       view: pick('.view-switch button'),
     };
   `);
