@@ -121,13 +121,22 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
             <div className="flex h-[30px] items-center gap-2">
               <Input
                 value={inviteName}
-                placeholder="输入邀请的成员的用户名"
-                aria-label="输入邀请的成员的用户名"
+                /* placeholder 只给格式示例，**不当可访问名字** —— 名字走下面的
+                   `aria-label`（见 CLAUDE.md 三、无障碍 1）。
+                   原先写「输入邀请的成员的用户名」，10 个字：这个框只有 30px 高，
+                   右边还并着权限下拉和纸飞机，后半截根本显示不出来，只显得满。
+                   缩到「输入用户名」——上下文（成员列表的最后一行）已经说清了
+                   「邀请谁」。 */
+                placeholder="输入用户名"
+                aria-label="邀请成员的用户名"
                 autoComplete="off"
                 spellCheck={false}
                 onChange={(e) => setInviteName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-                className="h-[30px] min-w-0 flex-1"
+                /* 字号跟同一行的字走：`Input` 本身就是 13px，和上面每行的成员名
+                   同号 —— 不用再单独写 text-*（写了也只会多一处要同步的地方）。
+                   `px-2` 是这一行特有的：30px 高的框里 py-2 已吃掉 14px。 */
+                className="h-[30px] min-w-0 flex-1 px-2"
               />
               <Dropdown
                 value={inviteRole}
@@ -137,11 +146,13 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                 onPick={(v) => setInviteRole(v as Role)}
               />
               {/* 右侧一律图标钮，和上面那些行的移出钮同一套 MiniIconBtn ——
-                  只有「发出去」用主色，点之前就分得清是「邀请」还是「移出」。 */}
+                  只有「发出去」用主色，点之前就分得清是「邀请」还是「移出」。
+                  主色走 `primary` **prop**：叠 `className` 会被基类的
+                  `text-[var(--text-3)]` 按生成顺序压掉（实测过，见 kit.tsx）。 */}
               <MiniIconBtn
                 label="发出邀请"
                 disabled={busy || !inviteName.trim()}
-                className="text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                primary
                 onClick={() => void invite()}
               >
                 <Send size={13} />

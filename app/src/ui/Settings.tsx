@@ -467,12 +467,21 @@ function CalItem({ cal, active, isDefault, open, onToggle }: {
        现在**只有标题行是那块圆角 + 底色的东西**，正文直接摆在卡的留白里，
        左右边与标题行的内容对齐（不再多包一层 p-3）。 */
     <div>
-      {/* 固定 h-[40px]：改名输入框是 28px、三个图标钮都是 24px，两态都落在
-          这个高度上 —— 一点铅笔，下面的成员区不会被顶一下。
-          外面那层 `px-3` 只给标题行（它是条），正文是 px-0。 */}
+      {/* 标题行分三区，从左到右：**名称区 · 操作区 · 箭头区**。
+          固定 h-[40px]：改名输入框 28px、图标钮 24px，两态都落在这个高度上
+          —— 一点铅笔，下面的成员区不会被顶一下。
+
+          **名称区不再是按钮了。** 它原先整段可点（点名字展开），但名字右边
+          要挂「设为默认」的星标、编辑态还要换成 `<input>` —— 两者都塞不进一个
+          `<button>` 里（按钮套按钮是非法 HTML，input 也进不了 button）。
+          所以展开 / 收起改由**最右边那个箭头**独家负责，它才是真的折叠开关，
+          `aria-expanded` 也归它。 */}
       <div
         className="flex h-[40px] items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] pl-3 pr-2 transition hover:brightness-95"
       >
+        {/* —— 名称区 + 操作区 ——
+            InlineRename 左边是名称区、右边那固定 52px 是操作区：
+            平时「铅笔 + 删除」，编辑中「√ + ✕」，两态都是两格。 */}
         <InlineRename
           value={cal.name}
           label="日程集名字"
@@ -480,41 +489,63 @@ function CalItem({ cal, active, isDefault, open, onToggle }: {
           onSave={saveName}
           inputProps={{ 'data-cal-name': '1' } as InputHTMLAttributes<HTMLInputElement>}
           confirmProps={{ 'data-cal-save': '1' } as ButtonHTMLAttributes<HTMLButtonElement>}
-          display={(
-            <button
-              type="button"
-              data-cal-item={cal.id}
-              onClick={onToggle}
-              aria-expanded={open}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left text-[13px]"
+          /* 删除挂在操作区第二格，原先在下面「危险区」里 —— 用户要求搬到标题行上。
+             `manage` 之外不渲染：只读成员没有「删除日程集」这个动作，那一格留空
+             （槽宽不变，所以箭头不挪窝）。禁用的只有「默认日程集」——
+             删了它，下次新建的东西就没地方落。 */
+          extraAction={manage ? (
+            <MiniIconBtn
+              danger
+              label="删除日程集"
+              disabled={busy || isDefault}
+              onClick={() => void remove()}
             >
+              <Trash2 size={13} />
+            </MiniIconBtn>
+          ) : null}
+          display={(
+            /* 星标**紧跟着名字**。放在 `display` 里 → 编辑态整个 display 被输入框
+               换掉，星标和角色徽标自动隐藏，不用在外面再判一次 `editing`，
+               也就不会出现「名字已经是输入框了，星标还杵在旁边」的错位。 */
+            <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
               <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium text-[var(--primary)]' : 'text-[var(--text-2)]')}>
                 {cal.name}
               </span>
+              {/* 星标 = 默认日程集。传 `aria-pressed` 不传 `disabled`：它是显示状态
+                  的标记，禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。
+                  「选中变主色」走 `primary` **prop** —— 叠 `className` 会被
+                  基类的 `text-[var(--text-3)]` 按生成顺序压掉（实测过）。 */}
+              <MiniIconBtn
+                label={isDefault ? '默认日程集' : '设为默认日程集'}
+                aria-pressed={isDefault}
+                primary={isDefault}
+                onClick={() => {
+                  if (isDefault) return;
+                  store.setUi({ defaultCal: calId });
+                  toast('「' + cal.name + '」已设为默认日程集');
+                }}
+              >
+                <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
+              </MiniIconBtn>
               {cal.role !== 'owner' && (
                 <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
                   {ROLE_LABEL[cal.role]}
                 </span>
               )}
-              <ChevronDown size={13} className={cx('shrink-0 text-[var(--text-3)] transition', open && 'rotate-180')} />
-            </button>
+            </span>
           )}
         />
-        {/* 星标 = 默认日程集。固定 24px 那一格常驻 —— 改名时它不消失，
-            所以从「平时」切到「编辑中」，标题行右边的宽度一点不变。
-            传 `aria-pressed` 不传 `disabled`：它是显示状态的标记，
-            禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。 */}
+
+        {/* —— 箭头区 —— 标题行最右侧，独家负责展开 / 收起。`aria-expanded`
+            只给**真的是折叠开关**的东西，这一格就是。`data-cal-item` 也跟着
+            从名字那一段搬过来：探针点这一下就是展开那一行。 */}
         <MiniIconBtn
-          label={isDefault ? '默认日程集' : '设为默认日程集'}
-          aria-pressed={isDefault}
-          onClick={() => {
-            if (isDefault) return;
-            store.setUi({ defaultCal: calId });
-            toast('「' + cal.name + '」已设为默认日程集');
-          }}
-          className={isDefault ? 'text-[var(--primary)]' : ''}
+          label={open ? '收起' : '展开'}
+          aria-expanded={open}
+          data-cal-item={cal.id}
+          onClick={onToggle}
         >
-          <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
+          <ChevronDown size={13} className={cx('shrink-0 text-[var(--text-3)] transition', open && 'rotate-180')} />
         </MiniIconBtn>
       </div>
 
@@ -536,29 +567,28 @@ function CalItem({ cal, active, isDefault, open, onToggle }: {
             run={(fn) => void run(fn)}
           />
 
-          {/* 危险区：和设置页别处的危险操作走同一个 variant，不再手写一套
-              「红字 + hover 淡红底」。 */}
-          <div className="border-t-[length:var(--border-w)] border-[var(--border)] pt-3.5">
-            <Field label="危险区">
-              <Row>
-                {manage ? (
-                  <Btn variant="danger" size="sm" disabled={isDefault} onClick={() => void remove()}>
-                    <Trash2 size={13} /> 删除日程集
-                  </Btn>
-                ) : (
+          {/* 危险区：**只在有东西可放时才出现**。删除按钮搬到标题行的操作区了
+              （见上），所以创建者这一块整个不渲染 —— 剩一个只有标题的空框，
+              比没有更费解。可编辑 / 只读成员仍然在这里「退出日程集」：
+              那不是删集，是退掉一段关系，和「删除」不是一件事。
+              和设置页别处的危险操作走同一个 variant，不再手写一套「红字 + hover 淡红底」。 */}
+          {!manage && (
+            <div className="border-t-[length:var(--border-w)] border-[var(--border)] pt-3.5">
+              <Field label="危险区">
+                <Row>
                   <Btn variant="danger" size="sm" onClick={() => void leave()}>
                     <LogOut size={13} /> 退出日程集
                   </Btn>
+                </Row>
+                {mine === 'viewer' && (
+                  <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] text-[var(--text-3)]">
+                    <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                    <span>你是只读成员，改不了里面的内容。</span>
+                  </div>
                 )}
-              </Row>
-              {mine === 'viewer' && (
-                <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] text-[var(--text-3)]">
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                  <span>你是只读成员，改不了里面的内容。</span>
-                </div>
-              )}
-            </Field>
-          </div>
+              </Field>
+            </div>
+          )}
         </div>
       )}
     </div>

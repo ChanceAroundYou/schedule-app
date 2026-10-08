@@ -101,7 +101,16 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
 /* 输入框 / 文本域统一走这两个组件。
    样式全部引用 语义样式模块 的设计令牌（--input / --border-w / --r-md /
    --panel-2 / --primary），不在 .tsx 里写死颜色。
-   需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
+   需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。
+
+   字号是 **13px**，两档都是 —— 这不是随手挑的：13px 是界面文字那一档
+   （成员名、列表行、行内改名的显示态），输入框里的字该跟它**一模一样**，
+   否则点一下铅笔，同一行字会当场变大一号。
+
+   ⚠️ 改这里的字号之前先看 `styles/tokens.css` 里 `input, select, textarea`
+   那一条：它一度是**没有层**的作者样式，于是 `font-size: 14px` 把这里的
+   `text-*` 全部吃掉了 —— 类名写得再对也不生效。现在它在 `@layer base` 里，
+   工具类压得住；但**再往那条规则里加字号之前想清楚**（踩坑 17）。 */
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   dense?: boolean;
@@ -112,8 +121,8 @@ export function Input({ dense, className, ...rest }: InputProps) {
     <input
       {...rest}
       className={cx(
-        'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-        dense && 'h-[30px] w-auto px-2 text-[12.5px]',
+        'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition',
+        dense && 'h-[30px] w-auto px-2 text-[13px]',
         'focus:border-[var(--primary)] focus:bg-[var(--panel)] focus:shadow-[0_0_0_3px_var(--primary-soft),var(--shadow-md)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
@@ -131,7 +140,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         ref={ref}
         {...rest}
         className={cx(
-          'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+          'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition',
           'focus:border-[var(--primary)] focus:bg-[var(--panel)] focus:shadow-[0_0_0_3px_var(--primary-soft),var(--shadow-md)]',
           'disabled:cursor-not-allowed disabled:opacity-50',
           className,
@@ -397,6 +406,15 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
  *
  * 24px 是 WCAG 2.5.8 的下限 —— **别再往小改**（18px 的点按不准）。
  * `danger` 给「移出 / 撤回」这类会改变关系的操作。
+ * `primary` 给「这一格是当前那一组里唯一要突出的动作」—— 行内改名的 ✓
+ * （编辑态里它是唯一的提交动作，跟旁边灰色的 ✕ 得区分开）、默认日程集的星标。
+ *
+ * ⚠️ **这两个 tone 必须是这里的 prop，不能靠外面叠 `className`。**
+ * 叠 `text-[var(--primary)]` 是不生效的：它和基类里的 `text-[var(--text-3)]`
+ * 特异度一样，Tailwind 里同特异度只看**生成顺序**，谁后生成谁赢 —— 跟
+ * `className` 写在前面还是后面无关。实测确认按钮拿到的是 `--text-3`
+ * （`rgb(95,101,119)`），和旁边那个 ✕ 一模一样。见踩坑 17。
+ * 同一条也解释了 `Btn` 为什么要拆 `chip` / `chipOn` 两档。
  *
  * ⚠️ **尺寸必须写 `h-[24px] w-[24px]`，不能写 `h-6 w-6`。**
  * Tailwind 的间距刻度是「0.25rem × n」，而本项目 `html { font-size: 14px }`
@@ -406,8 +424,8 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
  * 同一条也适用于别处写 `h-6` 当 24px 用的地方（本文件 `IconBtn` 的 `h-8`
  * 是 28px，达标，所以没暴露这个问题）。
  */
-export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger?: boolean }>(
-  function MiniIconBtn({ label, danger = false, children, className, ...rest }, ref) {
+export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger?: boolean; primary?: boolean }>(
+  function MiniIconBtn({ label, danger = false, primary = false, children, className, ...rest }, ref) {
     return (
       <button
         ref={ref}
@@ -420,7 +438,9 @@ export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger
           'disabled:cursor-not-allowed disabled:opacity-40',
           danger
             ? 'text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]'
-            : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
+            : primary
+              ? 'text-[var(--primary)] hover:bg-[var(--primary-soft)]'
+              : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
           className,
         )}
       >
@@ -777,40 +797,55 @@ export function Row({ children }: { children: ReactNode }) {
 /**
  * 行内改名 —— 项目里**所有**改名都走它，形状固定一套：
  *
- *   平时    [ 显示内容 ][ 铅笔 ]
+ *   平时    [ 显示内容 ][ 铅笔 ][ 删除 ]    ← 第二格可选，见 extraAction
  *   编辑中  [ 输入框   ][ √ ][ ✕ ]
  *
  * **切换编辑态时左边那段内容一像素都不动**，这是这个组件存在的全部理由。
  * 做到它靠两条硬约束：
  *
- *   1. 动作槽**固定宽度**（`w-[52px]` = 24 + 4 + 24）。平时只放一个铅笔，
- *      但槽是右对齐的，所以铅笔落在将来 √ 该在的位置上 —— 看起来是「铅笔
- *      变成 √」，而不是「右边多出来两个按钮」。槽宽不变，左边可用宽度就
- *      不变，显示内容（常常是一段会截断的文字）就不会重新折行 / 换行。
+ *   1. 动作槽**固定宽度**（`w-[52px]` = 24 + 4 + 24，正好两格）。两态都是
+ *      两个按钮 —— 平时「铅笔 + 删除」，编辑中「√ + ✕」—— 槽宽一样，左边
+ *      可用宽度就不变，显示内容（常常是一段会截断的文字）不会重新折行。
+ *      只给铅笔、不给 `extraAction` 时**也照样占满 52px**：槽的右边缘是
+ *      一切对齐的基准，它不能随内容伸缩。
  *   2. 行高交给**外层**：本组件自己不定高，由调用方给一个固定高度的容器
  *      （日程集 header 是 `h-[40px]`，输入框 `h-[28px]`、按钮 24px）。
  *      两态都落在同一个高度上，下面的东西才不会被顶一下。
  *
- * `display` 由调用方给 —— 它常常不是纯文字，而是「一段文字 + 徽标 + 箭头」
- * 这种本身可点的东西（日程集那一行点一下是展开）。给 ReactNode 而不是
- * `renderText` 就是为了这个：组件不去猜显示态长什么样，只负责把那三格
- * 摆稳。
+ * `display` 由调用方给 —— 它常常不是纯文字，而是「一段文字 + 星标 + 徽标」
+ * 这种**里面还带按钮**的东西。给 ReactNode 而不是 `renderText` 就是为了
+ * 这个：组件不去猜显示态长什么样，只负责把那几格摆稳。
+ *
+ * **编辑态整个 `display` 被输入框换掉** —— 所以塞在里面的按钮（星标那类）
+ * 天然只在平时出现。想「编辑时隐藏」的东西放进去就行，外面不用再判一次
+ * `editing`（也就不需要在两处各维护一份状态）。
+ *
+ * 反过来有一条调用方必须守的：**`display` 里可以有按钮，但别把 `display`
+ * 整个包进 `<button>`** —— 按钮套按钮是非法 HTML，浏览器会把里层那个甩到
+ * 外面去，「编辑态换成 input」也会当场失效（input 进不了 button）。
+ * 需要「点整行展开」的话，那个开关得放在本组件**外面**。
  *
  * 编辑态里显示的是真 `<input>`，不是 `<span contenteditable>`：后者没有
  * 输入法、没有撤销栈、没有平台的读屏支持。
  */
-export function InlineRename({ value, onSave, disabled, display, label, placeholder, inputProps, confirmProps }: {
+export function InlineRename({ value, onSave, disabled, display, label, placeholder, extraAction, inputProps, confirmProps }: {
   /** 已保存的值。存好了会跟着变（所以外部改名成功后显示内容也会更新） */
   value: string;
   /** 提交。**空串也照传** —— 校验与提示由调用方决定（不同场景的话不一样） */
   onSave: (next: string) => void;
   /** 没有权限改：铅笔按钮禁用，输入框也进不去 */
   disabled?: boolean;
-  /** 平时那一格。默认就是 `value` 的纯文字 */
+  /** 平时那一格。默认就是 `value` 的纯文字。里面可以放按钮（星标那类），编辑态会连它一起换掉 */
   display?: ReactNode;
   /** 输入框的可访问名字 */
   label: string;
   placeholder?: string;
+  /**
+   * 平时那一格**右边**再挂一个按钮（日程集 header 的「删除」走这里）。
+   * 它和铅笔一起占满那 52px，编辑态被 √ / ✕ 顶掉 —— 所以传进来的东西
+   * **只在平时出现**，不用自己判编辑态。
+   */
+  extraAction?: ReactNode;
   /** 透给输入框（探针抓手 `data-cal-name` 之类走这里） */
   inputProps?: InputHTMLAttributes<HTMLInputElement>;
   /** 透给确认按钮（探针抓手 `data-cal-save` 走这里） */
@@ -846,7 +881,11 @@ export function InlineRename({ value, onSave, disabled, display, label, placehol
             if (e.key === 'Enter') commit();
             else if (e.key === 'Escape') cancel();
           }}
-          className="h-[28px] min-w-0 flex-1"
+          /* 字号**不在这里写**：`Input` 本身就是 13px，而显示态那一行也是
+             13px —— 两态同一号字，点铅笔不会让同一行字跳一下。
+             `px` 从 12 收到 8：28px 高的框里 py-2 已经吃掉 14px，横向再留 12
+             会让可用宽度比非编辑态窄一截。 */
+          className="h-[28px] min-w-0 flex-1 px-2"
         />
       ) : (
         /* 显示态的容器和编辑态的输入框**同一个 flex-1 槽**，所以宽度一致 ——
@@ -856,11 +895,19 @@ export function InlineRename({ value, onSave, disabled, display, label, placehol
         </div>
       )}
 
-      {/* 右对齐的固定宽槽：平时一个铅笔，编辑中 √+✕，右边那条边一动不动 */}
+      {/* 右对齐的固定宽槽：平时「铅笔 + extraAction」，编辑中 √+✕，
+          右边那条边一动不动。确认钮走 `primary` **prop** 而不是叠 `className`
+          —— 叠了不生效（同特异度看生成顺序），实测拿到的是和 ✕ 一样的
+          `--text-3`。见 `MiniIconBtn` 的注释。 */}
       <span className="flex w-[52px] shrink-0 items-center justify-end gap-1">
         {editing ? (
           <>
-            <MiniIconBtn {...confirmProps} label="确认" onClick={commit}>
+            <MiniIconBtn
+              {...confirmProps}
+              primary
+              label="确认"
+              onClick={commit}
+            >
               <Check size={14} />
             </MiniIconBtn>
             <MiniIconBtn label="取消" onClick={cancel}>
@@ -868,9 +915,12 @@ export function InlineRename({ value, onSave, disabled, display, label, placehol
             </MiniIconBtn>
           </>
         ) : (
-          <MiniIconBtn label="改名" disabled={disabled} onClick={() => setEditing(true)}>
-            <Pencil size={13} />
-          </MiniIconBtn>
+          <>
+            <MiniIconBtn label="改名" disabled={disabled} onClick={() => setEditing(true)}>
+              <Pencil size={13} />
+            </MiniIconBtn>
+            {extraAction}
+          </>
         )}
       </span>
     </div>

@@ -63,9 +63,12 @@
 
 /* ===== 打卡（习惯）页 ===== */
 .habit-add { display: flex; gap: 8px; margin-bottom: 18px; }
+/* 字号跟全系统其他输入框一致（13px，见 tokens.css 的 `@layer base`）。
+   原先写 14px —— 它比同一行那个 12.5px 的按钮大，也比上面每条习惯的标题
+   （14px）之外的正文都大，是「输入框自成一套」的又一个来源。 */
 .habit-add input {
   flex: 1; padding: 11px 13px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
-  background: var(--panel); color: var(--text); font-size: 14px;
+  background: var(--panel); color: var(--text); font-size: 13px;
 }
 .habit-add input:focus { outline: none; border-color: var(--primary); }
 /* 习惯行：默认单列（flex），宽屏由.media query 里的 .mc 接管成 grid */

@@ -282,12 +282,17 @@ test('repeatNext 的边界：今天发生的那次算数，不会跳过今天', 
 });
 
 test('repeatNext 尊重结束条件', () => {
+  // 日期一律相对 `today` 算。`repeatNext` 内部会一路补到**今天**，所以这里
+  // 写死日期就是一颗定时炸弹：原先写死 2026-10-06 → 2026-10-08，2026-10-09
+  // 零点一过，`repeatNext(t, '2026-10-07')` 先被推到 10-09、再被结束日期挡成
+  // null，断言当场红 —— 而代码一个字没改。
+  const t0 = D.today();
   const byDate = makeTask({
-    id: 'a', title: 'x', date: '2026-10-06',
-    repeat: { ...repeat({ unit: 'day' }), end: { type: 'date', date: '2026-10-08' } },
+    id: 'a', title: 'x', date: t0,
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'date', date: D.addDays(t0, 2) } },
   });
-  assert.equal(repeatNext(byDate, '2026-10-07'), '2026-10-08');
-  assert.equal(repeatNext(byDate, '2026-10-08'), null, '超出结束日期就没了');
+  assert.equal(repeatNext(byDate, D.addDays(t0, 1)), D.addDays(t0, 2));
+  assert.equal(repeatNext(byDate, D.addDays(t0, 2)), null, '超出结束日期就没了');
 
   const byCount = makeTask({
     id: 'b', title: 'y', date: '2099-01-01',

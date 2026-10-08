@@ -38,10 +38,13 @@
    resize:none 是必须的 —— 浏览器默认给 textarea 一个右下角的拖拽角，
    在这个横条里拖它只会把布局拖坏。
    **width: 100% 而不是 flex: 1** —— `.fast-add-body` 不是 flex 容器，
-   textarea 的 flex: 1 从来就没生效过（它只对 flex 父元素有意义）。 */
+   textarea 的 flex: 1 从来就没生效过（它只对 flex 父元素有意义）。
+   字号 13px = 全系统其他输入框那一档（见 tokens.css 的 `@layer base`）。
+   高度跟着字号走（`calc(2 * 1.35em)`），所以改字号不会破坏「固定两行」——
+   横条总高由右边那两个 30px 的按钮（`.fast-side` 64px）决定，不由它决定。 */
 .fast-add textarea {
   width: 100%; min-width: 140px; border: none; outline: none; background: none; box-shadow: none;
-  font: inherit; font-size: 14.5px; line-height: 1.35;
+  font: inherit; font-size: 13px; line-height: 1.35;
   padding: 0; margin: 0; resize: none; overflow-y: auto;
   height: calc(2 * 1.35em);
 }

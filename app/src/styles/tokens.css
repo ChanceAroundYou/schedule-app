@@ -239,7 +239,36 @@ html, body {
 }
 
 button { font-family: inherit; cursor: pointer; }
-input, select, textarea { font-family: inherit; font-size: 14px; color: var(--text); }
+
+/* 表单控件的默认字号。**这一条必须待在 `@layer base` 里。**
+ *
+ * 原先它是一条**没有层**的作者样式（本文件整体不进 layer，为的是让已定稿的
+ * 表面规则压过工具类，见 tailwind.css 文件头）。可「没有层的样式永远赢过任何
+ * 层内的样式」这条规律在这里反咬了一口：`font-size: 14px` 把 `<Input>` /
+ * `<Textarea>` 上**每一个** Tailwind `text-*` 都静默吃掉了 —— `<Input dense>`
+ * 写的 12.5px、行内改名框写的 13px，渲染出来全是 14px。
+ * 症状就是「输入框里的字永远比它旁边那行字大一号」，而且改类名毫无反应
+ * （不报错、不白屏，只是那一处永远不生效 —— 和踩坑 17 同一类）。
+ *
+ * 放进 `base` 层之后：Tailwind 的 `utilities` 层排在 base 之后
+ * （`@import "tailwindcss"` 会写出 `@layer theme, base, components, utilities`），
+ * 组件上写的 `text-[13px]` 正常生效；没写字号的原生控件仍然拿到这里的兜底
+ * （作者样式照旧压过 UA 那个 13.333px —— 层只在同源之内排序）。
+ *
+ * ⚠️ **但光挪进来还不够**：`styles/responsive.css` 里还有一条**同样没有层**的
+ * `input, select, textarea { font-size: max(14px, 16px) }`（防 iOS 聚焦时自动放大
+ * 页面），它把**全项目每一个输入框**都钉在 16px —— 连写了 `text-[13px]` 的
+ * `<Input>` 也跑不掉。所以那一轮的症状是「同一个抽屉里两种字号」：
+ * `.field input` 是 13px（类选择器压得过它），`<Input>` 是 16px。
+ * 修法是 `responsive.css` 那条删掉桌面端那一半，只留 `@media (max-width: 820px)`
+ * 里的 16px（≤820px 下这两个组件仍是 16px，那是 iOS 的规矩）。详见踩坑 45。
+ *
+ * 13px 取的是**界面文字那一档**：成员名、列表行、行内改名的显示态都是 13px，
+ * 输入框该跟它一致，而不是自成一套 14px。 */
+@layer base {
+  input, select, textarea { font-family: inherit; font-size: 13px; color: var(--text); }
+}
+
 b, strong { font-variant-numeric: tabular-nums; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
