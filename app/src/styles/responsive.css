@@ -7,21 +7,18 @@
 button, .nav-item, .tab, .ms-item, .jp-cell {
   touch-action: manipulation;
 }
-/* 数字输入在 iOS 上默认有放大行为，16px 以下会强制放大页面。
-   **只在 ≤820px 生效** —— 桌面端没有这个问题，而输入框该跟界面文字同字号
-   （13px，见 `tokens.css` 里 `@layer base` 那一条）。
+/* 输入框字号：**全系统一律 13px**（界面文字那一档，见 `tokens.css` 里
+   `@layer base` 那一条），桌面与窄屏一个样。
 
-   这一条**必须留在没有层的作者样式里**：它是全项目唯一还压得住组件上
-   `text-*` 的东西（Tailwind 的工具类在 `@layer utilities` 里，没有层的作者
-   样式永远赢 —— 见踩坑 17）。把它也挪进 `@layer base` 的话，`Input` 上的
-   `text-[13px]` 立刻压过它，iOS 上该放的放大就放回来了。
+   原先这里压着一条 `@media (max-width: 820px) { input, select, textarea {
+   font-size: 16px; }` —— 为的是 iOS Safari 聚焦 <16px 的输入框时会强制放大
+   整页。2026-10-09 用户要求「全系统都统一一下字体，尤其是输入控件」，
+   **整块删掉了**（连同下面 `.jp-row input` / `.fast-add textarea` 那两条
+   16px 一起）。
 
-   代价说清楚：**≤820px 下 `Input` / `Textarea` 是 16px，不是 13px**。那是
-   iOS 的规矩，不是我们的 —— 而且 16px 本来就是触屏表单的推荐字号。
-   桌面端（>820px）全部统一 13px。 */
-@media (max-width: 820px) {
-  input, select, textarea { font-size: 16px; }
-}
+   **代价说清楚**：≤820px 下聚焦输入框，iOS 上会拿回自动放大。要回去的话
+   把这几条加回来即可 —— 但它们是**没有层的作者样式**，挪进 `@layer base`
+   的话 `Input` 上的 `text-[13px]` 会立刻压过它（见踩坑 17）。 */
 
 /* 触屏没有 hover：原本 hover 才显形的东西（拖拽抓手、右箭头）要常显，
    否则手机上永远看不到。宽度用媒体查询而不是 hover 判定，
@@ -210,7 +207,6 @@ body.sheet-open .tab:active { background: none; }
   .jp-cell.has::after { bottom: 4px; }
   .jp-cell.has.lv2::after { width: 16px; }
   .jp-cell.has.lv3::after { width: 22px; }
-  .jp-row input { font-size: 16px; }   /* 16px 以下 iOS 会自动放大页面 */
   .jp-go { padding: 0 14px; }
 
   /* 任务行：手机上加大点击面 */
@@ -224,9 +220,6 @@ body.sheet-open .tab:active { background: none; }
 
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
-  /* 16px 是**必须的**：iOS Safari 在字号 < 16px 的输入控件上会自动放大整页，
-     而放大之后那一屏就再也回不到原样了。textarea 和 input 同罪。 */
-  .fast-add textarea { font-size: 16px; }
   /* 窄屏的横条是 `position: fixed`（定位值由 Shell.tsx 内联，见那边的
      bottom: calc(64px + env(...))），所以这里只留内边距 ——
      展开 / 关闭动画不在这儿，见文件末尾那两条 `.fast-add[data-narrow]` 规则。 */

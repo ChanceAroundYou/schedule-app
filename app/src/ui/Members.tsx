@@ -123,11 +123,11 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                 value={inviteName}
                 /* placeholder 只给格式示例，**不当可访问名字** —— 名字走下面的
                    `aria-label`（见 CLAUDE.md 三、无障碍 1）。
-                   原先写「输入邀请的成员的用户名」，10 个字：这个框只有 30px 高，
-                   右边还并着权限下拉和纸飞机，后半截根本显示不出来，只显得满。
-                   缩到「输入用户名」——上下文（成员列表的最后一行）已经说清了
-                   「邀请谁」。 */
-                placeholder="输入用户名"
+                   **必须带上「邀请」三个字**（用户 2026-10-09 明确要求）：这一行
+                   是成员列表的最后一行，前面几行都是「谁有权看」，孤零零一个
+                   「输入用户名」读不出是在邀请谁 —— 而 `aria-label` 是读屏才
+                   听得到的，眼睛看不见。9 个字，474px 的框放得下。 */
+                placeholder="输入要邀请的用户名"
                 aria-label="邀请成员的用户名"
                 autoComplete="off"
                 spellCheck={false}
