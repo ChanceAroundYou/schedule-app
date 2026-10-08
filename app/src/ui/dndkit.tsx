@@ -24,7 +24,7 @@ import {
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core';
 import {
-  SortableContext, useSortable, verticalListSortingStrategy,
+  SortableContext, useSortable, rectSortingStrategy,
   sortableKeyboardCoordinates, arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -154,7 +154,7 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
  *
  * 用法：
  *   <DndScope onDragEnd={handleDragEnd}>
- *     <SortableContext items={items} strategy={verticalListSortingStrategy}>
+ *     <SortableContext items={items} strategy={rectSortingStrategy}>
  *       ...
  *     </SortableContext>
  *   </DndScope>
@@ -222,7 +222,7 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <SortableContext items={items} strategy={verticalListSortingStrategy}>
+      <SortableContext items={items} strategy={rectSortingStrategy}>
         <div className={className} data-scope={scope}>
           {items.map((id) => (
             <SortableItem key={id} id={id}>

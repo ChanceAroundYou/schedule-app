@@ -21,7 +21,7 @@ import {
   UserPlus, Users, X, AlertTriangle, ChevronDown,
 } from 'lucide-react';
 import { type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
@@ -131,7 +131,7 @@ function NavCard({ state }: { state: LocalState }) {
         {narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}
       </div>
       <DndScope onDragEnd={onDragEnd}>
-        <SortableContext items={rows} strategy={verticalListSortingStrategy}>
+        <SortableContext items={rows} strategy={rectSortingStrategy}>
           <ul className="flex flex-col gap-1">
             {rows.map((k) => (
               <SortableNavRow key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />

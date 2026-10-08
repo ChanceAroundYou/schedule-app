@@ -18,7 +18,7 @@
   /* 行内块元素（打卡条、逾期提示、已完成标题、垃圾箱头）不参与分列 */
   .checkin-strip, .od-strip, .today-done, .trash-head, .habit-add, .empty { grid-column: 1 / -1; }
   /* 分列后行与行之间靠 grid gap，任务行自身的下边距要去掉 */
-  .mc > .task-row, .mc > .habit-row { margin-bottom: 0; }
+  .mc > .task-row, .mc > .habit-row { margin-bottom: 0; align-self: start; }
   .mc { row-gap: 7px; }
 }
 
