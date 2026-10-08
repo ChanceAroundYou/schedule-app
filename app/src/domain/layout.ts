@@ -84,3 +84,69 @@ export function timeRange(start: number, dur: number): string {
 /** 一天 24 小时的像素高度 */
 export const HOUR_H = 64;
 export const DAY_H = HOUR_H * 24;
+
+/* ================= 日视图的可见时间窗 ================= */
+
+/**
+ * 日视图只看 `[from, to)` 这一段（分钟）。默认 0–1440 = 整天。
+ *
+ * 有了它，日视图就能**按比例**摆事件（百分比而不是像素），于是时间轴的高度
+ * 由容器说了算 —— 锁成单屏不滚动、把时间窗收窄到白天，两件事共用同一份算法。
+ */
+export interface DayWindow {
+  from: number;
+  to: number;
+}
+
+export const FULL_DAY: DayWindow = { from: 0, to: 1440 };
+
+/** 窗宽（分钟）。下限 1 小时 —— 收得太窄时间轴就没法看了 */
+export const MIN_SPAN = 60;
+
+export function windowOf(ui: { dayFrom: number; dayTo: number }): DayWindow {
+  const from = Math.max(0, Math.min(1439, Math.round(ui.dayFrom) * 60));
+  let to = Math.max(0, Math.min(1440, Math.round(ui.dayTo) * 60));
+  if (to - from < MIN_SPAN) to = Math.min(1440, from + MIN_SPAN);
+  return { from, to };
+}
+
+export function spanOf(w: DayWindow): number {
+  return w.to - w.from;
+}
+
+/**
+ * 纵坐标 → 分钟。`boxH` 是时间轴**实测**高度。
+ *
+ * 刻意收 boxH 而不是收一个写死的高度常量：日视图的高度是 JS 按可见区域算出来的
+ * （见 Views.fitWeekHeight），任何写死的换算都会在窗口一缩放就错位。
+ * 顺手也把结果收进窗内并对齐 15 分钟。
+ */
+export function yToMin(y: number, boxH: number, w: DayWindow): number {
+  if (boxH <= 0) return w.from;
+  const raw = w.from + (y / boxH) * spanOf(w);
+  const snapped = Math.round(raw / 15) * 15;
+  return Math.max(w.from, Math.min(w.to - 15, snapped));
+}
+
+/** 分钟 → 纵向百分比（0–100）。窗外返回 null —— 窗外的东西不画 */
+export function minToPct(min: number, w: DayWindow): number | null {
+  if (min < w.from || min > w.to) return null;
+  return (min - w.from) / spanOf(w) * 100;
+}
+
+/**
+ * 一段时间段 → 纵向的 top / height（%），**跨过窗沿的按窗沿截断**。
+ *
+ * 完全在窗外才返回 null。跨沿的不能跟着消失 —— 07:00–09:00 那条在 08:00 起的
+ * 窗里还露着后一小时，整条抹掉等于「这一小时明明有事，界面上却看不见」。
+ *
+ * 返回的 height 已经是最小可读高度之外的真实比例；太薄的由渲染层兜底。
+ */
+export function pctRange(start: number, end: number, w: DayWindow): { top: number; height: number } | null {
+  const a = Math.max(start, w.from);
+  const b = Math.min(end, w.to);
+  if (b <= a) return null;
+  const span = spanOf(w);
+  return { top: (a - w.from) / span * 100, height: (b - a) / span * 100 };
+}
+

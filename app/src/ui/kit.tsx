@@ -18,7 +18,7 @@ import {
   forwardRef,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { Check, ChevronDown, Pencil, X } from 'lucide-react';
 import { cx } from './cx.ts';
 import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
@@ -472,7 +472,10 @@ export function Dropdown<K extends string | number>({
   size?: Size;
   className?: string;
   menuClassName?: string;
-  renderValue?: (option: DropdownOption<K>) => ReactNode;
+  /** 触发按钮上画当前值。**`option` 可能是 undefined** —— 当前值不在
+      options 里时（比如 owner：它不是能分下去的权限，就不在下拉里）。
+      传了 renderValue 就以它为准，没传才回退到选项文字 / placeholder。 */
+  renderValue?: (option: DropdownOption<K> | undefined) => ReactNode;
   renderOption?: (option: DropdownOption<K>, selected: boolean) => ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -544,7 +547,7 @@ export function Dropdown<K extends string | number>({
         )}
       >
         <span className="min-w-0 truncate text-left">
-          {current ? (renderValue ? renderValue(current) : current.label) : placeholder}
+          {renderValue ? renderValue(current) : (current ? current.label : placeholder)}
         </span>
         <ChevronDown size={14} aria-hidden="true" className={cx('shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
@@ -767,4 +770,109 @@ export function Field({ label, htmlFor, icon, children, hint }: {
 /** 一行控件：flex 换行 + 统一间距。按钮排、输入框 + 按钮都走它 */
 export function Row({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap items-center gap-2">{children}</div>;
+}
+
+/* ============================== 行内改名 ============================== */
+
+/**
+ * 行内改名 —— 项目里**所有**改名都走它，形状固定一套：
+ *
+ *   平时    [ 显示内容 ][ 铅笔 ]
+ *   编辑中  [ 输入框   ][ √ ][ ✕ ]
+ *
+ * **切换编辑态时左边那段内容一像素都不动**，这是这个组件存在的全部理由。
+ * 做到它靠两条硬约束：
+ *
+ *   1. 动作槽**固定宽度**（`w-[52px]` = 24 + 4 + 24）。平时只放一个铅笔，
+ *      但槽是右对齐的，所以铅笔落在将来 √ 该在的位置上 —— 看起来是「铅笔
+ *      变成 √」，而不是「右边多出来两个按钮」。槽宽不变，左边可用宽度就
+ *      不变，显示内容（常常是一段会截断的文字）就不会重新折行 / 换行。
+ *   2. 行高交给**外层**：本组件自己不定高，由调用方给一个固定高度的容器
+ *      （日程集 header 是 `h-[40px]`，输入框 `h-[28px]`、按钮 24px）。
+ *      两态都落在同一个高度上，下面的东西才不会被顶一下。
+ *
+ * `display` 由调用方给 —— 它常常不是纯文字，而是「一段文字 + 徽标 + 箭头」
+ * 这种本身可点的东西（日程集那一行点一下是展开）。给 ReactNode 而不是
+ * `renderText` 就是为了这个：组件不去猜显示态长什么样，只负责把那三格
+ * 摆稳。
+ *
+ * 编辑态里显示的是真 `<input>`，不是 `<span contenteditable>`：后者没有
+ * 输入法、没有撤销栈、没有平台的读屏支持。
+ */
+export function InlineRename({ value, onSave, disabled, display, label, placeholder, inputProps, confirmProps }: {
+  /** 已保存的值。存好了会跟着变（所以外部改名成功后显示内容也会更新） */
+  value: string;
+  /** 提交。**空串也照传** —— 校验与提示由调用方决定（不同场景的话不一样） */
+  onSave: (next: string) => void;
+  /** 没有权限改：铅笔按钮禁用，输入框也进不去 */
+  disabled?: boolean;
+  /** 平时那一格。默认就是 `value` 的纯文字 */
+  display?: ReactNode;
+  /** 输入框的可访问名字 */
+  label: string;
+  placeholder?: string;
+  /** 透给输入框（探针抓手 `data-cal-name` 之类走这里） */
+  inputProps?: InputHTMLAttributes<HTMLInputElement>;
+  /** 透给确认按钮（探针抓手 `data-cal-save` 走这里） */
+  confirmProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  /* 存好了（或外面改了名）就同步草稿，免得下次点铅笔看到的是上一轮的字。
+     `editing` 不在里面：正在改的时候外部刷新列表不该把用户打的字冲掉。 */
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+
+  const cancel = () => { setDraft(value); setEditing(false); };
+  const commit = () => {
+    setEditing(false);
+    // 一模一样就别白跑一趟接口（服务端会把它当成一次真改名，触发同步）
+    if (draft === value) return;
+    onSave(draft);
+  };
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      {editing ? (
+        <Input
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- 点铅笔就是要立刻改字
+          autoFocus
+          {...inputProps}
+          value={draft}
+          aria-label={label}
+          placeholder={placeholder}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') cancel();
+          }}
+          className="h-[28px] min-w-0 flex-1"
+        />
+      ) : (
+        /* 显示态的容器和编辑态的输入框**同一个 flex-1 槽**，所以宽度一致 ——
+           调用方塞进来的按钮填满它就行，不用管自己是几格。 */
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {display ?? <span className="truncate">{value}</span>}
+        </div>
+      )}
+
+      {/* 右对齐的固定宽槽：平时一个铅笔，编辑中 √+✕，右边那条边一动不动 */}
+      <span className="flex w-[52px] shrink-0 items-center justify-end gap-1">
+        {editing ? (
+          <>
+            <MiniIconBtn {...confirmProps} label="确认" onClick={commit}>
+              <Check size={14} />
+            </MiniIconBtn>
+            <MiniIconBtn label="取消" onClick={cancel}>
+              <X size={14} />
+            </MiniIconBtn>
+          </>
+        ) : (
+          <MiniIconBtn label="改名" disabled={disabled} onClick={() => setEditing(true)}>
+            <Pencil size={13} />
+          </MiniIconBtn>
+        )}
+      </span>
+    </div>
+  );
 }

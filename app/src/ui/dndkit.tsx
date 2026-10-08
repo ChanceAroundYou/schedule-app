@@ -31,7 +31,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { setDragging } from './dragState.ts';
 import * as D from '../domain/date.ts';
 import * as store from '../data/store.ts';
-import { DAY_H } from '../domain/layout.ts';
+import { DAY_H, FULL_DAY, spanOf, yToMin, type DayWindow } from '../domain/layout.ts';
 import { toast } from './kit.tsx';
 import { LONG_PRESS_MS } from './hooks.ts';
 
@@ -289,7 +289,13 @@ function SortableItem({ id, children }: { id: string; children: ReactNode }) {
  */
 export function useDraggableEvent(id: string) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
-  const style: React.CSSProperties = { transform: CSS.Transform.toString(transform) };
+  /* **只取位移。** core 的 DndContext 里有一句
+     `adjustScale(appliedTranslate, over?.rect, activeNodeRect)`，把 transform 的
+     scaleX/scaleY 定成「落点 ÷ 自己」的尺寸比。日视图的落点是 `.timeline`
+     （整天 1536px 高），方块只有几十像素高 → scaleY 能到 25 以上，
+     一拖起来就铺满整屏。`CSS.Transform.toString` 会把这个比值一起烤进
+     transform；`CSS.Translate` 只出 translate3d，尺寸锁死在提起时那一刻。 */
+  const style: React.CSSProperties = { transform: CSS.Translate.toString(transform) };
   return { ref: setNodeRef, style, isDragging, attributes, listeners };
 }
 
@@ -308,7 +314,21 @@ export function useDroppableZone(id: string) {
 
 let guideLine: HTMLDivElement | null = null;
 
-function drawTimeGuide(zone: HTMLElement, min: number): void {
+/**
+ * 从 zone 上读出时间窗。
+ *
+ * **时间轴不再有写死的高度**：日视图锁成单屏，高度是 JS 按可见区域算出来的，
+ * 所以 px↔分钟只能现场量（`data-from` / `data-to` 是 DayView 渲染时写进去的）。
+ * 读不到就按整天算 —— 只可能发生在这个函数被喂了非时间轴 zone 的时候。
+ */
+function zoneWindow(zone: HTMLElement): DayWindow {
+  const from = Number(zone.dataset.from);
+  const to = Number(zone.dataset.to);
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from) return { from, to };
+  return FULL_DAY;
+}
+
+function drawTimeGuide(zone: HTMLElement, min: number, win: DayWindow): void {
   if (!guideLine) {
     guideLine = document.createElement('div');
     guideLine.className = 'tl-guide';
@@ -316,7 +336,7 @@ function drawTimeGuide(zone: HTMLElement, min: number): void {
     guideLine.appendChild(span);
     zone.appendChild(guideLine);
   }
-  guideLine.style.top = `${min / 1440 * DAY_H}px`;
+  guideLine.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
   const span = guideLine.querySelector('span');
   if (span) span.textContent = D.minToTime(min);
 }
@@ -327,13 +347,13 @@ function clearTimeGuide(): void {
 
 /* ============================ 时间计算 ============================ */
 
-function timeGuideMin(zone: HTMLElement, clientY: number): number {
+/** 纵坐标 → 分钟。`boxH` 由调用方量（见 zoneWindow 的注释） */
+function minFromY(zone: HTMLElement, clientY: number): number {
   const rect = zone.getBoundingClientRect();
-  const topMin = clientY - rect.top;
-  const clamped = Math.max(0, Math.min(DAY_H - 24, topMin));
-  return Math.max(0, Math.min(1425, Math.round(clamped / DAY_H * 1440 / 15) * 15));
+  return yToMin(clientY - rect.top, rect.height, zoneWindow(zone));
 }
 
+/** 周视图整列都是 24 小时、像素高度固定 —— 那一套还成立 */
 function weekGuideMin(zone: HTMLElement, clientY: number): number {
   const rect = zone.getBoundingClientRect();
   const min = Math.round((clientY - rect.top) / DAY_H * 1440 / 15) * 15;
@@ -369,11 +389,11 @@ export function useTimelineDrag() {
     const currentY = activatorEvent.clientY + event.delta.y;
 
     if (overId.startsWith('timeline:')) {
-      const min = timeGuideMin(zone, currentY);
-      drawTimeGuide(zone, min);
+      const min = minFromY(zone, currentY);
+      drawTimeGuide(zone, min, zoneWindow(zone));
     } else if (overId.startsWith('week:')) {
       const min = weekGuideMin(zone, currentY);
-      drawTimeGuide(zone, min);
+      drawTimeGuide(zone, min, FULL_DAY);
     } else {
       clearTimeGuide();
     }
@@ -394,7 +414,7 @@ export function useTimelineDrag() {
     const date = zone.dataset.date || null;
 
     if (overId.startsWith('timeline:')) {
-      const min = timeGuideMin(zone, currentY);
+      const min = minFromY(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.minToTime(min)}`);
       return;

@@ -182,6 +182,17 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export const ROLES: Role[] = ['owner', 'editor', 'viewer'];
 
+/**
+ * **能授出去的**角色：只有 `editor` 与 `viewer`，没有 `owner`。
+ *
+ * 创建者不是「一种可以分下去的权限」，而是一个集**必须存在的那个主人**
+ * （不变量 2：每个集永远至少有一个 owner）。所以下拉里不该有它 ——
+ * 列出来就等于在问「把谁升成第二个主人」，那是个没有答案的问题。
+ *
+ * 界面上凡是「给某人挑权限」的选择器都该用这个列表，别再用 `ROLES`。
+ */
+export const ASSIGNABLE_ROLES: Role[] = ['editor', 'viewer'];
+
 /** 角色一句话解释，选权限时直接写清楚会怎样 */
 export const ROLE_HINT: Record<Role, string> = {
   owner: '能改内容，也能改名、加人、删日程集',
@@ -306,6 +317,24 @@ export interface UiPrefs {
    */
   navHidden: string[];
   /**
+   * **默认日程集**：`null` 表示用户还没选过，按 `resolveDefaultCal()` 兜。
+   *
+   * 以前「哪个是默认」是拿名字比的 —— `cal.name === '我的日程'`。那条判断
+   * 会在**改名**那一刻失效：把默认的那个改名叫「工作」，它就不再是默认、
+   * 就可以被删掉，于是用户可能把自己最后一个集删没了（不变量 1 只在登录 /
+   * 退出 / 被踢时才由服务端的 `ensureHasCalendar` 兜回来）。反过来，别人建
+   * 一个也叫「我的日程」的集并把你拉进去，你这个只读成员会看到「这是你的
+   * 默认日程集，不能删除」—— 一句对不上的话。
+   *
+   * 现在它是一个**显式的 id**，改不改名都不影响。
+   *
+   * 为什么存本地而不是跟 `cals` 一起同步：`ui.cal`（当前看哪个集）本来就是
+   * 本地偏好，见下面 `cal` 的注释。「打开哪个」和「现在看哪个」是同一类
+   * 偏好，各设备不一样是合理的。要改成跨设备就得加 users 表的一列 +
+   * 接口，那是另一件事，别顺手动。
+   */
+  defaultCal: string | null;
+  /**
    * 移动端底栏成员，1–4 项，顺序同 `navOrder`。
    *
    * 「更多」恒占最后一格，所以总格数 ≤ 5 —— 这是 Apple HIG 对 tab bar 的
@@ -316,6 +345,25 @@ export interface UiPrefs {
   tdoneOpen: boolean;
   /** 当前选中的日程集。本地偏好，各设备可以看不同的集 */
   cal: string | null;
+  /**
+   * 侧栏勾选显示哪些集。**只管显示，不管归属** —— 新建的东西永远落 `cal`。
+   *
+   * 它跟 `cal` 分开是因为两件事的粒度不同：`cal` 必须是**一个**（新任务得有个
+   * 归属），而「我想同时看哪几个」可以是零到多个。
+   *
+   * `store.toggleCal()` 保证至少留一个勾着的（归属不能落在看不见的集里，
+   * 否则新建的东西会「凭空消失」）。空数组只可能来自老数据或手改的
+   * localStorage，读取时照样当「什么都不显示」，不崩。
+   */
+  cals: string[];
+  /**
+   * 日视图时间窗，只看 `[dayFrom, dayTo)` 这几个小时（整数小时，0–24）。
+   *
+   * 默认 0–24 = 整天。收窄之后时间轴按比例重排，**不滚动的日视图**因此还能
+   * 保持每小时足够高 —— 见 domain/layout.ts 的 DayWindow。
+   */
+  dayFrom: number;
+  dayTo: number;
 }
 
 export interface LocalState {

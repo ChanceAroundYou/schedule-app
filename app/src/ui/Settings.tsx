@@ -15,21 +15,22 @@
  * 写死颜色会让深色模式在这里失效）。
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
 import {
   Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
   Upload, Download, Trash2, UserRound, Plus,
-  AlertTriangle, ChevronDown, Wifi, WifiOff, CloudUpload,
+  AlertTriangle, ChevronDown, Wifi, WifiOff, CloudUpload, Clock, Star,
 } from 'lucide-react';
 import { type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode } from '../domain/types.ts';
+import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode, UiPrefs } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
-import { TAB_MAX } from '../domain/model.ts';
+import { TAB_MAX, resolveDefaultCal } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Card, Chips, Field, Input, Row, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Card, Chips, Field, InlineRename, Input, MiniIconBtn, Row, Sheet, useConfirm, toast } from './kit.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
@@ -272,6 +273,47 @@ function say(e: unknown): string {
   return e instanceof ApiError ? e.message : '操作失败，请重试';
 }
 
+/* ============================ 日视图时间窗 ============================ */
+
+const HOUR_LABELS: string[] = Array.from({ length: 25 }, (_, h) => (h + ':00'));
+
+/**
+ * 日视图只看哪几个小时。
+ *
+ * 日视图是**锁单屏、不滚动**的（见 styles/calendar.css 的 .content-day），
+ * 整天 24 小时摊在一屏里每小时只有二十几 px。收窄时间窗 = 每小时重新变高，
+ * 于是这一档既是「隐藏夜里的任务」，也是「让白天的时间块读得清」。
+ *
+ * 下限由 normalizeUi 兜（MIN_SPAN 小时），这里不重复判断。
+ */
+function DayWindowCard({ ui }: { ui: UiPrefs }) {
+  const fromId = useId();
+  const toId = useId();
+  return (
+    <Card icon={<Clock size={14} />} title="日视图">
+      <Field label="只看这段时间">
+        <Row>
+          <select
+            id={fromId} value={ui.dayFrom} data-day-win="from"
+            onChange={(e) => store.setUi({ dayFrom: Number(e.target.value) })}
+            className="h-[30px] rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-2 text-[12.5px] text-[var(--text)] outline-none focus:border-[var(--primary)]"
+          >
+            {HOUR_LABELS.map((l, h) => <option key={h} value={h}>{l}</option>)}
+          </select>
+          <span className="text-[12.5px] text-[var(--text-2)]">到</span>
+          <select
+            id={toId} value={ui.dayTo} data-day-win="to"
+            onChange={(e) => store.setUi({ dayTo: Number(e.target.value) })}
+            className="h-[30px] rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-2 text-[12.5px] text-[var(--text)] outline-none focus:border-[var(--primary)]"
+          >
+            {HOUR_LABELS.map((l, h) => <option key={h} value={h}>{l}</option>)}
+          </select>
+        </Row>
+      </Field>
+    </Card>
+  );
+}
+
 /** 权限变了 / 成员变了之后，把集列表和邀请刷新一遍 */
 async function refreshCals(): Promise<void> {
   await engine.refreshMeta();
@@ -289,6 +331,10 @@ async function refreshCals(): Promise<void> {
 function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => void }) {
   const active = state.ui.cal;
   const [openId, setOpenId] = useState<string | null>(active);
+  /* 口径只有这一处：默认集 = `ui.defaultCal`，失效时兜到第一个自己建的集。
+     在这一层算一遍传下去，别让每个 CalItem 各自问一遍（那种写法迟早
+     有一项忘了更新，星标和「不能删」就对不上了）。 */
+  const defaultId = resolveDefaultCal(state.ui, state.cals);
 
   const create = async () => {
     try {
@@ -309,7 +355,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
          文字就叫「邀请」—— 和上面「邀请成员」那个提交按钮重名，两个按钮
          一个发邀请、一个看收件箱，点错是常事。 */
       extra={!!state.invites.length && (
-        <Btn variant="chip" size="sm" onClick={onInvites}>
+        <Btn variant="chip" size="sm" data-cal-invites="1" onClick={onInvites}>
           <MailPlus size={13} /> 邀请收件箱 {state.invites.length}
         </Btn>
       )}
@@ -320,6 +366,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
             key={c.id}
             cal={c}
             active={c.id === active}
+            isDefault={c.id === defaultId}
             open={openId === c.id}
             onToggle={() => {
               store.setActiveCal(c.id);
@@ -328,10 +375,12 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
           />
         ))}
       </div>
+      {/* normal 而不是「虚线框的 chip」：虚线是「这里可以放东西」的暗示，
+          而新建是一个**按钮**，虚线框让它看着像一块待填的占位区。 */}
       <Btn
-        variant="chip"
+        variant="normal"
         onClick={() => void create()}
-        className="w-full border-dashed"
+        className="w-full"
       >
         <Plus size={13} /> 新建日程集
       </Btn>
@@ -340,24 +389,24 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
 }
 
 /** 一个日程集：收起是一行，展开是它的全部设置 */
-function CalItem({ cal, active, open, onToggle }: {
+function CalItem({ cal, active, isDefault, open, onToggle }: {
   cal: Cal;
   active: boolean;
+  /** 是不是默认日程集。由 CalsTab 用 `resolveDefaultCal()` 算好传进来 */
+  isDefault: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
   const confirm = useConfirm();
   const [members, setMembers] = useState<Member[]>([]);
   const [sent, setSent] = useState<Invite[]>([]);
-  const [name, setName] = useState(cal.name);
   const [busy, setBusy] = useState(false);
-  const fid = useId();
 
   const calId = cal.id;
   const mine = cal.role;
   const manage = canManage(mine);
-  /** 默认日程集 = 用户注册时自动建的那个，名字固定叫「我的日程」 */
-  const isDefault = cal.name === '我的日程' && mine === 'owner';
+  /* 「哪个是默认」是一个**显式的 id**（`ui.defaultCal`），不是拿名字比 ——
+     以前写的是 `cal.name === '我的日程'`，改个名这条保护就失效了。 */
 
   const reload = async () => {
     try {
@@ -367,10 +416,7 @@ function CalItem({ cal, active, open, onToggle }: {
     } catch (e) { toast(say(e)); }
   };
 
-  useEffect(() => {
-    setName(cal.name);
-    if (open) void reload();
-  }, [open, cal.name]);
+  useEffect(() => { if (open) void reload(); }, [open]);
 
   const run = async (fn: () => Promise<void>) => {
     if (busy) return;
@@ -380,9 +426,9 @@ function CalItem({ cal, active, open, onToggle }: {
     finally { setBusy(false); }
   };
 
-  const saveName = () => run(async () => {
-    const n = name.trim();
-    if (!n || n === cal.name) return;
+  const saveName = (next: string) => run(async () => {
+    const n = next.trim();
+    if (!n) { toast('日程集名字不能为空'); return; }
     await api.renameCal(calId, n);
     toast('已改名');
   });
@@ -416,55 +462,67 @@ function CalItem({ cal, active, open, onToggle }: {
   };
 
   return (
-    /* 整块**始终**有描边，标题行**始终**有底色 —— 收起时也看得出这里是一个
-       可展开的块。原先收起态是 `border-transparent`、底色挂在整块上（开的时候
-       连正文一起染色），于是「展开」的视觉信号是「整块变灰」，正文跟着一起灰。
-       用户要的是：正文不要底色，只有标题行有底色 + 边缘。 */
-    <div className="overflow-hidden rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--border)]">
-      <button
-        type="button"
-        data-cal={cal.id}
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 bg-[var(--panel-3)] px-3 py-2 text-left text-[13px] transition hover:brightness-95"
+    /* 外框整个去掉了：原来「卡里一个大框、框里一个小框、小框里每行又是一个
+       带底色的胶囊」，三层框套三层底色，用户说「一层层大框套小框」。
+       现在**只有标题行是那块圆角 + 底色的东西**，正文直接摆在卡的留白里，
+       左右边与标题行的内容对齐（不再多包一层 p-3）。 */
+    <div>
+      {/* 固定 h-[40px]：改名输入框是 28px、三个图标钮都是 24px，两态都落在
+          这个高度上 —— 一点铅笔，下面的成员区不会被顶一下。
+          外面那层 `px-3` 只给标题行（它是条），正文是 px-0。 */}
+      <div
+        className="flex h-[40px] items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] pl-3 pr-2 transition hover:brightness-95"
       >
-        <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium text-[var(--primary)]' : 'text-[var(--text-2)]')}>
-          {cal.name}
-        </span>
-        {cal.role !== 'owner' && (
-          <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
-            {ROLE_LABEL[cal.role]}
-          </span>
-        )}
-        <ChevronDown size={13} className={cx('shrink-0 text-[var(--text-3)] transition', open && 'rotate-180')} />
-      </button>
+        <InlineRename
+          value={cal.name}
+          label="日程集名字"
+          disabled={!manage || busy}
+          onSave={saveName}
+          inputProps={{ 'data-cal-name': '1' } as InputHTMLAttributes<HTMLInputElement>}
+          confirmProps={{ 'data-cal-save': '1' } as ButtonHTMLAttributes<HTMLButtonElement>}
+          display={(
+            <button
+              type="button"
+              data-cal-item={cal.id}
+              onClick={onToggle}
+              aria-expanded={open}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left text-[13px]"
+            >
+              <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium text-[var(--primary)]' : 'text-[var(--text-2)]')}>
+                {cal.name}
+              </span>
+              {cal.role !== 'owner' && (
+                <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+                  {ROLE_LABEL[cal.role]}
+                </span>
+              )}
+              <ChevronDown size={13} className={cx('shrink-0 text-[var(--text-3)] transition', open && 'rotate-180')} />
+            </button>
+          )}
+        />
+        {/* 星标 = 默认日程集。固定 24px 那一格常驻 —— 改名时它不消失，
+            所以从「平时」切到「编辑中」，标题行右边的宽度一点不变。
+            传 `aria-pressed` 不传 `disabled`：它是显示状态的标记，
+            禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。 */}
+        <MiniIconBtn
+          label={isDefault ? '默认日程集' : '设为默认日程集'}
+          aria-pressed={isDefault}
+          onClick={() => {
+            if (isDefault) return;
+            store.setUi({ defaultCal: calId });
+            toast('「' + cal.name + '」已设为默认日程集');
+          }}
+          className={isDefault ? 'text-[var(--primary)]' : ''}
+        >
+          <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
+        </MiniIconBtn>
+      </div>
 
       {open && (
-        <div className="flex flex-col gap-4 p-3">
-          {/* 改名 */}
-          <Field
-            label="名字"
-            htmlFor={fid + '-name'}
-            hint={isDefault ? '这是你的默认日程集，不能删除或退出。' : undefined}
-          >
-            <Row>
-              <Input
-                id={fid + '-name'}
-                value={name}
-                disabled={!manage}
-                data-cal-name="1"
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-                className="h-[30px] min-w-0 flex-1"
-              />
-              {manage && (
-                <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
-                  保存
-                </Btn>
-              )}
-            </Row>
-          </Field>
-
+        /* data-cal-body 是探针抓手：它量的是「标题行下面那块」的位置，
+           用来盯住「切进行内改名时下面不许动」这条约定（见 kit.tsx 的
+           InlineRename）。给它一个锚点，探针就不用去猜哪个元素是正文。 */
+        <div data-cal-body="1" className="flex flex-col gap-3.5 pt-3.5">
           {/* 成员 / 邀请：走和「管理日程集」浮层**同一份** MembersSection。
               这里原先自己抄了一遍成员行、角色选择器、邀请行、撤回按钮，
               两份只有缩进不同 —— 角色一处用 Chips 一处用 Dropdown，
@@ -580,7 +638,6 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
         <>
           {/* 功能区放在最前面 —— 它改的是导航本身，比配色更「结构性」 */}
           <NavCard state={state} />
-
           <Card icon={<Palette size={14} />} title="外观">
             <Field label="色板">
               <Chips<AccentKey>
@@ -621,6 +678,8 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               />
             </Field>
           </Card>
+
+          <DayWindowCard ui={ui} />
         </>
       )}
 

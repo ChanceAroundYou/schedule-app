@@ -22,10 +22,10 @@ import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset, LONG_PRES
 import * as T from './ui/theme.ts';
 import { ConfirmProvider, ToastHost, useConfirm, toast } from './ui/kit.tsx';
 import { DndProvider, useTimelineDrag } from './ui/dndkit.tsx';
-import { HOUR_H, DAY_H } from './domain/layout.ts';
+import { HOUR_H, DAY_H, FULL_DAY, spanOf, yToMin, type DayWindow } from './domain/layout.ts';
 import { Auth } from './ui/Auth.tsx';
 import { Shell, Topbar, CalSubheader, QuickAdd } from './ui/Shell.tsx';
-import { InviteSheet, ManageSheet } from './ui/Calendars.tsx';
+import { InviteSheet } from './ui/Calendars.tsx';
 import { ProjectSheet } from './ui/ProjectSheet.tsx';
 import { Drawer } from './ui/Drawer.tsx';
 import { ActSheet } from './ui/ActSheet.tsx';
@@ -39,6 +39,20 @@ import { Empty } from './views/parts.tsx';
 import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
+
+/**
+ * 从 DOM 上读出时间轴的时间窗。
+ *
+ * 日视图不再有固定像素高度（锁单屏 + 用户可收窄时间窗），所以 px↔分钟的换算
+ * 必须知道**当前那一屏是哪几个小时**。DayView 把 `data-from` / `data-to`
+ * 写在时间轴上，这里现场读回来。读不到就按整天算。
+ */
+function domWindow(zone: HTMLElement | null): DayWindow {
+  const from = Number(zone?.dataset.from);
+  const to = Number(zone?.dataset.to);
+  if (zone && Number.isFinite(from) && Number.isFinite(to) && to > from) return { from, to };
+  return FULL_DAY;
+}
 
 function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
   /**
@@ -58,7 +72,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [actId, setActId] = useState<string | null>(null);
-  const [calOpen, setCalOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   /** 找日期面板与「更多」抽屉的开关放在这里 —— Esc 要按一个固定顺序逐层关 */
   const [jumpOpen, setJumpOpen] = useState(false);
@@ -349,11 +362,15 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       }
       if (kind === 'timeline' || kind === 'week') {
         const r = zone.getBoundingClientRect();
-        const min = Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15;
+        /* 时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——
+           实测高度 + 窗内换算，见 domain/layout.ts 的 yToMin。 */
+        const min = kind === 'timeline'
+          ? yToMin(e.clientY - r.top, r.height, domWindow(zone))
+          : Math.max(0, Math.min(1425, Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15));
         setOpenId(store.addTask({
           title: '',
           date,
-          time: D.minToTime(Math.max(0, Math.min(1425, min))),
+          time: D.minToTime(min),
         }));
         return;
       }
@@ -388,6 +405,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       id: string; y: number; edge: 'top' | 'bottom';
       start: number; end: number; dur: number; cur: number; curStart?: number;
       el: HTMLElement | null;
+      /** 按下那一刻的时间窗与时间轴实测高度 —— 拉伸全程只用这一份，中途不重测 */
+      win: DayWindow; boxH: number;
     } | null = null;
 
     /* 拉伸时的浮标：把「现在拉成了几点 / 多长」写在手边。
@@ -415,32 +434,41 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       const t = store.get().tasks[h.dataset.id || ''];
       if (!t) return;
       const start = D.timeToMin(t.time) || 0;
+      /* 拉伸全程按**实测**高度换算：时间轴高度随窗口和屏幕变，写死 HOUR_H 会越拖越偏。
+         把时间窗和像素高度在按下那一刻一起存住，move 里直接用。 */
+      const tl = host.querySelector<HTMLElement>('.timeline');
+      const boxH = tl?.getBoundingClientRect().height || HOUR_H * 24;
       rz = {
         id: t.id, y: e.clientY,
         edge: h.dataset.act === 'resize-top' ? 'top' : 'bottom',
         start, end: start + (t.duration || 60), dur: t.duration || 60, cur: t.duration || 60,
         el: host.querySelector<HTMLElement>(`.tl-event[data-id="${t.id}"]`),
+        win: domWindow(tl), boxH,
       };
       rz.el?.classList.add('resizing');
       showTip(rz.el, rz.dur, rz.edge === 'top' ? t.time : null);
       e.preventDefault();
     };
 
+    /* 分钟 → 纵向百分比。日视图的方块高度是百分比定位，跟这里必须同一种算法。 */
+    const pct = (min: number) => (min - rz!.win.from) / spanOf(rz!.win) * 100;
+
     const move = (e: MouseEvent) => {
       if (!rz) return;
-      const addMin = Math.round((e.clientY - rz.y) / HOUR_H * 60 / 15) * 15;
+      const minPerPx = spanOf(rz.win) / rz.boxH;
+      const addMin = Math.round((e.clientY - rz.y) * minPerPx / 15) * 15;
       if (rz.edge === 'top') {
         // 底边固定：不能越过底边、不能早于 0:00
         const ns = Math.max(0, Math.min(rz.end - 15, rz.start + addMin));
         rz.curStart = ns;
         rz.cur = rz.end - ns;
         if (rz.el) {
-          rz.el.style.top = (ns / 1440 * 1536) + 'px';
-          rz.el.style.height = (rz.cur / 1440 * 1536) + 'px';
+          rz.el.style.top = pct(ns) + '%';
+          rz.el.style.height = (rz.cur / spanOf(rz.win) * 100) + '%';
         }
       } else {
         rz.cur = Math.max(15, rz.dur + addMin);
-        if (rz.el) rz.el.style.height = (rz.cur / 1440 * 1536) + 'px';
+        if (rz.el) rz.el.style.height = (rz.cur / spanOf(rz.win) * 100) + '%';
       }
       showTip(rz.el, rz.cur, rz.edge === 'top' && rz.curStart != null ? D.minToTime(rz.curStart) : null);
     };
@@ -672,7 +700,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       state={state}
       contentRef={contentRef}
       onNav={nav}
-      onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
       /* 「更多」抽屉 / 找日期面板的开关都在 App 这一层：Esc 要按
          actSheet > 抽屉 > 找日期 的顺序关，只有同时看得见这三者的地方才排得出顺序 */
@@ -751,7 +778,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       />
 
       {/* 两个浮层都传全量 state：它们要读 cals / invites，那是跨集的东西 */}
-      <ManageSheet state={state} open={calOpen} onClose={() => setCalOpen(false)} />
       <InviteSheet state={state} open={invOpen} onClose={() => setInvOpen(false)} />
       {pjSheet && (
         <ProjectSheet

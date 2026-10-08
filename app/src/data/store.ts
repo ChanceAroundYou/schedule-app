@@ -20,6 +20,7 @@ import { canWrite } from '../domain/types.ts';
 import {
   hydrateHabit, hydrateTask, hydrateProject, isGone, liveHabits, trashedTasks, trashedHabits,
   roleOf, makeTask, makeHabit, makeProject, newOpId, normalizeUi, defaultUi, nextOrder, orderCmp,
+  resolveDefaultCal,
 } from '../domain/model.ts';
 import { writeFields } from '../domain/merge.ts';
 import { instanceId, repeatNext, seriesRootOf, toRepeat } from '../domain/repeat.ts';
@@ -119,19 +120,29 @@ export function resetLocal(): void {
 /* ------------------------------------------------------------ 日程集 */
 
 /**
- * 保证 `ui.cal` 指向一个真实存在、且我仍然在里面的集。
+ * 保证 `ui.cal` 指向一个真实存在、且我仍然在里面的集；
+ * `ui.cals`（勾选显示的集合）里不留已消失的集。
  *
- * **只有这一个地方改 `ui.cal` 的归属** —— 集列表一变（被踢、自己退出、
- * 别人删了、刚接受邀请）就调它。散在各处判断迟早会留下一个指向已消失集的
- * 选择，表现是「界面一片空白，怎么点都没反应」。
+ * **集列表一变（被踢、自己退出、别人删了、刚接受邀请）就调它** —— 这是唯一
+ * 「修」归属的地方：把指向已消失集的选择拉回来，顺手把勾选集合里那些已经
+ * 不在的集清掉。散在各处判断迟早会留下一个指向已消失集的选择，表现是
+ * 「界面一片空白，怎么点都没反应」。
  *
- * 优先保留用户当前的选择；它不在了才退到第一个。
+ * 优先保留用户当前的选择；它不在了才退到**默认日程集**（还没有默认就退到第一个）。
+ * **`cal` 不在勾选集合里也补进去** —— 它是新建东西的归属集，不显示它的话
+ * 新建的条目会当场「凭空消失」（写进去了但被过滤器滤掉），那比空页面更费解。
  */
 function resolveCal(): void {
   const ids = state.cals.map((c) => c.id);
   if (!state.ui.cal || !ids.includes(state.ui.cal)) {
-    state.ui.cal = ids.length ? ids[0] : null;
+    state.ui.cal = resolveDefaultCal(state.ui, state.cals);
   }
+  if (state.ui.cal && !state.ui.cals.includes(state.ui.cal)) {
+    state.ui.cals = [...state.ui.cals, state.ui.cal];
+  }
+  // 只清「已经不在列表里」的。**勾选状态本身不动** —— 用户勾成什么样就是
+  // 什么样，这里没有立场替他重排（能不能勾成空是 toggleCal 的事，见下）
+  state.ui.cals = state.ui.cals.filter((id) => ids.includes(id));
 }
 
 /** 当前选中的集 id。null 表示还没有集（多半是还没连上服务器） */
@@ -230,12 +241,51 @@ export function dismissConflict(entityId: string, field: string): void {
   emit();
 }
 
-/** 切换当前看的集。纯本地偏好，不影响数据归属。 */
+/**
+ * 切换当前看的集。纯本地偏好，不影响数据归属。
+ *
+ * 顺手让它**勾着**（侧栏是显示过滤，`ui.cal` 是它的归属 —— 归属的集没勾上，
+ * 新建的东西就落在看不见的集里）。设成归属却不显示，等于凭空消失。
+ */
 export function setActiveCal(id: string): void {
-  if (!state.cals.some((c) => c.id === id) || state.ui.cal === id) return;
+  if (!state.cals.some((c) => c.id === id)) return;
+  if (state.ui.cal === id && state.ui.cals.includes(id)) return;
   state.ui.cal = id;
+  resolveCal();
   persist();
   emit();
+}
+
+/**
+ * 勾 / 取消勾一个集（只管显示）。
+ *
+ * 顺带管一下**归属**（`ui.cal`，新东西落哪儿），因为归属和显示是分不开的：
+ * 归属的集没勾上，新建的日程就落在日程页看不见的集里 —— 用户看到的是
+ * 「凭空消失」。所以勾上它就让它当归属；取消勾掉它（也就是它本来是归属）
+ * 就把归属交给**还在勾着的那个**，没有别的在勾就还给它（见下）。
+ *
+ * 所以实际上**至少永远有一个集是勾着的**：不勾任何东西让日程页全空看着像
+ * 坏了，而且恢复得靠用户自己想起来。真想只看某一个集，取消勾掉别的就够了。
+ */
+export function toggleCal(id: string): void {
+  if (!state.cals.some((c) => c.id === id)) return;
+  const at = state.ui.cals.indexOf(id);
+  if (at < 0) {
+    state.ui.cals = [...state.ui.cals, id];
+    state.ui.cal = id;
+  } else {
+    const left = state.ui.cals.filter((x) => x !== id);
+    // 还有别的勾着就顺位给它，没有就**撤销这次取消** —— 归属不能没有显示的地方
+    state.ui.cals = left.length ? left : state.ui.cals;
+    if (left.length && state.ui.cal === id) state.ui.cal = left[0];
+  }
+  persist();
+  emit();
+}
+
+/** 侧栏勾选显示的集。至少一个 —— 见 toggleCal 那段 */
+export function shownCals(): string[] {
+  return state.ui.cals;
 }
 
 /**

@@ -9,8 +9,9 @@
 
 import * as D from './date.ts';
 import { toRepeat } from './repeat.ts';
+import { MIN_SPAN } from './layout.ts';
 import type {
-  AccentKey, Habit, LocalState, Project, ProjectStatus, Role, StyleKey, Task, ThemeMode, UiPrefs,
+  AccentKey, Cal, Habit, LocalState, Project, ProjectStatus, Role, StyleKey, Task, ThemeMode, UiPrefs,
 } from './types.ts';
 
 /* ------------------------------------------------------------------ id */
@@ -539,10 +540,47 @@ export function defaultUi(): UiPrefs {
     navOrder: CUSTOMIZABLE.slice(),
     navBottom: ['trash'],
     navHidden: [],
+    // 还没选过 → 由 resolveDefaultCal() 兜到「第一个自己建的集」
+    defaultCal: null,
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     cal: null,
+    // 侧栏「显示哪几个集」。空数组只有 normalizeUi 的坏值回落才会真的出现 ——
+    // store.toggleCal() 保证至少留一个勾着的（见 types.ts 的注释）
+    cals: [],
+    dayFrom: 0,
+    dayTo: 24,
   };
+}
+
+/**
+ * **谁是默认日程集** —— 界面与 `store` 都只问这一个函数，不各写一套判断。
+ *
+ * 三步，顺序有意义：
+ *   1. 用户选过、且那个集我还在里面 → 就是它（哪怕我是只读成员：我可以把它
+ *      设成「打开时看哪个」，只是不能改它）。
+ *   2. 选过的那个已经没了（被踢、被删、我退出了）→ 退到**第一个自己建的集**。
+ *      不退到「列表第一个」是因为列表顺序按 `createdAt`，可能第一个是别人
+ *      建、我只有只读的集 —— 把它当默认没有意义，而且它多半不能改名。
+ *   3. 一个自己建的都没有（只有别人拉我进去的集）→ 列表第一个。此时**不要**
+ *      硬造一个默认出来：这一栏会显示成「星标在别人建的集上」，而那一栏还
+ *      带着「不能删」的暗示。
+ *
+ * 返回 null = 一个集都没有（还没连上服务器 / 注册刚落地）。
+ */
+export function resolveDefaultCal(ui: Pick<UiPrefs, 'defaultCal'>, cals: Cal[]): string | null {
+  if (ui.defaultCal && cals.some((c) => c.id === ui.defaultCal)) return ui.defaultCal;
+  const own = cals.find((c) => c.role === 'owner');
+  if (own) return own.id;
+  return cals.length ? cals[0].id : null;
+}
+
+/**
+ * 改 UI 偏好。**只认得写进去的键**，其余原样保留 —— 调用方写
+ * `setUi({ defaultCal: id })` 不会把别的偏好冲掉。
+ */
+export function setDefaultCal(ui: UiPrefs, calId: string | null): void {
+  ui.defaultCal = calId && calId.trim() ? calId : null;
 }
 
 export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
@@ -557,7 +595,31 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // cal 只保证是字符串或 null。它到底还存不存在要等服务器把集列表发下来，
   // 那一步在 store.setCals 里做 —— normalizeUi 是纯函数，不知道有哪些集。
   if (ui.cal != null && typeof ui.cal !== 'string') ui.cal = null;
+  /* cals 是勾选显示的集合。老数据没有这个字段（undefined），落成 [] = 一个都
+     不显示 —— 对老用户来说等于「日程页空了」，所以**从 cal 起步**：把当前
+     那个集勾上，其余一个不勾。
+
+     **判的是 `raw.cals` 而不是 `ui.cals`**：上面 `{ ...d, ...raw }` 已经用
+     默认值把 cals 补成 [] 了，再问 ui.cals 永远是数组，老数据这条永远走不到
+     （写的时候没发现，是 domain.test.ts 那条断言红的）。 */
+  const rawCals = raw?.cals;
+  if (!Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
+  else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', 'week', 'month'].includes(ui.view)) ui.view = 'day';
+  /* 时间窗：只认 0–24 的整数小时，且至少留 MIN_SPAN 小时。
+     写坏的值（字符串、NaN、to ≤ from）一律回落成整天 —— 归一化的职责是
+     「认得的值原样保留，不认得的打回默认」，不是替用户猜一个好看的窗。 */
+  const hour = (v: unknown): number =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(24, Math.round(v))) : NaN;
+  const from = hour(ui.dayFrom);
+  const to = hour(ui.dayTo);
+  if (Number.isNaN(from) || Number.isNaN(to)) {
+    ui.dayFrom = 0;
+    ui.dayTo = 24;
+  } else {
+    ui.dayFrom = Math.min(from, 24 - MIN_SPAN / 60);
+    ui.dayTo = Math.max(ui.dayFrom + MIN_SPAN / 60, to);
+  }
   if (!ui.cursor) ui.cursor = D.today();
   if (ui.nav === 'notes') ui.nav = 'today';
   if (!NAV_ALL.includes(ui.nav)) ui.nav = 'today';
@@ -591,6 +653,12 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   ui.navHidden = Array.isArray(ui.navHidden)
     ? ui.navHidden.filter((k) => order.indexOf(k) >= 0)
     : [];
+
+  // defaultCal 这里**只做形状校正**，不判断它还在不在列表里 —— `normalizeUi`
+  // 拿不到 `cals`（签名只有 ui），那是 `resolveDefaultCal()` 的活。
+  // 空串归一成 null：老版本没这个字段（undefined）与「显式留空」一样，
+  // 都表示「没选过」，由 resolveDefaultCal 兜底。
+  if (typeof ui.defaultCal !== 'string' || !ui.defaultCal) ui.defaultCal = null;
 
   // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
   // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，

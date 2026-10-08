@@ -120,9 +120,8 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onManageCal, onInvites }: {
+function Sidebar({ state, onNav }: {
   state: LocalState; onNav: (k: string) => void;
-  onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
   const order = state.ui.navOrder.length ? state.ui.navOrder : DEFAULT_ORDER;
@@ -165,9 +164,9 @@ function Sidebar({ state, onNav, onManageCal, onInvites }: {
         <div className="brand-name">日程清单</div>
       </div>
 
-      {/* 日程集在导航之上：下面的日程 / 打卡 / 已完成是**按集**的，
+      {/* 日程集在导航之上：下面的日程 / 打卡 / 已完成是**按勾选的集**过滤的，
           先选集再选页面，顺序跟用户脑子里的模型一致 */}
-      <CalSwitcher state={state} onManage={onManageCal} onInvites={onInvites} />
+      <CalSwitcher state={state} />
 
       <nav className="nav" id="nav">{main.map(item)}</nav>
       <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
@@ -916,12 +915,11 @@ export function QuickAdd({ state, onSubmit }: {
 
 export function Shell({
   state, contentRef, onNav,
-  onManageCal, onInvites, more, setMore, topbar, quickAdd, children,
+  onInvites, more, setMore, topbar, quickAdd, children,
 }: {
   state: LocalState;
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
-  onManageCal: () => void;
   onInvites: () => void;
   /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
   more: boolean; setMore: (v: boolean) => void;
@@ -941,15 +939,17 @@ export function Shell({
   return (
     <div className="app">
       {!narrow && (
-        <Sidebar
-          state={state} onNav={onNav}
-          onManageCal={onManageCal} onInvites={onInvites}
-        />
+        <Sidebar state={state} onNav={onNav} />
       )}
 
       <main className="main">
         {topbar}
-        <div className="content" id="content" ref={contentRef}>{children}</div>
+        {/* 日视图锁单屏：内容区不跟着滚（见 styles/calendar.css 的 .content-day）。
+            判据是「日程页 + 日视图」—— 其它页面（列表 / 周 / 月）照常滚。 */}
+        <div
+          className={'content' + (state.ui.nav === 'calendar' && state.ui.view === 'day' ? ' content-day' : '')}
+          id="content" ref={contentRef}
+        >{children}</div>
         {quickAdd}
       </main>
 

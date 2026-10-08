@@ -17,12 +17,12 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { layoutOverlap, timeRange } from './layout.ts';
+import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
-  quickDefaults,
+  quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
 } from './model.ts';
 import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
 
@@ -545,8 +545,105 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
 });
 
-test('navHidden：藏起来是显式黑名单，不会被 navOrder 的补全逻辑吃掉', () => {
-  // 关键区别：navOrder 会把缺的键**补回来**，所以「从 navOrder 里删掉」表达不了
+/* ================= 侧栏多选（ui.cals 的迁移） ================= */
+
+test('多选集合：老数据从当前集起步，不会一进界面日程页就空着', () => {
+  // 老 localStorage 里没有 cals 这个键 —— 落成 [] 的话 useScopedState 会
+  // 返回空 state，老用户看到的是「我所有的任务都没了」
+  assert.deepEqual(normalizeUi({ cal: 'a' }).cals, ['a'], '从 ui.cal 起步');
+  assert.deepEqual(normalizeUi(undefined).cals, [], '连当前集都没有 → 空（还没连服务器）');
+
+  // 认得的值原样保留，别替用户重排或去重成别的样子
+  assert.deepEqual(normalizeUi({ cal: 'a', cals: ['b', 'a'] }).cals, ['b', 'a'],
+    '已经勾着的原样保留，顺序也不动');
+  // 坏值打回默认
+  assert.deepEqual(normalizeUi({ cals: 'a' as unknown as string[] }).cals, [], '非数组 → 空');
+  assert.deepEqual(normalizeUi({ cals: ['a', 7 as unknown as string] }).cals, ['a'],
+    '塞了非字符串的丢掉那一个');
+});
+
+/* ================= 日视图时间窗 ================= */
+
+test('时间窗：默认值是整天，写坏的值打回整天而不是猜一个', () => {
+  assert.deepEqual(windowOf(normalizeUi(undefined)), { from: 0, to: 1440 },
+    '没设置过 → 整天，一小时都不藏');
+
+  for (const bad of [
+    { dayFrom: '早' as unknown as number, dayTo: 23 },
+    { dayFrom: 7, dayTo: NaN },
+    { dayFrom: -5, dayTo: 999 },
+  ]) {
+    assert.deepEqual(windowOf(normalizeUi(bad)), { from: 0, to: 1440 },
+      `写坏的值要打回整天：${JSON.stringify(bad)}`);
+  }
+});
+
+test('时间窗：合法值原样保留，且至少留一个小时', () => {
+  assert.deepEqual(windowOf(normalizeUi({ dayFrom: 7, dayTo: 23 })), { from: 420, to: 1380 });
+
+  // 用户把两头收到只剩半小时 —— 撑开成 1 小时，而不是画出一条看不见的时间轴
+  const tiny = windowOf(normalizeUi({ dayFrom: 10, dayTo: 10 }));
+  assert.equal(spanOf(tiny), 60, '收得太窄要撑到下限');
+
+  // 夜里 23 点起、到 24 点 —— 正好一小时，合法
+  assert.deepEqual(windowOf(normalizeUi({ dayFrom: 23, dayTo: 24 })), { from: 1380, to: 1440 });
+
+  // 反向的窗（23 → 5）不认，但也不打回整天：把 to 顶到 from + 下限，
+  // 用户至少得到一个**能看**的时间窗，而不是「设置被忽略了」
+  assert.deepEqual(windowOf(normalizeUi({ dayFrom: 23, dayTo: 5 })), { from: 1380, to: 1440 },
+    '反向的窗撑成 from 之后的那一小时');
+});
+
+test('时间窗：纵坐标 ⇄ 分钟 互为逆运算', () => {
+  const win = { from: 420, to: 1380 };   // 07:00 – 23:00
+  const boxH = 960;
+  assert.equal(spanOf(win), 960, '16 小时铺满 960px → 每小时 60px');
+
+  // 正中 = 15:00
+  assert.equal(yToMin(boxH / 2, boxH, win), 900);
+  // 顶端 = 07:00
+  assert.equal(yToMin(0, boxH, win), 420);
+  // 底端收在**最后一档起点**（22:45），不是 23:00 —— 23:00 起的那条在窗里
+  // 没有 15 分钟的时长可画，放到窗外就成了看不见的孤儿
+  assert.equal(yToMin(boxH, boxH, win), 1365);
+
+  // 拖到窗外要被夹回窗内，不能落到 03:00 去
+  assert.equal(yToMin(-500, boxH, win), 420);
+  assert.equal(yToMin(99999, boxH, win), 1365);
+
+  // 高度为 0（还没量到 / 已卸载）不能除出 NaN
+  assert.equal(yToMin(100, 0, win), 420);
+});
+
+test('时间窗：窗外的事件整条不画（minToPct 返回 null）', () => {
+  const win = { from: 420, to: 1380 };
+  assert.equal(minToPct(420, win), 0, '窗的第一分钟贴着顶');
+  assert.equal(minToPct(1380, win), 100, '窗的最后一分钟贴着底');
+
+  // 夜里的两条：整条不画，而不是画在顶上冒充 07:00
+  assert.equal(minToPct(60, win), null, '01:00 在窗外');
+  assert.equal(minToPct(1439, win), null, '23:59 在窗外');
+
+  assert.equal(minToPct(900, win), (900 - 420) / 960 * 100, '15:00 落在正中');
+});
+
+test('时间窗：跨过窗沿的按窗沿截断，不整条抹掉', () => {
+  const win = { from: 480, to: 720 };   // 08:00 – 12:00
+
+  // 07:00–09:00 在窗里还露着一小时 —— 整条消失等于「明明有事却看不见」
+  const straddles = pctRange(420, 540, win);
+  assert.deepEqual(straddles, { top: 0, height: 60 / 240 * 100 },
+    '贴着窗顶截断，露出 08:00–09:00 那一小时');
+
+  // 完全在窗外（两头顶不到窗）才整条不画
+  assert.equal(pctRange(0, 300, win), null, '00:00–05:00 完全在窗外');
+  assert.equal(pctRange(900, 1000, win), null, '15:00 之后完全在窗外');
+
+  // 正好卡在窗沿上：高度为 0，不该画成一个空壳
+  assert.equal(pctRange(300, 480, win), null, '07:00–08:00 结束在窗顶，画出来是空的');
+});
+
+test('navHidden：藏起来是显式黑名单，不会被 navOrder 的补全逻辑吃掉', () => {  // 关键区别：navOrder 会把缺的键**补回来**，所以「从 navOrder 里删掉」表达不了
   // 「用户不要它」—— 刷新一次它就自己回来了。navHidden 才表达得了。
   const hidden = normalizeUi({ navHidden: ['projects', 'ai'] });
   assert.deepEqual(hidden.navHidden, ['projects', 'ai']);
@@ -728,4 +825,60 @@ test('一条 op 带了几个字段，就逐个字段各判一次', () => {
     'me',
   );
   assert.deepEqual(r.map((c) => c.field).sort(), ['time', 'title']);
+});
+
+test('resolveDefaultCal：默认日程集是一个显式字段，改名不会让它失效', () => {
+  // 三步回落，各锁一条
+  const cals = [
+    { id: 'a', name: '工作', ownerId: 'u1', createdAt: 1, role: 'owner' as const },
+    { id: 'b', name: '我的日程', ownerId: 'u2', createdAt: 2, role: 'viewer' as const },
+  ];
+
+  // ① 选过的就是它，**名字叫什么都算**
+  assert.equal(resolveDefaultCal({ defaultCal: 'b' }, cals), 'b',
+    '选过的那个哪怕是个只读的集、名字还正好叫「我的日程」，也是默认');
+  assert.equal(resolveDefaultCal({ defaultCal: 'a' }, [
+    { ...cals[0], name: '改过的名字' }, cals[1],
+  ]), 'a', '改过名之后仍然是默认 —— 以前 `name === \'我的日程\'` 这里就断了');
+
+  // ② 选过的那个已经不在了（被踢 / 被删 / 我退出了）→ 退到**第一个自己建的**
+  assert.equal(resolveDefaultCal({ defaultCal: 'gone' }, cals), 'a',
+    '不该退到列表第一个：b 是别人建的，我只读，把别人的集当默认没意义');
+  assert.equal(resolveDefaultCal({ defaultCal: null }, cals), 'a', '没选过 → 第一个自己建的');
+
+  // ③ 一个自己建的都没有 → 列表第一个；一个集都没有 → null
+  assert.equal(resolveDefaultCal({ defaultCal: null }, [cals[1]]), 'b',
+    '只有别人的集时就用那一个，不要硬造默认');
+  assert.equal(resolveDefaultCal({ defaultCal: null }, []), null, '一个集都没有');
+
+  // 关键回归：**别人建一个叫「我的日程」的集**，按名字比会认错
+  assert.equal(resolveDefaultCal({ defaultCal: null }, [
+    { id: 'b', name: '我的日程', ownerId: 'u2', createdAt: 2, role: 'viewer' as const },
+    cals[0],
+  ]), 'a', '「我的日程」是个普通名字，不是标记；真正的默认是第一个自己建的集');
+});
+
+test('normalizeUi：defaultCal 缺省 / 空串都归一成 null，老用户那份不会被打回', () => {
+  assert.equal(defaultUi().defaultCal, null, '新装：没选过');
+  assert.equal(normalizeUi(undefined).defaultCal, null);
+  assert.equal(normalizeUi({}).defaultCal, null);
+  // 老版本没这个字段 → raw 里是 undefined，铺开 defaultUi 之后是 null
+  assert.equal(normalizeUi({ nav: 'today' }).defaultCal, null);
+  // 空串 = 「显式没选」，跟 null 一回事（否则星标那一栏永远点不亮）
+  assert.equal(normalizeUi({ defaultCal: '' }).defaultCal, null);
+  assert.equal(normalizeUi({ defaultCal: 'cal-1' }).defaultCal, 'cal-1');
+  // 类型不对的（盘上被人手改过）也归零，别让它漏到 resolveDefaultCal
+  assert.equal(normalizeUi({ defaultCal: 7 as unknown as string }).defaultCal, null);
+});
+
+test('setDefaultCal：空串与 null 同义，不会写出「有个默认是空串」', () => {
+  const ui = defaultUi();
+  setDefaultCal(ui, 'cal-1');
+  assert.equal(ui.defaultCal, 'cal-1');
+  setDefaultCal(ui, '   ');
+  assert.equal(ui.defaultCal, null, '纯空白 = 没选');
+  setDefaultCal(ui, 'cal-2');
+  setDefaultCal(ui, null);
+  assert.equal(ui.defaultCal, null);
+  assert.equal(defaultUi().defaultCal, null, 'defaultUi() 返回的是新对象，不会被上一个改脏');
 });

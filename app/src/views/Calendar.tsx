@@ -18,7 +18,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { DAY_H, HOUR_H, layoutOverlap, timeRange, type Slot } from '../domain/layout.ts';
+import { DAY_H, HOUR_H, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, type DayWindow, type Slot } from '../domain/layout.ts';
 import { dayLoad, tasksOn, untimedOn } from '../domain/model.ts';
 import { CheckBtn, TaskPill, loadLevel } from './parts.tsx';
 import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
@@ -35,19 +35,23 @@ function hours24(): number[] {
 
 type LayoutEvent = { item: Task; start: number; end: number; col: number; cols: number };
 
-function TimelineEvent({ e, isToday, nowMin }: { e: LayoutEvent; isToday: boolean; nowMin: number }) {
+function TimelineEvent({ e, isToday, nowMin, win }: { e: LayoutEvent; isToday: boolean; nowMin: number; win: DayWindow }) {
   const drag = useDraggableEvent(e.item.id);
   const t = e.item;
-  const top = e.start / 1440 * DAY_H;
-  const hgt = Math.max(24, (e.end - e.start) / 1440 * DAY_H);
+  /* 纵向一律走**百分比**：时间轴高度由容器决定（锁单屏），写死 px 会在
+     窗口一缩放就整体错位。完全在窗外的整条不画，跨过窗沿的按窗沿截断。 */
+  const box = pctRange(e.start, e.end, win);
+  if (!box) return null;
   const w = 100 / e.cols;
   const live = isToday && nowMin >= e.start && nowMin < e.end;
-  const roomy = hgt >= 46;
+  /* 时间段那行只有块够高才画。判据跟着窗口走（收窄时间窗 = 每小时更高），
+     所以不能再拿写死的 px 比 —— 用百分比跟最小可读高度比。 */
+  const roomy = box.height >= 3.4;
   return (
     <div
       className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '')}
       ref={drag.ref}
-      style={{ ...drag.style, top, height: hgt, left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
+      style={{ ...drag.style, top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
       {...drag.attributes}
       {...drag.listeners}
       data-id={t.id}
@@ -76,6 +80,9 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
   // 已完成的未定时任务不再占日程位置 —— 它去了「今天 › 今天已完成」
   const allday = tasks.filter((t) => !t.time && !t.done);
 
+  /* 时间窗由设置决定（默认整天）。窗外的事件整条不画，小时线也只画窗内的。 */
+  const win = windowOf(state.ui);
+
   const slots: Slot<Task>[] = timed.map((t) => {
     const start = D.timeToMin(t.time) || 0;
     return { item: t, start, end: start + (t.duration || 60) };
@@ -90,6 +97,11 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const timelineZone = useDroppableZone(`timeline:${iso}`);
   const alldayZone = useDroppableZone(`allday:${iso}`);
 
+  /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。 */
+  const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to);
+  /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
+  const nowPct = minToPct(nowMin, win);
+
   return (
     <>
       <div className="allday-zone" ref={alldayZone.ref} data-zone-id={`allday:${iso}`} data-date={iso}>
@@ -100,9 +112,12 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
       </div>
 
       <div className="tl-wrap">
-        <div className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`} data-date={iso} style={{ height: DAY_H }}>
-          {hours24().map((h) => (
-            <div className="tl-hour" key={h} style={{ top: h * HOUR_H }}>
+        <div
+          className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`}
+          data-date={iso} data-from={win.from} data-to={win.to}
+        >
+          {hours.map((h) => (
+            <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / spanOf(win)) * 100 + '%' }}>
               <span className="tl-label">{pad2(h)}:00</span>
             </div>
           ))}
@@ -110,14 +125,16 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
           <div className="tl-layer">
             {events.map((e) => {
               const w = 100 / e.cols;
+              const box = pctRange(e.start, e.end, win);
+              if (!box) return null;
               return (
                 <div
                   className="tl-busy"
                   key={e.item.id}
                   data-busy={e.item.id}
                   style={{
-                    top: e.start / 1440 * DAY_H,
-                    height: Math.max(2, (e.end - e.start) / 1440 * DAY_H),
+                    top: box.top + '%',
+                    height: Math.max(0.3, box.height) + '%',
                     left: `${e.col * w}%`,
                     width: `calc(${w}% - 4px)`,
                   }}
@@ -126,8 +143,8 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
             })}
           </div>
 
-          {isToday && (
-            <div className="tl-now" style={{ top: nowMin / 1440 * DAY_H }}>
+          {isToday && nowPct !== null && (
+            <div className="tl-now" style={{ top: nowPct + '%' }}>
               <i />
               <span>{D.minToTime(nowMin)}</span>
             </div>
@@ -135,7 +152,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
           <div className="tl-events">
             {events.map((e) => (
-              <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} />
+              <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} />
             ))}
           </div>
         </div>
@@ -415,9 +432,9 @@ export function useViewLayout(
     }
     saved.current.key = key;
 
-    if (nav === 'calendar' && view === 'day') {
-      host.scrollTop = Math.max(0, D.nowMin() / 1440 * DAY_H - 160);
-    } else if (nav === 'calendar' && view === 'week') {
+    /* 日视图锁单屏、不滚动，所以没有「定位到当前时间」这一步 ——
+       整段可见，内容区不该再被 scrollTop 推走。 */
+    if (nav === 'calendar' && view === 'week') {
       host.scrollTop = 0;
       const g = host.querySelector<HTMLElement>('.week-view');
       if (!g) return;

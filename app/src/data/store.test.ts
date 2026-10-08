@@ -538,3 +538,47 @@ test('快照摊平认得 project 桶，缺省时也不炸', () => {
   assert.doesNotThrow(() => flattenSnapshot({ tasks: {}, habits: {} }));
   assert.equal(flattenSnapshot({ tasks: {}, habits: {} }).length, 0);
 });
+
+/* ==================== 侧栏多选：勾选与归属 ==================== */
+
+test('取消勾掉当前集，归属让给还勾着的那个（不许掉进看不见的集里）', () => {
+  fresh();
+  const other = 'cal-2';
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: other, name: '妈妈', ownerId: 'u2', createdAt: 1, role: 'editor' },
+  ]);
+  store.toggleCal(other);
+  assert.deepEqual(store.shownCals(), [CAL, other], '勾上就加入显示范围');
+  assert.equal(store.get().ui.cal, other, '勾上哪个它就是归属（新建落那儿）');
+
+  store.toggleCal(other);
+  const ui = store.get().ui;
+  assert.deepEqual(store.shownCals(), [CAL], '取消勾掉就只剩一个');
+  assert.equal(ui.cal, CAL, '归属让回还勾着的那个');
+  assert.ok(ui.cals.includes(ui.cal), '归属必须是被显示的那个 —— 否则新建的东西凭空消失');
+});
+
+test('想把最后一个也取消掉：不生效', () => {
+  fresh();
+  store.toggleCal(CAL);           // 取消勾掉唯一一个
+  assert.deepEqual(store.shownCals(), [CAL], '日程页全空看着像坏了，留一个');
+  const cur = store.get().ui.cal;
+  assert.ok(cur && store.shownCals().includes(cur), '归属照样看得见');
+});
+
+test('setActiveCal 会把那个集勾上 —— 设成归属却不显示等于凭空消失', () => {
+  fresh();
+  const other = 'cal-2';
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: other, name: '妈妈', ownerId: 'u2', createdAt: 1, role: 'editor' },
+  ]);
+  store.toggleCal(other);       // 先勾上第二个，才有「取消勾掉一个」这回事
+  store.toggleCal(CAL);         // 取消勾掉原来的那个 → 只剩 other
+  assert.deepEqual(store.shownCals(), [other]);
+
+  store.setActiveCal(CAL);      // 邀请接受后走的就是这条路：设归属 + 勾上
+  assert.deepEqual(store.shownCals(), [other, CAL], '新归属自己被勾上了');
+  assert.equal(store.get().ui.cal, CAL);
+});

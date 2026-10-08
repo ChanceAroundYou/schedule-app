@@ -2,6 +2,20 @@
 
 .content { flex: 1; overflow-y: auto; padding: 18px 22px 8px; }
 
+/* 日视图锁单屏：整天摊在一屏里，内容区不滚。
+   高度**全部交给 flex**（不写 JS 量、不写 calc(100vh - N)）—— 时间轴是 flex 子项，
+   `flex:1 + min-height:0` 就能刚好填满剩下的空间，窗口怎么缩放都不用重算。
+   只有 `.allday-zone` 允许自己滚：未定时任务多起来不该把时间轴顶出屏幕。
+
+   **用后代选择器，不能用 `>`**：`#content` 和 `.tl-wrap` 之间隔着 App.tsx
+   那个 `display:contents` 的长按包装层（它的盒子不生成，但**DOM 树上还在**，
+   子选择器照样断链）。它 display:contents 意味着这两个块确实是 #content 的
+   flex 子项，所以后代选择器命中的就是对的元素。 */
+.content-day { overflow: hidden; display: flex; flex-direction: column; }
+.content-day .allday-zone { flex: 0 0 auto; max-height: 34%; overflow-y: auto; }
+.content-day .tl-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.content-day .tl-wrap > .timeline { flex: 1 1 auto; min-height: 0; height: auto; }
+
 .empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; padding: 70px 0; color: var(--text-3); font-size: 13px;
@@ -32,7 +46,10 @@
   border-radius: var(--r-lg); padding: 16px 14px 16px 62px;
   box-shadow: var(--shadow);
 }
-.timeline { position: relative; }
+/* 兜底高度。真正的高度是 `.content-day .tl-wrap > .timeline` 那条 flex 给的
+   （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。
+   **不滚** —— 整天 24 小时一次性摊在一屏里，滚轮在时间轴上是死的。 */
+.timeline { position: relative; height: 640px; }
 .tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
 .tl-label { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 
@@ -52,7 +69,7 @@
   position: absolute; border-radius: var(--r-sm); padding: 4px 7px;
   background: var(--primary-soft); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
-  overflow: hidden; cursor: pointer; min-height: 22px;
+  overflow: hidden; cursor: pointer; min-height: 12px;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线） */
   display: flex; flex-direction: column; justify-content: center; gap: 1px;
   transition: box-shadow .14s, transform .14s;
