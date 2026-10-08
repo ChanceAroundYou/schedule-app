@@ -1,6 +1,10 @@
 /**
- * color-scan.mjs —— 锁住 legacy.css 里「颜色 / 圆角 / 阴影不许写死」这条。
+ * color-scan.mjs —— 锁住语义样式模块里「颜色 / 圆角 / 阴影不许写死」这条。
  * 零依赖，`node tests/color-scan.mjs`。
+ *
+ * 读哪几个文件**从 `styles/tailwind.css` 的 `@import` 现读**，不写死清单：
+ * 样式拆成模块之后，写死清单的结果是「加了新模块没人回来补」——
+ * 而漏掉的那个模块就变成了没人锁的空白区，正是这个脚本要防的那种错。
  *
  * 为什么值得单独一个脚本：外观是三轴的（深浅 × 色板 × 风格），而三个轴**全靠
  * 改 CSS 变量**。规则区里只要漏一处写死的 px 或 #fff，那一处在切色板时就会
@@ -12,10 +16,30 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const CSS = fileURLToPath(new URL('../src/styles/legacy.css', import.meta.url));
-/** 新表面。令牌仍全在 legacy.css，这里只借用它的变量 —— 但同样不许写死 */
-const NEW_SURFACES = fileURLToPath(new URL('../src/styles/tailwind.css', import.meta.url));
+/** 样式目录与入口。入口自己也算「新表面」，单独扫一遍（它没有令牌块）。 */
+const STYLE_DIR = fileURLToPath(new URL('../src/styles/', import.meta.url));
+const NEW_SURFACES = join(STYLE_DIR, 'tailwind.css');
+
+/**
+ * 按入口里 `@import "./x.css"` 的**出现顺序**读出全部语义模块。
+ *
+ * 顺序不能乱：风格轴靠源码顺序压过 `:root` 与 `[data-theme]`（三者特异度都是
+ * (0,1,0)），拼错顺序会让下面的先后判断失真 —— 那正是这个脚本要锁的东西之一。
+ */
+export function styleSources() {
+  const list = [...readFileSync(NEW_SURFACES, 'utf8')
+    .matchAll(/@import\s+"\.\/([\w.-]+\.css)"/g)].map((m) => m[1]);
+  if (!list.length) throw new Error('tailwind.css 里没读到 @import "./*.css" —— 入口结构变了？');
+  return list.map((file) => ({ file, src: readFileSync(join(STYLE_DIR, file), 'utf8') }));
+}
+
+/** 拼成一份，等价于拆分之前的那一整份样式 */
+export function readStyles() {
+  const parts = styleSources();
+  return { files: parts.map((p) => p.file), src: parts.map((p) => p.src).join('\n') };
+}
 
 /** 令牌块的选择器长这样。这些块里的写死值是**本分**，要跳过 */
 const TOKEN_BLOCK = /(^|,)\s*(:root|\[data-(theme|accent|style)[^\]]*\])\s*$/;
@@ -70,7 +94,8 @@ const REQUIRED = [
 ];
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const src = readFileSync(CSS, 'utf8');
+  const { files, src } = readStyles();
+  console.log('读到的语义样式模块：' + files.join(' → '));
   const { tokens, rules } = split(src);
 
   if (!tokens.length) {
@@ -119,7 +144,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log('\n未走 --shadow* 的中性阴影（只报告，需人工判断）：' + neutral.length + ' 处');
   for (const v of neutral) console.log('    ' + v);
 
-  // tailwind.css（新表面）—— 没有令牌块（令牌全在 legacy.css），所以拿同一份
+  // tailwind.css（新表面）—— 没有令牌块（令牌全在 tokens.css），所以拿同一份
   // BANNED 直接扫整份文件。之前它完全没人锁：写死的圆角和 1px 边框可以随便长，
   // 而它们恰恰是切 flat / notion 时不会跟着动的那一批。
   const tw = readFileSync(NEW_SURFACES, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -131,7 +156,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('  ' + tag + ' ' + name.padEnd(14) + String(hits.length).padStart(3) + ' 处   ' +
       (hits.length ? '→ ' + how : ''));
   }
-  // 兜底值和 legacy 那边一个道理：新表面的变量同样来自 legacy.css，
+  // 兜底值和语义模块那边一个道理：新表面的变量同样来自 tokens.css，
   // 兜底值唯一的作用是把「变量名写错了」变成静默降级的写死浅色。
   // `--kb` 例外 —— 没软键盘时它就该是 0，那是真默认值。
   const fb = [...tw.matchAll(/var\((--[\w-]+)\s*,[^)]*\)/g)].filter((m) => m[1] !== '--kb');
@@ -142,15 +167,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log('\n不达标 ' + failed + ' 条');
 
   // 扫描 .tsx 文件里的原生 <select> 元素
-  // 项目约定：零原生 <select>，一律用 Chips 或 SheetPicker 替代
+  // 项目约定：零原生 <select>，一律用 Dropdown / Chips / SheetPicker 替代
   const SRC = fileURLToPath(new URL('../src', import.meta.url));
   const { readdirSync, statSync } = await import('node:fs');
-  const { join } = await import('node:path');
+  const { join: joinPath } = await import('node:path');
 
   function findTsx(dir) {
     const results = [];
     for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
+      const full = joinPath(dir, entry);
       if (statSync(full).isDirectory()) {
         results.push(...findTsx(full));
       } else if (entry.endsWith('.tsx')) {
@@ -179,7 +204,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('  ok    0 处');
   } else {
     failed++;
-    console.log('  → 改用 Chips<K>（≤7 个固定选项）或 SheetPicker<K>（动态/大量选项）');
+    console.log('  → 改用 Dropdown<K>（少量固定选项）/ Chips<K>（选项要一直看得见）/ SheetPicker<K>（动态或大量选项）');
   }
 
   console.log('\n不达标 ' + failed + ' 条');

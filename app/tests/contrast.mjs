@@ -1,5 +1,5 @@
 /**
- * contrast.mjs —— 锁住 legacy.css 的调色板对比度。零依赖，`node tests/contrast.mjs`。
+ * contrast.mjs —— 锁住语义样式模块的调色板对比度。零依赖，`node tests/contrast.mjs`。
  *
  * 为什么值得单独一个脚本：色板的取值是**算出来的**，但代码里只看得见十六进制，
  * 看不出「#687084 是 4.5:1 那条线」。谁觉得某个灰「太深了想调淡一点」，
@@ -18,7 +18,7 @@
  *     只测一个方向会让另一个方向在改动后悄悄退回去 —— 真的发生过：
  *     只测了「语义色当文字」，漏了反方向，暗色的白字压上去其实只有 3.09。
  *
- * 第二部分（见文件末尾 undefinedVars）：扫 src/ 里引用了但 legacy.css 里
+ * 第二部分（见文件末尾 undefinedVars）：扫 src/ 里引用了但样式模块里
  * 没定义的变量。那是同一类错误的另一个面 —— 写错变量名 + 有兜底值 = 静默
  * 降级成写死的颜色，两套主题都不跟。
  */
@@ -26,10 +26,30 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const CSS = fileURLToPath(new URL('../src/styles/legacy.css', import.meta.url));
-const TW = fileURLToPath(new URL('../src/styles/tailwind.css', import.meta.url));
+/** 样式目录与入口。读哪几个模块**从入口的 @import 现读**，见 styleSources()。 */
+const STYLE_DIR = fileURLToPath(new URL('../src/styles/', import.meta.url));
+const TW = join(STYLE_DIR, 'tailwind.css');
 const SRC = fileURLToPath(new URL('../src', import.meta.url));
 const WHITE = '#ffffff';
+
+/**
+ * 按入口里 `@import "./x.css"` 的顺序读出全部语义模块并拼成一份。
+ *
+ * 顺序有语义：`:root` / `[data-theme]` / `[data-style]` 三者特异度相同，
+ * 风格轴是靠**源码顺序**压过深浅轴的。拼错顺序会让 vars() 抠到错的那个块。
+ */
+export function styleSources() {
+  const list = [...readFileSync(TW, 'utf8')
+    .matchAll(/@import\s+"\.\/([\w.-]+\.css)"/g)].map((m) => m[1]);
+  if (!list.length) throw new Error('tailwind.css 里没读到 @import "./*.css" —— 入口结构变了？');
+  return list.map((file) => ({ file, src: readFileSync(join(STYLE_DIR, file), 'utf8') }));
+}
+
+/** 全部语义模块拼成一份，等价于拆分之前的那一整份样式 */
+export function readStyles() {
+  const parts = styleSources();
+  return { files: parts.map((p) => p.file), src: parts.map((p) => p.src).join('\n') };
+}
 
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -39,7 +59,7 @@ export const ratio = (fg, bg) => { const a = rel(fg), b = rel(bg); const [hi, lo
 /** 抠出一个选择器块里的 --var: #hex。背景色里有 #fff 字面量时也得认。 */
 function vars(src, sel) {
   const i = src.indexOf(sel);
-  if (i < 0) throw new Error('找不到选择器 ' + sel + ' —— legacy.css 的结构变了？');
+  if (i < 0) throw new Error('找不到选择器 ' + sel + ' —— 语义样式模块的结构变了？');
   const body = src.slice(src.indexOf('{', i) + 1, src.indexOf('}', i));
   const out = {};
   for (const m of body.matchAll(/(--[\w-]+):\s*(#[0-9a-fA-F]{6})/g)) out[m[1]] = m[2];
@@ -82,7 +102,7 @@ const NONTEXT = [
 ];
 
 /**
- * 扫 `src/` 里所有 `var(--x)`，报出 legacy.css / tailwind.css 里**没有定义**的那些。
+ * 扫 `src/` 里所有 `var(--x)`，报出语义样式模块 / tailwind.css 里**没有定义**的那些。
  *
  * 为什么要锁：新 surface（登录页 / 浮层 / Btn）原先写的是
  * `var(--accent,#4f7cff)` / `var(--card,#fff)` / `var(--line,…)` 这一批，
@@ -101,7 +121,8 @@ const RUNTIME_SET = {
 
 export function undefinedVars() {
   const defs = new Set();
-  for (const f of [CSS, TW]) for (const m of readFileSync(f, 'utf8').matchAll(/(--[\w-]+)\s*:/g)) defs.add(m[1]);
+  const files = [...styleSources().map((p) => join(STYLE_DIR, p.file)), TW];
+  for (const f of files) for (const m of readFileSync(f, 'utf8').matchAll(/(--[\w-]+)\s*:/g)) defs.add(m[1]);
 
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
   const used = new Map();
@@ -119,7 +140,7 @@ export function undefinedVars() {
 /**
  * 第二道：`.tsx` 里的 `var(--x, 兜底值)` 里的兜底值**一律是多余的**。
  *
- * 组件里的变量全部来自 legacy.css（或 JS 内联那两个），所以兜底值永远不会生效；
+ * 组件里的变量全部来自语义样式模块（或 JS 内联那两个），所以兜底值永远不会生效；
  * 它唯一的作用是**把「变量名写错了」变成静默降级**。上面那六个别名就是这么活下来的：
  * 名字是错的，兜底值是写死的浅色，于是两套主题下都用自己的兜底值在跑，
  * 谁也没发现。CSS 里的兜底值不一样（`var(--cols, 1)`）—— 那个是真默认值，不在此列。
@@ -190,7 +211,9 @@ export function audit(src) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const rows = audit(readFileSync(CSS, 'utf8'));
+  const { files, src } = readStyles();
+  console.log('读到的语义样式模块：' + files.join(' → '));
+  const rows = audit(src);
   /** 每行自带下限：正文 4.5（1.4.3），控件描边 3（1.4.11）。见 NONTEXT 上面那段。 */
   const floor = (r) => r.min ?? 4.5;
   const mark = (r) => { const m = floor(r); return r.r >= m ? '✓' : r.r >= m - 1.5 ? '✗ 差一点' : '✗✗ 不足'; };
