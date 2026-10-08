@@ -101,7 +101,7 @@ export function Input({ dense, className, ...rest }: InputProps) {
       className={cx(
         'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
         dense && 'h-[30px] w-auto px-2 text-[12.5px]',
-        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+        'focus:border-[var(--primary)] focus:bg-[var(--panel)] focus:shadow-[0_0_0_3px_var(--primary-soft),var(--shadow-md)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
@@ -119,7 +119,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {...rest}
         className={cx(
           'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-          'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+          'focus:border-[var(--primary)] focus:bg-[var(--panel)] focus:shadow-[0_0_0_3px_var(--primary-soft),var(--shadow-md)]',
           'disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}

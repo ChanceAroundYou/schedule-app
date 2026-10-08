@@ -414,5 +414,9 @@ body.sheet-open .tab:active { background: none; }
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+/* 输入框已有自身边框 + 聚焦阴影，全局 outline 会叠加成"双层框" */
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+}
 /* 这个容器自己是 overflow: hidden，外环会被裁掉，所以改成画在里面 */
 .view-switch > *:focus-visible { outline-offset: -2px; }
