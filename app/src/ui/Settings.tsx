@@ -18,7 +18,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import {
   Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
   Pencil, Upload, Download, Trash2, UserRound, Plus, Crown, Eye, UserMinus,
-  UserPlus, Users, X, AlertTriangle, ChevronDown,
+  UserPlus, Users, X, AlertTriangle, ChevronDown, Wifi, WifiOff, CloudUpload,
 } from 'lucide-react';
 import { type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
@@ -755,9 +755,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
             <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
               <KeyRound size={13} /> 修改密码
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={onLogout}>
-              <LogOut size={13} /> 退出登录
-            </Btn>
+                <Btn variant="danger" size="sm" onClick={onLogout}>
+                  <LogOut size={13} /> 退出登录
+                </Btn>
           </div>
 
           <div className="mt-4 border-t border-[var(--border)] pt-3">
@@ -771,7 +771,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               <Btn variant="chip" size="sm" onClick={() => fileRef.current?.click()}>
                 <Download size={13} /> 导入备份
               </Btn>
-              <Btn variant="ghost" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>
+              <Btn variant="danger" size="sm" disabled={busy} onClick={() => { setBusy(true); void wipeLocal().then(() => setBusy(false)); }}>
                 <Trash2 size={13} /> 清空本机副本
               </Btn>
               <input

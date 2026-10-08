@@ -567,7 +567,7 @@ export function Chips<K extends string | number>({ value, options, onPick, rende
             aria-pressed={on}
             onClick={() => onPick(k)}
             className={cx(
-              'inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 py-1 text-[12.5px] transition',
+              'inline-flex h-[30px] items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 text-[12.5px] transition',
               on
                 ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
                 : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] border-[var(--border)]',
