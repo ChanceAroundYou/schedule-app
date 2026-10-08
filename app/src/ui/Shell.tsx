@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AlarmClock, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
+  AlarmClock, CalendarCheck, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Loader2, MailPlus,
   MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock,
 } from 'lucide-react';
@@ -120,8 +120,8 @@ export function Pulse({ state }: { state: LocalState }) {
 
 /* =============================== 侧栏 =============================== */
 
-function Sidebar({ state, onNav, onNew, onManageCal, onInvites }: {
-  state: LocalState; onNav: (k: string) => void; onNew: () => void;
+function Sidebar({ state, onNav, onManageCal, onInvites }: {
+  state: LocalState; onNav: (k: string) => void;
   onManageCal: () => void; onInvites: () => void;
 }) {
   const c = counts(state);
@@ -156,14 +156,9 @@ function Sidebar({ state, onNav, onNew, onManageCal, onInvites }: {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-logo">日</div>
+        <div className="brand-logo"><CalendarCheck size={24} /></div>
         <div className="brand-name">日程清单</div>
       </div>
-
-      <button className="quick-add" onClick={onNew}>
-        <span className="plus"><Plus size={15} /></span>
-        <span>新建任务</span>
-      </button>
 
       {/* 日程集在导航之上：下面的日程 / 打卡 / 已完成是**按集**的，
           先选集再选页面，顺序跟用户脑子里的模型一致 */}
@@ -795,7 +790,7 @@ export function QuickAdd({ state, onSubmit }: {
         style={narrow ? {
           position: 'fixed',
           left: '13px',
-          right: '0',
+          right: '13px',
           // margin 也要在内联里清掉：基线上那条 `.fast-add { margin: 6px 22px 18px }`
           // 是给**流内**布局的，而 fixed + left/right 的定位里 margin 会**再加一层**偏移
           //（right:74px 实际让出 96px）。CSS 媒体块里虽然也清了，但媒体查询按**真实**
@@ -915,13 +910,12 @@ export function QuickAdd({ state, onSubmit }: {
 /* ============================== 外壳 ============================== */
 
 export function Shell({
-  state, contentRef, onNav, onNew,
+  state, contentRef, onNav,
   onManageCal, onInvites, more, setMore, topbar, quickAdd, children,
 }: {
   state: LocalState;
   contentRef: React.RefObject<HTMLDivElement>;
   onNav: (k: string) => void;
-  onNew: () => void;
   onManageCal: () => void;
   onInvites: () => void;
   /** 「更多」抽屉的开关放在 App 那边 —— Esc 要按 actSheet > 抽屉 > 找日期 的顺序关 */
@@ -943,7 +937,7 @@ export function Shell({
     <div className="app">
       {!narrow && (
         <Sidebar
-          state={state} onNav={onNav} onNew={onNew}
+          state={state} onNav={onNav}
           onManageCal={onManageCal} onInvites={onInvites}
         />
       )}

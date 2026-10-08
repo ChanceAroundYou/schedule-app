@@ -672,10 +672,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       state={state}
       contentRef={contentRef}
       onNav={nav}
-      onNew={() => {
-        const id = store.addTask({ title: '新任务', date: state.ui.nav === 'inbox' ? null : D.today() });
-        setOpenId(id);
-      }}
       onManageCal={() => setCalOpen(true)}
       onInvites={() => setInvOpen(true)}
       /* 「更多」抽屉 / 找日期面板的开关都在 App 这一层：Esc 要按

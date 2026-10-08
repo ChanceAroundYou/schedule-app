@@ -24,11 +24,9 @@ input, select, textarea { font-size: max(14px, 16px); }
   .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
-  .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
+  .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover,
   .icon-btn:hover, .jp-go:hover,
   .sidebar-footer .ghost-btn:hover { background: none; color: inherit; }
-  .quick-add:hover { background: var(--primary); color: var(--on-primary); }
-  .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
