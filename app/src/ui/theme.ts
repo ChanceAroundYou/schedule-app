@@ -2,12 +2,12 @@
  * theme.ts —— 外观三轴（深浅 × 色板 × 风格）的控制器。
  *
  * 三轴**各自独立**，都是往 `documentElement` 上写一个 `data-*`，
- * 真正的取值全在 `styles/legacy.css` 的令牌块里。这里一个字都不重复 ——
+ * 真正的取值全在 `styles/tokens.css` 的令牌块里。这里一个字都不重复 ——
  * 几何 / 颜色在 TS 里再抄一份，改 CSS 时必然漏一边（账本项目踩过）。
  *
  * 三个 apply* 是**幂等**的：写同样的值不会有副作用，所以调用方不用先比较。
  *
- * 默认档（light + jade + soft）与 2026-10-06 之前逐像素相同 —— 见 legacy.css
+ * 默认档（light + jade + soft）与 2026-10-06 之前逐像素相同 —— 见 tokens.css
  * 里 `[data-style="soft"]` 那个空块。
  */
 import type { AccentKey, StyleKey, ThemeMode } from '../domain/types.ts';

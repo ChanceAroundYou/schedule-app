@@ -1,0 +1,423 @@
+/* ================= 响应式 ================= */
+
+/* ---- 触屏基础：无论多窄都要生效 ---- */
+/* 去掉移动端点击时的灰色高亮方块 */
+* { -webkit-tap-highlight-color: transparent; }
+/* 禁掉双击缩放与双击滚动等待，让点击更跟手 */
+button, .nav-item, .tab, .ms-item, .jp-cell, .round-btn, .text-btn {
+  touch-action: manipulation;
+}
+/* 数字输入在 iOS 上默认有放大行为，16px 以下会强制放大页面 */
+input, select, textarea { font-size: max(14px, 16px); }
+@media (max-width: 820px) {
+  input, select, textarea { font-size: 16px; }
+}
+
+/* 触屏没有 hover：原本 hover 才显形的东西（拖拽抓手、右箭头）要常显，
+   否则手机上永远看不到。宽度用媒体查询而不是 hover 判定，
+   因为桌面窄窗口也不该受影响 */
+@media (hover: none) {
+  .tl-event:hover .ev-resize { opacity: .8; }
+  .task-row::after { opacity: .4; }
+  .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
+  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--input); color: var(--text-2); }
+  .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
+  .view-switch button.on:hover { background: var(--primary); }
+  .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
+  .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
+  .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
+  .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
+  .sidebar-footer .ghost-btn:hover, .today-btn.on:hover { background: none; color: inherit; }
+  .quick-add:hover { background: var(--primary); color: var(--on-primary); }
+  .quick-add:active { transform: none; }
+  .month-cell.today:hover { background: var(--primary-pale); }
+  .cell-date:hover { background: none; }
+  .jp-go:hover { background: var(--primary); }
+  .primary-btn:hover { transform: none; }
+  .today-btn.on:hover { background: var(--primary-pale); }
+  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
+  .search-box:hover { border-color: var(--input); background: var(--panel-2); }
+  .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
+}
+
+/* ---- 底部标签栏 ---- */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  display: flex; align-items: stretch;
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--panel); border-top: 1px solid var(--border);
+  box-shadow: var(--shadow-up-sm);
+}
+[data-theme="dark"] .tabbar { box-shadow: none; }
+.tabbar[hidden] { display: none; }
+.tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 0; border: none; background: none;
+  color: var(--text-3); font-size: 10.5px; position: relative;
+  transition: color .14s;
+}
+.tab .ti { font-size: 19px; line-height: 1.1; }
+.tab .tn { letter-spacing: .2px; }
+.tab.active { color: var(--primary); }
+.tab.active::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 2px; border-radius: 0 0 var(--r-xs) var(--r-xs); background: var(--primary);
+}
+.tab .tb {
+  position: absolute; top: 5px; left: 50%; margin-left: 6px;
+  min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text-2);
+  font-size: 9.5px; line-height: 15px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tab .tb:empty { display: none; }
+.tab.active .tb { background: var(--primary); color: var(--on-primary); }
+.tab .tb.warn { background: var(--danger); color: var(--on-primary); font-weight: 600; }
+
+/* ---- 「更多」抽屉 ---- */
+/* z-index 要高于底部标签栏（45），否则抽屉会被标签栏压住一截 */
+.sheet-mask {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(16, 24, 40, .4);
+  animation: fadeIn .18s ease;
+}
+.sheet-mask[hidden] { display: none; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* 浮层压住底部时，把标签栏的按下高亮收掉，避免看起来还能点 */
+body.sheet-open .tab:active { background: none; }
+
+.more-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
+  padding: 6px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-up);
+  animation: slideUp .22s cubic-bezier(.3, .8, .3, 1);
+}
+.more-sheet[hidden] { display: none; }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
+.ms-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 14px; }
+.ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ms-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  padding: 13px 6px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
+  background: var(--panel-2); color: var(--text); position: relative;
+}
+.ms-item:active { background: var(--panel-3); }
+.ms-item .mi { font-size: 21px; line-height: 1; }
+.ms-item .mt { font-size: 12px; }
+.ms-item .mc {
+  position: absolute; top: 7px; right: 9px;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text-2);
+  font-size: 10px; line-height: 16px; text-align: center;
+}
+.ms-item .mc:empty { display: none; }
+.ms-pulse:empty { display: none; }
+.ms-pulse { margin-top: 14px; }
+.ms-pulse .side-pulse { margin: 0; }
+
+/* ---- 长按操作弹层 ---- */
+.act-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 47;
+  padding: 6px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-up);
+  animation: slideUp .2s cubic-bezier(.3, .8, .3, 1);
+}
+.act-sheet[hidden] { display: none; }
+.as-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 10px; }
+.as-title {
+  font-size: 13.5px; font-weight: 600; padding: 0 2px 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.as-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.as-grid:empty + .as-cancel { margin-top: 0; }
+.as-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  padding: 12px 4px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
+  background: var(--panel-2); color: var(--text); font-size: 12px;
+}
+.as-btn:active { background: var(--panel-3); }
+.as-btn.on { border-color: var(--primary); background: var(--primary-pale); color: var(--primary); font-weight: 600; }
+.as-btn .ai:empty { display: none; }
+.as-btn .ai { font-size: 18px; line-height: 1; }
+.as-btn.danger { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
+.as-cancel {
+  width: 100%; margin-top: 10px; padding: 12px;
+  border: none; border-radius: var(--r-lg); background: var(--panel-3);
+  color: var(--text-2); font-size: 13.5px;
+}
+.as-cancel:active { background: var(--border); }
+
+/* ================= 窄屏适配 ================= */
+
+/* 900px 以下：侧栏收进「更多」，改用底部标签栏 */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .tabbar:not([hidden]) { display: flex; }
+  .app { height: 100dvh; }
+  html, body { height: 100dvh; }
+  /* 内容区给底部标签栏让位 */
+  .main { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .content { padding: 12px 13px 8px; }
+  .fast-add { margin: 4px 13px 12px; }
+  .fast-add-shell { padding: 9px 13px; }
+  .list-view, .habits-view { max-width: none; }
+
+  /* 顶栏单行：标题 + 搜索图标 + 状态 */
+  /* 顶栏绝对不能加 position/z-index（sticky 也算）：
+     那会生成层叠上下文，把里面的找日期面板困住、导致被下方内容盖住。
+     窄屏下顶栏随内容一起滚反而省出垂直空间，标签栏本来就常驻底部。 */
+  .topbar {
+    flex-direction: row; align-items: center; gap: 8px;
+    padding: 9px 13px 10px;
+  }
+  .topbar-left, .topbar-right { gap: 8px; min-width: 0; }
+  .topbar-left { flex-wrap: nowrap; }
+  .topbar-right { justify-content: flex-end; }
+  .view-title { font-size: 17px; white-space: nowrap; }
+  .date-range { display: none; }
+
+  /* 日程副header：日期导航 + 视图切换 */
+  .cal-subhead {
+    padding: 8px 13px;
+    flex-wrap: wrap; row-gap: 6px;
+  }
+  .cal-subhead .date-nav {
+    flex: 1 1 auto; min-width: 0;
+    justify-content: flex-start; flex-wrap: wrap; row-gap: 6px;
+  }
+  .cal-subhead .view-switch { flex: 0 0 auto; }
+
+  /* 触控目标太小，点不准。**一排控件一起放到 34px**（原先 36 / 34 / 34 三档），
+     只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架 */
+  .round-btn { width: 34px; height: 34px; }
+  .text-btn, .view-switch button { height: 34px; }
+
+  /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
+     改成靠右对齐并让出一点边距 */
+  .jump-pop { left: auto; right: 0; width: min(300px, calc(100vw - 20px)); }
+  /* 「日期 + 时间」面板与找日期同一套格子，宽度口径一致 */
+  .when-pop { width: min(300px, calc(100vw - 20px)); }
+  .jp-cell { height: 34px; line-height: 28px; font-size: 13.5px; }
+  .jp-cell.has::after { bottom: 4px; }
+  .jp-cell.has.lv2::after { width: 16px; }
+  .jp-cell.has.lv3::after { width: 22px; }
+  .jp-row input { font-size: 16px; }   /* 16px 以下 iOS 会自动放大页面 */
+  .jp-go { padding: 0 14px; }
+
+  /* 任务行：手机上加大点击面 */
+  .task-row { padding: 13px 30px 13px 14px; }
+  .check-btn { width: 22px; height: 22px; flex: 0 0 22px; }
+  .check-btn.on::after { left: 7px; top: 3px; width: 5px; height: 9px; }
+  .row-title { font-size: 14.5px; }
+  .task-pill { padding: 8px 10px; font-size: 13px; }
+  .allday-items .task-pill { padding: 9px 10px; }
+  .allday-items { gap: 7px 9px; }
+
+  /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
+  .fast-hint { display: none; }
+  /* 16px 是**必须的**：iOS Safari 在字号 < 16px 的输入控件上会自动放大整页，
+     而放大之后那一屏就再也回不到原样了。textarea 和 input 同罪。 */
+  .fast-add textarea { font-size: 16px; }
+  /* 窄屏的横条是 `position: fixed`（定位值由 Shell.tsx 内联，见那边的
+     bottom: calc(64px + env(...))），所以这里只留内边距 ——
+     展开 / 关闭动画不在这儿，见文件末尾那两条 `.fast-add[data-narrow]` 规则。 */
+  /* 右侧让出圆钮的位置（需求 2）：13(内边距) + 48(圆钮) + 4(间隙) = 65。
+     圆钮是绝对定位钉在右下角的（见上面 .fast-fab），这里只是让正文
+     （输入框 / 时间 / 保存）别被它压住。间隙压到 4px（需求 4）——
+     原先留 10px，时间 / 保存两个小按钮离圆钮显得太远。 */
+  .fast-add { margin: 0; }
+  .fast-add-shell { padding: 9px 65px 9px 13px; }
+  /* 按钮上那两行是小字，手机上加的是**点击面**不是字号；
+     高度仍是 30px（需求 3），只放宽左右内边距 */
+  .fast-clock { padding: 0 10px; }
+  .fast-save { padding: 0 11px; }
+  /* 圆钮和横条竖直居中（需求 2）：横条被撑成两行时圆心跟着往下走。
+     位置由 Shell.tsx 按横条的实测高度反推后写成内联样式，这里不写死。 */
+
+  /* 列表分组间距收一点 */
+  .list-group { margin-bottom: 18px; }
+  .empty { padding: 50px 0; }
+
+  /* 日程时间轴：左侧刻度占太宽，缩窄 */
+  .tl-wrap { padding: 14px 8px 14px 48px; }
+  .tl-label, .tl-now span { left: -44px; width: 38px; }
+  .tl-event { padding: 5px 8px; }
+  .ev-title { font-size: 13px; }
+  .ev-time { font-size: 11px; }
+  /* 触屏没有 hover，拖拽抓手常显会误触，改为整体隐藏 */
+  .ev-resize { display: none; }
+  .allday-zone { padding: 11px 12px; }
+
+  /* 任务抽屉：从底部整块弹出 */
+  .drawer {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
+    height: 88dvh; border-left: none; border-top: 1px solid var(--border);
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    transform: translateY(100%);
+    transition: transform .24s cubic-bezier(.3, .8, .3, 1);
+  }
+  .drawer.open { transform: none; }
+  .drawer-head { padding: 14px 15px; }
+  .drawer-title { font-size: 17px; }
+  .drawer-body { padding: 15px; }
+  .drawer-foot { padding: 12px 15px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .primary-btn, .danger-btn { padding: 11px 18px; }
+  .field-row { gap: 10px; }
+
+  /* 时钟弹窗：手机上居中铺开一点，好按。
+     这里曾经还有一条 `.cp-cell { min-width: 58px; font-size: 25px }` ——
+     显示行删掉之后（需求 4）那个类名已经不存在了，规则一起删。 */
+  .clock-pop { width: min(300px, calc(100vw - 40px)); }
+
+  /* 习惯页：热力点放大一点 */
+  .heat-dot { width: 15px; height: 15px; }
+  .habit-row { padding: 13px 14px; }
+  .ci-item { padding: 9px 13px; }
+}
+
+/* 需求 3：展开 / 关闭动画。两条都挂在 `.fast-add-shell` 上 ——
+   圆钮是 shell 的**兄弟**，动画碰不到它（挂在 `.fast-add` 上会带飞圆钮）。
+   窄屏限定用 `[data-narrow]`（Shell.tsx 按 JS 的 narrow 写）而不是 CSS 的
+   `@media`：探针环境里「JS 判窄、CSS 判宽」两者不一致，而圆钮和 fixed 定位
+   本来就跟着 JS 的 narrow 走，动画跟着它才自洽，也才测得到。
+   **放媒体查询外面**的理由同上：放进 `@media (max-width: 900px)` 里，
+   探针那种伪窄屏下永远不生效，等于没测。 */
+/* 展开：挂在 `.open` 上，不是 `:not([hidden])`。收起时 shell 是 display:none，
+   加 `.open` 让它重新显示，动画随之从头开始；挂在 `:not([hidden])` 上的话
+   只在挂载时跑一次（`.open` 变来变去不改那条 animation 的计算值，动画不重跑），
+   等于「点 + 号弹出来」根本没有动画。 */
+.fast-add[data-narrow].open .fast-add-shell { animation: fastPop .18s cubic-bezier(.3, .8, .3, 1); }
+/* 关闭：**必须排在展开那条后面** —— `.closing` 期间 `.open` 还在，两条选择器
+   特异度相同，后写的赢。 */
+.fast-add[data-narrow].closing .fast-add-shell { animation: fastPopOut .18s cubic-bezier(.3, .8, .3, 1) forwards; }
+
+/* 640px 以下：手机常见的窄屏，进一步收 */
+@media (max-width: 640px) {
+  .view-title { font-size: 16px; }
+  /* 日期组和视图切换可能还是挤，允许换行 */
+  .cal-subhead .date-nav { flex-wrap: wrap; }
+  .today-btn { margin-left: 2px; }
+  .list-group { margin-bottom: 15px; }
+  .group-title { padding-bottom: 7px; }
+  .row-meta { font-size: 11.5px; }
+  .od-strip { padding: 9px 11px; }
+  .ms-grid, .as-grid { gap: 7px; }
+  .ms-item { padding: 11px 4px; }
+  .as-btn { padding: 11px 2px; font-size: 11.5px; }
+  /* 打卡条：手机上换行排布 */
+  .ci-list { gap: 7px; }
+  .ci-item { padding: 8px 11px; }
+}
+
+/* ---- 周视图：窄屏改成横向滚动，列宽锁死 ---- */
+@media (max-width: 900px) {
+  .week-view {
+    /* 手机上 7 列并排根本看不清，改成左右滑 */
+    overflow-x: auto; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .week-head, .week-un-row, .week-grid { min-width: 0; }
+  /* 表头与未定时行是**吸顶**的，它们的不透明背景必须盖住整条滚动宽度。
+     可作为 flex 项时它们只有容器那么宽（≈一屏），右边三四列的头部会透出
+     下面时间网格的刻度线 —— 看着就是「表头只画了一半」。
+     `max-content` 让背景跟着内容走（列宽有 min-width 兜底，不会缩没）。 */
+  .week-head, .week-un-row { width: max-content; }
+  /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
+  .week-head, .week-un-row, .week-grid {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .week-head-cols, .week-un-cols, .week-cols {
+    /* 每列至少 92px，7 列 + 刻度列 ≈ 688px，靠横滑看全周 */
+    grid-template-columns: repeat(7, minmax(92px, 1fr));
+    min-width: 644px;
+  }
+  /* 左侧刻度列跟着横向滚动会露出来，钉在左边 */
+  .week-head-gutter, .week-un-gutter, .week-gutter {
+    position: sticky; left: 0; z-index: 3; background: var(--panel);
+  }
+  .week-gutter { background-color: var(--panel-2); }
+  .wk-hour span { left: 2px; text-align: left; width: 40px; }
+  .week-head-cell { padding: 7px 2px 5px; }
+  .wh-day { font-size: 15px; min-width: 24px; }
+  .wk-event { padding: 3px 5px; }
+  .wk-title { font-size: 11.5px; }
+  .wk-time { font-size: 10px; }
+  .wun-cell { padding: 3px; }
+  .wun-cell .task-pill { font-size: 11px; padding: 4px 6px; }
+}
+
+/* ---- 月视图：窄屏下格子塞不进文字，改成圆点+计数 ---- */
+@media (max-width: 900px) {
+  .month-grid { grid-auto-rows: minmax(62px, auto); }
+  .month-cell { padding: 4px 4px 3px; min-height: 62px; }
+  .cell-head { margin-bottom: 3px; gap: 3px; }
+  .cell-date { width: 20px; height: 20px; flex: 0 0 20px; font-size: 12px; }
+  .cell-today { display: none; }
+  /* 负载文字在窄格里用简写（见 Views.shortLoad），留一点余量即可 */
+  .cell-load {
+    margin-left: auto; font-size: 9.5px; line-height: 1;
+    white-space: nowrap; overflow: hidden;
+    max-width: 30px; text-align: right; flex: 0 0 auto;
+  }
+  .month-head-cell { font-size: 10.5px; padding: 3px 0; }
+  /* 任务文字在这个宽度下必然被截成一两个字，不如只留一个点 + 数量 */
+  .cell-tasks { flex-direction: row; flex-wrap: wrap; gap: 2px; }
+  .cell-tasks .task-pill {
+    width: 6px; height: 6px; padding: 0; border-radius: 50%;
+    background: var(--primary); border: none; overflow: hidden;
+    font-size: 0; gap: 0;
+  }
+  .cell-tasks .task-pill.done { background: var(--border); }
+  .cell-more { font-size: 9.5px; padding-left: 0; }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .topbar-right { gap: 8px; }
+  /* 顶栏挤不下时先舍掉日期长文本，保住按钮本身 */
+  .date-nav .date-range { display: none; }
+  .jump-btn { padding: 6px 9px; }
+}
+@media (max-width: 1000px) and (min-width: 901px) {
+  .sidebar { width: 208px; flex-basis: 208px; }
+  .week-head-cell, .month-head-cell { font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 同步中的加载圈：例外，它不是动效，是在说「正在同步」 */
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+/* ================= 焦点环 =================
+   一条统一定义，**不要再散着写**。
+
+   为什么必须和 --input 一起改：以前每处 `:focus` 只把描边染成 --primary，
+   **不新增任何像素** —— 那时前后对比是 3.73 / 3.64，刚好过 WCAG 2.2 SC 2.4.11
+   要的 3:1。但 --input 一提到 3:1，这个对比就掉到 1.45 / 1.48。
+   **两件事是耦合的，只改一件会把另一件踩烂。**
+
+   现在改成画一圈**新增**的 2px --primary 外环：那些像素未聚焦时是底色、
+   聚焦时是 --primary，5.11（亮）/ 5.57（暗），且不依赖底色是什么。
+   各处原来那句「聚焦时描边染成 --primary」保留不动 —— 环 + 变色叠加才是
+   常见做法（Material 3 的文本框、shadcn 的 :focus-visible 都是这样）。
+
+   用 :focus-visible 而不是 :focus：文本框在鼠标点入时也会命中它（浏览器自带
+   的判断），按钮则只在键盘走到时命中 —— 鼠标点按钮不该闪一圈蓝。
+   放在文件最末是为了压过各处零散的 `outline: none`（同特异度后写的赢）。 */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* 这个容器自己是 overflow: hidden，外环会被裁掉，所以改成画在里面 */
+.view-switch > *:focus-visible { outline-offset: -2px; }

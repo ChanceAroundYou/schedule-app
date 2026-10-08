@@ -788,7 +788,7 @@ export function QuickAdd({ state, onSubmit }: {
           bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
         } : undefined}
       >
-        {/* 展开 / 关闭动画挂在**这一层**（见 legacy.css 的 fastPop / fastPopOut），
+        {/* 展开 / 关闭动画挂在**这一层**（见 styles/quick-add.css 的 fastPop / fastPopOut），
             不是挂在 `.fast-add` 上。圆钮（`.fast-fab`）是 `.fast-add` 的子节点、
             这一层的**兄弟** —— 父元素一 transform、一改 opacity，整棵子树跟着动，
             圆钮会被拖着右移 28px、缩小 4%、淡出，动画一结束再弹回原位

@@ -1,0 +1,316 @@
+.list-view { max-width: var(--wide); margin: 0 auto; }
+.habits-view { max-width: var(--wide); margin: 0 auto; }
+
+/* 默认（窄屏/ 中屏）单列，就是原来的样子 */
+.mc { display: block; }
+
+@media (min-width: 1120px) {
+  /* 容器放宽：分列之后单列变窄，总宽度可以稍大一点 */
+  .list-view, .habits-view { max-width: 1280px; }
+  .mc {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+    align-content: start;
+  }
+  /* .habit-list 的 flex 声明在文件更靠后，这里同特异度再压一次 */
+  .habit-list.mc { display: grid; }
+  /* 行内块元素（打卡条、逾期提示、已完成标题、垃圾箱头）不参与分列 */
+  .checkin-strip, .od-strip, .today-done, .trash-head, .habit-add, .empty { grid-column: 1 / -1; }
+  /* 分列后行与行之间靠 grid gap，任务行自身的下边距要去掉 */
+  .mc > .task-row, .mc > .habit-row { margin-bottom: 0; }
+  .mc { row-gap: 7px; }
+}
+
+.list-group { margin-bottom: 22px; }
+.group-title {
+  font-size: 12.5px; font-weight: 650; color: var(--text-2);
+  padding: 0 0 9px; display: flex; align-items: center; gap: 7px; letter-spacing: .2px;
+}
+.group-title.over { color: var(--danger); }
+.group-count { font-size: 11px; background: var(--panel-3); color: var(--text-2); border-radius: var(--r-md); padding: 1px 7px; font-weight: 400; }
+.gt-day.today { color: var(--primary); }
+.group-sub { font-size: 11px; color: var(--text-3); font-weight: 400; }
+.group-load {
+  font-size: 11px; color: var(--text-2); font-weight: 400;
+  margin-left: auto; padding: 1px 7px; border-radius: var(--r-md); background: var(--panel-3);
+  font-variant-numeric: tabular-nums;
+}
+.group-load.over { color: var(--warn); background: var(--warn-soft); }
+.sub-title { font-size: 11px; color: var(--text-3); padding: 8px 0 5px; letter-spacing: .3px; }
+
+/* ===== 每日打卡条（今天顶部） ===== */
+.checkin-strip {
+  background: var(--panel); border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
+  padding: 12px 14px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.ci-head {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650;
+  color: var(--text-2); margin-bottom: 10px; letter-spacing: .2px;
+}
+.ci-head .ci-sub { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.ci-manage {
+  margin-left: auto; border: none; background: none; color: var(--primary);
+  font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm);
+}
+.ci-manage:hover { background: var(--primary-soft); }
+.ci-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ci-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 11px 6px 9px; border-radius: var(--r-pill);
+  background: var(--panel-2); border: var(--border-w) solid var(--border);
+}
+.ci-item.done { background: var(--primary-soft); border-color: transparent; }
+.ci-title { font-size: 13px; color: var(--text); }
+.ci-item.done .ci-title { color: var(--primary); font-weight: 600; }
+.ci-streak { font-size: 11px; color: var(--warn); font-weight: 600; }
+
+/* ===== 打卡（习惯）页 ===== */
+.habit-add { display: flex; gap: 8px; margin-bottom: 18px; }
+.habit-add input {
+  flex: 1; padding: 11px 13px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
+  background: var(--panel); color: var(--text); font-size: 14px;
+}
+.habit-add input:focus { outline: none; border-color: var(--primary); }
+/* 习惯行：默认单列（flex），宽屏由.media query 里的 .mc 接管成 grid */
+.habit-list { display: flex; flex-direction: column; gap: 9px; }
+.habit-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 14px; background: var(--panel); border: var(--border-w) solid var(--border);
+  border-left: 3px solid var(--primary); border-radius: var(--r-lg); box-shadow: var(--shadow);
+}
+.habit-row.done { opacity: .72; }
+.habit-main { flex: 1; min-width: 0; }
+.habit-title { font-size: 14px; font-weight: 550; color: var(--text); margin-bottom: 7px; }
+.habit-row.done .habit-title { color: var(--text-2); }
+.habit-heat { display: flex; gap: 4px; }
+.heat-dot {
+  width: 13px; height: 13px; border-radius: var(--r-xs); background: var(--panel-3);
+  border: var(--border-w) solid var(--border);
+}
+.heat-dot.on { background: var(--primary); border-color: var(--primary); }
+.habit-del {
+  border: none; background: none; color: var(--text-3); cursor: pointer;
+  font-size: 14px; padding: 6px 8px; border-radius: var(--r-sm);
+}
+.habit-del:hover { background: var(--danger-soft); color: var(--danger); }
+
+.task-row {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 32px 11px 13px; margin-bottom: 7px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-left: 3px solid var(--primary); border-radius: var(--r-lg);
+  cursor: pointer;
+  transition: box-shadow .14s, transform .14s, border-color .14s;
+}
+.task-row:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.task-row::after {
+  content: '›'; position: absolute; right: 13px; top: 50%; transform: translateY(-54%);
+  font-size: 18px; color: var(--text-3); opacity: 0; transition: opacity .14s;
+}
+.task-row:hover::after { opacity: .55; }
+.task-row.done { opacity: .58; }
+.task-row.done .row-title { color: var(--text-2); }
+/* .dragging 的样式统一放在文件后面的「让位拖放」一节里，避免两处定义互相覆盖 */
+.row-main { flex: 1; min-width: 0; }
+.row-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); margin-top: 3px; flex-wrap: wrap; }
+.row-meta .dot { color: var(--border); }
+.m-time { color: var(--primary); font-variant-numeric: tabular-nums; }
+.m-date.over { color: var(--danger); }
+.m-dur { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.m-note { color: var(--text-3); }
+.m-repeat { color: var(--purple); }
+.row-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
+/* ================= 逾期 ================= */
+
+/* 「今天」顶部那条很轻的逾期提示 */
+.od-strip {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 7px 10px; margin-bottom: 8px;
+  background: var(--danger-soft); border: 1px solid transparent;
+  border-radius: var(--r-md); color: var(--danger);
+  font-size: 12.5px; font-weight: 550; text-align: left;
+  transition: border-color .14s;
+}
+.od-strip:hover { border-color: var(--danger); }
+.od-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); flex: 0 0 6px; }
+.od-go { margin-left: auto; font-weight: 400; opacity: .8; }
+
+/* 「今天已完成」：勾完的任务从日程页让位到这里，收在「今天」底部。
+   默认收起（只留一行标题和数量），点开才列出明细，不干扰今天的主列表。 */
+.today-done {
+  margin-top: 20px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.td-head {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 4px 2px; background: none; border: none;
+  color: var(--text-3); font-size: 12px; text-align: left;
+  transition: color .14s;
+}
+.td-head:hover { color: var(--text-2); }
+.td-caret { font-size: 9px; transition: transform .16s; display: inline-block; }
+.today-done.open .td-caret { transform: rotate(90deg); }
+.td-title { font-weight: 600; letter-spacing: .2px; }
+.td-count {
+  background: var(--panel-3); border-radius: var(--r-md); padding: 0 7px;
+  font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.td-body { display: none; margin-top: 8px; }
+/* 收起时必须压住 .mc 的 display:grid —— 同特异度下 .mc 写在后面会赢 */
+.today-done .td-body { display: none; }
+.today-done.open .td-body { display: block; }
+.today-done.open .td-body.mc { display: grid; }
+.td-body .task-row { opacity: .62; }
+
+/* 逾期分组标题：逾期天数 + 原定日期 */
+.od-view .group-title.over { display: flex; align-items: center; gap: 7px; }
+.od-date { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 400; }
+
+.od-row { border-left: 3px solid var(--danger); }
+.od-row .od-late { color: var(--danger); font-weight: 600; }
+.od-quick { display: inline-flex; gap: 4px; margin-left: 4px; }
+.od-btn {
+  padding: 1px 8px; border-radius: var(--r-md); white-space: nowrap;
+  background: var(--panel-3); color: var(--text-2);
+  font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
+}
+.od-btn:hover { background: var(--primary); color: var(--on-primary); }
+.od-btn.ghost { background: transparent; border: var(--border-w) solid var(--input); }
+.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--input); }
+
+.check-btn {
+  width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
+  border: 1.5px solid var(--input); border-radius: 50%;
+  background: none; position: relative;
+  transition: border-color .14s, background .14s, transform .12s;
+}
+.check-btn:hover { border-color: var(--primary); transform: scale(1.08); }
+.check-btn.on { background: var(--primary); border-color: var(--primary); }
+.check-btn.on::after {
+  content: ''; position: absolute; left: 5px; top: 2px;
+  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.check-btn.sm { width: 14px; height: 14px; flex-basis: 14px; }
+.check-btn.sm.on::after { left: 3.5px; top: 1px; width: 3px; height: 6px; }
+
+/* 命中区补到 24×24（WCAG 2.5.8 的下限），**视觉尺寸不变**。
+   这是全应用点得最多的一个控件（勾任务、勾打卡），而它本体只有 18px，
+   .sm 更小只有 14px。用 ::before 往外撑，不是把圆点画大 —— 画大就毁了列表密度。
+   用 ::before 而不是 ::after：勾那一下子已经被 ::after 占了。
+   安全边际：它两侧最近的邻居是 .ci-item 的 9px 内边距 / 7px gap、
+   .habit-row 的 11px gap，都容得下这 5px，不会和隔壁的按钮抢点击。 */
+.check-btn::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 24px; height: 24px; transform: translate(-50%, -50%);
+}
+
+/* 完成瞬间的小动效 */
+.task-el.popping { animation: taskPop .3s cubic-bezier(.3, .8, .3, 1) forwards; }
+.task-el.popping .check-btn { animation: checkPop .3s ease; }
+@keyframes taskPop {
+  0% { transform: scale(1); }
+  30% { transform: scale(.985); background: var(--ok-soft); border-color: var(--ok); }
+  100% { transform: scale(.97); opacity: .45; background: var(--ok-soft); }
+}
+@keyframes checkPop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.chip {
+  padding: 4px 10px; border: var(--border-w) solid var(--input); background: var(--panel);
+  border-radius: var(--r-sm); color: var(--text-2); font-size: 12px;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.chip:hover { border-color: var(--primary); color: var(--primary); }
+.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.chip.tiny { padding: 2px 8px; font-size: 11px; }
+.chip.danger { color: var(--danger); border-color: var(--danger); }
+
+/* ================= 垃圾箱 ================= */
+
+.trash-head { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+.trash-row { cursor: default; }
+.trash-row:hover::after { opacity: 0; }
+.trash-ico { font-size: 14px; }
+
+/* ================= 拖拽插入线 ================= */
+
+/* 所有落点容器都要是定位父级，指示物才能按坐标绝对定位画上去 */
+[data-drop] { position: relative; }
+
+/* ================= 让位拖放 =================
+   落点不再用「一条线 + 描边」表示，改成在列表里真的让开一个洞：
+   洞在哪，任务就落在哪 —— 位置本身就是位置，不用眼睛去推断。
+
+   之前那套静态线条（.ins-line / .ins-bar / .ins-hl）已废弃：
+   线只在跨过格子边界时跳一下，中间一大段位移完全没有反馈，
+   拖起来就是用户说的「刻板」。 */
+
+/* 占位洞：虚线框 + 极淡的主色底。
+   刻意做得很轻 —— 它只是「这里会空出来」的提示，
+   不该抢走被拖元素本身的注意力。 */
+.drop-hole {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--r-lg);
+  background: var(--primary-soft);
+  opacity: .5;
+  pointer-events: none;
+  box-sizing: border-box;
+  /* 洞自己也在动：换格子时滑过去，而不是瞬移 */
+  transition: left .16s cubic-bezier(.22, .61, .36, 1),
+              top .16s cubic-bezier(.22, .61, .36, 1),
+              width .16s cubic-bezier(.22, .61, .36, 1),
+              height .16s cubic-bezier(.22, .61, .36, 1);
+}
+/* 被让位的任务：滑到新位置。
+   这是「丝滑」的主要来源 —— 之前它们是瞬移的，
+   现在整列会像被磁铁吸开一样依次挪动。 */
+.task-row, .habit-row, .task-pill {
+  transition: transform .18s cubic-bezier(.22, .61, .36, 1);
+}
+/* 正在被拖的那条：压暗 + 轻微缩放，像被「拿起来了」。
+   .drag-muted 是让位开始后追加的 —— 它马上要让位，别再抢注意力。 */
+.task-row.dragging, .task-pill.dragging, .habit-row.dragging {
+  opacity: .96;
+  cursor: grabbing;
+  box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
+  transform: scale(1.012);
+  z-index: 8;
+  position: relative;
+}
+/* 正在被拖的那条：留在原位当「出处」锚点，压暗 + 虚线化。
+   它不参与让位位移 —— 位置不动，用户才看得出「我从这里出发」。
+   之前让它也滑到目标格，结果它和洞叠在同一处：两份占位重叠、
+   原位又空出来，比不做让位更乱。 */
+.task-row.drag-muted, .task-pill.drag-muted, .habit-row.drag-muted {
+  opacity: .4;
+  transform: none !important;
+  box-shadow: none;
+  outline: 1.5px dashed var(--input);
+  outline-offset: -2px;
+  border-radius: var(--r-lg);
+}
+/* 拖动中禁止文字选中，否则拖过的地方会留下一片选区高亮 */
+body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+
+/* 时间轴上的落点指示（只画线，不改底色） */
+.tl-guide {
+  position: absolute; left: 0; right: 0; height: 0;
+  border-top: 1.5px dashed var(--primary); z-index: 6; pointer-events: none;
+}
+.tl-guide span {
+  position: absolute; left: 6px; top: -9px;
+  padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--primary); color: var(--on-primary);
+  font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-md);
+}
+

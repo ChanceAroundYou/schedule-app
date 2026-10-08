@@ -37,7 +37,7 @@
 │   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
 │   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽（`dndkit.tsx`，@dnd-kit）/ 日程集 / AI 面板
 │   ├── src/views/     纯展示，**零回调**，只出 data-* 属性
-│   ├── src/styles/    legacy.css（设计系统，**不带 @layer**）+ tailwind.css
+│   ├── src/styles/    语义样式模块（tokens / shell / calendar / lists / quick-add / overlays / responsive）+ tailwind.css
 │   └── public/ · tests/
 ├── server/       后端（Node 22，**只引 AI 那一组依赖**，见五、1）
 │   ├── server.js      路由表 + 处理器 + 鉴权中间件

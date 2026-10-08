@@ -266,9 +266,9 @@ export interface SyncResponse {  cursor: number;
 
 /** 深浅。`auto` = 跟随系统，实际生效的那一档由 ui/theme.ts 解析 */
 export type ThemeMode = 'auto' | 'light' | 'dark';
-/** 色板。只改主色族，底色归深浅那一轴 —— 见 legacy.css 的「色板轴」一段 */
+/** 色板。只改主色族，底色归深浅那一轴 —— 见 styles/tokens.css 的「色板轴」一段 */
 export type AccentKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate';
-/** 风格。几何（圆角 / 阴影）全在 CSS 里，TS 这边只有 label —— 见 legacy.css 的「风格轴」 */
+/** 风格。几何（圆角 / 阴影）全在 CSS 里，TS 这边只有 label —— 见 styles/tokens.css 的「风格轴」 */
 export type StyleKey = 'soft' | 'flat' | 'notion';
 
 export interface UiPrefs {

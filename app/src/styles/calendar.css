@@ -1,0 +1,272 @@
+/* ================= 内容区 ================= */
+
+.content { flex: 1; overflow-y: auto; padding: 18px 22px 8px; }
+
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 70px 0; color: var(--text-3); font-size: 13px;
+}
+.empty-ico { font-size: 34px; opacity: .55; }
+
+/* ================= 日视图 ================= */
+
+.allday-zone {
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); padding: 12px 16px; margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.zone-title { font-size: 12.5px; color: var(--text-2); margin-bottom: 9px; display: flex; gap: 8px; align-items: baseline; }
+.zone-hint { color: var(--text-3); font-size: 11px; }
+/* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
+   不至于把下面的时间轴挤出屏幕。行内按「先上后下、先左后右」的顺序读。 */
+.allday-items {
+  display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  gap: 6px 10px; min-height: 32px; align-content: start;
+}
+.allday-items .task-pill { width: 100%; padding: 6px 9px; min-width: 0; }
+.allday-items .task-pill:hover { transform: none; }
+.zone-empty { font-size: 12px; color: var(--text-3); padding: 5px 0; grid-column: 1 / -1; }
+
+.tl-wrap {
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); padding: 16px 14px 16px 62px;
+  box-shadow: var(--shadow);
+}
+.timeline { position: relative; }
+.tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
+.tl-label { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 占用底纹 */
+.tl-layer { position: absolute; inset: 0; pointer-events: none; }
+.tl-busy { position: absolute; left: 0; right: 0; background: var(--primary-pale); border-radius: var(--r-sm); }
+/* 正在拖动的那一段，底纹立刻让位给方块，原位置不再留一块颜色 */
+.tl-busy.drag-src { display: none; }
+
+.tl-now { position: absolute; left: -8px; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
+.tl-now i { position: absolute; left: -4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
+.tl-now span { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--danger); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.tl-events { position: absolute; top: 0; bottom: 0; left: 4px; right: 6px; }
+
+.tl-event {
+  position: absolute; border-radius: var(--r-sm); padding: 4px 7px;
+  background: var(--primary-soft); border: var(--border-w) solid var(--border);
+  border-left: 3px solid var(--primary);
+  overflow: hidden; cursor: pointer; min-height: 22px;
+  /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线） */
+  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  transition: box-shadow .14s, transform .14s;
+}
+.tl-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
+.tl-event.done { opacity: .5; }
+.tl-event.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+.ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ev-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-time {
+  font-size: 10.5px; line-height: 1.2; color: var(--text-3);
+  font-variant-numeric: tabular-nums; letter-spacing: .1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
+}
+.tl-event.done .ev-time { text-decoration: none; }
+/* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突 */
+.ev-resize {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 11px;
+  cursor: ns-resize; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .12s;
+}
+.ev-resize-top { top: 0; bottom: auto; }
+.tl-event:hover .ev-resize { opacity: .85; }
+.ev-resize::after {
+  content: ''; width: 24px; height: 3px; border-radius: var(--r-xs);
+  background: rgb(from var(--primary) r g b / .55);
+}
+/* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
+.tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
+.tl-resize-tip {
+  position: fixed; z-index: 80; pointer-events: none;
+  background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-md); transform: translateY(3px);
+}
+/* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点 */
+.tl-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
+
+/* ================= 周视图（时间网格） ================= */
+
+/* 整块区域纵向滚动。表头、未定时行、左侧时间刻度和右侧任务列
+   全部放在同一个滚动容器里，横向永远共用一条基线，不会因为
+   某一行的滚动条宽度不同而错位 */
+/* 高度由 JS 按可见区域算好（见 Views.fitWeekHeight），
+   这里只给一个兜底值，避免脚本没跑时塌掉 */
+.week-view {
+  display: flex; flex-direction: column;
+  height: calc(100vh - 168px); min-height: 420px;
+  overflow-y: auto; overflow-x: hidden;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+}
+.week-head {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  flex: 0 0 auto; position: sticky; top: 0; z-index: 6;
+  background: var(--panel); border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.week-head-gutter { }
+.week-head-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.week-head-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 0 6px; border: none; background: none; border-radius: var(--r-md);
+  color: var(--text-2); font-size: 12px;
+  transition: background .14s, color .14s;
+}
+.week-head-cell:hover { background: var(--panel-3); color: var(--text); }
+.week-head-cell.weekend { color: var(--text-3); }
+.wh-week { font-size: 11px; letter-spacing: .5px; }
+.wh-day {
+  font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.2;
+  min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
+}
+/* 今天**只把数字染成主色**，不要加圆形底色：那一格会凭空高出 9px，
+   同一行里其他日期的数字看着就是没对齐。「今天是哪天」由下面
+   .week-col.today 的 --primary-pale 整列淡底负责，表头不重复做。 */
+.week-head-cell.today .wh-day { color: var(--primary); }
+
+/* 时间网格本体：左刻度 + 右 7 列，和表头、未定时行共用外层滚动容器 */
+.week-grid {
+  flex: 0 0 auto;
+  display: grid; grid-template-columns: 46px minmax(0, 1fr);
+}
+/* 内部两条轨道都撑满整整 24 小时（DAY_H = 64 × 24）：
+   否则列的底色、竖分隔线、横向刻度线只画到容器可视高度那一段，
+   往下滚就变成「格子没画完」的样子 */
+.week-gutter, .week-cols { height: 1536px; }
+.week-gutter { position: relative; border-right: 1px solid var(--border); }
+.wk-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
+.wk-hour span {
+  position: absolute; left: 0; top: -7px; width: 40px; text-align: right;
+  font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+/* 0:00 在最顶端，标签往下挪一点，别被容器裁掉 */
+.wk-hour:first-child span { top: 2px; }
+/* 整列淡底，让「这一格属于哪一天」更好认 */
+.week-gutter {
+  background: var(--panel-2);
+  background-image: repeating-linear-gradient(
+    to bottom, var(--border) 0 1px, transparent 1px 64px);
+}
+
+.week-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.week-col {
+  min-width: 0; position: relative;
+  border-right: 1px solid var(--border);
+  /* 横向刻度线：与左侧 .wk-hour 同一套高度 */
+  background-image: repeating-linear-gradient(
+    to bottom, var(--border) 0 1px, transparent 1px 64px);
+  background-position: 0 0;
+}
+.week-col:last-child { border-right: none; }
+.week-col.today { background-color: var(--primary-pale); }
+
+/* 未定时任务：独立一行，跟表头一起吸顶，
+   横向列宽和下面的时间网格完全共用一条基线。
+   **上下都要有分割线**：只有下面那条时，这一行和上面的周几表头融成一体，
+   看不出「未定时」是独立的一块。 */
+.week-un-row {
+  flex: 0 0 auto; display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: var(--week-head-h, 79px); z-index: 5;
+  box-shadow: var(--shadow-sticky);
+}
+.week-un-gutter {
+  border-right: 1px solid var(--border);
+  font-size: 10.5px; color: var(--text-3);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 6px;
+}
+.week-un-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.wun-cell {
+  min-width: 0; padding: 4px;
+  display: flex; flex-direction: column; gap: 3px;
+  border-right: 1px solid var(--border);
+  min-height: 30px;
+}
+.wun-cell:last-child { border-right: none; }
+.wun-cell.today { background: var(--primary-pale); }
+.wun-cell .task-pill { font-size: 11px; }
+.wun-empty { display: block; height: 4px; }
+
+/* 定时任务按时间落格 */
+.wk-event {
+  position: absolute; border-radius: var(--r-sm); padding: 2px 5px;
+  background: var(--primary-soft); border: var(--border-w) solid var(--border);
+  border-left: 3px solid var(--primary);
+  overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; gap: 1px;
+  transition: box-shadow .14s;
+}
+.wk-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
+.wk-event.done { opacity: .5; }
+.wk-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
+.wk-time { font-size: 9.5px; color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.wk-title { font-size: 11px; font-weight: 550; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ================= 月视图 ================= */
+
+/* 高度由 JS 按可见区域算好（见 Views.fitMonthHeight）：
+   窗口高就撑满整屏、行高均分；窗口矮就按最小行高撑开，页面照常滚动，不会截掉最后一行 */
+.month-view { display: flex; flex-direction: column; min-height: 480px; }
+.month-head { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
+.month-head-cell { text-align: center; font-size: 11.5px; color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
+.month-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
+  gap: 1px; background: var(--border);
+  border: var(--border-w) solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
+}
+.month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
+.month-cell:hover { background: var(--panel-2); }
+.month-cell.out { background: var(--panel-3); color: var(--text-3); }
+.month-cell.today { background: var(--primary-pale); }
+.month-cell.lv2 { box-shadow: inset 0 -3px 0 var(--warn); }
+.month-cell.lv3 { box-shadow: inset 0 -3px 0 var(--danger); }
+.cell-head { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+.cell-date {
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 12.5px; font-weight: 500; flex: 0 0 22px;
+  font-variant-numeric: tabular-nums; transition: background .14s, color .14s;
+}
+.cell-date:hover { background: var(--primary-soft); color: var(--primary); }
+.cell-date.busy { font-weight: 700; }
+.month-cell.today .cell-date { background: var(--primary); color: var(--on-primary); }
+.cell-today { font-size: 10px; background: var(--primary); color: var(--on-primary); border-radius: var(--r-sm); padding: 0 5px; }
+.cell-load { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.month-cell.lv3 .cell-load { color: var(--danger); }
+.cell-tasks { display: flex; flex-direction: column; gap: 3px; }
+.cell-more {
+  font-size: 10.5px; color: var(--text-3); padding: 2px 0 0 2px;
+  cursor: pointer; transition: color .12s;
+}
+.cell-more:hover { color: var(--primary); }
+
+/* ================= 任务胶囊 / 列表行 ================= */
+
+.task-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
+  border: var(--border-w) solid var(--border); border-left: 3px solid var(--primary);
+  font-size: 12px; cursor: pointer; max-width: 100%; overflow: hidden;
+  transition: background .14s, box-shadow .14s, transform .14s;
+}
+.task-pill:hover { background: var(--primary-soft); box-shadow: var(--shadow); transform: translateY(-1px); }
+.task-pill.done { opacity: .5; }
+.task-pill.done .pill-title { color: var(--text-2); }
+.pill-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill-time { color: var(--text-2); font-size: 11px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
+/* ================= 宽屏：列表分列 =================
+   .mc 是任务流的容器（按页面语义显式加的类，不是靠子元素猜）。
+   分几列的原则：**最多两列**。试过 3~5 列，一行塞太多任务反而难认、
+   眼睛要从左扫到右才能对上标题，两列刚好；单列太窄又挤。
+   容器也随之收窄到 1280px —— 容器太宽会让每一行的空白拉得过长。 */
+
