@@ -255,7 +255,6 @@
   opacity: .96;
   cursor: grabbing;
   box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
-  transform: scale(1.012);
   z-index: 8;
   position: relative;
 }

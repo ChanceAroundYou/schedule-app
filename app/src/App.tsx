@@ -228,8 +228,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       // 认不出 userActivation 的老浏览器（`!ua`）维持原样。
       const ua = navigator.userActivation;
       if ((!ua || ua.hasBeenActive) && typeof navigator.vibrate === 'function') navigator.vibrate(12);
-      // 长按触发：dnd-kit 的 PointerSensor 会在移动时自动开始拖拽
+      // 长按触发：dnd-kit 的 TouchSensor 会在移动时自动开始拖拽
       // 原地松手时由 onPointerUp 弹操作层
+      // 注意：长按后如果用户开始移动，dnd-kit 会接管拖拽，
+      // 这时 lp.current.fired 会被 handleDragStart 清除
     }, LONG_PRESS_MS);
   };
 

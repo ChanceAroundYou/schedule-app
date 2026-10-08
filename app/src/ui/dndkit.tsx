@@ -17,7 +17,7 @@
  * `if (isDragging()) return` 照旧工作。
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import {
   DndContext, MouseSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, useDraggable, useDroppable,
@@ -79,8 +79,19 @@ interface DndProviderProps {
   onDragCancel?: () => void;
 }
 
+/**
+ * 拖拽回调 context —— 让嵌套的拖拽区域（如设置页）可以注册自己的 onDragEnd。
+ * 外层 DndProvider 的 onDragEnd 会调用这个 context 中注册的回调。
+ */
+interface DndCallbacks {
+  register: (onDragEnd: ((event: DragEndEvent) => void) | null) => void;
+}
+
+const DndCallbacksCtx = createContext<DndCallbacks>({ register: () => {} });
+
 export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDragCancel }: DndProviderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const nestedCallbackRef = useRef<((event: DragEndEvent) => void) | null>(null);
 
   const sensors = useDragSensors();
 
@@ -93,6 +104,8 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setActiveId(null);
     setDragging(false);
+    // 先调用嵌套的回调（如设置页），再调用外层的回调
+    nestedCallbackRef.current?.(event);
     onDragEnd?.(event);
   }, [onDragEnd]);
 
@@ -101,6 +114,10 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
     setDragging(false);
     onDragCancel?.();
   }, [onDragCancel]);
+
+  const register = useCallback((onDragEnd: ((event: DragEndEvent) => void) | null) => {
+    nestedCallbackRef.current = onDragEnd;
+  }, []);
 
   return (
     <DndContext
@@ -123,10 +140,34 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
       跟着走（和迁移前 `.touch-drag` 的行为一致）。
       */}
       <DragCtx.Provider value={{ activeId, activeKind: null }}>
-        {children}
+        <DndCallbacksCtx.Provider value={{ register }}>
+          {children}
+        </DndCallbacksCtx.Provider>
       </DragCtx.Provider>
     </DndContext>
   );
+}
+
+/**
+ * 嵌套拖拽区域 —— 让设置页等组件可以注册自己的 onDragEnd 回调，
+ * 而不需要创建新的 DContext。
+ *
+ * 用法：
+ *   <DndScope onDragEnd={handleDragEnd}>
+ *     <SortableContext items={items} strategy={verticalListSortingStrategy}>
+ *       ...
+ *     </SortableContext>
+ *   </DndScope>
+ */
+export function DndScope({ children, onDragEnd }: { children: ReactNode; onDragEnd: (event: DragEndEvent) => void }) {
+  const { register } = useContext(DndCallbacksCtx);
+
+  useEffect(() => {
+    register(onDragEnd);
+    return () => register(null);
+  }, [register, onDragEnd]);
+
+  return <>{children}</>;
 }
 
 /* ============================ 可排序项 ============================ */

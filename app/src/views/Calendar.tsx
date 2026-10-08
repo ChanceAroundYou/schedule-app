@@ -94,7 +94,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
     <>
       <div className="allday-zone" ref={alldayZone.ref} data-zone-id={`allday:${iso}`} data-date={iso}>
         <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
-          {allday.map((t) => <TaskPill key={t.id} task={t} draggable={false} />)}
+          {allday.map((t) => <TaskPill key={t.id} task={t} />)}
           {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
         </div>
       </div>
@@ -191,7 +191,7 @@ function WunCell({ state, d, today }: { state: LocalState; d: string; today: str
   return (
     <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}>
       {un.length
-        ? un.map((t) => <TaskPill key={t.id} task={t} draggable={false} />)
+        ? un.map((t) => <TaskPill key={t.id} task={t} />)
         : <span className="wun-empty" />}
     </div>
   );
@@ -283,7 +283,7 @@ function MonthCell({ state, d, curMonth, today }: { state: LocalState; d: string
       </div>
       <div className="cell-tasks">
         {ts.slice(0, MONTH_CELL_MAX).map((t) => (
-          <TaskPill key={t.id} task={t} showTime draggable={false} />
+          <TaskPill key={t.id} task={t} showTime />
         ))}
         {more > 0 && (
           <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>

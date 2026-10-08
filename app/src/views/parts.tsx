@@ -83,11 +83,9 @@ export interface TaskRowProps {
   extra?: ReactNode;
   /** 覆盖 .task-row 的附加类（逾期行用 od-row） */
   className?: string;
-  /** 列表视图用 dnd-kit 拖拽，关掉原生 draggable 避免冲突 */
-  draggable?: boolean;
 }
 
-export function TaskRow({ task: t, bare, showDoneAt, extra, className, draggable = true }: TaskRowProps) {
+export function TaskRow({ task: t, bare, showDoneAt, extra, className }: TaskRowProps) {
   const meta: ReactNode[] = [];
   const today = D.today();
   if (!bare) {
@@ -120,7 +118,6 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, draggable
       className={'task-row task-el' + (t.done ? ' done' : '') + (className ? ' ' + className : '')}
       data-id={t.id}
       data-untimed={t.time ? undefined : '1'}
-      draggable={draggable}
     >
       <CheckBtn id={t.id} on={!!t.done} />
       <div className="row-main">
@@ -133,13 +130,12 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, draggable
 
 /* ============================== 小胶囊 ============================== */
 
-export function TaskPill({ task: t, showTime, draggable = true }: { task: Task; showTime?: boolean; draggable?: boolean }) {
+export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean }) {
   return (
     <div
       className={'task-pill task-el' + (t.done ? ' done' : '')}
       data-id={t.id}
       data-untimed={t.time ? undefined : '1'}
-      draggable={draggable}
       title={t.title}
     >
       {/* 月 / 周视图格子里唯一一个勾选入口。**必须是 <button>**：
