@@ -9,7 +9,7 @@
  * 填了就是手改覆盖 —— 空 vs 0 是两回事，所以用 `''` 而不是 0 表达「自动」。
  */
 import { useId, useState } from 'react';
-import { Btn, Chips, Sheet, useConfirm } from './kit.tsx';
+import { Btn, Chips, Input, Sheet, Textarea, useConfirm } from './kit.tsx';
 import * as store from '../data/store.ts';
 import { STATUS_LABEL } from '../domain/model.ts';
 import type { LocalState, ProjectStatus } from '../domain/types.ts';
@@ -63,7 +63,7 @@ export function ProjectSheet({ state, id, onClose }: {
       <div className="flex flex-col gap-3">
         <div className="field">
           <label htmlFor={fid + '-n'}>名字</label>
-          <input
+          <Input
             id={fid + '-n'} value={name} autoFocus
             placeholder="比如：星星包"
             onChange={(e) => setName(e.target.value)}
@@ -83,7 +83,7 @@ export function ProjectSheet({ state, id, onClose }: {
 
         <div className="field">
           <label htmlFor={fid + '-p'}>进度</label>
-          <input
+          <Input
             id={fid + '-p'} type="number" min={0} max={100} value={prog}
             placeholder="留空 = 按关联的任务自动算"
             onChange={(e) => setProg(e.target.value)}
@@ -92,7 +92,7 @@ export function ProjectSheet({ state, id, onClose }: {
 
         <div className="field">
           <label htmlFor={fid + '-t'}>备注</label>
-          <textarea id={fid + '-t'} rows={4} value={note}
+          <Textarea id={fid + '-t'} rows={4} value={note}
             placeholder="想得起来的都写这儿…"
             onChange={(e) => setNote(e.target.value)} />
         </div>

@@ -182,6 +182,8 @@ node server/tests/migration.test.js       # schema 迁移：8 条
 node --test server/tests/ai.test.js       # AI 层：18 条（假模型，不联网）
 ```
 
+> **完整清单、每个探针节在验什么、哪条约定锁在哪一节 → [docs/测试.md](docs/测试.md)。**
+
 端到端（真实网络 / 真实 Chrome，零 npm 依赖）：
 
 ```bash
@@ -207,7 +209,7 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 ```
 
 > **它会在那个服务器上注册一个新账户。** 打线上跑完记得清库（见
-> [DEPLOY.md](DEPLOY.md) 「发布流程」）。注册是开放的，所以多出来的账户
+> [DEPLOY-运维.md](DEPLOY-运维.md)「发布流程」）。注册是开放的，所以多出来的账户
 > 不会挡住谁，但留着也是垃圾。
 
 ---
@@ -216,40 +218,24 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 
 ```text
 日程管理/
-├── app/                   前端源码（React + TS + Vite）
-│   ├── src/
-│   │   ├── main.tsx       入口（先注销旧版 Service Worker）
-│   │   ├── App.tsx        串起来的那层：渲染调度、事件委托、拖拽、快捷键
-│   │   ├── domain/        纯逻辑：日期 / 解析 / 重复规则 / 布局 / 合并
-│   │   ├── data/          本地存储 + 接口封装 + 旧数据导入
-│   │   ├── sync/          同步引擎：outbox 推送 + 游标拉取
-│   │   ├── ui/            侧栏 / 顶栏 / 抽屉 / 操作层 / 拖拽 / 日程集与邀请
-│   │   ├── views/         日 · 周 · 月 + 六个列表页
-│   │   └── styles/        legacy.css（设计系统）+ tailwind.css（新表面）
-│   ├── tests/browser-smoke.mjs   真实 Chrome 走一遍界面（自己起临时后端）
-│   ├── tests/smoke.mjs           旧的端到端冒烟，打的是已部署的那份
-│   └── public/            icon.svg / manifest.json / sw.js（离线外壳）
-│
-├── server/                后端（Node 22，**只引 AI 那一组依赖**）
-│   ├── server.js          HTTP 路由
-│   ├── lib/db.js          SQLite（node:sqlite）
-│   ├── lib/auth.js        注册 / 登录 / 令牌
-│   ├── lib/calendars.js   日程集与成员 —— **权限的唯一实现处**
-│   ├── lib/invites.js     两段式邀请
-│   ├── lib/ratelimit.js   登录 / 注册 / 邀请 / AI 的频次限制
-│   ├── lib/sync.js        逐字段 LWW + 游标
-│   ├── lib/ai/            AI 对话：工具、提示词、SSE、提案确认
-│   └── tests/             api.test.js + migration.test.js + ai.test.js + smoke-share.mjs
-│
-├── dist/                  构建产物（生成物，勿手改；nginx 只伺服这里）
-├── deploy/                nginx conf + systemd 单元的本地副本
-├── legacy/                旧版纯静态应用，冻结存档（可回滚，见 DEPLOY.md）
-├── docs/                  接口.md · 重构路线.md · 踩坑.md · 测试.md
-│                          业务模型.md · 界面约定.md
-├── package.json           后端依赖（只有 AI 那一组，见「技术栈」）
-├── CLAUDE.md              给 AI 编码助手
-├── DEPLOY.md              部署与运维
-└── README.md              本文件
+├── app/          前端（React + TS + Vite，有构建）
+│   ├── src/domain/    纯逻辑，零 React / DOM / 网络
+│   ├── src/data/      本地存储 + 接口封装 + 旧数据导入
+│   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
+│   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽 / 日程集与邀请
+│   ├── src/views/     纯展示（日 · 周 · 月 + 六个列表页）
+│   ├── src/styles/    legacy.css（设计系统）+ tailwind.css（新表面）
+│   ├── public/        icon.svg / manifest.json / sw.js（离线外壳）
+│   └── tests/         browser-smoke.mjs（真实 Chrome）· smoke.mjs（旧的）
+├── server/       后端（Node 22，**只引 AI 那一组依赖**）
+│   ├── server.js      路由 + 鉴权中间件
+│   ├── lib/           db · auth · calendars（**权限唯一实现处**）· invites ·
+│   │                  ratelimit · sync（逐字段 LWW + 游标）
+│   ├── lib/ai/        AI 对话：工具、提示词、SSE、提案确认
+│   └── tests/         api · migration · ai · smoke-share
+├── dist/         构建产物（生成物，勿手改；nginx 只伺服这里）
+├── deploy/ · legacy/（旧版冻结存档，可回滚）· docs/ · package.json
+└── CLAUDE.md · DEPLOY.md（+ 四份分册）· README.md（本文件）
 ```
 
 **只有 `dist/` 会被 nginx 伺服。** 源码、`server/`、`legacy/`、本项目文档
@@ -301,7 +287,7 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 > 只是 AI 页会报「依赖没装好」。
 
 **为什么保留 `legacy/`**：旧版是能用的，新版出问题时可以整体退回去
-（见 [DEPLOY.md](DEPLOY.md) 「回滚」）。旧数据 key 也一直没删。
+（见 [DEPLOY-运维.md](DEPLOY-运维.md)「回滚」）。旧数据 key 也一直没删。
 
 ---
 
@@ -309,6 +295,7 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 
 **往哪走**（结构、数据模型不变量、界面硬规则）→ [CLAUDE.md](CLAUDE.md)
 **别踩哪**（40 条坑，改代码前先读）→ [docs/踩坑.md](docs/踩坑.md)
+（另两份：[踩坑-前端.md](docs/踩坑-前端.md) · [踩坑-环境.md](docs/踩坑-环境.md)）
 **怎么验**（跑哪些测试）→ [docs/测试.md](docs/测试.md)
 
 那里的约束都是踩坑换来的，改代码前请先读。
@@ -319,8 +306,25 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 |---|---|---|
 | `README.md` | 人 | 网址、怎么用、数据在哪、快捷键、故障排查 |
 | [CLAUDE.md](CLAUDE.md) | AI 编码助手 | 往哪走：结构、数据模型不变量、界面硬规则、最容易翻车的十条 |
-| [docs/踩坑.md](docs/踩坑.md) | AI 编码助手 | 别踩哪：40 条坑（**改代码前先读**） |
+| [docs/踩坑.md](docs/踩坑.md) | AI 编码助手 | 别踩哪：40 条坑的索引（1–4 同步 / 数据） |
+| [docs/踩坑-前端.md](docs/踩坑-前端.md) | AI 编码助手 | 第 5–20 条：前端 / UI |
+| [docs/踩坑-环境.md](docs/踩坑-环境.md) | AI 编码助手 | 第 21–40 条：环境 / 工具 |
 | [docs/测试.md](docs/测试.md) | AI 编码助手 | 怎么验：跑哪些测试、每个探针节在验什么 |
 | [docs/业务模型.md](docs/业务模型.md) | AI 编码助手 | 完整字段表、重复规则、逾期、冲突提示 |
-| [docs/界面约定.md](docs/界面约定.md) | AI 编码助手 | 顶栏 / 周视图 / 快速添加 / 软键盘 各功能的约定 |
-| `DEPLOY.md` | 人 + AI | nginx 怎么操作、conf 怎么写、发布流程、回滚 |
+| [docs/界面约定.md](docs/界面约定.md) | AI 编码助手 | 配色令牌、变量名对照表 |
+| [docs/界面约定-无障碍.md](docs/界面约定-无障碍.md) | AI 编码助手 | 无障碍 / 键盘 / 浮层 / 动效 |
+| [docs/界面约定-布局.md](docs/界面约定-布局.md) | AI 编码助手 | 顶栏、周视图、软键盘避让 |
+| [docs/界面约定-快速添加.md](docs/界面约定-快速添加.md) | AI 编码助手 | 快速添加：圆钮 / 两层折叠面板 / 转盘 |
+| [docs/接口.md](docs/接口.md) | 人 + AI | HTTP 接口总览 + 认证 |
+| [docs/接口-日程集.md](docs/接口-日程集.md) | 人 + AI | 日程集 / 成员 / 邀请 |
+| [docs/接口-同步.md](docs/接口-同步.md) | 人 + AI | `POST /api/sync` 与同步语义 |
+| [docs/接口-AI.md](docs/接口-AI.md) | 人 + AI | AI 对话、提案确认、手工演练 |
+| [docs/重构路线.md](docs/重构路线.md) | 人 + AI | 决策记录：选型 · 仓库结构 · 数据模型演进 |
+| [docs/重构路线-同步.md](docs/重构路线-同步.md) | 人 + AI | 决策记录：同步协议 |
+| [docs/重构路线-计划.md](docs/重构路线-计划.md) | 人 + AI | 决策记录：Android 小组件 · 迭代阶段 |
+| [docs/重构路线-记录.md](docs/重构路线-记录.md) | 人 + AI | 决策记录：多账户 · 硬骨头 · 落地记录 |
+| `DEPLOY.md` | 人 + AI | 拓扑、改完代码怎么上线 |
+| `DEPLOY-nginx.md` | 人 + AI | nginx 怎么操作 |
+| `DEPLOY-conf.md` | 人 + AI | conf 怎么写 |
+| `DEPLOY-运维.md` | 人 + AI | 发布流程、回滚、与现行结构的适配 |
+| `DEPLOY-排障.md` | 人 + AI | 环境踩坑、故障排查 |

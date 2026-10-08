@@ -26,6 +26,7 @@ import {
 import type { LocalState, Project, Task } from '../domain/types.ts';
 import { fmtMD } from '../domain/date.ts';
 import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
+import { Btn } from '../ui/kit.tsx';
 
 /** 三列。顺序就是板子上的顺序 —— `projectColumn` 的返回值要对得上 */
 const COLS = [
@@ -178,16 +179,13 @@ export function ProjectsView({ state, onNew, onEdit, onNext }: {
     <div className="pj-wrap">
       <div className="pj-top">
         <h2 className="pj-h">项目</h2>
-        <button className="text-btn" type="button" onClick={onNew}>＋ 新建项目</button>
+        <Btn variant="ghost" className="text-btn" type="button" onClick={onNew}>＋ 新建项目</Btn>
       </div>
 
       {!list.length && (
         <div className="empty">
           <div>还没有项目</div>
-          <div className="empty-sub">
-            长周期的事放这儿。泳道头上那两样（下一步 · 几天没动）是给
-            「想不起来做到哪儿了」用的 —— 不用先写计划
-          </div>
+          <div className="empty-sub">长周期的事放这儿。</div>
         </div>
       )}
 

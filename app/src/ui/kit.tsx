@@ -14,6 +14,8 @@
 import {
   createContext, useCallback, useContext, useEffect, useId, useRef, useState,
   type ReactNode, type ButtonHTMLAttributes, type RefObject,
+  type InputHTMLAttributes, type TextareaHTMLAttributes,
+  forwardRef,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, X } from 'lucide-react';
@@ -22,7 +24,15 @@ import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
-type Variant = 'primary' | 'ghost' | 'danger' | 'chip';
+/* 五种固定 variant，覆盖全应用所有按钮场景：
+   primary  主操作（保存、确认、跳转）
+    normal  普通操作（导航、切换、取消）
+    ghost   极轻操作（关闭、清空）
+    danger  危险操作（删除、退出）
+    chip    标签式操作（筛选、选择）
+   新增 variant 必须先在这里加，再在 legacy.css 里加对应样式 —— 别在
+   .tsx 里写死颜色，那等于把设计令牌绕过去。 */
+type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
 
 /* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
    兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
@@ -34,17 +44,26 @@ type Variant = 'primary' | 'ghost' | 'danger' | 'chip';
    tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
 const VARIANT: Record<Variant, string> = {
   primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
+  normal: 'border-[var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
-  danger: 'bg-[var(--danger)] text-[var(--on-primary)] hover:brightness-95',
-  chip: 'bg-[var(--panel-3)] text-[var(--text)] hover:brightness-95',
+  danger: 'border-[var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
+  chip: 'border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
+};
+
+type Size = 'sm' | 'md' | 'lg';
+
+const SIZE: Record<Size, string> = {
+  sm: 'h-7 px-2.5 text-[13px]',
+  md: 'h-9 px-3.5 text-sm',
+  lg: 'h-11 px-5 text-[15px]',
 };
 
 interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
-  size?: 'sm' | 'md';
+  size?: Size;
 }
 
-export function Btn({ variant = 'ghost', size = 'md', className, ...rest }: BtnProps) {
+export function Btn({ variant = 'normal', size = 'md', className, ...rest }: BtnProps) {
   return (
     <button
       type="button"
@@ -52,13 +71,55 @@ export function Btn({ variant = 'ghost', size = 'md', className, ...rest }: BtnP
       className={cx(
         'inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-9 px-3.5 text-sm',
+        SIZE[size],
         VARIANT[variant],
         className,
       )}
     />
   );
 }
+
+/* ================================ 表单控件 ================================ */
+
+/* 输入框 / 文本域统一走这两个组件。
+   样式全部引用 legacy.css 的设计令牌（--input / --border-w / --r-md /
+   --panel-2 / --primary），不在 .tsx 里写死颜色。
+   需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {}
+
+export function Input({ className, ...rest }: InputProps) {
+  return (
+    <input
+      {...rest}
+      className={cx(
+        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+    />
+  );
+}
+
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, ...rest }, ref) => {
+    return (
+      <textarea
+        ref={ref}
+        {...rest}
+        className={cx(
+          'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+          'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          className,
+        )}
+      />
+    );
+  }
+);
 
 /* =============================== 底部浮层 =============================== */
 

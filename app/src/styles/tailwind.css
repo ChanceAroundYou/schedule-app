@@ -298,11 +298,7 @@
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 12px;
 }
-.ai-onboarding-title {
-  font-size: 13px; font-weight: 600; color: var(--text);
-  margin-bottom: 8px;
-}
-.ai-onboarding-list {
+.ai-onboarding-tip {
   font-size: 12.5px; line-height: 1.8; color: var(--text-2);
   margin-bottom: 10px;
 }

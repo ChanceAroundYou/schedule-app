@@ -23,7 +23,7 @@ import { chatStream } from './aiClient.ts';
 import { AiSettingsSheet } from './AiSettings.tsx';
 import { AiHistory } from './AiHistory.tsx';
 import { AiMemory } from './AiMemory.tsx';
-import { Btn, IconBtn, toast } from './kit.tsx';
+import { Btn, IconBtn, Textarea, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
@@ -296,13 +296,7 @@ export function AiPanel({ state, onConfirmed }: {
 
       {showOnboarding && view === 'chat' && (
         <div className="ai-onboarding">
-          <div className="ai-onboarding-title">AI 助手能做什么</div>
-          <div className="ai-onboarding-list">
-            <div>• 查排期：「这周还剩什么没做？」「下周哪天适合出去玩？」</div>
-            <div>• 改排期：说「把明天那个会挪到周四」，它会提案，你点确认才落库</div>
-            <div>• 管打卡：建打卡项、打卡、删打卡项</div>
-            <div>• 记偏好：它会记住你说过的偏好，下次对话还能用</div>
-          </div>
+          <div className="ai-onboarding-tip">改动要你点「确认」才生效——它先提案，你点头才落库。</div>
           <Btn
             variant="primary"
             size="sm"
@@ -420,11 +414,12 @@ export function AiPanel({ state, onConfirmed }: {
       </div>
 
       <div className="ai-compose">
-        <textarea
+        <Textarea
           className="ai-input"
           value={text}
           rows={narrow ? 1 : 2}
           placeholder="问点排期上的事…（回车发送，Shift+回车换行）"
+          aria-label="跟 AI 说"
           spellCheck={false}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

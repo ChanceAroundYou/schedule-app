@@ -29,7 +29,7 @@ import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import * as T from './theme.ts';
-import { Btn, Chips, Sheet, useConfirm, toast } from './kit.tsx';
+import { Btn, Chips, Input, Sheet, useConfirm, toast } from './kit.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
@@ -227,17 +227,17 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-3">
         <div className="field">
           <label htmlFor={fid + '-c'}>当前密码</label>
-          <input id={fid + '-c'} type="password" autoComplete="current-password" value={cur}
+          <Input id={fid + '-c'} type="password" autoComplete="current-password" value={cur}
             onChange={(e) => setCur(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor={fid + '-n'}>新密码</label>
-          <input id={fid + '-n'} type="password" autoComplete="new-password" value={next}
+          <Input id={fid + '-n'} type="password" autoComplete="new-password" value={next}
             onChange={(e) => setNext(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor={fid + '-a'}>再输一遍</label>
-          <input id={fid + '-a'} type="password" autoComplete="new-password" value={again}
+          <Input id={fid + '-a'} type="password" autoComplete="new-password" value={again}
             onChange={(e) => setAgain(e.target.value)} />
         </div>
 
@@ -450,16 +450,14 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
           <div>
             <label htmlFor={fid + '-name'} className="mb-1.5 block text-[12px] text-[var(--text-2)]">名字</label>
             <div className="flex gap-2">
-              <input
+              <Input
                 id={fid + '-name'}
                 value={name}
                 disabled={!manage}
                 data-cal-name="1"
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-                className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
-                           bg-transparent px-3 py-1.5 text-sm outline-none
-                           focus:border-[var(--primary)] disabled:opacity-60"
+                className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5 disabled:opacity-60"
               />
               {manage && (
                 <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
@@ -534,7 +532,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                 <UserPlus size={13} /> 邀请成员
               </div>
               <div className="flex gap-2">
-                <input
+                <Input
                   value={inviteName}
                   placeholder="对方的用户名"
                   aria-label="对方的用户名"
@@ -542,8 +540,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                   spellCheck={false}
                   onChange={(e) => setInviteName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-                  className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
-                             bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
+                  className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5"
                 />
                 <Chips<Role>
                   value={inviteRole}
@@ -702,8 +699,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           {/* 功能区放在最前面 —— 它改的是导航本身，比配色更「结构性」 */}
           <NavCard state={state} />
 
-          <Card icon={<Palette size={14} />} title="外观"
-            hint="深浅那一档选「跟随系统」时会随系统的日夜切换自动变，不用手动改。">
+          <Card icon={<Palette size={14} />} title="外观">
             <div className="flex flex-col gap-3">
               <div>
                 <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">色板</div>
@@ -756,8 +752,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
       )}
 
       {tab === 'security' && (
-        <Card icon={<UserRound size={14} />} title="安全"
-          hint="备份是**合并**，不是覆盖：同 id 的会被覆盖，其余原样留着。">
+        <Card icon={<UserRound size={14} />} title="安全">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
             <Btn variant="chip" size="sm" onClick={() => setPwOpen(true)}>
@@ -766,10 +761,6 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
             <Btn variant="ghost" size="sm" onClick={onLogout}>
               <LogOut size={13} /> 退出登录
             </Btn>
-          </div>
-          <div className="mt-2.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
-            这个应用没有找回口令的路子（没有邮箱、没有手机、没有管理员），
-            改密码前请记得当前密码。退出登录后其他设备也需要重新登录。
           </div>
 
           <div className="mt-4 border-t border-[var(--border)] pt-3">

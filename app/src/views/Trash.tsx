@@ -15,6 +15,7 @@ import { Trash2 } from 'lucide-react';
 import type { Habit, LocalState, Task } from '../domain/types.ts';
 import { trashedHabits, trashedTasks } from '../domain/model.ts';
 import { Empty } from './parts.tsx';
+import { Btn } from '../ui/kit.tsx';
 
 interface Item {
   id: string;
@@ -43,10 +44,9 @@ export function TrashView({ state }: { state: LocalState }) {
   return (
     <div className="list-view">
       <div className="trash-head">
-        <div className="trash-tip">删除的任务都在这里，随时可以还原。</div>
-        <button className="danger-btn" data-act="empty-trash" data-count={items.length}>
+        <Btn variant="danger" data-act="empty-trash" data-count={items.length}>
           <Trash2 size={14} /> 清空垃圾箱
-        </button>
+        </Btn>
       </div>
 
       <div className="list-group">
@@ -67,14 +67,15 @@ export function TrashView({ state }: { state: LocalState }) {
                   </div>
                 </div>
                 <span className="row-actions">
-                  <button className="chip tiny" data-act="restore" data-kind={it.kind} data-id={it.id}>还原</button>
-                  <button
-                    className="chip tiny danger"
+                  <Btn variant="chip" size="sm" data-act="restore" data-kind={it.kind} data-id={it.id}>还原</Btn>
+                  <Btn
+                    variant="danger"
+                    size="sm"
                     data-act="purge"
                     data-kind={it.kind}
                     data-id={it.id}
                     data-title={it.title}
-                  >彻底删除</button>
+                  >彻底删除</Btn>
                 </span>
               </div>
             );

@@ -571,7 +571,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   // 只读日程集里点勾选，写入会在 store 那一层被丢在门口。不提示的话
   // 用户看到的是「点了没反应」，会以为程序坏了。
   //
-  // **要说清是哪个集**：今天 / 逾期 / 待办箱是跨集的（见「五、界面约定」），
+  // **要说清是哪个集**：今天 / 逾期 / 待办箱是跨集的（见 CLAUDE.md「三、界面硬规则」），
   // 在「今天」里勾了一条别的集的任务时，一句「这个日程集你只有查看权限」
   // 只会让人以为是眼前这个集出了问题。
   const deniedRef = useRef(state.denied);

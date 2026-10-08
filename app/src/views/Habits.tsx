@@ -19,6 +19,7 @@ import * as D from '../domain/date.ts';
 import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
 import { SortableList } from '../ui/dndkit.tsx';
+import { Input, Btn } from '../ui/kit.tsx';
 import * as store from '../data/store.ts';
 
 export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title: string) => void }) {
@@ -35,17 +36,18 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
 
   const addBar = (
     <div className="habit-add">
-      <input
+      <Input
         type="text"
         id="habitInput"
         placeholder="添加一个打卡项，如：学英语"
+        aria-label="添加打卡项"
         autoComplete="off"
         spellCheck={false}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
       />
-      <button className="primary-btn" onClick={add}><Plus size={14} /> 添加</button>
+      <Btn variant="primary" onClick={add}><Plus size={14} /> 添加</Btn>
     </div>
   );
 

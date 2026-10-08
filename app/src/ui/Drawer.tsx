@@ -19,7 +19,7 @@ import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/type
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { liveProjects } from '../domain/model.ts';
-import { Btn, Chips, SheetPicker, useConfirm } from './kit.tsx';
+import { Btn, Chips, IconBtn, Input, SheetPicker, Textarea, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
@@ -196,7 +196,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             />
             <span className="check-circle" />
           </label>
-          <input
+          <Input
             type="text"
             className="drawer-title"
             placeholder="任务名称"
@@ -205,9 +205,9 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { const v = title.trim() || '未命名任务'; setTitle(v); if (v !== task.title) patch({ title: v }); }}
           />
-          <button className="icon-btn" title="关闭" onClick={onClose}>
+          <IconBtn label="关闭" className="icon-btn" onClick={onClose}>
             <Check size={16} />
-          </button>
+          </IconBtn>
         </div>
 
         <div className="drawer-body">
@@ -219,7 +219,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
           <div className="field-row">
             <div className="field">
               <label htmlFor={fid + '-date'}>日期</label>
-              <input
+              <Input
                 id={fid + '-date'}
                 type="date"
                 value={task.date || ''}
@@ -232,7 +232,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                   重构时只留了原生框，把表盘整个丢了 —— 而「把 9 点挪到 10 点」
                   这种一格的事，点两下表盘比开系统控件快得多 */}
               <div className="field-inline">
-                <input
+                <Input
                   id={fid + '-time'}
                   type="time"
                   value={task.time || ''}
@@ -353,13 +353,13 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                     label="重复结束方式"
                   />
                   {rep.end?.type === 'date' && (
-                    <input
+                    <Input
                       type="date" value={rep.end.date}
                       onChange={(e) => patch({ repeat: { ...rep, end: { type: 'date', date: e.target.value } } })}
                     />
                   )}
                   {rep.end?.type === 'count' && (
-                    <input
+                    <Input
                       type="number" min={1} max={999} value={rep.end.count}
                       onChange={(e) => patch({ repeat: { ...rep, end: { type: 'count', count: Math.max(1, +e.target.value || 1) } } })}
                     />
@@ -391,7 +391,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
 
           <div className="field">
             <label htmlFor={fid + '-note'}>备注</label>
-            <textarea
+            <Textarea
               id={fid + '-note'}
               rows={5}
               placeholder="补充说明…"

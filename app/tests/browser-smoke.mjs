@@ -356,6 +356,16 @@ try {
     ok(await evalJs(page, `return !!document.querySelector('${marker}');`), nav + ' 有 ' + marker);
   }
 
+  // 打卡页的输入框也要有名字 —— a11y() 原来只扫了待办箱 / 抽屉 / 浮层，
+  // 打卡页从来没被扫过，habitInput 只有 placeholder 的漏洞就是这么漏掉的
+  await evalJs(page, `document.querySelector('[data-nav="habits"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('.habit-add')`, '打卡页渲染出来', 8000);
+  const hab = await evalJs(page, `return { bad: ${a11y('.habit-add')},
+    cands: document.querySelectorAll('.habit-add input').length };`);
+  ok(hab.cands === 1, '打卡页有 ' + hab.cands + ' 个输入框可查');
+  ok(hab.bad.length === 0, '打卡页每个控件都有名字'
+    + (hab.bad.length ? '：\n      ' + hab.bad.join('\n      ') : ''));
+
   console.log('\n五、管理浮层：改名能落库');
   await evalJs(page, `document.querySelector('[data-cal-manage]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('[data-cal-name]')`, '管理浮层打开');
@@ -633,7 +643,7 @@ try {
   ok(mSaved.join('') === mAfter.join(''), '鼠标拖的结果也落库了，实际 ' + JSON.stringify(mSaved));
 
   console.log('\n十、被降成只读之后：改动挡下来，并且说是哪个集');
-  /* 这一节测的是「写操作不许静默失败」那条约定（见 CLAUDE.md 五、界面约定）。
+  /* 这一节测的是「写操作不许静默失败」那条约定（见 CLAUDE.md 三、界面硬规则）。
      store 那一层有单测，但**接线**没测过：计数器涨了、提示没弹出来，
      用户看到的还是「点了没反应」。所以这里走完整条路：真降权限 → 真点 → 真看提示。
 
@@ -851,6 +861,14 @@ try {
   // 切到 AI 页
   await evalJs(page, `document.querySelector('[data-nav="ai"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('.ai-wrap')`, 'AI 面板渲染出来', 8000);
+
+  // AI 面板的输入框也要有名字 —— a11y() 原来从没扫过 AI 面板，
+  // .ai-input 只有 placeholder 的漏洞就是这么漏掉的
+  const aiA11y = await evalJs(page, `return { bad: ${a11y('.ai-wrap')},
+    cands: document.querySelectorAll('.ai-wrap input, .ai-wrap textarea').length };`);
+  ok(aiA11y.cands >= 1, 'AI 面板有 ' + aiA11y.cands + ' 个输入框可查');
+  ok(aiA11y.bad.length === 0, 'AI 面板每个控件都有名字'
+    + (aiA11y.bad.length ? '：\n      ' + aiA11y.bad.join('\n      ') : ''));
 
   // 发一句话。`.ai-input` 是 <textarea>，setter 必须取 HTMLTextAreaElement
   // 那个原型上的 —— 拿 HTMLInputElement 的来 call 会当场 `Illegal invocation`
@@ -1687,6 +1705,9 @@ try {
       apmOff: +((((apm.left + apm.right) / 2) - ((ampm.left + ampm.right) / 2))).toFixed(1),
       // 「现在」在下午右边多少（需求 5）
       nowGap: +(now.left - pm.right).toFixed(1),
+      // 「现在」两个字横排还是竖排（需求 3）：竖排会高出一行
+      nowW: +now.width.toFixed(1),
+      nowH: +now.height.toFixed(1),
       dot: pop.querySelector('.cp-dot') ? pop.querySelector('.cp-dot').textContent.trim() : null,
     };
   `);
@@ -1698,12 +1719,38 @@ try {
   ok(!dial.hasDisplay, '面板里那个大号的时间显示整块去掉了');
   // 「现在」挪到下午的**右侧**（需求 5），但不能把上午 / 下午那一组挤偏 ——
   // 写成三个 flex 子元素就会一起居中、整组左移，所以它走的是绝对定位
-  ok(dial.nowParent === 'cp-ampm', '「现在」在上午 / 下午那一行里，实际 ' + JSON.stringify(dial.nowParent));
+  ok(dial.nowParent === 'cp-apm', '「现在」在上午 / 下午那一行里，实际 ' + JSON.stringify(dial.nowParent));
   ok(dial.nowText === '现在', '「现在」两个字还在，实际 ' + JSON.stringify(dial.nowText));
-  ok(dial.nowGap > 0, '「现在」在下午的右边，实际间距 ' + dial.nowGap);
+  ok(dial.nowGap > 0 && dial.nowGap < 20, '「现在」紧贴下午按钮，实际间距 ' + dial.nowGap);
+  // 需求 3：「现在」两个字**横着排**。它的包含块是 `.cp-apm`，而 left 超出
+  // 包含块宽度 → 绝对定位的可用宽度算成负数 → 被压到一个汉字宽、竖成两行。
+  // 横排时高度就是一行
+  ok(dial.nowH < 30,
+    '「现在」两个字横着排，不是竖成两行（需求 3），实际 ' + dial.nowW + '×' + dial.nowH);
+  // 需求 5：点「现在」→ 拨到的就是此刻 → 这个键亮起（选中态）。
+  // 和上午 / 下午那对 `.cp-ap.on` 同一套语义：它是「选中了什么」的状态。
+  await clickEl(page, `document.querySelector('.when-pop .cp-now')`);
+  // 「现在」也是一次选完 → 面板**自己收起**（和分钟落定走同一条 onMinutePick）。
+  // 所以「这个键变成选中态」不再断得出来 —— 键跟着面板一起卸载了，
+  // 改成断「收掉了、且按钮上写的就是此刻」。
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '点「现在」面板自动收起', 8000);
+  const nowShown = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
+  const nowMin = await evalJs(page, `
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  `);
+  const shownMin = nowShown ? (+nowShown.slice(0, 2)) * 60 + (+nowShown.slice(3)) : -1;
+  // 差 1 分钟是给「点下去那一刻」到「断言这一刻」之间跨了整点留的余量
+  ok(Math.abs(shownMin - nowMin) <= 1,
+    '点「现在」之后按钮上就是此刻，实际 ' + JSON.stringify(nowShown) + '，此刻 ' + JSON.stringify(nowMin));
+  // 面板被「现在」收掉了，后面几节还要用 —— 重开（时间层）
+  await openLayer('time');
   ok(Math.abs(dial.apmOff) < 1,
     '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
   ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
+  // 行与主体之间有分界线（需求 6）
+  const borderTop = await evalJs(page, `return getComputedStyle(document.querySelector('.wp-body')).borderTopWidth;`);
+  ok(parseFloat(borderTop) >= 1, '行与主体之间有分界线（需求 6），实际 ' + borderTop);
   ok(Math.abs(dial.left - dial.right) < 1,
     '表盘在面板里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right);
 
@@ -1712,11 +1759,13 @@ try {
   const pmNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
   ok(pmNums === '12,13,14,15,16,17,18,19,20,21,22,23',
     '下午那圈直接写 12–23（不是 1–12），实际 ' + pmNums);
+  // 上午那圈写 0–11（24 小时制），和按钮/输入框显示一致
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
   // 表盘下面**不该有任何说明文字**（需求 7）：12 在顶部是画着的，
   // 「每格 5 分钟」数一下就知道 —— 写出来只是把人当不会看
   ok(await evalJs(page, `return !document.querySelector('.when-pop .cp-tip');`),
     '表盘下面没有「选小时（12 在顶部）」这类提示文字');
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '3')`);
   // 选完小时自动进分钟档 —— 提示文字没了，改看表盘正中心写的是「时」还是「分」
   //（那个点同时是切换键，见需求 4：显示行删了之后总得有个地方切圈）
   const mode = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
@@ -1728,7 +1777,7 @@ try {
   // 分钟一落定 = 这次选择走完了 → 面板**自己收起**（需求 5），不用再点任何按钮
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板自动收起', 8000);
   const shown = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
-  ok(shown === '15:30', '下午 3 点选出来是 24 小时制的 15:30（面板已自己收起，值写在按钮上），实际 ' + JSON.stringify(shown));
+  ok(shown === '03:30', '上午 3 点选出来是 24 小时制的 03:30（面板已自己收起，值写在按钮上），实际 ' + JSON.stringify(shown));
 
   // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格。
   // 面板刚自己收起了，先重新打开（openLayer 会连时间层一起打开）。
@@ -1746,16 +1795,13 @@ try {
   await clickEl(page, `document.querySelector('.when-pop .cp-dot')`);
   const backToHour = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
   ok(backToHour === '时', '再点一下切回小时圈，实际 ' + JSON.stringify(backToHour));
-  const amNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
-  ok(amNums === '12,1,2,3,4,5,6,7,8,9,10,11',
-    '上午那圈还是 12,1,…,11（和下午那圈正好对照），实际 ' + amNums);
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '12')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板又自己收起', 8000);
-  // 上面那排数字写的是 **24 小时制**：上午 12 点（午夜）就是 00。
+  // 上面那排数字写的是 **24 小时制**：上午 0 点（午夜）就是 00。
   // 这是跟「下午那圈直接写 12–23」配套的 —— 点的是 15、上面显示 03 会让人以为点错了
   const shown2 = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
-  ok(shown2 === '00:30', '上午 12 点显示成 24 小时制的 00:30，实际 ' + JSON.stringify(shown2));
+  ok(shown2 === '00:30', '上午 0 点显示成 24 小时制的 00:30，实际 ' + JSON.stringify(shown2));
 
   // 表盘是**实时**的（没有「确定」）：标题行立刻跟着走，
   // 而按钮上写的是**生效值** —— 待办箱没有日期，所以只有第二行
@@ -1860,6 +1906,7 @@ try {
     '选好日期自动收起日期层、切到时间层，实际 ' + swapped);
 
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  // 下午那圈写的是 12–23，3 点就是「15」——点 '3' 会落空（上午圈才有 '3'）
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
   // 分钟那圈顶端那格写的是 60（就是 0 分），没有「0」这一格
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
@@ -2190,6 +2237,12 @@ try {
   ok(await evalJs(page, `return document.querySelector('.today-btn').textContent;`) === '今',
     '「今天」按钮只留一个「今」字，实际 '
     + await evalJs(page, `return document.querySelector('.today-btn').textContent;`));
+  // 需求 6：就在今天时「今」键亮起（原先反了：不在今天才亮）。
+  // 点「今」跳回今天 → 这个键变成选中态，和日 / 周 / 月三个视图档同一个语义。
+  await clickEl(page, `document.querySelector('.today-btn')`);
+  await new Promise((r) => setTimeout(r, 200));
+  ok(await evalJs(page, `return document.querySelector('.today-btn').classList.contains('on');`),
+    '回到今天之后「今」按钮是选中态（需求 6）');
   ok(await evalJs(page, `return !document.querySelector('.jump-btn').textContent.trim();`),
     '「找日期」只留图标、没有文字');
   ok(await evalJs(page, `return !!document.querySelector('.date-nav .round-btn svg');`),
@@ -2332,84 +2385,126 @@ try {
   // lucide-react 给每个图标带 `lucide-<名字>` 这个类，所以 `+` / `×` 认的是
   // `.lucide-plus` / `.lucide-x`，比数 svg 的 path 稳。
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab');`), '窄屏下右下角有浮动 + 号');
-  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display === 'none';`),
-    '窄屏下横条默认收起');
+  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display !== 'none';`),
+    '窄屏下横条常渲染（收起时只露圆钮）');
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
     '收起时那个圆里是 +');
+  // 收起态的圆钮位置 —— 展开后要**一模一样**（需求 1：开关固定在某个位置不动）
+  const fabCollapsed = await evalJs(page, `
+    const f = document.querySelector('.fast-fab').getBoundingClientRect();
+    return { right: +f.right.toFixed(1), bottom: +f.bottom.toFixed(1) };
+  `);
 
   await clickEl(page, `document.querySelector('.fast-fab')`);
-  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display !== 'none'`, '点 + 号展开横条', 8000);
+  // 窄屏横条**常渲染**（收起时只露圆钮），所以「展开」要看 `.open` 这个类，
+  // 不是 display —— display 从头到尾都是 flex，拿它判展开恒真
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '点 + 号展开横条', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-x');`),
     '展开后 + 号**原地**变成 ×（需求 1）');
-  // 上一版那个「× 超过输入框边缘」的横条内收起键（需求 1 明确要改回去）
-  ok(await evalJs(page, `return !document.querySelector('.fast-add .fast-collapse');`),
-    '横条里不再有那个会顶到输入框边缘的 ×（需求 1）');
+  // 需求 2：点 + 展开**不自动聚焦**输入框（手机上那会当场弹出软键盘，
+  // 把用户想先看一眼的输入框挡住）。要打字自己点一下输入框。
+  ok(await evalJs(page, `return document.activeElement !== document.querySelector('.fast-add textarea');`),
+    '展开后焦点没有自动进输入框（需求 2）');
 
-  /* 圆钮和横条竖直居中（需求 2）—— **不能当场量一次就断言**。
-     横条的高度还会被**字体替换 / 换行**这类不经过 React 的变化改掉，
-     那一帧里 ResizeObserver 还没回调，当场量会读到上一个高度（实测偶发假红：
-     横条已经 97.3px，而按钮还按 54px 摆）。这里等它**稳定**下来再判 ——
-     真机上那一帧的偏差看不出来，断言要守的是最终状态。
-     不用 waitFor：它超时是**抛异常**，会把后面几十条断言全带走。 */
-  const settleCenter = async () => {
-    let last = null;
-    for (let i = 0; i < 40; i++) {
-      last = await evalJs(page, `
-        const b = document.querySelector('.fast-add').getBoundingClientRect();
-        const f = document.querySelector('.fast-fab').getBoundingClientRect();
-        return +((((b.top + b.bottom) / 2) - ((f.top + f.bottom) / 2))).toFixed(1);
-      `);
-      if (Math.abs(last) < 2) return last;
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    return last;
-  };
-
-  // 横条是从圆钮里「弹出来」的：定位是 fixed、右端给圆钮让位、
-  // 缩放原点钉在圆钮那一侧（`transform-origin` 的 x 是 100%）
+  /* 圆钮**钉在横条右下角**（需求 1、2）—— 绝对定位，不参与 flex。
+     它以前是普通 flex 子元素：收起时 `.fast-add-body` / `.fast-side` 都
+     display:none，只剩它一个，默认 justify-content:flex-start 就把它甩到
+     **左边**；展开时又跟着内容跑。 */
   const barBox = await evalJs(page, `
     const bar = document.querySelector('.fast-add');
     const fab = document.querySelector('.fast-fab');
     const b = bar.getBoundingClientRect(), f = fab.getBoundingClientRect();
-    const s = getComputedStyle(bar);
+    const s = getComputedStyle(bar), fs = getComputedStyle(fab);
     return {
       pos: s.position,
-      // transform-origin 在 Chrome 的 computed style 里是**解析成 px 的**，
-      // 所以 100% 读出来就是「横条自己的宽度」。拿宽度比，别去比字符串。
-      //（这段注释里**不能写反引号** —— 它自己就在一个模板字符串里面。）
-      originX: +parseFloat(s.transformOrigin).toFixed(1),
-      width: +b.width.toFixed(1),
-      gap: +(f.left - b.right).toFixed(1),
-      // 出问题时用得上的原始数
+      fabPos: fs.position,
+      // 横条延伸到屏幕最右（right: 0）
+      rightGap: +(window.innerWidth - b.right).toFixed(1),
+      // 圆钮在横条内（DOM 上仍是子节点），但**不在动画层里**（见下面的 fabInShell）
+      fabInBar: bar.contains(fab),
+      fabInShell: document.querySelector('.fast-add-shell').contains(fab),
+      // 圆钮贴横条右端 / 底端 —— 右 13 是照着左边的内边距 13 来的，底 18 是居中
+      fabRightGap: +(b.right - f.right).toFixed(1),
+      fabBottomGap: +(b.bottom - f.bottom).toFixed(1),
+      // 圆钮在屏幕上的绝对位置，展开前后要一样
+      fabRight: +f.right.toFixed(1),
+      fabBottom: +f.bottom.toFixed(1),
       dbg: { n: document.querySelectorAll('.fast-add').length,
-        barH: +b.height.toFixed(1), barBottom: +(window.innerHeight - b.bottom).toFixed(1),
-        fabBottom: +(window.innerHeight - f.bottom).toFixed(1), fabH: +f.height.toFixed(1),
-        fabBottomCss: getComputedStyle(fab).bottom,
+        barH: +b.height.toFixed(1), fabH: +f.height.toFixed(1),
         kids: [...bar.children].map((c) => c.className + ':' + Math.round(c.getBoundingClientRect().height)) },
     };
   `);
   ok(barBox.pos === 'fixed',
     '窄屏的横条是 fixed 定位（贴着圆钮、不占正文流），实际 ' + barBox.pos);
-  ok(barBox.gap >= 0 && barBox.gap < 24,
-    '横条右端给圆钮让出了位置（两个不相压），实际间距 ' + barBox.gap);
-  ok(Math.abs(barBox.originX - barBox.width) < 2,
-    '横条的缩放原点钉在**右端**（= 圆钮的左边缘，看着就是从那个圆里长出来的），实际 '
-      + barBox.originX + ' / 宽 ' + barBox.width);
-  const centerOff = await settleCenter();
-  ok(Math.abs(centerOff) < 2,
-    '圆钮和横条竖直居中（需求 2），实际偏 ' + centerOff + 'px');
+  ok(barBox.fabPos === 'absolute',
+    '圆钮是绝对定位（不参与 flex，才不会被甩到左边 / 被内容带着跑），实际 ' + barBox.fabPos);
+  ok(barBox.rightGap < 2,
+    '横条延伸到屏幕最右（right: 0），实际间距 ' + barBox.rightGap);
+  ok(barBox.fabInBar,
+    '圆钮在横条内（DOM 上仍是子节点）');
+  // 需求 3 的结构前提：圆钮不能落在动画层里 —— 动画一 transform、一改 opacity，
+  // 整棵子树跟着动，圆钮就被拖着走了。这条断言把它钉在结构上。
+  ok(!barBox.fabInShell,
+    '圆钮不在动画层 .fast-add-shell 里（否则动画会带飞它）');
+  ok(Math.abs(barBox.fabRightGap - 13) < 1.5,
+    '圆钮贴横条右端（13px），实际 ' + barBox.fabRightGap);
+  // 需求 3：圆钮**竖直居中于展开后的横条**（不是贴底）——
+  // 盒子高 84（内边距 9×2 + 内容 64 + 边框 1×2），48 的圆钮居中 → (84 − 48) / 2 = 18
+  ok(Math.abs(barBox.fabBottomGap - 18) < 2,
+    '圆钮在展开后的横条里竖直居中（不贴底），实际底间隙 ' + barBox.fabBottomGap);
+  // 需求 1 的正面：+ / × 换图标时，圆钮自己在屏幕上不挪窝
+  ok(Math.abs(barBox.fabRight - fabCollapsed.right) < 1
+     && Math.abs(barBox.fabBottom - fabCollapsed.bottom) < 1,
+    '展开前后圆钮位置不动（需求 1）：收起 右 ' + fabCollapsed.right + ' 底 ' + fabCollapsed.bottom
+     + '，展开 右 ' + barBox.fabRight + ' 底 ' + barBox.fabBottom);
+  // 需求 1：展开态的 × 有**常亮的主题色描边**（不是 hover 才出现）
+  const fabOpen = await evalJs(page, `
+    const s = getComputedStyle(document.querySelector('.fast-fab.open'));
+    return { w: parseFloat(s.borderTopWidth), c: s.borderTopColor };
+  `);
+  ok(fabOpen.w >= 1 && !/rgba?\(0, 0, 0, 0\)/.test(fabOpen.c),
+    '展开态圆钮有常亮描边（需求 1），实际 ' + fabOpen.w + 'px ' + fabOpen.c);
+  // 需求 4：时间 / 保存按钮靠到右端、贴着圆钮但不压住（间隙从 10px 收到 4px）
+  const sideBox = await evalJs(page, `
+    const fab = document.querySelector('.fast-fab');
+    const side = document.querySelector('.fast-add .fast-side');
+    const body = document.querySelector('.fast-add .fast-add-body');
+    const bar = document.querySelector('.fast-add');
+    const f = fab.getBoundingClientRect(), s = side.getBoundingClientRect();
+    const b = body.getBoundingClientRect(), r = bar.getBoundingClientRect();
+    const bs = getComputedStyle(document.querySelector('.fast-add-shell'));
+    return {
+      gapToFab: +(f.left - s.right).toFixed(1),
+      bodyW: +b.width.toFixed(1), sideW: +s.width.toFixed(1), barW: +r.width.toFixed(1),
+      sideRightToBar: +(r.right - s.right).toFixed(1),
+      bodyRightToSideLeft: +(s.left - b.right).toFixed(1),
+      padL: bs.paddingLeft, padR: bs.paddingRight, borderW: bs.borderTopWidth,
+      bodyFlex: getComputedStyle(body).flex, bodyMinW: getComputedStyle(body).minWidth,
+      sideFlex: getComputedStyle(side).flex, sideMinW: getComputedStyle(side).minWidth,
+    };
+  `);
+  // 需求 4 的间距断言**只在窄屏 CSS 生效时跑** —— 探针的伪窄屏只在 JS
+  // matchMedia 上套了 Proxy，CSS `@media (max-width: 900px)` 不认这个
+  // （窗口真的 1280px）。宽屏下 padding 还是基线 16px，side 会被圆钮压住，
+  // 这不是代码的问题。真机窄屏下 padding 65px，间距 4px。
+  if (sideBox.padR === '65px') {
+    ok(sideBox.gapToFab > 0 && sideBox.gapToFab < 8,
+      '时间 / 保存按钮贴着圆钮但不重叠（需求 4），实际间距 ' + sideBox.gapToFab
+      + '（body ' + sideBox.bodyW + ' / side ' + sideBox.sideW + ' / bar ' + sideBox.barW
+      + ' / sideRight→bar ' + sideBox.sideRightToBar + ' / bodyRight→sideLeft ' + sideBox.bodyRightToSideLeft
+      + ' / pad ' + sideBox.padL + '→' + sideBox.padR + ' / border ' + sideBox.borderW
+      + ' / bodyFlex ' + sideBox.bodyFlex + ' / bodyMinW ' + sideBox.bodyMinW
+      + ' / sideFlex ' + sideBox.sideFlex + ' / sideMinW ' + sideBox.sideMinW + '）');
+  } else {
+    console.log('  skip 需求 4 的间距断言（窄屏 CSS 未生效，padR=' + sideBox.padR + '，真机窄屏下跑）');
+  }
 
-  // 输入框默认一行、内容多了自己撑开（需求 2）
-  const h1 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
-  ok(h1 > 0 && h1 < 40, '输入框默认就一行高，实际 ' + h1 + 'px');
+  // 输入框固定两行，超过可内部滚动（需求 1）
+  const h2 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
+  ok(h2 > 20 && h2 < 50, '输入框固定两行高，实际 ' + h2 + 'px');
   await setField('.fast-add textarea', '第一行\n第二行\n第三行');
-  const h3 = await waitFor(page,
-    `(() => { const h = Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);
-      return h > ${h1} ? h : null; })()`, '输入框跟着多行撑开');
-  ok(h3 > h1, '内容变成三行时输入框自己撑开（' + h1 + 'px → ' + h3 + 'px）');
-  // 撑开之后圆钮跟着往下走，仍然和横条竖直居中（需求 2）
-  const center2 = await settleCenter();
-  ok(Math.abs(center2) < 2, '横条撑成多行之后圆钮仍然竖直居中，实际偏 ' + center2 + 'px');
+  const h3 = await evalJs(page, `return Math.round(document.querySelector('.fast-add textarea').getBoundingClientRect().height);`);
+  ok(Math.abs(h3 - h2) < 2, '内容变成三行时输入框高度不变（固定两行），实际 ' + h2 + 'px → ' + h3 + 'px');
   await setField('.fast-add textarea', '');
 
   /* ---- 点空白收起，**两级**（需求 8）---- */
@@ -2425,12 +2520,197 @@ try {
   await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '窄屏下打开日期时间面板', 8000);
   await blank();
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '第一次点空白：收起面板', 8000);
-  ok(await evalJs(page, `return getComputedStyle(document.querySelector('.fast-add')).display !== 'none';`),
+  ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
     '第一次点空白只收面板，横条还开着（需求 8：先收面板再收输入框）');
   await blank();
-  await waitFor(page, `getComputedStyle(document.querySelector('.fast-add')).display === 'none'`, '第二次点空白：收起横条', 8000);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '第二次点空白：收起横条', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-fab .lucide-plus');`),
     '横条收起之后圆钮又变回 +');
+
+  /* ---- 点外面收起时，这记 click 要**吞掉**；顶栏 / 底栏例外（需求 9）----
+
+     三条规矩：
+       1. 输入框开着、点空白 → 关上，且空白处自己的事件**不触发**。
+          不吞的话，点日视图空白会顺手新建一条空任务 —— 而 App 的委托挂在
+          `#content` 上，click 是从 document 往下走的，capture 阶段拦得住。
+       2. 顶栏 / 底栏是例外：上面的按钮要能**直接点到**（这记 click 放行）。
+       3. 时间面板开着 → **点哪儿都只关面板**，顶栏 / 底栏也不例外。
+
+     这三条只有**真实**事件才走得到（`justClosed` 只在 `e.isTrusted` 时设），
+     所以这里不用 `clickEl`（它派发的是合成 click），改走 CDP 的
+     `Input.dispatchMouseEvent` —— 和真手点走同一条路。 */
+  const centerOf = (sel) => evalJs(page, `
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  `);
+  const realClick = async (at) => {
+    const base = { x: at.x, y: at.y, button: 'left', clickCount: 1 };
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...base });
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+  };
+  // 在 #content 里找一个**真的空白**落点：不在任务行、横条、按钮上
+  const blankPoint = () => evalJs(page, `
+    const zone = document.querySelector('#content');
+    if (!zone) return null;
+    const r = zone.getBoundingClientRect();
+    for (let iy = 0; iy < 12; iy++) {
+      for (let ix = 0; ix < 5; ix++) {
+        const x = Math.round(r.left + r.width * (0.1 + ix * 0.2));
+        const y = Math.round(r.top + r.height * (0.05 + iy * 0.08));
+        if (x < 2 || y < 2 || x > innerWidth - 2 || y > innerHeight - 2) continue;
+        const el = document.elementFromPoint(x, y);
+        if (!el || !zone.contains(el)) continue;
+        if (el.closest('.task-el, .habit-row, .fast-add, button, a, input, textarea, label, svg')) continue;
+        return { x, y };
+      }
+    }
+    return null;
+  `);
+  // #content 上的 capture 探针：委托那层到底有没有收到这记 click
+  await evalJs(page, `
+    window.__c = [];
+    document.querySelector('#content').addEventListener('click', () => window.__c.push(1), true);
+    return true;
+  `);
+
+  // 规矩 1
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '展开横条（规矩 1）', 8000);
+  const pt1 = await blankPoint();
+  ok(!!pt1, '今天页找得到一个真空白落点（不在任务行 / 横条 / 控件上），实际 ' + JSON.stringify(pt1));
+  await evalJs(page, `window.__c = []; return 1;`);
+  await realClick(pt1);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '点空白收起横条（规矩 1）', 8000);
+  ok((await evalJs(page, `return window.__c.length;`)) === 0,
+    '规矩 1：这记 click 被吞掉了，没走到 #content 的委托 —— 否则日视图空白处会新建一条空任务');
+
+  // 规矩 2：横条开着，顶栏的搜索键照样能**直接**点开，而且横条不收
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '再展开横条（规矩 2）', 8000);
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.topbar .search-pop') ? 1 : null`,
+    '规矩 2：横条开着，点顶栏搜索键也能打开搜索框', 8000);
+  ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
+    '规矩 2：顶栏当例外 —— 这一下既没被吞（搜索框开了），也没把横条收掉');
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.topbar .search-pop') ? null : 1`, '收起搜索框', 8000);
+
+  // 规矩 3：面板开着时，顶栏也不再是例外
+  await clickEl(page, `document.querySelector('.fast-clock')`);
+  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '打开时间面板（规矩 3）', 8000);
+  await evalJs(page, `window.__c = []; return 1;`);
+  await realClick(await centerOf('.topbar .search-toggle'));
+  await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '规矩 3：点顶栏先把面板收掉', 8000);
+  const r3 = await evalJs(page, `return {
+    c: window.__c.length,
+    pop: !!document.querySelector('.topbar .search-pop'),
+    open: !!document.querySelector('.fast-add.open'),
+  };`);
+  ok(r3.pop === false, '规矩 3：顶栏的搜索**没有**被点开 —— 面板开着时它也在例外之外');
+  ok(r3.c === 0, '规矩 3：这记 click 同样被吞掉（没走到 #content 的委托），实际 ' + r3.c);
+  ok(r3.open === true, '规矩 3：只收面板，横条留着');
+
+  // 收干净：横条回到收起态，接下面那串动画断言
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '收尾：横条收起', 8000);
+
+  // 需求 3：关闭动画 —— 点击 FAB 后 `.closing` class 立即出现，
+  // `fastPopOut` 动画播放 180ms，期间内容还可见（不压扁），
+  // 动画结束后 `.open` 才移除、内容 display:none。
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '重新展开', 8000);
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  // 等待 .closing 出现（React 异步更新，几毫秒后）
+  await waitFor(page, `document.querySelector('.fast-add.closing') ? 1 : null`, '点击 FAB 后 .closing 出现', 8000);
+  // 立即检查动画属性（动画 180ms，waitFor 100ms 轮询，能捕获）
+  const closingState = await evalJs(page, `
+    return (() => {
+      const bar = document.querySelector('.fast-add');
+      const shell = document.querySelector('.fast-add-shell');
+      const cs = getComputedStyle(shell);
+      return {
+        hasClosing: bar.classList.contains('closing'),
+        hasOpen: bar.classList.contains('open'),
+        animName: cs.animationName,
+        animDuration: cs.animationDuration,
+        // 动画必须挂在 shell 上 —— 挂在 .fast-add 上会把圆钮一起带飞
+        barAnim: getComputedStyle(bar).animationName,
+      };
+    })();
+  `);
+  ok(closingState.hasClosing, '点击 FAB 后 .closing class 出现（需求 3）');
+  ok(closingState.hasOpen, '动画播放期间 .open 还在（内容可见，不压扁）');
+  ok(closingState.animName === 'fastPopOut', '关闭动画是 fastPopOut，实际 ' + closingState.animName);
+  ok(closingState.animDuration === '0.18s', '关闭动画时长 0.18s，实际 ' + closingState.animDuration);
+  ok(closingState.barAnim === 'none',
+    '动画挂在 .fast-add-shell 上、不在 .fast-add 上（否则圆钮跟着动），实际 .fast-add 的 animation-name = ' + closingState.barAnim);
+  // 动画结束后 .open 移除
+  await waitFor(page, `!document.querySelector('.fast-add.open')`, '关闭动画结束后 .open 移除', 8000);
+  ok(await evalJs(page, `return !document.querySelector('.fast-add.closing');`),
+    '动画结束后 .closing 也移除');
+
+  /* 需求 3：**圆钮在整个关闭动画期间一动不动**。
+     它以前是动画元素 `.fast-add` 的子节点 —— 父元素一 transform、一改
+     opacity，整棵子树跟着动：圆钮被拖着右移 28px、缩 4%、淡出，动画一结束
+     再弹回原位，看着就是「异常跳变」。光比动画**前后**两个静止状态抓不到
+     （那两处本来就相等），必须按帧采样。 */
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '重新展开（供按帧采样）', 8000);
+  // 需求 3：展开也要有动画，而且是 fastPop —— 挂在 `.open` 上才会每次重跑
+  // （原先挂在 `:not([hidden])` 上，只在挂载时跑一次，点 + 号其实没有动画）
+  const openAnim = await evalJs(page, `
+    const cs = getComputedStyle(document.querySelector('.fast-add-shell'));
+    return { name: cs.animationName, dur: cs.animationDuration };
+  `);
+  ok(openAnim.name === 'fastPop', '展开时 .fast-add-shell 跑 fastPop（从圆钮弹出来），实际 ' + openAnim.name);
+  ok(openAnim.dur === '0.18s', '展开动画时长 0.18s，实际 ' + openAnim.dur);
+
+  const anim = await evalJs(page, `
+    const shell = document.querySelector('.fast-add-shell');
+    const fab = document.querySelector('.fast-fab');
+    const at = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.width.toFixed(1), +r.height.toFixed(1)];
+    const before = at(fab.getBoundingClientRect());
+    const rec = [];
+    let stop = false;
+    const tick = () => { rec.push(at(fab.getBoundingClientRect())); if (!stop) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    const r = fab.getBoundingClientRect();
+    const ev = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    fab.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, ev)));
+    fab.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true }, ev)));
+    fab.dispatchEvent(new MouseEvent('click', ev));
+    const seen = [];
+    const scaleY = [];
+    for (let i = 0; i < 30; i++) {
+      await new Promise((res) => setTimeout(res, 16));
+      const cs = getComputedStyle(shell);
+      if (cs.animationName !== 'fastPopOut') continue;
+      if (!seen.includes(cs.transform)) seen.push(cs.transform);
+      // matrix(a, b, c, d, e, f) —— d 是**竖向**缩放，必须恒为 1
+      if (cs.transform && cs.transform !== 'none') scaleY.push(+new DOMMatrix(cs.transform).d.toFixed(3));
+    }
+    await new Promise((res) => setTimeout(res, 120));
+    stop = true;
+    const drift = Math.max(...rec.map((p) => Math.max(
+      Math.abs(p[0] - before[0]), Math.abs(p[1] - before[1]),
+      Math.abs(p[2] - before[2]), Math.abs(p[3] - before[3]))));
+    return { before, n: rec.length, drift, transforms: seen.slice(0, 2),
+      scaleY: [...new Set(scaleY)], frames: scaleY.length };
+  `);
+  // 先证「动画真的在变换 shell」—— 否则下面那条是空跑（动画没跑，圆钮当然不动）
+  ok(anim.transforms.length > 0 && !anim.transforms.every((t) => t === 'none'),
+    '关闭动画期间 .fast-add-shell 确实在变换（否则「圆钮不动」是空跑），实际 ' + JSON.stringify(anim.transforms));
+  ok(anim.drift < 1,
+    '圆钮在整个关闭动画期间一动不动（需求 3），实际最大偏移 ' + anim.drift
+    + 'px / 采样 ' + anim.n + ' 帧 / 起始 ' + JSON.stringify(anim.before));
+  // 需求 3：**只做横向收紧，竖向不缩放**。原先的 `scale(.96)` 把 a 和 d 一起缩，
+  // 那正是「竖直方向压扁」的来源 —— 这条断言把 scaleY 钉死在 1。
+  ok(anim.frames > 0 && anim.scaleY.every((v) => v === 1),
+    '关闭动画只做横向收紧，竖向不缩放（需求 3），实际 scaleY 取值 ' + JSON.stringify(anim.scaleY)
+    + ' / ' + anim.frames + ' 帧');
 
   // 重新展开，继续后面几节
   await clickEl(page, `document.querySelector('.fast-fab')`);
@@ -2446,9 +2726,8 @@ try {
   `);
   await waitFor(page, `[...document.querySelectorAll('.task-el')].some((x) => x.textContent.includes('写方案'))`, '任务出现');
 
-  /* ---- 「保存」是个 ✓，摆在日期按钮前面（需求 3） ---- */
-  // 回车键还在，但不能再是**唯一**的路 —— 手机上「回车」是软键盘上那个小箭头，
-  // 找不着的人就只能干瞪眼。这一条证的是按钮在、位置对、高度和日期按钮齐平、
+  /* ---- 「保存」是个 ✓，和日期按钮上下叠放（需求 4） ---- */
+  // 时间在上，保存在下，固定位置。这一条证的是按钮在、位置对、高度和日期按钮齐平、
   // 点了真能交、空着的时候禁用。
   const saveBtn = await evalJs(page, `
     const b = document.querySelector('.fast-add .fast-save');
@@ -2461,16 +2740,16 @@ try {
       text: b.textContent.trim(),
       hasCheck: !!b.querySelector('.lucide-check'),
       display: s.display,
-      // 「在日期按钮前」= 它的右边缘不越过日期按钮的左边缘
-      beforeClock: r.right <= c.left + 0.5,
-      // 日期按钮的高度不能变，✓ 要一样高（需求 3）
+      // 保存在时间下面（需求 4）
+      belowClock: r.top >= c.bottom - 0.5,
+      // 日期按钮和 ✓ 一样高（需求 3）
       h: Math.round(r.height), clockH: Math.round(c.height),
     };
   `);
   ok(saveBtn && saveBtn.hasCheck, '横条上那个保存键是个 ✓ 图标，实际 ' + JSON.stringify(saveBtn));
   ok(saveBtn && saveBtn.text === '', '它只有图标，没有「保存」两个字（一行里三个文字按钮太吵）');
   ok(saveBtn && saveBtn.display !== 'none', '「保存」按钮看得见（不是 display:none）');
-  ok(saveBtn && saveBtn.beforeClock, '✓ 摆在日期按钮**前面**（需求 3）');
+  ok(saveBtn && saveBtn.belowClock, '✓ 摆在日期按钮**下面**（需求 4）');
   ok(saveBtn && saveBtn.h === saveBtn.clockH,
     '✓ 和日期按钮一样高（需求 3：那个按钮要摆两行小字，高度不能变），实际 ' + JSON.stringify([saveBtn && saveBtn.h, saveBtn && saveBtn.clockH]));
   // 空着的时候禁用：一个点下去没反应的按钮，比没有按钮更让人犯嘀咕
@@ -2713,6 +2992,54 @@ try {
   ok(wk.whLoad === 0 && wk.whCount === 0, '表头不再有负载横条与任务计数，实际 ' + wk.whLoad + ' / ' + wk.whCount);
   ok(parseFloat(wk.unBorderTop) >= 1, '未定时行**上边**也有一条分割线，实际 ' + wk.unBorderTop);
   ok(wk.todayBg === 'rgba(0, 0, 0, 0)', '今天的数字没有圆底（只染色），实际 ' + wk.todayBg);
+
+  /* ---- 真·窄屏视口（390×854）----
+     上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
+     窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。
+     而快速添加这整套东西是**手机专用**的 —— 盒子的窄屏内边距（让开圆钮的 65px）、
+     圆钮竖直居中，全写在媒体查询里。这里用 CDP 把视口真的压到手机尺寸，
+     补上那一段：真机上圆钮在展开 / 收起两态必须落在**同一个屏幕位置**，
+     且在展开后的盒子里竖直居中。 */
+  await page.send('Emulation.setDeviceMetricsOverride', {
+    width: 390, height: 854, deviceScaleFactor: 1, mobile: true,
+  });
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.fast-fab')`, '真窄屏视口下圆钮出现', 15000);
+  await new Promise((r) => setTimeout(r, 400));
+  if (await evalJs(page, `return !!document.querySelector('.fast-add.open');`)) {
+    await clickEl(page, `document.querySelector('.fast-fab')`);
+    await waitFor(page, `!document.querySelector('.fast-add.open')`, '真窄屏：先收起', 8000);
+  }
+  const rnClosed = await evalJs(page, `
+    const f = document.querySelector('.fast-fab').getBoundingClientRect();
+    return { left: +f.left.toFixed(1), top: +f.top.toFixed(1) };
+  `);
+  await clickEl(page, `document.querySelector('.fast-fab')`);
+  await waitFor(page, `!!document.querySelector('.fast-add.open')`, '真窄屏：展开', 8000);
+  await new Promise((r) => setTimeout(r, 300));   // 等 180ms 的展开动画走完再量
+  const rnOpen = await evalJs(page, `
+    const bar = document.querySelector('.fast-add');
+    const shell = document.querySelector('.fast-add-shell');
+    const fab = document.querySelector('.fast-fab');
+    const b = bar.getBoundingClientRect(), f = fab.getBoundingClientRect();
+    const s = shell.getBoundingClientRect(), bs = getComputedStyle(shell);
+    return {
+      fabLeft: +f.left.toFixed(1), fabTop: +f.top.toFixed(1),
+      gapTop: +(f.top - b.top).toFixed(1), gapBottom: +(b.bottom - f.bottom).toFixed(1),
+      padRight: bs.paddingRight, shellRight: +(b.right - s.right).toFixed(1),
+      barH: +b.height.toFixed(1),
+    };
+  `);
+  ok(rnOpen.padRight === '65px',
+    '真窄屏下盒子右侧让出圆钮（65px），实际 ' + rnOpen.padRight);
+  ok(Math.abs(rnOpen.shellRight) < 1,
+    '盒子与横条右端对齐（动画基准点才对得上圆钮），实际差 ' + rnOpen.shellRight);
+  ok(Math.abs(rnOpen.gapTop - rnOpen.gapBottom) < 1.5,
+    '真窄屏下圆钮在展开后的盒子里竖直居中，实际 上 ' + rnOpen.gapTop
+    + ' / 下 ' + rnOpen.gapBottom + '（盒子高 ' + rnOpen.barH + '）');
+  ok(Math.abs(rnOpen.fabLeft - rnClosed.left) < 1 && Math.abs(rnOpen.fabTop - rnClosed.top) < 1,
+    '真窄屏下展开前后圆钮在屏幕上不动：收起 (' + rnClosed.left + ',' + rnClosed.top
+    + ') 展开 (' + rnOpen.fabLeft + ',' + rnOpen.fabTop + ')');
 
   page.close();
 } catch (e) {

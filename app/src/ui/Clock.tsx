@@ -14,8 +14,8 @@
  *
  * **上面那排数字写的是 24 小时制**（下午 3 点就是 15，不是 03）。这是跟
  * 「下午那圈直接写 12–23」配套的：表盘上点的是 15、上面显示的却是 03，
- * 用户会以为点错了。上午 12 点（午夜）因此显示 00 —— 这是 24 小时制的
- * 标准写法，不是 bug。
+ * 用户会以为点错了。上午圈写 0–11（午夜是 0，不是 12），和按钮/输入框
+ * 显示的 HH:MM 完全一致 —— 标签就是点下去得到的那个值。
  *
  * 两处分身，**表盘本体只有一份**：
  *   · `ClockBody` —— 表盘本身，不带定位、不带「确定 / 取消」。谁要谁嵌。
@@ -42,6 +42,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as D from '../domain/date.ts';
+import { Btn } from './kit.tsx';
 
 /** 抽屉里那个浮层的表盘直径。`.clock-pop` 的 278px 宽度就是按它配出来的
  *  （278 扣掉两条 1px 边框和左右各 15px 内边距 = 246），见 legacy.css 那段注释 */
@@ -81,11 +82,17 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
   const isAm = hour < 12;
   const isHour = mode === 'h';
+  // 拨到的时刻**正好是此刻** → 「现在」键亮起（需求 5）。和上午 / 下午那对
+  // `.cp-ap.on` 同一套语义：它是「选中了什么」的状态，不是按钮的 hover。
+  // 每次渲染重算即可 —— 用户一拨动就会重渲染（hour / minute 是 state）。
+  const nowMin = D.nowMin();
+  const isNow = hour === Math.floor(nowMin / 60) && minute === nowMin % 60;
 
   /* 表盘上 12 个位置，k = 0 是顶端（12 点位置），顺时针。
-     标签必须**等于点下去得到的那个值**，否则用户点「3」出来 15 会以为坏了。 */
+     标签必须**等于点下去得到的那个值**，否则用户点「3」出来 15 会以为坏了。
+     上午圈写 0–11（午夜是 0），下午圈写 12–23，和按钮/输入框的 HH:MM 一致。 */
   const labelOf = (k: number) => isHour
-    ? (k === 0 ? 12 : (isAm ? k : k + 12))
+    ? (isAm ? k : k + 12)
     : (k === 0 ? 60 : k * 5);
 
   /** 当前值落在第几个位置 —— 指针角度和「哪个数高亮」都用它 */
@@ -119,6 +126,9 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
     const n = D.nowMin();
     const h = Math.floor(n / 60), mi = n % 60;
     setHour(h); setMinute(mi); emit(h, mi);
+    // 「现在」也是一次选完 —— 快速添加那层面板照样收起（和分钟落定走同一条
+    // onMinutePick）。抽屉里那个浮层不传这个回调，不受影响。
+    onMinutePick?.();
   };
 
   return (
@@ -130,8 +140,8 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
         <span className="cp-apm">
           <button className={'cp-ap' + (isAm ? ' on' : '')} onClick={() => setAmPm(true)}>上午</button>
           <button className={'cp-ap' + (!isAm ? ' on' : '')} onClick={() => setAmPm(false)}>下午</button>
+          <button className={'cp-now' + (isNow ? ' on' : '')} onClick={now}>现在</button>
         </span>
-        <button className="cp-now" onClick={now}>现在</button>
       </div>
 
       {/* 大号的时间显示**没有**（需求 4）：生效时间已经写在横条那个按钮上
@@ -246,10 +256,10 @@ export function ClockPop({ open, anchor, value, onChange, onClose }: ClockPopPro
       <ClockBody value={value} onChange={setDraft} />
 
       <div className="cp-foot">
-        <button className="chip tiny" onClick={() => { onChange(null); onClose(); }}>清除</button>
+        <Btn variant="chip" size="sm" onClick={() => { onChange(null); onClose(); }}>清除</Btn>
         <span className="grow" />
-        <button className="ghost-btn" onClick={onClose}>取消</button>
-        <button className="primary-btn" onClick={() => { onChange(draft); onClose(); }}>确定</button>
+        <Btn variant="ghost" onClick={onClose}>取消</Btn>
+        <Btn variant="primary" onClick={() => { onChange(draft); onClose(); }}>确定</Btn>
       </div>
     </div>
   );

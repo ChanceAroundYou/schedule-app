@@ -12,7 +12,7 @@
 import { useId, useState } from 'react';
 import { CalendarCheck, Loader2, LogIn, UserPlus } from 'lucide-react';
 import { api, ApiError, setToken } from '../data/api.ts';
-import { Btn } from './kit.tsx';
+import { Btn, Input } from './kit.tsx';
 import type { PublicUser } from '../domain/types.ts';
 
 type Mode = 'login' | 'register';
@@ -78,18 +78,10 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           </div>
         </div>
 
-        {register && (
-          <div className="mb-4 rounded-[var(--r-lg)] bg-[var(--panel-3)] p-3
-                          text-[12.5px] leading-relaxed text-[var(--text-2)]">
-            家里人各自注册一个账户，然后互相邀请进同一个日程集就能一起用了。
-          </div>
-        )}
-
         <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
-        <input
+        <Input
           id={fid + '-name'}
-          className="mb-3 w-full rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                     px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+          className="mb-3 rounded-[var(--r-sm)] bg-transparent"
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoComplete="username"
@@ -98,11 +90,10 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
         />
 
         <label htmlFor={fid + '-pwd'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">密码</label>
-        <input
+        <Input
           id={fid + '-pwd'}
           type="password"
-          className="w-full rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                     px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+          className="rounded-[var(--r-sm)] bg-transparent"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={register ? 'new-password' : 'current-password'}
