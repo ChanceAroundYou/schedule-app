@@ -2424,8 +2424,11 @@ try {
     return {
       pos: s.position,
       fabPos: fs.position,
-      // 横条延伸到屏幕最右（right: 0）
-      rightGap: +(window.innerWidth - b.right).toFixed(1),
+      // 横条**左右各留 13px**（和流内那条 margin: 4px 13px 12px 同一档）。
+      // 量的是 layout viewport（clientWidth，不含滚动条）：用 innerWidth 的话，
+      // 页面上真出现一条 10px 滚动条时这里会凭空多出 10，看着像「右边距变大了」。
+      leftGap: +b.left.toFixed(1),
+      rightGap: +(document.documentElement.clientWidth - b.right).toFixed(1),
       // 圆钮在横条内（DOM 上仍是子节点），但**不在动画层里**（见下面的 fabInShell）
       fabInBar: bar.contains(fab),
       fabInShell: document.querySelector('.fast-add-shell').contains(fab),
@@ -2444,8 +2447,12 @@ try {
     '窄屏的横条是 fixed 定位（贴着圆钮、不占正文流），实际 ' + barBox.pos);
   ok(barBox.fabPos === 'absolute',
     '圆钮是绝对定位（不参与 flex，才不会被甩到左边 / 被内容带着跑），实际 ' + barBox.fabPos);
-  ok(barBox.rightGap < 2,
-    '横条延伸到屏幕最右（right: 0），实际间距 ' + barBox.rightGap);
+  // 左右**对称**留 13px，不是贴到屏幕最右。
+  // 贴边（原先的 `right: 0`）会让 `:focus-within` 那圈 3px 光晕在右端被裁掉一截，
+  // 和左边不对称 —— 2026-10-08 改成 left/right 都是 13px。这条断言跟着改口径：
+  // 要守的是「两边一样宽」，不是「贴边」。
+  ok(Math.abs(barBox.leftGap - 13) < 1.5 && Math.abs(barBox.rightGap - 13) < 1.5,
+    '横条左右各留 13px（贴边会把 focus 光晕裁掉），实际 左 ' + barBox.leftGap + ' / 右 ' + barBox.rightGap);
   ok(barBox.fabInBar,
     '圆钮在横条内（DOM 上仍是子节点）');
   // 需求 3 的结构前提：圆钮不能落在动画层里 —— 动画一 transform、一改 opacity，
