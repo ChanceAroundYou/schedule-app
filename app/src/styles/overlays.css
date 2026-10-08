@@ -1,0 +1,77 @@
+/* ================= 抽屉 ================= */
+
+.mask {
+  position: fixed; inset: 0; background: rgba(16, 24, 40, .34);
+  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40;
+}
+.mask.show { opacity: 1; pointer-events: auto; }
+
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 410px; max-width: 92vw;
+  background: var(--panel); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg); z-index: 50;
+  transform: translateX(100%); transition: transform .24s cubic-bezier(.3, .8, .3, 1);
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: none; }
+.drawer-head { display: flex; align-items: center; gap: 11px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+.check-wrap { display: flex; }
+.check-wrap input { display: none; }
+.check-circle {
+  width: 20px; height: 20px; border: 2px solid var(--input); border-radius: 50%;
+  cursor: pointer; position: relative; flex: 0 0 20px;
+  transition: border-color .14s, background .14s, transform .12s;
+}
+.check-circle:hover { border-color: var(--primary); transform: scale(1.06); }
+.check-wrap input:checked + .check-circle { background: var(--primary); border-color: var(--primary); }
+.check-wrap input:checked + .check-circle::after {
+  content: ''; position: absolute; left: 6px; top: 2px;
+  width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.drawer-title { flex: 1; border: none; background: none; outline: none; font-size: 16.5px; font-weight: 650; }
+.icon-btn { border: none; background: none; color: var(--text-3); font-size: 14px; padding: 5px; border-radius: var(--r-sm); transition: background .14s, color .14s; }
+.icon-btn:hover { color: var(--text); background: var(--panel-3); }
+.icon-btn.tiny { font-size: 12px; padding: 2px; }
+
+.drawer-body { flex: 1; overflow-y: auto; padding: 17px; }
+.field-row { display: flex; gap: 12px; margin-bottom: 15px; }
+.field { flex: 1; min-width: 0; margin-bottom: 15px; }
+.field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 6px; letter-spacing: .2px; }
+.field .sub { color: var(--text-3); }
+.field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.field input[type="date"], .field input[type="time"], .field textarea {
+  width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--input);
+  border-radius: var(--r-md); background: var(--panel-2); outline: none;
+  transition: border-color .14s, background .14s;
+}
+.field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }
+.field textarea { resize: vertical; line-height: 1.6; }
+.field input:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
+.drawer-meta { font-size: 11px; color: var(--text-3); padding-top: 10px; border-top: 1px solid var(--border); }
+.drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
+.primary-btn {
+  padding: 9px 20px; border: none; border-radius: var(--r-md);
+  background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 500;
+  box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .26);
+  transition: filter .14s, transform .12s;
+}
+.primary-btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.danger-btn {
+  padding: 9px 15px; border: var(--border-w) solid var(--danger); border-radius: var(--r-md);
+  background: none; color: var(--danger); font-size: 13px;
+  transition: background .14s;
+}
+.danger-btn:hover { background: var(--danger-soft); }
+
+/* ================= toast ================= */
+
+.toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(12px);
+  display: flex; align-items: center; gap: 16px;
+  background: var(--toast-bg); color: var(--toast-fg); padding: 11px 18px; border-radius: var(--r-md);
+  font-size: 13px; box-shadow: var(--shadow-lg);
+  opacity: 0; pointer-events: none; transition: all .22s cubic-bezier(.3, .8, .3, 1); z-index: 80;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.toast button { border: none; background: none; color: var(--toast-link); font-size: 13px; font-weight: 500; }
+

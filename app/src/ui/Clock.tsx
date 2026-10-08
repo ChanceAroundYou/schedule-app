@@ -45,7 +45,7 @@ import * as D from '../domain/date.ts';
 import { Btn } from './kit.tsx';
 
 /** 抽屉里那个浮层的表盘直径。`.clock-pop` 的 278px 宽度就是按它配出来的
- *  （278 扣掉两条 1px 边框和左右各 15px 内边距 = 246），见 legacy.css 那段注释 */
+ *  （278 扣掉两条 1px 边框和左右各 15px 内边距 = 246），见 styles/quick-add.css 那段注释 */
 const FACE_POP = 246;
 /** 数字环离表盘边缘的距离。246/2 - 29 = 94，正是重构前写死的那个半径 */
 const R_INSET = 29;

@@ -224,7 +224,7 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 │   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
 │   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽 / 日程集与邀请
 │   ├── src/views/     纯展示（日 · 周 · 月 + 六个列表页）
-│   ├── src/styles/    legacy.css（设计系统）+ tailwind.css（新表面）
+│   ├── src/styles/    语义样式模块（tokens / shell / calendar / lists / quick-add / overlays / responsive）+ tailwind.css
 │   ├── public/        icon.svg / manifest.json / sw.js（离线外壳）
 │   └── tests/         browser-smoke.mjs（真实 Chrome）· smoke.mjs（旧的）
 ├── server/       后端（Node 22，**只引 AI 那一组依赖**）

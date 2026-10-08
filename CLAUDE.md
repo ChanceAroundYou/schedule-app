@@ -37,7 +37,7 @@
 │   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
 │   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽（`dndkit.tsx`，@dnd-kit）/ 日程集 / AI 面板
 │   ├── src/views/     纯展示，**零回调**，只出 data-* 属性
-│   ├── src/styles/    legacy.css（设计系统，**不带 @layer**）+ tailwind.css
+│   ├── src/styles/    语义样式模块（tokens / shell / calendar / lists / quick-add / overlays / responsive）+ tailwind.css
 │   └── public/ · tests/
 ├── server/       后端（Node 22，**只引 AI 那一组依赖**，见五、1）
 │   ├── server.js      路由表 + 处理器 + 鉴权中间件
@@ -200,13 +200,12 @@ REST，不走 LWW**（它们是「关系」不是「字段」）。**LWW 是逐�
 **交互统一是「列表 → 详情 → 编辑」三段式**（用户 2026-10-05 裁决）：点行 → 抽屉详情 →
 从抽屉底部进编辑。删除走应用内确认弹层（`useConfirm`）。**界面上不出现「备忘录」「笔记
 本」「清单」**；**脚本文案统一「打卡」不是「习惯」**（`habits` 数组名保留）。**深浅色两档**
-（`ui.theme`）、**风格三档**（`ui.style` → `data-style` + `legacy.css` 令牌块）。**色板
+（`ui.theme`）、**风格三档**（`ui.style` → `data-style` + `styles/tokens.css` 令牌块）。**色板
 没有。图标一律 lucide，零 emoji；弹层一律应用内，零原生 `confirm` / `alert`。**
 
 **令牌三条**：① **`.tsx` 里引用变量一律不给兜底值**（有兜底值时不报错、不白屏，只是两套
 主题下全在用写死的浅色 —— **静默降级比直接坏掉难查得多**）。② **`--border`（装饰线，不要
-求 3:1）与 `--input`（交互控件描边，≥3:1，WCAG 1.4.11）按「用户能不能操作它」分档**；焦点
-环统一在 `legacy.css` 最末那条 `:focus-visible`，**必须和 `--input` 一起改**。③ **风格轴
+求 3:1）与 `--input`（交互控件描边，≥3:1，WCAG 1.4.11）按「用户能不能操作它」分档**；焦点环统一在 `styles/responsive.css` 最末那条 `:focus-visible`，**必须和 `--input` 一起改**。③ **风格轴
 两半**：线粗细走 `--border-w`，圆角走 `--r-xs/sm/md/lg/xl/pill`，**`.tsx` 里不许出现
 Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素，切到 flat / notion
 原地不动）。`contrast.mjs` / `color-scan.mjs` 锁着这三条。
@@ -326,8 +325,8 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 > 记下来等于把「还回哪」擦掉。
 >
 > 遮罩加 `aria-hidden="true"`：它只是个鼠标目标（键盘走 Escape）。
-> `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `legacy.css` 末尾
-> **关掉焦点环** —— 必须写在 `legacy.css` 里：Tailwind 的 `outline-none` 在 `@layer`
+> `.drawer:focus-visible` / `[role="dialog"]:focus-visible` 在 `styles/responsive.css` 末尾
+> **关掉焦点环** —— 必须写在 `styles/responsive.css` 里：Tailwind 的 `outline-none` 在 `@layer`
 > 里，压不过它（见[踩坑 17](docs/踩坑.md)）。
 
 ### 状态语义：`aria-current` / `aria-expanded` / `aria-haspopup`（2026-10-06）
@@ -345,7 +344,7 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 
 ### 降低动态效果：全站关，只有「正在同步」例外（2026-10-06）
 
-`legacy.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
+`styles/responsive.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
 通配 `*` + `!important` 把 `animation-duration` / `transition-duration` 压到
 `.01ms`、`scroll-behavior` 复位。
 

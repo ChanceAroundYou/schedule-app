@@ -30,15 +30,15 @@ import { useFocusTrap, useOutsideClose } from './hooks.ts';
     ghost   极轻操作（关闭、清空）
     danger  危险操作（删除、退出）
     chip    标签式操作（筛选、选择）
-   新增 variant 必须先在这里加，再在 legacy.css 里加对应样式 —— 别在
+   新增 variant 必须先在这里加，再在 语义样式模块 里加对应样式 —— 别在
    .tsx 里写死颜色，那等于把设计令牌绕过去。 */
 type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
 
-/* 变量名一律写 legacy.css 里**真实存在**的那些，且**不给兜底值**。
+/* 变量名一律写 语义样式模块 里**真实存在**的那些，且**不给兜底值**。
    兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
    --accent / --card / --line / --chip / --hover / --accent-soft 那一批，
    而 --accent / --accent-soft / --card / --chip / --hover / --line
-   在 legacy.css 里**一个都没有** —— 于是两套主题下全是写死的颜色，
+   在 语义样式模块 里**一个都没有** —— 于是两套主题下全是写死的颜色，
    主按钮那个 #4f7cff 压白字只有 3.70:1，暗色也没跟着 --primary 走。
    没有兜底值时写错名字会当场看得见（声明失效→继承），不会悄悄糊过去。
    tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
@@ -86,7 +86,7 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
 /* ================================ 表单控件 ================================ */
 
 /* 输入框 / 文本域统一走这两个组件。
-   样式全部引用 legacy.css 的设计令牌（--input / --border-w / --r-md /
+   样式全部引用 语义样式模块 的设计令牌（--input / --border-w / --r-md /
    --panel-2 / --primary），不在 .tsx 里写死颜色。
    需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
 

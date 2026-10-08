@@ -11,7 +11,7 @@
  * 页面结构：**大 header + 小 tab 切换**。四个 tab：
  *   外观 · 安全 · 日程集 · 关于
  *
- * 配色一律走 legacy.css 的 CSS 变量（新表面没有 legacy 规则，Tailwind 生效；
+ * 配色一律走 styles/tokens.css 的 CSS 变量（语义样式模块不覆盖这些新表面，Tailwind 生效；
  * 写死颜色会让深色模式在这里失效）。
  */
 import { useEffect, useId, useRef, useState } from 'react';
@@ -42,7 +42,7 @@ const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
  * 描边走 **真令牌 `--border`**，不给兜底值。
  *
  * 老 surface（Calendars / Auth / kit）描边写的是一个**不存在的令牌**再配一个兜底值，
- * 而那个令牌在 legacy.css 里根本没定义 —— 有兜底值所以不报错、不白屏，
+ * 而那个令牌在 styles/tokens.css 里根本没定义 —— 有兜底值所以不报错、不白屏，
  * 只是两套主题下都在用写死的浅色。**静默降级比直接坏掉难查得多。**
  * 这个文件是新的，别把这个坏习惯带过来。
  */

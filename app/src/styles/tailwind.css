@@ -4,24 +4,27 @@
  * 层叠顺序是本文件唯一需要动脑的地方：
  *
  *   Tailwind 4 把它的东西（含 preflight 重置）全部塞进 @layer。而**没有层的
- *   作者样式永远赢过任何层内的样式** —— 所以下面这份 legacy.css 一旦不带 layer
- *   引入，它就在所有 Tailwind 工具类之上。
+ *   作者样式永远赢过任何层内的样式** —— 所以下面的语义样式模块不放进 layer，
+ *   让已定稿的表面规则稳定地压过工具类。
  *
- * 这正是我们要的：legacy.css 是这个应用已经定稿的设计系统（67KB、踩过坑的），
- * React 重写要沿用同一套视觉，不能在重写过程中被 preflight 或工具类悄悄改掉
- * 按钮边框、输入框底色这类东西。
+ * 样式按语义拆成 tokens / shell / calendar / lists / quick-add / overlays / responsive，
+ * 不再使用含义模糊的 legacy 文件名。各模块仍保持这里的导入顺序，避免同特异度规则漂移。
  *
- * 代价要说清楚：**在 legacy.css 已经覆盖的元素上，Tailwind 工具类不生效**。
- * 新表面（登录页、浮层、按钮）用的是 legacy 里根本没有的类名，不受影响；
- * 但想用工具类去改一个已有元素（比如给 .task-row 加个 mt-2）是会白写的。
+ * 新表面和组件样式共用 tokens.css 的设计令牌；不要为了局部效果重新定义一套颜色。
  */
 @import "tailwindcss";
-@import "./legacy.css";
+@import "./tokens.css";
+@import "./shell.css";
+@import "./calendar.css";
+@import "./lists.css";
+@import "./quick-add.css";
+@import "./overlays.css";
+@import "./responsive.css";
 
 /* ---------------------------------------------------------------- 新表面 */
 
 /*
- * 新表面的配色跟着 legacy.css 的 CSS 变量走，不另起一套。
+ * 新表面的配色跟着 设计系统样式文件 的 CSS 变量走，不另起一套。
  * 写死颜色会让深色模式在登录页上失效 —— 那是最容易被漏掉的一屏。
  *
  * **圆角与线宽同理**，走 --r-xs/sm/md/lg/xl/pill 与 --border-w：风格轴
@@ -38,25 +41,11 @@
 /* 「更多」抽屉底部的账户行（.ms-user / .ms-logout）已随退出登录入口一起收进
    设置页，样式跟着删掉 —— 留着就是一段没人再渲染的死 CSS。 */
 
-/*
- * 触屏长按把行「提起来」之后的状态（见 ui/dnd.ts 文件头）。
- *
- * 这一步**还不是拖动**，是「抓住了」的反馈：给个抬起阴影 + 抬高层级，
- * 不然长按完屏幕毫无变化，用户不知道可以拖了。
- *
- * `position: relative` 是为了让 z-index 生效（行本来就占位，不影响布局）；
- * 位移由 JS 写 inline transform —— 所以这里**不能**写 transform，会被覆盖。
- * 也不用自己写背景色：行本来就有 `background: var(--panel)`。
- */
-.touch-drag {
-  position: relative;
-  z-index: 55;                 /* 高于内容，低于浮层的 60 */
-  box-shadow: var(--shadow-lg);
-}
+/* 触屏长按反馈已由 @dnd-kit 的 DragOverlay / sortable 状态接管。 */
 
 /*
  * 详情抽屉里那条「另一台设备也改过这个任务」（见 domain/merge.ts 的
- * findConflicts）。配色跟着 legacy.css 的变量走 —— 写死颜色会让深色模式
+ * findConflicts）。配色跟着 设计系统样式文件 的变量走 —— 写死颜色会让深色模式
  * 在这块失效（新表面的通例，见 CLAUDE.md 四、27）。
  *
  * 用 warn 那条暖色，但**不做成报错红**：数据是好的，LWW 已经判完了，
@@ -236,7 +225,6 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; font-size: 12.5px; color: var(--text-2);
 }
-.ai-auth-item select,
 .ai-auth-item input[type="time"] {
   font-size: 12px; color: var(--text);
   background: var(--panel); border: var(--border-w) solid var(--input);
@@ -355,13 +343,13 @@
 
 /* ============================== 项目泳道看板 ==============================
  *
- * 新表面（Projects.tsx），legacy.css 里没有这些类名，所以这里写的规则
+ * 新表面（Projects.tsx），设计系统样式文件 里没有这些类名，所以这里写的规则
  * Tailwind 压不过、也不跟 legacy 打架。**配色一律走 legacy 的变量** ——
  * 写死颜色会让深色模式在这块失效（见 CLAUDE.md 四、27）。
  *
  * 拖拽那套是复用 `ui/dnd.ts` 的：卡片同时是 `.task-el`（拖得起来）和
  * `data-card`（算一格），所以 `.drop-hole` / `.drag-muted` 的样式
- * 直接用 legacy 里现成的，这里一个字都不用写。
+ * 直接用 设计系统里现成的，这里一个字都不用写。
  */
 
 .pj-wrap { display: flex; flex-direction: column; gap: 10px; }

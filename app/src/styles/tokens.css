@@ -1,0 +1,262 @@
+/* 三档灰（--text / --text-2 / --text-3）的取值是**算出来的**，不是挑出来的。
+   两个约束同时成立，改之前先读懂：
+
+   (a) 每一档对**每一种底色**的对比度都 ≥ 4.5:1（WCAG 1.4.3 正文）。
+       --text-2 / --text-3 不是装饰色，在 10.5–12px 的**有信息量**文字上用了
+       38 处（时间轴刻度 .tl-label、.ev-time、.m-note、.cell-load、
+       .od-date、.drawer-meta、.tip…）。旧值 #949bab 只有 2.79:1，看着「淡雅」，
+       实际读不清。
+
+   (b) 三档之间的 **L\* 感知档距按原比例**保留，只是整体压进达标区间。
+       必须按 L* 定档，**不能按对比度比值** —— 比值不是线性感知，拿比值去定
+       就会把三层挤成两层（#949bab 补到 4.5:1 正好落在 #636b80 上）。
+
+   下面的数字是 2026-10-06 换暖纸之后重算的。**换底色 / 改色板之后必须重跑
+   `node tests/contrast.mjs`** —— 暖纸比原来的冷白深，最难的那一档从
+   --panel-3 #f3f5fa 变成 #f0ede8，--text-3 因此从 #687084 压到 #5f6577
+   （4.54 → 4.98）。不重算就会静默掉到线下，而这个脚本**会**断言它。
+
+   --text 是正文，两档底色下都有 14 以上，一直不动。 */
+:root {
+  --bg: #f6f5f3;
+  --panel: #fffefc;
+  --panel-2: #fbfaf8;
+  --panel-3: #f0ede8;
+  --sidebar: #fbfaf8;
+  --text: #1a1d29;
+  --text-2: #474955;
+  --text-3: #5f6577;
+  --border: #e7e4de;
+  /* 交互控件的描边（输入框 / 下拉 / 勾选圈 / 幽灵按钮 / 视图切换 / 滚动条把手）。
+     **必须 ≥3:1**（WCAG 1.4.11）—— 勾选圈尤其要紧：那个 20px 的空圈只有它自己
+     说明「这里能点」。装饰性的线（卡片边 / 浮层边 / 进度槽 / 拖拽抓手）走 --border，
+     那一档不要求 3:1。按「能不能操作」分，不按「长得像不像框」分。 */
+  --input: #82889b;
+  /* 可见边框的宽度。风格轴靠它换「线」的粗细：soft / notion 都是 1px，
+     flat 是 2px（Minimalist Flat 的硬边框感）。规则区里凡是全边的
+     `border: … solid …` 都引用它，**别再写死 1px** —— 写死的那一处会在
+     flat 档下原地不动，而它不报错、不崩，只是「这一圈线没变粗」。
+     `border: 1px solid transparent`（占位边框）不引用它：那种不参与视觉，
+     只是撑住尺寸防抖动，加粗反而会挤动布局。 */
+  --border-w: 1px;
+  --primary: #27795a;
+  --primary-soft: #e6f3ec;
+  --primary-pale: #f1f9f5;
+  --danger: #cf252b;
+  --danger-soft: #fdeeef;
+  --warn: #995d16;
+  --warn-soft: #fdf3e6;
+  --ok: #147a50;
+  --ok-soft: #e8f7f0;
+  --purple: #3f7d8c;
+  --shadow: 0 1px 2px rgba(38, 32, 24, .06);
+  --shadow-md: 0 4px 12px rgba(38, 32, 24, .09);
+  --shadow-lg: 0 16px 40px rgba(38, 32, 24, .15);
+  /* 圆角刻度。原本 67 处写死值收敛到这 6 个 —— 风格轴靠改这 6 个值换几何，
+     所以**新加的圆角一律引用刻度，别再写死 px**。取的是各档的众数，
+     最坏情况下单个元素差 2px（8px→7px 那一档），肉眼看不出来。 */
+  --r-xs: 2px; --r-sm: 7px; --r-md: 9px; --r-lg: 12px; --r-xl: 18px; --r-pill: 999px;
+
+  /* 主色 / 危险色上的前景色。主色是浅色时（暗色档全部、以后的浅色板）它必须
+     翻成深色，否则白字压浅底读不出来 —— 原来 21 处写死 color:#fff。
+     :root 这一套取的是**默认色板 jade** 的值（applyAccent 总会写上 data-accent，
+     所以 :root 只在首帧 FOUC 那一瞬生效，但别让它跟默认色板对不上）。 */
+  --on-primary: #ffffff;
+
+  /* toast 是反色的小黑条，深浅两档都长这样，所以它自带三个值 */
+  --toast-bg: #1b1f28; --toast-fg: #fff; --toast-link: #9db4ff;
+
+  --font: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+
+  /* 方向与 --shadow* 相反的三条：底栏 / 抽屉 / 更多浮层往上投，
+     周视图未定时行那条只有 2px 的贴边阴影。它们没法用 --shadow* 表达。 */
+  --shadow-up: 0 -8px 30px rgba(16, 24, 40, .18);
+  --shadow-up-sm: 0 -2px 12px rgba(16, 24, 40, .06);
+  --shadow-sticky: 0 4px 10px -8px rgba(0, 0, 0, .35);
+  --wide: 920px;
+
+  --chip-date-bg: #e9eeff; --chip-date-fg: #3a5bd9;
+  --chip-time-bg: #e4f6ee; --chip-time-fg: #117d55;
+  --chip-dur-bg: #f0eaff; --chip-dur-fg: #6b45c8;
+  --chip-pri-bg: #fdecec; --chip-pri-fg: #c6383e;
+  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #9d6118;
+}
+
+[data-theme="dark"] {
+  --bg: #14120f;
+  --panel: #1c1a17;
+  --panel-2: #22201c;
+  --panel-3: #2a2723;
+  --sidebar: #181613;
+  --text: #eae7e2;
+  --text-2: #b8b3ab;
+  --text-3: #97928a;
+  --border: #302c27;
+  --input: #71767f;
+  --primary: #6fc0a0;
+  --primary-soft: #1a2e27;
+  --primary-pale: #152420;
+  --danger: #f0656a;
+  --danger-soft: #332024;
+  --warn: #e8a24a;
+  --warn-soft: #33291a;
+  --ok: #37b57f;
+  --ok-soft: #1b3028;
+  --purple: #7bb3c2;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
+  --on-primary: #14120f;
+  --chip-date-bg: #223052; --chip-date-fg: #9db4ff;
+  --chip-time-bg: #1c3b30; --chip-time-fg: #6fd6a8;
+  --chip-dur-bg: #2c2445; --chip-dur-fg: #bfa4ff;
+  --chip-pri-bg: #40262a; --chip-pri-fg: #ff9ba0;
+  --chip-rep-bg: #3a2c19; --chip-rep-fg: #f0bd7a;
+}
+
+/* ================= 色板轴 =================
+   6 套，只改主色族（--primary / soft / pale / --on-primary / --purple）与语义色的冷暖。
+   底色（--bg / --panel*）**不随色板走**，那是「深浅」那一轴的事 —— 两轴混在一起
+   会变成 6×2 套手工配色，改一处要翻 12 个地方。
+
+   --on-primary 是主色上的**前景色**：主色是浅色时（暗色档全部、以后的浅色板）
+   它必须是深色，否则白字压浅底读不出来。这是原来 21 处写死 color:#fff 的病根。
+   亮色档六套都是 #fff —— 它们的主色都压到了 4.5:1 以上，白字压得住。
+
+   暗色档用复合选择器 [data-theme="dark"][data-accent="…"]，特异度比单属性的
+   高一级，所以不依赖两块的先后顺序 —— 但也别把暗色档写到亮色档前面去。 */
+
+[data-accent="jade"] {
+  --primary: #27795a; --primary-soft: #e6f3ec; --primary-pale: #f1f9f5;
+  --on-primary: #fff; --purple: #3f7d8c;
+}
+[data-accent="azure"] {
+  --primary: #4260dc; --primary-soft: #edf1ff; --primary-pale: #f6f8ff;
+  --on-primary: #fff; --purple: #7b53d8;
+}
+[data-accent="clay"] {
+  --primary: #a5543a; --primary-soft: #fbeee8; --primary-pale: #fdf6f2;
+  --on-primary: #fff; --purple: #8a5a7a;
+}
+[data-accent="plum"] {
+  --primary: #8a4a86; --primary-soft: #f7ecf6; --primary-pale: #fbf5fa;
+  --on-primary: #fff; --purple: #5f4a9c;
+}
+[data-accent="gold"] {
+  --primary: #8d6414; --primary-soft: #faf1dc; --primary-pale: #fdf8ee;
+  --on-primary: #fff; --purple: #6b7a3a;
+}
+[data-accent="slate"] {
+  --primary: #4b5b70; --primary-soft: #eaeef3; --primary-pale: #f4f6f9;
+  --on-primary: #fff; --purple: #5c6b80;
+}
+
+[data-theme="dark"][data-accent="jade"] {
+  --primary: #6fc0a0; --primary-soft: #1a2e27; --primary-pale: #152420;
+  --on-primary: #14120f; --purple: #7bb3c2;
+}
+[data-theme="dark"][data-accent="azure"] {
+  --primary: #6d8bff; --primary-soft: #202739; --primary-pale: #1a2030;
+  --on-primary: #14120f; --purple: #a184f0;
+}
+[data-theme="dark"][data-accent="clay"] {
+  --primary: #e08a68; --primary-soft: #301f19; --primary-pale: #261914;
+  --on-primary: #14120f; --purple: #c395b5;
+}
+[data-theme="dark"][data-accent="plum"] {
+  --primary: #c98cc4; --primary-soft: #2c1f2b; --primary-pale: #231a22;
+  --on-primary: #14120f; --purple: #a48cd8;
+}
+[data-theme="dark"][data-accent="gold"] {
+  --primary: #d9b055; --primary-soft: #2c2517; --primary-pale: #231e13;
+  --on-primary: #14120f; --purple: #a8b06a;
+}
+[data-theme="dark"][data-accent="slate"] {
+  --primary: #9aabc2; --primary-soft: #1e2530; --primary-pale: #191f28;
+  --on-primary: #14120f; --purple: #8fa0b8;
+}
+
+/* ================= 风格轴 =================
+   改**几何**：6 个圆角刻度 + 6 个阴影令牌 + 一个边框宽度。颜色一个字不动 ——
+   那是另两轴的事。这样一个风格切过去，配色不会跟着变，排查「怎么这个风格颜色
+   不对」时不必翻色板。
+
+   三个块**必须排在 :root 与 [data-theme="dark"] 之后**：三者特异度都是 (0,1,0)，
+   靠源码顺序决胜。排在前面的话 flat + 暗色会留着暗色档那套阴影（flat 但是有影子，
+   最难查的那种半生效）。
+
+   `soft` 是**空块**：不切风格时几何与 2026-10-06 之前逐像素相同，零回归风险。
+   另外：`border-radius: 50%`（勾选圈、时间轴上的「现在」那个点）**不受影响** ——
+   那是正圆，不是圆角刻度，扁平风格里也照样是圆的。
+
+   三档现在各自的特征（参考 stylekit.top 的定义）：
+     soft   大圆角 + 柔和阴影 + 1px 边框（默认，原样）
+     flat   零圆角 + 零阴影 + **2px 硬边框**（Minimalist Flat）
+     notion 小圆角 + 零阴影 + 1px 微妙边框（Notion Style）
+
+   边框这一维靠 `--border-w`：规则区里凡是全边 `border: … solid …` 都引用它。
+   这就是原来 flat / notion 看起来差不多的原因 —— 之前只改了圆角与阴影，
+   而边框（三档都有 1px）一直没跟着动，flat 少了「硬边框」这个最显眼的特征。 */
+
+[data-style="soft"] {
+}
+
+[data-style="flat"] {
+  --r-xs: 0; --r-sm: 0; --r-md: 0; --r-lg: 0; --r-xl: 0; --r-pill: 0;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  --shadow-up: none; --shadow-up-sm: none; --shadow-sticky: none;
+  /* Minimalist Flat 的硬边框：全边边框统一加粗到 2px */
+  --border-w: 2px;
+}
+
+[data-style="notion"] {
+  --r-xs: 1px; --r-sm: 3px; --r-md: 4px; --r-lg: 6px; --r-xl: 8px; --r-pill: 4px;
+  --shadow: none; --shadow-md: none; --shadow-lg: none;
+  /* 往上投的那三条换成一条细线：底栏 / 抽屉 / 更多浮层还是要有条界，
+     全 none 会让它们在内容上「糊」成一片 */
+  --shadow-up: 0 -1px 0 var(--border);
+  --shadow-up-sm: none; --shadow-sticky: none;
+  /* 边框仍是 1px —— Notion 的特征是「1px 微妙细线」，不是粗边框 */
+  --border-w: 1px;
+}
+
+/* flat / notion 的阴影都归零，下面这几个「只靠阴影浮在内容之上」的面就没界了。
+   卡片 / 任务行 / 时间轴方块**本来就有 1px 边框**（.task-row / .habit-row /
+   .tl-event / .checkin-strip…，三档都带），不用管；缺界的只有这几个整页浮层。
+   补一条真边框，soft 档有阴影、本来就没这个问题，不动它（保持零回归）。
+
+   特异度 (0,2,0) 压过 `.drawer { border-left: … }` 那种 (0,1,0)，所以不必
+   担心它定义在本节之后 —— 覆盖靠的是特异度，不是源码顺序。 */
+[data-style="flat"] .drawer,
+[data-style="flat"] .more-sheet,
+[data-style="flat"] .act-sheet,
+[data-style="notion"] .drawer,
+[data-style="notion"] .more-sheet,
+[data-style="notion"] .act-sheet {
+  border: var(--border-w) solid var(--border);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; font-size: 14px; color: var(--text); }
+b, strong { font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--input); border-radius: var(--r-sm); border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ================= 布局 ================= */
+

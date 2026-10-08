@@ -1,0 +1,346 @@
+/* ================= 快速添加 ================= */
+
+/* 横条本体（只管 `margin` / `z-index`）与**动画层**（`.fast-add-shell`）分开：
+   圆钮 `.fast-fab` 是 `.fast-add` 的子节点、shell 的兄弟。动画必须挂在 shell 上
+   —— 挂在 `.fast-add` 上的话，`transform` 和 `opacity` 会作用到整棵子树，
+   圆钮被拖着右移 28px、缩小 4%、淡出，动画一结束弹回原位（实测最大偏移 30.5px），
+   就是那个「异常跳变」。 */
+.fast-add {
+  margin: 6px 22px 18px;
+  /* 需求 1：给输入框很高的 z-index，否则会被日视图/周视图等里面的元素挡住。
+     窄屏下它是 position: fixed，在 #content 外面，但 #content 内的 sticky 元素
+     （表头 z-index 5/6）会创建新的层叠上下文，可能盖住它。 */
+  z-index: 100;
+}
+/* 真正的「那个盒子」：背景 / 边框 / 圆角 / 阴影 / 内边距 / flex 排布都在这一层，
+   展开 / 关闭动画也挂在它身上。它**不含圆钮**，所以怎么动都带不动圆钮。 */
+.fast-add-shell {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 16px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  transition: border-color .16s, box-shadow .16s;
+  /* 需求 3：缩放基准定在**圆钮的圆心**（右 13 + 48/2 = 37）——
+     看着就是这个盒子被吸进圆钮里 / 从圆钮里长出来。 */
+  transform-origin: calc(100% - 37px) center;
+}
+.fast-add:focus-within .fast-add-shell { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
+/* 收起时只露圆钮：整个盒子 display:none（需求 2）。
+   盒子不再承担圆钮的定位 —— 圆钮的 `bottom` 相对 `.fast-add` 的 padding box，
+   而 `.fast-add` 的**底边**由 fixed 的 bottom 钉死：盒子在不在、多高，圆钮都不动。 */
+.fast-add:not(.open) .fast-add-shell { display: none; }
+
+/* 输入框那一行占满横条的剩余宽度，把时间 / 保存按钮**挤到右边**（需求 4）——
+   原先 `.fast-add-body` 没有 flex，只占 textarea 的内容宽（cols=20），
+   `.fast-side` 紧跟在左边，离右下角的圆钮足足 867px。 */
+.fast-add-body { flex: 1; }
+/* 输入框固定两行，超过可内部滚动（需求 1）。
+   resize:none 是必须的 —— 浏览器默认给 textarea 一个右下角的拖拽角，
+   在这个横条里拖它只会把布局拖坏。
+   **width: 100% 而不是 flex: 1** —— `.fast-add-body` 不是 flex 容器，
+   textarea 的 flex: 1 从来就没生效过（它只对 flex 父元素有意义）。 */
+.fast-add textarea {
+  width: 100%; min-width: 140px; border: none; outline: none; background: none;
+  font: inherit; font-size: 14.5px; line-height: 1.35;
+  padding: 0; margin: 0; resize: none; overflow-y: auto;
+  height: calc(2 * 1.35em);
+}
+.fast-hint { font-size: 11px; color: var(--text-3); }
+
+/* 时间/保存按钮上下叠放（需求 4）：时间在上，保存在下，固定位置 */
+.fast-side {
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+/* 日期按钮和 ✓ 都定成 30px 高（需求 3）。日期按钮里要摆**两行 10px 的小字**，
+   两行加行距约 22px，再算上内边距就是这个高度 —— 高度不能跟着内容变，
+   不然「只有日期」和「日期 + 时间」两种状态下横条会跳一下。
+   ✓ 跟着同高，一行里才齐平。 */
+.fast-clock {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px;
+  border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
+  border-radius: var(--r-md); padding: 0 9px; font-size: 13px; line-height: 1;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.fast-clock:hover { border-color: var(--primary); color: var(--primary); }
+/* 类名是 `.on`，**不是 `.set`** —— Shell 和 Drawer 两处调用点都写
+   `'fast-clock' + (有值 ? ' on' : '')`。这里曾经写成 `.set`，于是这条
+   「已经选了日期 / 时间」的高亮**从来没生效过**（选择器对不上，静默失效）。
+   按钮上那两行字的颜色就靠它 —— 见下面 .fc-when 那段。 */
+.fast-clock.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+
+/* 「保存」是个 ✓ 图标（需求 3）。回车键还在，
+   但不能再是**唯一**的路 —— 手机上「回车」是软键盘上那个小箭头，
+   找不着的人就只能干瞪眼。和 `.fast-clock` 同高。
+   禁用态要看得懂：不是淡一点点，而是连底色带描边一起退回去 */
+.fast-save {
+  display: flex; align-items: center; justify-content: center;
+  height: 30px; padding: 0 10px;
+  border: var(--border-w) solid var(--primary); background: var(--primary);
+  color: var(--on-primary); border-radius: var(--r-md);
+  line-height: 1; font-weight: 600;
+  transition: filter .14s, background .14s, border-color .14s, color .14s;
+}
+.fast-save:hover:not(:disabled) { filter: brightness(1.06); }
+.fast-save:disabled { background: var(--panel-2); border-color: var(--border); color: var(--text-3); }
+
+/* 选好的日期 / 时间分两行摆在图标右边（需求 1）：上行 10/7、下行 08:00。
+   字号压到 10px —— 它是**按钮上的状态**，不是正文；两行加起来 23px，
+   跟左边那个 15px 的图标配得起来，横条不会被它撑高多少。
+
+   **两行必须一模一样**（需求 2）：字号、字重、颜色都同。原先日期那行 600、
+   时间那行是 --text-3 的浅灰，同一个按钮里两行字看着像两种不同的东西。
+   颜色跟着按钮自己的 color 走（`.fast-clock` 是 --text-2，选中态是 --primary），
+   这里不再单独指定 —— 一旦指定，选中态就只有一行跟着变。 */
+.fc-when { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.05; }
+.fc-when .fc-d, .fc-when .fc-t {
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+
+/* 面板展开时那条淡入上浮（.wp-body / .jump-pop / 快速添加浮层都用它） */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+/* 需求 3：展开动画 —— 盒子从圆钮那儿长出来。挂在 `.fast-add-shell` 上，
+   **只用 scaleX**：带 Y 的 `scale` 就是那个「竖直方向压扁」（a 和 d 一起缩）。
+   数值和 fastPopOut 完全对称，一正一反。 */
+@keyframes fastPop {
+  from { opacity: 0; transform: translateX(24px) scaleX(.5); }
+  to { opacity: 1; transform: none; }
+}
+/* 需求 3：关闭动画 —— 向圆钮收紧。`forwards` 让动画结束后保持最终状态
+   （opacity: 0），直到 React 把 `.closing` 一起移除、盒子 display:none。 */
+@keyframes fastPopOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(24px) scaleX(.5); }
+}
+
+/* ================= 快速添加的圆钮（窄屏，在横条内） ================= */
+
+/* 圆钮钉在横条**右下角**（需求 1）：绝对定位，不参与 flex ——
+   收起时盒子整个 display:none，只剩它一个，默认的 justify-content:flex-start
+   会把它甩到**左边**；展开时它又会跟着内容跑。钉死之后 + / × 在同一个位置不动。
+
+   贴的是 `.fast-add` 的右下角，而 `.fast-add` 的**底边**由 Shell.tsx 内联的
+   `bottom: calc(64px + env(...))` 钉死 —— 高度怎么变，底边都在那儿，
+   所以相对屏幕它也不动。`bottom` 是相对 **padding box 底边**量的，
+   `.fast-add` 自己不设内边距 / 边框（那些在 `.fast-add-shell` 上），
+   所以 18 就是「展开后竖直居中」那个位置：盒子高 84（内边距 9×2 + 内容 64
+   + 边框 1×2），48 的圆钮居中 → (84 − 48) / 2 = 18。
+   用固定值而不是 flex 居中，是因为绝对定位的 bottom 相对的是那条**不动的底边**。 */
+.fast-fab {
+  position: absolute; right: 13px; bottom: 18px;
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border: none; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary);
+  box-shadow: var(--shadow-lg);
+  transition: transform .16s, background .16s;
+}
+.fast-fab:hover { filter: brightness(1.06); }
+.fast-fab:active { transform: scale(.94); }
+/* 展开态：同一个圆、同一个位置，只是图标换成 ×（需求 1）。
+   底色压暗一档，免得那个 × 看着还像个「加」的召唤；
+   **主题色描边常亮**（需求 1）—— 它说的是「这个开关现在是开着的」，
+   是状态不是 hover 反馈，所以不挂在 `:hover` 上，失去焦点也留着。 */
+.fast-fab.open {
+  background: var(--panel); color: var(--primary);
+  border: var(--border-w) solid var(--primary); box-shadow: var(--shadow);
+}
+.fast-fab.open:hover { filter: none; background: var(--primary-soft); }
+
+/* ================= 快速添加的「日期 + 时间」面板 ================= */
+
+/* 两层叠着往下展开：上面日期、下面时间，各点各的标题行开合，
+   **同时只开一层**（见 ui/WhenPop.tsx）。
+   定位跟 .jump-pop 同一套算法，只是 position: fixed —— 它贴着横条上那个
+   时钟按钮出现，不是贴着顶栏 */
+.when-pop {
+  position: fixed; z-index: 70;
+  width: 268px; padding: 8px;
+  background: var(--panel); border: var(--border-w) solid var(--input);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: fadeUp .14s ease;
+}
+
+/* 一层标题 = 一个 `.wp-row`（div）里装着**三个**平级 button：
+   `.wp-head`（点它开合）+ `.wp-act`（「清空 / 跳过」）+ `.wp-cv`（箭头）。
+   顺序就是「清空 / 跳过」在箭头**左边**（需求 6）：动作排在开合前面。
+   之所以不是一个 button 全包下来：button 里套 button 是非法 HTML，
+   浏览器会把里层那个甩到外面去，点起来完全不是看到的样子。 */
+.wp-row {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  border-radius: var(--r-md); transition: background .14s;
+}
+.wp-head:hover, .wp-row.open { background: var(--panel-2); }
+.wp-head {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  padding: 7px 4px 7px 8px; border: none; border-radius: var(--r-md);
+  background: none; color: var(--text); font-size: 12.5px; text-align: left;
+}
+.wp-k { flex: 0 0 auto; color: var(--text-3); }
+.wp-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wp-v.none { font-weight: 400; color: var(--text-3); }
+
+/* 开合箭头现在自己是**一个按钮**（原先它是 `.wp-head` 里的一个图标，
+   因为「清空 / 跳过」得排在它左边，而那样就没法留在同一个 button 里）。
+   点它和点 `.wp-head` 是同一件事，两个都带 aria-expanded。 */
+.wp-cv {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  padding: 5px 6px; border: none; border-radius: var(--r-sm);
+  background: none; color: var(--text-3);
+  transition: transform .16s, color .14s;
+}
+.wp-cv:hover { color: var(--primary); }
+.wp-row.open .wp-cv { transform: rotate(180deg); }
+
+/* 「清空 / 跳过」：在开合箭头**左边**，日期、时间各一个（需求 3、6）。
+   文案会变（有值 = 清空，没值 = 跳过），所以给个最小宽度 ——
+   不然两行右边的按钮会随字数左右错开，看着像没对齐 */
+.wp-act {
+  flex: 0 0 auto; min-width: 44px;
+  padding: 5px 8px; border: none; border-radius: var(--r-sm);
+  background: none; color: var(--text-3); font-size: 11.5px;
+  transition: background .14s, color .14s;
+}
+.wp-act:hover { background: var(--panel-3); color: var(--primary); }
+
+/* 展开出来的那一层。左右各留 8px，跟层标题的 padding 对齐 */
+.wp-body { padding: 0 8px 8px; animation: fadeUp .14s ease; border-top: 1px solid var(--border); }
+.wp-body .jp-head { margin: 6px 0; }
+
+/* `.wp-foot` 整块**删了**（需求 7）：那个「收起」是面板里唯一的出口，
+   现在点面板外面就收 —— 出口不该只长在底部。 */
+
+/* 面板里那只表盘比抽屉里的小一号：面板宽 268，扣掉内边距只剩 234，
+   塞 246 的表盘会顶到边。表盘的**直径**由 JS 按 face 算（见 ui/Clock.tsx），
+   这里只管里面那些格子的字号 —— 它们不跟着直径走 */
+.wp-clock .cp-num { width: 23px; height: 23px; font-size: 10.5px; }
+.wp-clock .cp-ap { padding: 3px 13px; }
+.wp-clock .cp-now { padding: 3px 13px; font-size: 11px; }
+
+/* ================= 时钟时间选择器 ================= */
+
+.time-trigger {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, color .14s;
+}
+.time-trigger.wide { width: 100%; justify-content: center; padding: 8px 12px; }
+.time-trigger:hover { border-color: var(--primary); color: var(--primary); }
+.time-trigger.set { color: var(--text); }
+.time-trigger.set .tt-text { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tt-ico { font-size: 13px; }
+
+.clock-pop {
+  position: fixed; z-index: 70;
+  /* 278 不是随手挑的数：`* { box-sizing: border-box }`，所以这个宽里已经扣掉了
+     两条 1px 边框和左右各 15px 的内边距，剩下恰好 246 —— 正好等于 `.cp-face`
+     那个写死的 246px（C = 123 = 它的一半，见 ui/Clock.tsx）。
+     写成 274 时内容盒只有 242，表盘比它宽 4px，`margin: 0 auto` 塌成 0，
+     表盘就整体偏右 2px（探针第十七节量左右空隙，差超过 1px 就红）。 */
+  width: 278px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-xl); box-shadow: var(--shadow-lg); padding: 15px;
+}
+/* `.cp-display` / `.cp-cell` / `.cp-colon` 三块**整组删了**（需求 4）：
+   表盘上面那两个 27px 的大数字没有了。生效时间早就写在横条那个按钮上
+   （`.fast-clock .fc-t`），面板里再重复一遍纯属占地方 —— 这个面板只有
+   234px 宽，表盘已经占掉 198。时 / 分圈的切换改由表盘正中心那个点承担。 */
+
+/* 上午 / 下午**仍然居中**，但「现在」挂在右边（需求 5）。
+   写法是「居中的那一组自己是个 span，现在走绝对定位」——
+   把「现在」当第三个 flex 子元素的话，justify-content:center 会把
+   三个一起居中，上午 / 下午 整组就左偏了，而这两个键的居中是面板的基准线。 */
+.cp-ampm { position: relative; display: flex; justify-content: center; margin-top: 12px; margin-bottom: 9px; }
+.cp-apm { display: flex; gap: 6px; position: relative; }
+.cp-ap {
+  padding: 4px 16px; border: none; border-radius: var(--r-md); cursor: pointer;
+  background: var(--panel-2); color: var(--text-2); font-size: 12px;
+  transition: background .14s, color .14s;
+}
+.cp-ap:hover { background: var(--panel-3); }
+.cp-ap.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+
+.cp-face {
+  position: relative; width: 246px; height: 246px; margin: 0 auto;
+  border-radius: 50%; background: var(--panel-2); border: var(--border-w) solid var(--border);
+}
+.cp-hand {
+  position: absolute; left: 50%; top: 50%; margin-top: -1px; height: 2px;
+  background: var(--primary); transform-origin: left center; border-radius: var(--r-xs);
+  transition: transform .18s cubic-bezier(.3, .8, .3, 1);
+}
+/* 表盘正中心：**点它切时圈 / 分圈**（需求 4）。原先这个切换是显示行上那两个
+   大数字（点小时那个数切回小时档），显示行删了之后总得有个地方切，
+   而中心本来就在指针轴上，点它最自然。
+   上面那个「时 / 分」是**状态**不是提示：不写的话，同一个位置上那 12 个数
+   是 12 点还是 12 分，只能靠数数猜。 */
+.cp-dot {
+  position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+  margin: -13px 0 0 -13px; padding: 0;
+  border: none; border-radius: 50%;
+  background: var(--panel-3); color: var(--text-3);
+  font-size: 10.5px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.cp-dot:hover { background: var(--primary-soft); color: var(--primary); }
+.cp-dot.m { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-num {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 25px; height: 25px; padding: 0; border: none; border-radius: 50%;
+  background: none; color: var(--text-2); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.cp-num:hover { background: var(--primary-soft); color: var(--primary); }
+.cp-num.on { background: var(--primary); color: var(--on-primary); font-weight: 600; box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
+/* 表盘下面**不再有说明文字**（需求 7）。原先那行 `.cp-tip` 写的是
+   「选小时（12 在顶部）」「选分钟，每格 5 分钟（顶端 60 就是 0 分）」——
+   表盘上就画着 12 在顶部、数出来就是每格 5 分钟，写出来只是把人当不会看。
+   现在靠中心那个 `.cp-dot` 上的「时 / 分」表达在拨哪一圈，一个字都不多说。 */
+
+/* 「现在」在上午 / 下午的**右侧**，但那一组仍然居中（需求 5）。
+   绝对定位是关键 —— 它不参与上面那组的居中计算。
+
+   **`white-space: nowrap` 不能省**（需求 3）：它的包含块是 `.cp-apm`
+   （两个按钮加 6px 间隙，约 118px 宽），而 `left: calc(100% + 6px)` = 124px
+   **已经超出包含块宽度** —— 绝对定位元素此时可用宽度算成负数，
+   shrink-to-fit 就把「现在」压到 min-content（一个汉字宽），两个字竖着排。
+   写 nowrap 让宽度回到两个字本身，溢出的那点落在 `.cp-ampm` 里，
+   而那一行本来就是居中留白的。 */
+.cp-now {
+  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  padding: 4px 16px;
+  border: none; border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 12px;
+  white-space: nowrap;
+  transition: background .14s, color .14s;
+}
+.cp-now:hover { background: var(--panel-3); color: var(--primary); }
+/* 当前拨到的时刻**就是现在**时亮起（需求 5）：点了「现在」、或者自己拨到
+   此刻，这个键都该是选中态 —— 和上午 / 下午那对 `.cp-ap.on` 同一套语义。 */
+.cp-now.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-now.on:hover { background: var(--primary); color: var(--on-primary); }
+.cp-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.cp-foot .grow { flex: 1; }
+.cp-foot .ghost-btn, .cp-foot .primary-btn { padding: 6px 13px; font-size: 12px; }
+
+/* ================= 重复规则面板 ================= */
+
+.repeat-panel {
+  margin-top: 10px; padding: 12px 14px;
+  background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+}
+.rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
+.rp-l { flex: 0 0 34px; font-size: 12px; color: var(--text-2); }
+.rp-row input[type="number"], .rp-row input[type="date"] {
+  padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
+  background: var(--panel); outline: none; font-size: 13px; color: var(--text);
+  transition: border-color .14s;
+}
+.rp-row input:focus { border-color: var(--primary); }
+.rp-row input[type="number"] { width: 66px; }
+.rp-row input[type="date"] { flex: 1; min-width: 122px; }
+.rp-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.rp-tail { font-size: 11px; color: var(--text-3); }
+.rp-preview { font-size: 12px; color: var(--primary); }
+

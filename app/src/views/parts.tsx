@@ -31,7 +31,7 @@ import { habitStreak } from '../domain/model.ts';
  *
  * 必须是 `<button>`：这是全应用点得最多的控件，得能 Tab 到、得能回车触发。
  * 尺寸 / 内外边距 / 边框 / 圆角全由 `.check-btn` 显式定死，不会带进 UA 默认样式。
- * 24×24 的命中区由 `legacy.css` 里 `.check-btn::before` 撑出来（视觉尺寸不变）。
+ * 24×24 的命中区由 `styles/lists.css` 里 `.check-btn::before` 撑出来（视觉尺寸不变）。
  */
 export function CheckBtn({ id, on, act = 'toggle', sm }: {
   id: string;
