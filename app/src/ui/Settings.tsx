@@ -20,7 +20,7 @@ import {
   Pencil, Upload, Download, Trash2, UserRound, Plus, Crown, Eye, UserMinus,
   UserPlus, Users, X, AlertTriangle, ChevronDown,
 } from 'lucide-react';
-import { DndContext, MouseSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
@@ -33,6 +33,7 @@ import { Btn, Chips, Input, Sheet, useConfirm, toast } from './kit.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
+import { DndScope } from './dndkit.tsx';
 import { cx } from './cx.ts';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
@@ -107,10 +108,6 @@ function NavCard({ state }: { state: LocalState }) {
     }
   };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-  );
-
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
@@ -133,7 +130,7 @@ function NavCard({ state }: { state: LocalState }) {
       <div className="mb-1.5 text-[11.5px] text-[var(--text-3)]">
         {narrow ? '底栏 · 点选 + 拖拽' : '侧栏 · 拖拽排序'}
       </div>
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      <DndScope onDragEnd={onDragEnd}>
         <SortableContext items={rows} strategy={verticalListSortingStrategy}>
           <ul className="flex flex-col gap-1">
             {rows.map((k) => (
@@ -141,7 +138,7 @@ function NavCard({ state }: { state: LocalState }) {
             ))}
           </ul>
         </SortableContext>
-      </DndContext>
+      </DndScope>
     </Card>
   );
 }
@@ -177,7 +174,7 @@ function SortableNavRow({ id, on, narrow, onToggle }: {
           : 'text-[var(--text-2)] ' + LINE + ' ' + HOVER,
       )}
     >
-      <span {...listeners} className="shrink-0 cursor-grab touch-none text-[var(--text-3)]">
+      <span {...listeners} className="shrink-0 cursor-grab text-[var(--text-3)]">
         <GripVertical size={13} />
       </span>
       <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>

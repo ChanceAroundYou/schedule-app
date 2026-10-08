@@ -40,7 +40,7 @@ export function InboxView({ state }: { state: LocalState }) {
       <SortableList
         items={list.map((t) => t.id)}
         onReorder={(newOrder) => store.reorder('task', newOrder)}
-        renderItem={(id) => <TaskRow task={state.tasks[id]} bare draggable={false} />}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} bare />}
         className="group-items mc"
         scope="inbox"
       />
@@ -86,7 +86,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
       <SortableList
         items={list.map((t) => t.id)}
         onReorder={(newOrder) => store.reorder('task', newOrder)}
-        renderItem={(id) => <TaskRow task={state.tasks[id]} draggable={false} />}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} />}
         className="mc"
         scope={'day:' + today}
       />
@@ -110,7 +110,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
           <SortableList
             items={doneToday.map((t) => t.id)}
             onReorder={(newOrder) => store.reorder('task', newOrder)}
-            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt draggable={false} />}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
             className="td-body mc"
             scope={'done:' + today}
           />
@@ -221,7 +221,7 @@ export function DoneView({ state }: { state: LocalState }) {
           <SortableList
             items={groups.get(d)!.map((t) => t.id)}
             onReorder={(newOrder) => store.reorder('task', newOrder)}
-            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt draggable={false} />}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
             className="mc"
             scope={'done:' + d}
           />
