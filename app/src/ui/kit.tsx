@@ -44,10 +44,10 @@ type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
    tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
 const VARIANT: Record<Variant, string> = {
   primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
-  normal: 'border-[var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
+  normal: 'border-[length:var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
-  danger: 'border-[var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
-  chip: 'border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
+  danger: 'border-[length:var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
+  chip: 'border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
 };
 
 type Size = 'sm' | 'md' | 'lg';
@@ -99,7 +99,7 @@ export function Input({ dense, className, ...rest }: InputProps) {
     <input
       {...rest}
       className={cx(
-        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+        'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
         dense && 'h-[30px] w-auto px-2 text-[12.5px]',
         'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
@@ -118,7 +118,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         ref={ref}
         {...rest}
         className={cx(
-          'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
+          'w-full rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
           'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
           'disabled:cursor-not-allowed disabled:opacity-50',
           className,
@@ -479,7 +479,7 @@ export function Dropdown<K extends string | number>({
           }
         }}
         className={cx(
-          'inline-flex min-w-0 items-center justify-between gap-2 rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
+          'inline-flex min-w-0 items-center justify-between gap-2 rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
           'hover:border-[var(--primary)] focus:border-[var(--primary)] focus:bg-[var(--panel)]',
           'disabled:cursor-not-allowed disabled:opacity-50',
           SIZE[size],
@@ -497,7 +497,7 @@ export function Dropdown<K extends string | number>({
           role="listbox"
           aria-label={label}
           className={cx(
-            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 min-w-full overflow-y-auto rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
+            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 min-w-full overflow-y-auto rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
             menuClassName,
           )}
         >
