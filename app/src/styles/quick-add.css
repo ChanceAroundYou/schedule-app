@@ -332,14 +332,13 @@
 }
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .rp-l { flex: 0 0 34px; font-size: 12px; color: var(--text-2); }
-.rp-row input[type="number"], .rp-row select, .rp-row input[type="date"] {
+.rp-row input[type="number"], .rp-row input[type="date"] {
   padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
   background: var(--panel); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
-.rp-row input:focus, .rp-row select:focus { border-color: var(--primary); }
+.rp-row input:focus { border-color: var(--primary); }
 .rp-row input[type="number"] { width: 66px; }
-.rp-row select { flex: 1; min-width: 94px; }
 .rp-row input[type="date"] { flex: 1; min-width: 122px; }
 .rp-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .rp-tail { font-size: 11px; color: var(--text-3); }

@@ -39,14 +39,14 @@
 .field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 6px; letter-spacing: .2px; }
 .field .sub { color: var(--text-3); }
 .field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
-.field input[type="date"], .field input[type="time"], .field select, .field textarea {
+.field input[type="date"], .field input[type="time"], .field textarea {
   width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--input);
   border-radius: var(--r-md); background: var(--panel-2); outline: none;
   transition: border-color .14s, background .14s;
 }
 .field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }
 .field textarea { resize: vertical; line-height: 1.6; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
+.field input:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
 .drawer-meta { font-size: 11px; color: var(--text-3); padding-top: 10px; border-top: 1px solid var(--border); }
 .drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
 .primary-btn {
