@@ -61,13 +61,26 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
-export function Btn({ variant = 'normal', size = 'md', className, ...rest }: BtnProps) {
+/**
+ * `ref` 要能拿到那个真 `<button>`：浮层的 outside-close 得知道「开合键自己」
+ * 是哪个节点，好把它当例外（见 ui/hooks.ts 的 useOutsideClose）。
+ * 不 forward 的话 `ref` 只会进 `...rest` 里被 React 丢掉。
+ */
+export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
+  { variant = 'normal', size = 'md', className, ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       {...rest}
       className={cx(
-        'inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
+        /* `btn` 是给测试与 legacy.css 留的**稳定钩子**：探针要量「日期导航那四个
+           控件高度一致」，靠的是 `.date-nav .btn`；而 legacy.css 里
+           `.cal-subhead .date-nav .btn { height: 34px }` 这条也只有它才接得到。
+           没有这个类名，那两处都是对空选择器说话。 */
+        'btn inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
         'disabled:cursor-not-allowed disabled:opacity-50',
         SIZE[size],
         VARIANT[variant],
@@ -75,7 +88,7 @@ export function Btn({ variant = 'normal', size = 'md', className, ...rest }: Btn
       )}
     />
   );
-}
+});
 
 /* ================================ 表单控件 ================================ */
 
@@ -384,9 +397,13 @@ interface IconBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
+export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function IconBtn(
+  { label, children, className, ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       title={label}
@@ -401,7 +418,7 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
       {children}
     </button>
   );
-}
+});
 
 /** 给外部（比如在 effect 里）用的遮罩层元素引用类型别名 */
 export type ElRef = RefObject<HTMLElement | null>;

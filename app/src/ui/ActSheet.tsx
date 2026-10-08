@@ -151,6 +151,9 @@ export function ActSheet({ state, id, onClose, onPatch, onDelete, onOpenDrawer, 
             </Btn>
           ))}
         </div>
+        {/* 浮层底部的「取消」保持原样：它是**整宽**的浮层 chrome，有自己的
+            :active 按压反馈，而 Btn 的 normal 档是描边透明按钮 —— 换过去会
+            丢掉按压态、还会把文字从左对齐改成居中 */}
         <button className="as-cancel" onClick={onClose}>取消</button>
       </div>
     </>

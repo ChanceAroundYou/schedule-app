@@ -166,11 +166,19 @@ export function useDebounced<T>(value: T, ms = 180): T {
   return v;
 }
 
-/** mousedown + capture 收起浮层。不用 capture 的话，面板内 input 的 blur 会抢先关掉它 */
+/**
+ * mousedown + capture 收起浮层。不用 capture 的话，面板内 input 的 blur 会抢先关掉它。
+ *
+ * `trigger` 是**开合那个按钮**。没有它就会跟开关自己打架：mousedown 先关，
+ * 紧接着 click 又把状态翻回来 —— 表现是「点搜索键关不掉搜索框」，
+ * 而且只在真机上出现（合成 click 不派发 mousedown，所以 `clickEl` 那套
+ * 测试永远测不出来）。判据是「这一下是不是落在开关上」，不是「浮层开没开」。
+ */
 export function useOutsideClose(
   ref: React.RefObject<HTMLElement | null>,
   open: boolean,
   close: () => void,
+  trigger?: React.RefObject<HTMLElement | null>,
 ): void {
   const cb = useRef(close);
   cb.current = close;
@@ -178,11 +186,13 @@ export function useOutsideClose(
     if (!open) return;
     const on = (e: MouseEvent) => {
       const el = ref.current;
-      if (el && !el.contains(e.target as Node)) cb.current();
+      if (el && el.contains(e.target as Node)) return;
+      if (trigger?.current?.contains(e.target as Node)) return;
+      cb.current();
     };
     document.addEventListener('mousedown', on, true);
     return () => document.removeEventListener('mousedown', on, true);
-  }, [ref, open]);
+  }, [ref, open, trigger]);
 }
 
 /**

@@ -682,24 +682,13 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
           {/* 危险区 */}
           <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
             {manage ? (
-              <button
-                type="button"
-                disabled={isDefault}
-                onClick={() => void remove()}
-                className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
-                           text-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:opacity-40"
-              >
+              <Btn variant="danger" size="sm" disabled={isDefault} onClick={() => void remove()}>
                 <Trash2 size={13} /> 删除日程集
-              </button>
+              </Btn>
             ) : (
-              <button
-                type="button"
-                onClick={() => void leave()}
-                className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
-                           text-[var(--danger)] hover:bg-[var(--danger-soft)]"
-              >
+              <Btn variant="danger" size="sm" onClick={() => void leave()}>
                 <LogOut size={13} /> 退出日程集
-              </button>
+              </Btn>
             )}
           </div>
 

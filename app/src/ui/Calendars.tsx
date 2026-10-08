@@ -23,7 +23,7 @@ import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { api, ApiError } from '../data/api.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
-import { Btn, Sheet, toast, useConfirm } from './kit.tsx';
+import { Btn, IconBtn, Sheet, toast, useConfirm } from './kit.tsx';
 
 const ROLES: Role[] = ['owner', 'editor', 'viewer'];
 
@@ -77,15 +77,9 @@ export function CalSwitcher({ state, onManage, onInvites }: {
     <div className="mb-2 flex flex-col gap-[2px]">
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
         <span className="text-[11px] tracking-wide text-[var(--text-3)]">日程集</span>
-        <button
-          type="button"
-          title="新建日程集"
-          data-cal-new="1"
-          onClick={create}
-          className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]"
-        >
+        <IconBtn label="新建日程集" data-cal-new="1" onClick={create}>
           <Plus size={13} />
-        </button>
+        </IconBtn>
       </div>
 
       {visible.map((c) => (
@@ -128,17 +122,10 @@ export function CalSwitcher({ state, onManage, onInvites }: {
         </button>
       )}
 
-      <button
-        type="button"
-        onClick={onManage}
-        disabled={!active}
-        data-cal-manage="1"
-        aria-haspopup="dialog"
-        className="flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-[12.5px] text-[var(--text-3)]
-                   hover:bg-[var(--panel-3)] hover:text-[var(--text)] disabled:opacity-40"
-      >
+      <Btn variant="normal" size="sm" onClick={onManage} disabled={!active}
+        data-cal-manage="1" aria-haspopup="dialog" className="w-full justify-start">
         <Settings size={13} /> 管理当前日程集
-      </button>
+      </Btn>
     </div>
   );
 }
@@ -286,6 +273,8 @@ export function ManageSheet({ state, open, onClose }: {
                   >
                     {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                   </select>
+                  {/* 成员行是**紧凑行**（高度由 13px 的内容撑），IconBtn 的 32px
+                      会把整行顶高 11px —— 这种行内小图标按钮保持原样 */}
                   <button
                     type="button"
                     title="移出日程集"
@@ -353,18 +342,18 @@ export function ManageSheet({ state, open, onClose }: {
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
                     {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
                   </span>
-                  <button
-                    type="button"
-                    title="撤回邀请"
-                    disabled={busy}
-                    onClick={() => void run(async () => {
-                      await api.revokeInvite(i.id);
-                      toast('已撤回');
-                    })}
-                    className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
-                  >
-                    <X size={13} />
-                  </button>
+                    <button
+                      type="button"
+                      title="撤回邀请"
+                      disabled={busy}
+                      onClick={() => void run(async () => {
+                        await api.revokeInvite(i.id);
+                        toast('已撤回');
+                      })}
+                      className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
+                    >
+                      <X size={13} />
+                    </button>
                 </div>
               ))}
             </div>
@@ -375,23 +364,13 @@ export function ManageSheet({ state, open, onClose }: {
       {/* 危险区 */}
       <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
         {manage ? (
-          <button
-            type="button"
-            onClick={() => void remove()}
-            className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
-                       text-[var(--danger)] hover:bg-[var(--danger-soft)]"
-          >
+          <Btn variant="danger" size="sm" onClick={() => void remove()}>
             <Trash2 size={13} /> 删除日程集
-          </button>
+          </Btn>
         ) : (
-          <button
-            type="button"
-            onClick={() => void leave()}
-            className="flex items-center gap-1.5 rounded-[var(--r-md)] px-2.5 py-1.5 text-[12.5px]
-                       text-[var(--danger)] hover:bg-[var(--danger-soft)]"
-          >
+          <Btn variant="danger" size="sm" onClick={() => void leave()}>
             <LogOut size={13} /> 退出日程集
-          </button>
+          </Btn>
         )}
       </div>
 
