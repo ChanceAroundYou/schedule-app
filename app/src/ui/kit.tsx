@@ -24,15 +24,22 @@ import { useFocusTrap, useOutsideClose } from './hooks.ts';
 
 /* ================================ 按钮 ================================ */
 
-/* 五种固定 variant，覆盖全应用所有按钮场景：
+/* 六种固定 variant，覆盖全应用所有按钮场景：
    primary  主操作（保存、确认、跳转）
     normal  普通操作（导航、切换、取消）
     ghost   极轻操作（关闭、清空）
     danger  危险操作（删除、退出）
-    chip    标签式操作（筛选、选择）
+    chip    标签式操作（筛选、选择）—— 未选中的那一档
+    chipOn  **同一个胶囊的选中档**
+   `chip` / `chipOn` 是一对，`Chips` 在这两档之间切。两者**边框都在**，
+   选中只换颜色不换几何 —— 少一圈边框会让选中的那个缩 2px，一排胶囊
+   点一下整体抖一下。
+   分成两档而不是给 chip 叠一层 className：Tailwind 里同特异度的工具类
+   谁赢只看生成顺序，叠 className 会在某个值上静默失效，症状正是
+   「切风格时这个按钮和别的不一致」。
    新增 variant 必须先在这里加，再在 语义样式模块 里加对应样式 —— 别在
    .tsx 里写死颜色，那等于把设计令牌绕过去。 */
-type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip';
+type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip' | 'chipOn';
 
 /* 变量名一律写 语义样式模块 里**真实存在**的那些，且**不给兜底值**。
    兜底值看着稳，其实是把「变量名写错了」变成静默降级：这里原先写的是
@@ -48,6 +55,7 @@ const VARIANT: Record<Variant, string> = {
   ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
   danger: 'border-[length:var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
   chip: 'border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
+  chipOn: 'border-[length:var(--border-w)] border-[var(--primary)] bg-[var(--primary)] text-[var(--on-primary)]',
 };
 
 type Size = 'sm' | 'md' | 'lg';
@@ -373,6 +381,42 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
   );
 });
 
+/**
+ * 行内紧凑图标按钮：24×24，用在**由 13px 文本撑高的行**里（成员行、邀请行）。
+ *
+ * 为什么不直接用 `IconBtn`：它是 32px，塞进成员行会把整行顶高 11px。
+ * 为什么要有这个组件而不是各处手写：这个形状原先在 `Members.tsx`、
+ * `Settings.tsx`、`Calendars.tsx` 里各写了一遍，圆角取的是 `--r-xs`
+ * （风格轴最小那一档）而不是行内控件该用的 `--r-sm`，而且只有 hover 变红、
+ * 没有按下态。收成一处，改一次三处都跟着走。
+ *
+ * 24px 是 WCAG 2.5.8 的下限 —— **别再往小改**（18px 的点按不准）。
+ * `danger` 给「移出 / 撤回」这类会改变关系的操作。
+ */
+export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger?: boolean }>(
+  function MiniIconBtn({ label, danger = false, children, className, ...rest }, ref) {
+    return (
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        title={label}
+        {...rest}
+        className={cx(
+          'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--r-sm)] transition',
+          'disabled:cursor-not-allowed disabled:opacity-40',
+          danger
+            ? 'text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]'
+            : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
+          className,
+        )}
+      >
+        {children}
+      </button>
+    );
+  },
+);
+
 /** 给外部（比如在 effect 里）用的遮罩层元素引用类型别名 */
 export type ElRef = RefObject<HTMLElement | null>;
 
@@ -540,6 +584,14 @@ export function Dropdown<K extends string | number>({
  * **不是 `<select>`**：原生 select 在 PWA 里样式不可控、和项目设计系统不一致，
  * 且移动端体验差。小选项集（≤ 7 个固定选项）一律用这个。
  *
+ * **每个胶囊就是一个 `Btn`**（`chip` / `chipOn` 两档），不是另画一套。
+ * 原先这里自己写了一遍 `rounded-[var(--r-pill)] border …`，和 `Btn` 差在三处：
+ * 圆角走的是 `--r-pill` 而按钮走 `--r-md`、边框写死 Tailwind 的 `border`（1px）
+ * 而按钮走 `--border-w`、未选中用装饰线 `--border` 而按钮用 ≥3:1 的 `--input`。
+ * 于是「切到 flat 时别的按钮线变 2px、这几个还是 1px」「切到 notion 时圆角
+ * 和旁边按钮不是一个数」—— 用户看到的就是「颜色和风格这些按钮跟别的不一样」。
+ * 组件库的意义就是**没有第二套**，所以这里只有 `Btn` 一种画法。
+ *
  * 全局原则见 CLAUDE.md「三、界面约定」末尾。
  */
 export function Chips<K extends string | number>({ value, options, onPick, render, labelOf, label, labelledBy }: {
@@ -560,22 +612,17 @@ export function Chips<K extends string | number>({ value, options, onPick, rende
       {options.map((k) => {
         const on = k === value;
         return (
-          <button
+          <Btn
             key={String(k)}
-            type="button"
             data-pick={k}
             aria-pressed={on}
             onClick={() => onPick(k)}
-            className={cx(
-              'inline-flex h-[30px] items-center gap-1.5 rounded-[var(--r-pill)] border px-2.5 text-[12.5px] transition',
-              on
-                ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--text)]'
-                : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] border-[var(--border)]',
-            )}
+            variant={on ? 'chipOn' : 'chip'}
+            size="sm"
           >
             {render?.(k)}
             {labelOf ? labelOf(k) : k}
-          </button>
+          </Btn>
         );
       })}
     </div>

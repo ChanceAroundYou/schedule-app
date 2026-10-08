@@ -391,8 +391,14 @@ try {
   //
   // 放在这里而不是第十三节：成员是**联网拉的**，第十三节跑在断网之后，
   // 那时成员列表是空的、角色选择器根本不渲染，扫过去等于空过（候选数为 0）。
+  //
+  // 数的是「这个浮层里真的有控件可查」，所以要把**选择器的触发按钮**也算进来：
+  // 角色选择器是 `Dropdown`（`button[aria-haspopup="listbox"]`），不是原生
+  // `<select>`、也不是 `aria-pressed` 的胶囊 —— 只认 `input/select/aria-pressed`
+  // 的话，成员那几行换过组件之后就只剩名字框 + 邀请框两个，这条断言会假红
+  // （控件的可访问名字其实都好好的，见下面那条）。
   const sheetA11y = await evalJs(page, `return { bad: ${a11y('[role="dialog"]')},
-    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select, [role="dialog"] button[aria-pressed]').length };`);
+    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select, [role="dialog"] textarea, [role="dialog"] button[aria-haspopup]').length };`);
   ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 角色选择器）');
   ok(sheetA11y.bad.length === 0, '管理浮层里每个控件都有名字'
     + (sheetA11y.bad.length ? '：\n      ' + sheetA11y.bad.join('\n      ') : ''));

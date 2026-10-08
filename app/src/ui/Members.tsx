@@ -13,7 +13,7 @@ import { Crown, Eye, Pencil, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useState } from 'react';
 import { api } from '../data/api.ts';
 import { ROLE_HINT, ROLE_LABEL, ROLES, type Invite, type Member, type Role } from '../domain/types.ts';
-import { Btn, Dropdown, toast, useConfirm } from './kit.tsx';
+import { Btn, Dropdown, Input, MiniIconBtn, toast, useConfirm } from './kit.tsx';
 
 interface MembersSectionProps {
   calId: string;
@@ -68,11 +68,12 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                       toast('权限已更新');
                     })}
                   />
-                  {/* 成员行是**紧凑行**（高度由 13px 的内容撑），IconBtn 的 32px
-                      会把整行顶高 11px —— 这种行内小图标按钮保持原样 */}
-                  <button
-                    type="button"
-                    title="移出日程集"
+                  {/* 行内紧凑图标按钮走 kit 的 MiniIconBtn —— 这里原先手写了一个
+                      `rounded-[var(--r-xs)] p-1` 的裸 button，和 Settings.tsx 里
+                      那份逐字相同（见文件头）。 */}
+                  <MiniIconBtn
+                    danger
+                    label="移出日程集"
                     disabled={busy}
                     onClick={() => void run(async () => {
                       const ok = await confirm({
@@ -84,10 +85,9 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                       await api.kick(calId, m.id);
                       toast('已移出');
                     })}
-                    className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
                   >
                     <UserMinus size={13} />
-                  </button>
+                  </MiniIconBtn>
                 </>
               ) : (
                 <span className="text-[11.5px] text-[var(--text-3)]">{ROLE_LABEL[m.role]}</span>
@@ -104,7 +104,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
             <UserPlus size={13} /> 邀请成员
           </div>
           <div className="flex gap-2">
-            <input
+            <Input
               value={inviteName}
               placeholder="对方的用户名"
               aria-label="对方的用户名"
@@ -112,8 +112,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               spellCheck={false}
               onChange={(e) => setInviteName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-              className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
-                         bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
+              className="h-[30px] min-w-0 flex-1 px-2.5"
             />
             <Dropdown
               value={inviteRole}
@@ -132,23 +131,22 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
           {!!sent.length && (
             <div className="mt-3 flex flex-col gap-1.5">
               {sent.map((i) => (
-                <div key={i.id} className="flex items-center gap-2 rounded-[var(--r-md)] border border-dashed
+                <div key={i.id} className="flex items-center gap-2 rounded-[var(--r-md)] border-[length:var(--border-w)] border-dashed
                                            border-[var(--border)] px-2.5 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
                     {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
                   </span>
-                  <button
-                    type="button"
-                    title="撤回邀请"
+                  <MiniIconBtn
+                    danger
+                    label="撤回邀请"
                     disabled={busy}
                     onClick={() => void run(async () => {
                       await api.revokeInvite(i.id);
                       toast('已撤回');
                     })}
-                    className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
                   >
                     <X size={13} />
-                  </button>
+                  </MiniIconBtn>
                 </div>
               ))}
             </div>
