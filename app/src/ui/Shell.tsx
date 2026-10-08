@@ -199,16 +199,17 @@ function jumpLoad(state: LocalState, isoDay: string): number {
   return n;
 }
 
-function JumpPop({ open, cursor, state, onPick, onClose }: {
+function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
   open: boolean; cursor: string; state: LocalState;
   onPick: (iso: string) => void; onClose: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [month, setMonth] = useState(() => D.monthStart(cursor));
   const [text, setText] = useState('');
   const [bad, setBad] = useState(false);
 
-  useOutsideClose(box, open, onClose);
+  useOutsideClose(box, open, onClose, triggerRef);
   useEffect(() => { if (open) { setMonth(D.monthStart(cursor)); setText(''); setBad(false); } }, [open, cursor]);
 
   if (!open) return null;
@@ -232,6 +233,9 @@ function JumpPop({ open, cursor, state, onPick, onClose }: {
           onChange={(e) => { setText(e.target.value); setBad(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter') go(text); }}
         />
+        {/* 「跳转」保持原样：它有自己的 @media (hover:none) 触屏规则（legacy.css
+            里那几条 .jp-go），换成 Btn 就得把那些选择器一起改 —— 而它是
+            输入框的提交伙伴，跟 .fast-clock / .clear-search 同一类 */}
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
       </div>
 
@@ -285,11 +289,12 @@ function SearchInput({ kw, setKw, autoFocus }: {
 }
 
 /** 移动端搜索浮条：点击搜索图标后弹出 */
-function SearchPop({ open, kw, setKw, onClose }: {
+function SearchPop({ open, kw, setKw, onClose, triggerRef }: {
   open: boolean; kw: string; setKw: (v: string) => void; onClose: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  useOutsideClose(box, open, onClose);
+  useOutsideClose(box, open, onClose, triggerRef);
   if (!open) return null;
   return (
     <div className="search-pop" ref={box}>
@@ -314,6 +319,8 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
 }) {
   const ui = state.ui;
   const t0 = D.today();
+  /** 「找日期」键自己，给 JumpPop 的 outside-close 当例外 */
+  const jumpBtn = useRef<HTMLButtonElement>(null);
   let atToday = ui.cursor === t0;
   if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
   else if (ui.view === 'month') {
@@ -339,16 +346,15 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
         <Btn
           variant="normal"
           size="sm"
-          className="today-btn"
           aria-pressed={atToday}
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
         >今</Btn>
         <div className="jump-wrap">
           <Btn
+            ref={jumpBtn}
             variant="normal"
             size="sm"
-            className="jump-btn"
             aria-expanded={jump}
             title="跳到指定日期（快捷键 D）"
             aria-haspopup="dialog"
@@ -362,6 +368,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
             state={state}
             onPick={(d) => { onCursor(d); setJump(false); }}
             onClose={() => setJump(false)}
+            triggerRef={jumpBtn}
           />
         </div>
       </div>
@@ -382,6 +389,8 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   const ui = state.ui;
   const online = useOnline();
   const [kw, setKw] = useSearchValue(ui.search, onSearch);
+  /** 搜索键自己。SearchPop 的 outside-close 要拿它当例外，否则点它关不掉 */
+  const searchBtn = useRef<HTMLButtonElement>(null);
 
   // 标题写**具体日期**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
   // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
@@ -421,6 +430,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
         {narrow ? (
           <>
             <IconBtn
+              ref={searchBtn}
               label="搜索任务"
               className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
               aria-expanded={searchOpen}
@@ -433,6 +443,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
               kw={kw}
               setKw={setKw}
               onClose={() => setSearchOpen(false)}
+              triggerRef={searchBtn}
             />
           </>
         ) : (

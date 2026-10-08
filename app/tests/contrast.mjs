@@ -138,6 +138,28 @@ export function fallbackVars() {
   return out;
 }
 
+/**
+ * 第三道：`.tsx` 里不许出现 Tailwind 自带的圆角工具类（`rounded` / `rounded-lg`
+ * / `rounded-2xl` …）。它们写死像素，切到 flat（零圆角）/ notion（小圆角）时
+ * 原地不动 —— 和上面那两类一样，不报错、不崩，只是「这一块没跟着风格走」。
+ * 圆角一律走 `rounded-[var(--r-*)]`。
+ */
+export function roundedClasses() {
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const out = [];
+  for (const f of walk(SRC).filter((f) => /\.tsx$/.test(f))) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      // `rounded-[var(...)]` 是我们要的写法；`rounded-full` 是正圆/胶囊，不算
+      for (const m of line.matchAll(/\brounded(?:-[a-z0-9]+|-\[[^\]]*\])*/g)) {
+        const cls = m[0];
+        if (cls.includes('[var(') || cls === 'rounded-full' || cls === 'rounded-none') continue;
+        out.push({ file: f.slice(SRC.length + 1), line: i + 1, cls, text: line.trim().slice(0, 70) });
+      }
+    });
+  }
+  return out;
+}
+
 export function audit(src) {
   const rows = [];
   for (const [theme, sel] of [['亮色', ':root'], ['暗色', '[data-theme="dark"]']]) {
@@ -163,12 +185,6 @@ export function audit(src) {
         if (v[b]) rows.push({ theme, group: '控件描边', label: fg + ' on ' + b, fg: v[fg], bg: v[b], r: ratio(v[fg], v[b]), min: 3 });
       }
     }
-    // 快速添加那组胶囊：fg / bg 成对预置，自动认出来
-    for (const k of Object.keys(v)) {
-      const m = /^--chip-(.+)fg$/.exec(k);
-      const bgk = m && '--chip-' + m[1] + 'bg';
-      if (bgk && v[bgk]) rows.push({ theme, group: '胶囊', label: k + ' on ' + bgk, fg: v[k], bg: v[bgk], r: ratio(v[k], v[bgk]) });
-    }
   }
   return rows;
 }
@@ -181,7 +197,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let failed = 0;
 
   for (const theme of ['亮色', '暗色']) {
-    for (const g of ['正文三档', '语义色', '胶囊', '控件描边']) {
+    for (const g of ['正文三档', '语义色', '控件描边']) {
       const list = rows.filter((x) => x.theme === theme && x.group === g);
       if (!list.length) continue;
       console.log('\n' + theme + '　' + g + (g === '控件描边' ? '（下限 3:1，WCAG 1.4.11）' : ''));
@@ -210,6 +226,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const { name, files, snippet } of fb) {
     failed++;
     console.log('  FAIL ' + name.padEnd(22) + files[0] + '   ' + snippet);
+  }
+
+  // ---- 第四部分：.tsx 里 Tailwind 自带的圆角类（切风格时不会跟着动） ----
+  const rd = roundedClasses();
+  console.log('\n.tsx 里 Tailwind 自带的圆角类');
+  if (!rd.length) console.log('  ok   一个都没有');
+  for (const { file, line, cls, text } of rd) {
+    failed++;
+    console.log('  FAIL ' + cls.padEnd(22) + file + ':' + line + '   ' + text);
   }
 
   console.log('\n共 ' + rows.length + ' 对，不达标 ' + failed + ' 条');

@@ -35,6 +35,7 @@ import { DoneView, InboxView, OverdueView, TodayView } from './views/Lists.tsx';
 import { HabitsView } from './views/Habits.tsx';
 import { TrashView } from './views/Trash.tsx';
 import { ProjectsView } from './views/Projects.tsx';
+import { Empty } from './views/parts.tsx';
 import { SettingsView } from './ui/Settings.tsx';
 
 /* ============================== 主体 ============================== */
@@ -580,17 +581,13 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onExport={exportBackup}
         onImport={importBackup}
         onLogout={onLogout}
-        onInvites={() => setInvOpen(true)}
       />
     );
   } else if (!state.cals.length) {
     // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
     // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集
     body = (
-      <div className="empty">
-        <div>还没拿到你的日程集</div>
-        <div className="empty-sub">正在连接服务器，稍等一下；断网时本地内容照常显示</div>
-      </div>
+      <Empty text="还没拿到你的日程集" sub="正在连接服务器，稍等一下；断网时本地内容照常显示" />
     );
   } else {
     switch (state.ui.nav) {
@@ -674,7 +671,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
           {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
               时用户完全不知道为什么内容不变 */}
           {!!state.lastError && (
-            <div className="mx-4 mb-2 rounded-lg bg-[var(--danger-soft)]
+            <div className="mx-4 mb-2 rounded-[var(--r-lg)] bg-[var(--danger-soft)]
                             px-3 py-1.5 text-[12.5px] text-[var(--danger)]">
               {state.lastError}
             </div>

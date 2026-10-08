@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api } from '../data/api.ts';
-import { Btn, Sheet, toast } from './kit.tsx';
+import { Btn, Input, Sheet, toast } from './kit.tsx';
 import type { AiSettings } from '../domain/ai.ts';
 
 export function AiSettingsSheet({ open, onClose, onSaved }: {
@@ -107,7 +107,7 @@ export function AiSettingsSheet({ open, onClose, onSaved }: {
         <div className="ai-set">
           <label className="ai-field">
             <span className="ai-field-label">Base URL</span>
-            <input
+            <Input
               value={baseUrl}
               spellCheck={false}
               autoComplete="off"
@@ -122,7 +122,7 @@ export function AiSettingsSheet({ open, onClose, onSaved }: {
 
           <label className="ai-field">
             <span className="ai-field-label">模型名</span>
-            <input
+            <Input
               value={model}
               spellCheck={false}
               autoComplete="off"
@@ -133,7 +133,7 @@ export function AiSettingsSheet({ open, onClose, onSaved }: {
 
           <label className="ai-field">
             <span className="ai-field-label">API key</span>
-            <input
+            <Input
               value={key}
               type="password"
               spellCheck={false}

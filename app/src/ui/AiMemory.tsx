@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { api } from '../data/api.ts';
 import type { AiAuthorizations, AiMemory } from '../domain/ai.ts';
+import { Input, Select } from './kit.tsx';
 
 const TYPE_LABEL: Record<string, string> = {
   preference: '偏好',
@@ -71,48 +72,53 @@ export function AiMemory() {
           <div className="ai-auth-grid">
             <label className="ai-auth-item">
               <span>任务增删改</span>
-              <select
+              <Select
+                dense
                 value={auth.taskCrud}
                 onChange={(e) => void saveAuth({ taskCrud: e.target.value })}
               >
                 <option value="free">免确认</option>
                 <option value="confirm">需确认</option>
-              </select>
+              </Select>
             </label>
             <label className="ai-auth-item">
               <span>打卡</span>
-              <select
+              <Select
+                dense
                 value={auth.habitCheckin}
                 onChange={(e) => void saveAuth({ habitCheckin: e.target.value })}
               >
                 <option value="free">免确认</option>
                 <option value="confirm">需确认</option>
-              </select>
+              </Select>
             </label>
             <label className="ai-auth-item">
               <span>日程集管理</span>
-              <select
+              <Select
+                dense
                 value={auth.calendarMgmt}
                 onChange={(e) => void saveAuth({ calendarMgmt: e.target.value })}
               >
                 <option value="free">免确认</option>
                 <option value="confirm">需确认</option>
-              </select>
+              </Select>
             </label>
             <label className="ai-auth-item">
               <span>晚间汇报</span>
-              <select
+              <Select
+                dense
                 value={auth.eveningReportEnabled ? 'on' : 'off'}
                 onChange={(e) => void saveAuth({ eveningReportEnabled: e.target.value === 'on' })}
               >
                 <option value="off">关闭</option>
                 <option value="on">开启</option>
-              </select>
+              </Select>
             </label>
             {auth.eveningReportEnabled && (
               <label className="ai-auth-item">
                 <span>汇报时间</span>
-                <input
+                <Input
+                  dense
                   type="time"
                   value={auth.eveningReportTime}
                   onChange={(e) => void saveAuth({ eveningReportTime: e.target.value })}

@@ -23,7 +23,7 @@ import { chatStream } from './aiClient.ts';
 import { AiSettingsSheet } from './AiSettings.tsx';
 import { AiHistory } from './AiHistory.tsx';
 import { AiMemory } from './AiMemory.tsx';
-import { Btn, IconBtn, Textarea, toast } from './kit.tsx';
+import { Btn, IconBtn, Input, Textarea, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
@@ -382,7 +382,8 @@ export function AiPanel({ state, onConfirmed }: {
                         {p.calName && <span className="ai-prop-cal">{p.calName} · </span>}
                         {proposalText(p)}
                       </span>
-                      <input
+                      <Input
+                        dense
                         className="ai-prop-edit"
                         value={edit}
                         placeholder="要改什么？比如「改成 10月9日」"

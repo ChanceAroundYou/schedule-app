@@ -61,13 +61,26 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
-export function Btn({ variant = 'normal', size = 'md', className, ...rest }: BtnProps) {
+/**
+ * `ref` 要能拿到那个真 `<button>`：浮层的 outside-close 得知道「开合键自己」
+ * 是哪个节点，好把它当例外（见 ui/hooks.ts 的 useOutsideClose）。
+ * 不 forward 的话 `ref` 只会进 `...rest` 里被 React 丢掉。
+ */
+export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
+  { variant = 'normal', size = 'md', className, ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       {...rest}
       className={cx(
-        'inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
+        /* `btn` 是给测试与 legacy.css 留的**稳定钩子**：探针要量「日期导航那四个
+           控件高度一致」，靠的是 `.date-nav .btn`；而 legacy.css 里
+           `.cal-subhead .date-nav .btn { height: 34px }` 这条也只有它才接得到。
+           没有这个类名，那两处都是对空选择器说话。 */
+        'btn inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
         'disabled:cursor-not-allowed disabled:opacity-50',
         SIZE[size],
         VARIANT[variant],
@@ -75,7 +88,7 @@ export function Btn({ variant = 'normal', size = 'md', className, ...rest }: Btn
       )}
     />
   );
-}
+});
 
 /* ================================ 表单控件 ================================ */
 
@@ -84,37 +97,40 @@ export function Btn({ variant = 'normal', size = 'md', className, ...rest }: Btn
    --panel-2 / --primary），不在 .tsx 里写死颜色。
    需要特殊尺寸时用 className 覆盖，不要在组件里加 variant。 */
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {}
+/* 三个控件的共同外观只写一份 —— 改边框 / 底色 / 焦点 / 禁用时只改这里。
+   （legacy.css 里 `.field input` 那一组是同一套视觉的历史副本，
+   带 @layer 的 Tailwind 工具类压不过它，两边要保持一致。） */
+const CONTROL = [
+  'rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
+  'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+].join(' ');
 
-export function Input({ className, ...rest }: InputProps) {
-  return (
-    <input
-      {...rest}
-      className={cx(
-        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-    />
-  );
+/* 两种占位：默认是整行字段（`.field` 里那种，宽度撑满）；`dense` 是**行内**
+   控件 —— 宽度跟着内容走、高度对齐 Btn 的 sm 档。AI 面板那几行「标签 + 下拉」
+   用整行会把一行撑破，用 dense 才排得下。
+   不叫 `size`：那是 `<select>` 的原生属性（可见行数），遮掉会出岔子。 */
+const CONTROL_BOX = {
+  full: 'w-full px-3 py-2 text-sm',
+  dense: 'w-auto h-[30px] px-2 text-[12.5px]',
+} as const;
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  dense?: boolean;
+}
+
+export function Input({ dense, className, ...rest }: InputProps) {
+  return <input {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
 }
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  dense?: boolean;
   options?: { value: string; label: string }[];
 }
 
-export function Select({ options, className, children, ...rest }: SelectProps) {
+export function Select({ dense, options, className, children, ...rest }: SelectProps) {
   return (
-    <select
-      {...rest}
-      className={cx(
-        'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-        'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
-    >
+    <select {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)}>
       {options
         ? options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
         : children}
@@ -122,24 +138,42 @@ export function Select({ options, className, children, ...rest }: SelectProps) {
   );
 }
 
-interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {}
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  dense?: boolean;
+}
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...rest }, ref) => {
-    return (
-      <textarea
-        ref={ref}
-        {...rest}
-        className={cx(
-          'w-full rounded-[var(--r-md)] border-[var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text)] outline-none transition',
-          'focus:border-[var(--primary)] focus:bg-[var(--panel)]',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          className,
-        )}
-      />
-    );
+  ({ dense, className, ...rest }, ref) => {
+    return <textarea ref={ref} {...rest} className={cx(CONTROL, CONTROL_BOX[dense ? 'dense' : 'full'], className)} />;
   }
 );
+
+/* 字段外壳：label + 控件 + 提示 / 错误。
+   只统一「结构」—— 校验逻辑、必填判定留在调用方。
+   错误用 role="alert" 播报，不依赖调用方再补 aria-describedby。 */
+interface FieldProps {
+  label: ReactNode;
+  /** 控件的 id，和 label 关联。控件自己也要给同一个 id */
+  htmlFor?: string;
+  /** 常驻的辅助说明（格式示例等） */
+  hint?: ReactNode;
+  /** 校验错误。有值时顶掉 hint */
+  error?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}
+
+export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
+  return (
+    <div className={cx('field', className)}>
+      <label htmlFor={htmlFor}>{label}</label>
+      {children}
+      {error
+        ? <div className="field-error" role="alert">{error}</div>
+        : hint && <div className="field-hint">{hint}</div>}
+    </div>
+  );
+}
 
 /* =============================== 底部浮层 =============================== */
 
@@ -363,9 +397,13 @@ interface IconBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
+export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function IconBtn(
+  { label, children, className, ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       title={label}
@@ -380,7 +418,7 @@ export function IconBtn({ label, children, className, ...rest }: IconBtnProps) {
       {children}
     </button>
   );
-}
+});
 
 /** 给外部（比如在 effect 里）用的遮罩层元素引用类型别名 */
 export type ElRef = RefObject<HTMLElement | null>;
