@@ -180,6 +180,15 @@ export const ROLE_LABEL: Record<Role, string> = {
   viewer: '只读',
 };
 
+export const ROLES: Role[] = ['owner', 'editor', 'viewer'];
+
+/** 角色一句话解释，选权限时直接写清楚会怎样 */
+export const ROLE_HINT: Record<Role, string> = {
+  owner: '能改内容，也能改名、加人、删日程集',
+  editor: '能增删改任务和打卡，管不了成员',
+  viewer: '只能看',
+};
+
 /* ============================== 同步 ============================== */
 
 /** 一条同步操作。字段是「本次改动的那几个」，不是整条实体。 */

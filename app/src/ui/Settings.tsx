@@ -16,11 +16,10 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
-  Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, MailPlus, Palette, PanelTop,
-  Pencil, Upload, Download, Trash2, UserRound, Plus, Crown, Eye, UserMinus,
-  UserPlus, Users, X, AlertTriangle, ChevronDown,
+  Check, Database, GripVertical, Info, KeyRound, Layers, LogOut, Palette, PanelTop,
+  Upload, Download, Trash2, UserRound, Plus, AlertTriangle, ChevronDown,
 } from 'lucide-react';
-import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, Role, StyleKey, ThemeMode } from '../domain/types.ts';
+import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX } from '../domain/model.ts';
 import * as store from '../data/store.ts';
@@ -31,6 +30,7 @@ import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
 import { cx } from './cx.ts';
+import { MembersSection } from './Members.tsx';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
 const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
@@ -345,15 +345,6 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
 
 /* ============================ 日程集管理 ============================ */
 
-const ROLES: Role[] = ['owner', 'editor', 'viewer'];
-
-/** 角色一句话解释，选权限时直接写清楚会怎样 */
-const ROLE_HINT: Record<Role, string> = {
-  owner: '能改内容，也能改名、加人、删日程集',
-  editor: '能增删改任务和打卡，管不了成员',
-  viewer: '只能看',
-};
-
 function say(e: unknown): string {
   return e instanceof ApiError ? e.message : '操作失败，请重试';
 }
@@ -372,7 +363,7 @@ async function refreshCals(): Promise<void> {
  *
  * 默认日程集（「我的日程」）不能删除、不能退出、不能改名成空。
  */
-function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => void }) {
+function CalsTab({ state }: { state: LocalState }) {
   const active = state.ui.cal;
   const [openId, setOpenId] = useState<string | null>(active);
 
@@ -395,12 +386,10 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
             cal={c}
             active={c.id === active}
             open={openId === c.id}
-            invites={state.invites}
             onToggle={() => {
               store.setActiveCal(c.id);
               setOpenId((v) => (v === c.id ? null : c.id));
             }}
-            onInvites={onInvites}
           />
         ))}
       </div>
@@ -417,20 +406,16 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
 }
 
 /** 一个日程集：收起是一行，展开是它的全部设置 */
-function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
+function CalItem({ cal, active, open, onToggle }: {
   cal: Cal;
   active: boolean;
   open: boolean;
-  invites: Invite[];
   onToggle: () => void;
-  onInvites: () => void;
 }) {
   const confirm = useConfirm();
   const [members, setMembers] = useState<Member[]>([]);
   const [sent, setSent] = useState<Invite[]>([]);
   const [name, setName] = useState(cal.name);
-  const [inviteName, setInviteName] = useState('');
-  const [inviteRole, setInviteRole] = useState<Role>('editor');
   const [busy, setBusy] = useState(false);
   const fid = useId();
 
@@ -466,14 +451,6 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
     if (!n || n === cal.name) return;
     await api.renameCal(calId, n);
     toast('已改名');
-  });
-
-  const invite = () => run(async () => {
-    const who = inviteName.trim();
-    if (!who) { toast('填一下对方的用户名'); return; }
-    await api.invite(calId, who, inviteRole);
-    setInviteName('');
-    toast('邀请已发出，等对方确认');
   });
 
   const leave = async () => {
@@ -557,127 +534,14 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
             )}
           </div>
 
-          {/* 成员 */}
-          <div>
-            <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
-              <Users size={13} /> 成员（{members.length}）
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {members.map((m) => (
-                <div key={m.id} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] px-2.5 py-1.5">
-                  <span className="shrink-0">
-                    {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
-                      : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
-                        : <Pencil size={14} className="text-[var(--text-3)]" />}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
-                  {manage ? (
-                    <>
-                      <select
-                        value={m.role}
-                        disabled={busy}
-                        aria-label={`「${m.name}」的权限`}
-                        onChange={(e) => void run(async () => {
-                          await api.setRole(calId, m.id, e.target.value as Role);
-                          toast('权限已更新');
-                        })}
-                        className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent
-                                   px-1.5 py-1 text-[12px] outline-none"
-                      >
-                        {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                      </select>
-                      <button
-                        type="button"
-                        title="移出日程集"
-                        disabled={busy}
-                        onClick={() => void run(async () => {
-                          const ok = await confirm({
-                            title: `把「${m.name}」移出？`,
-                            body: '他马上就会看不到这个日程集，之后可以重新邀请。',
-                            confirmText: '移出', danger: true,
-                          });
-                          if (!ok) return;
-                          await api.kick(calId, m.id);
-                          toast('已移出');
-                        })}
-                        className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
-                      >
-                        <UserMinus size={13} />
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-[11.5px] text-[var(--text-3)]">{ROLE_LABEL[m.role]}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 发邀请 */}
-          {manage && (
-            <div>
-              <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
-                <UserPlus size={13} /> 邀请成员
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={inviteName}
-                  placeholder="对方的用户名"
-                  aria-label="对方的用户名"
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => setInviteName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-                  className="min-w-0 flex-1 rounded-[var(--r-sm)] border border-[var(--input)]
-                             bg-transparent px-3 py-1.5 text-sm outline-none focus:border-[var(--primary)]"
-                />
-                <select
-                  value={inviteRole}
-                  aria-label="邀请的权限"
-                  onChange={(e) => setInviteRole(e.target.value as Role)}
-                  className="rounded-[var(--r-sm)] border border-[var(--input)] bg-transparent px-2 text-[13px] outline-none"
-                >
-                  {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                </select>
-                <Btn variant="primary" size="sm" onClick={() => void invite()} disabled={busy}>邀请</Btn>
-              </div>
-              <div className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                {ROLE_HINT[inviteRole]}。对方<b>接受之后</b>才生效。
-              </div>
-
-              {!!sent.length && (
-                <div className="mt-3 flex flex-col gap-1.5">
-                  {sent.map((i) => (
-                    <div key={i.id} className="flex items-center gap-2 rounded-[var(--r-md)] border border-dashed
-                                        border-[var(--border)] px-2.5 py-1.5">
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-2)]">
-                        {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
-                      </span>
-                      <button
-                        type="button"
-                        title="撤回邀请"
-                        disabled={busy}
-                        onClick={() => void run(async () => {
-                          await api.revokeInvite(i.id);
-                          toast('已撤回');
-                        })}
-                        className="rounded-[var(--r-xs)] p-1 text-[var(--text-3)] hover:text-[var(--danger)]"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 邀请入口 */}
-          <div>
-            <Btn variant="normal" size="sm" onClick={onInvites}>
-              <MailPlus size={13} /> 邀请{invites.length ? `（${invites.length}）` : ''}
-            </Btn>
-          </div>
+          <MembersSection
+            calId={calId}
+            members={members}
+            sent={sent}
+            manage={manage}
+            busy={busy}
+            run={run}
+          />
 
           {/* 危险区 */}
           <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
@@ -716,7 +580,7 @@ const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'about', label: '关于' },
 ];
 
-export function SettingsView({ state, user, theme, onExport, onImport, onLogout, onInvites }: {
+export function SettingsView({ state, user, theme, onExport, onImport, onLogout }: {
   state: LocalState;
   user: PublicUser | null;
   /** **实际生效**的那一档（auto 已解析）。色点要靠它才画得出暗色档的颜色 */
@@ -724,7 +588,6 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   onExport: () => void;
   onImport: (f: File) => void;
   onLogout: () => void;
-  onInvites: () => void;
 }) {
   const ui = state.ui;
   const confirm = useConfirm();
@@ -868,7 +731,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
         </Card>
       )}
 
-      {tab === 'cals' && <CalsTab state={state} onInvites={onInvites} />}
+      {tab === 'cals' && <CalsTab state={state} />}
 
       {tab === 'about' && (
         <Card icon={<Info size={14} />} title="关于">

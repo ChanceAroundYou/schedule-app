@@ -581,7 +581,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         onExport={exportBackup}
         onImport={importBackup}
         onLogout={onLogout}
-        onInvites={() => setInvOpen(true)}
       />
     );
   } else if (!state.cals.length) {
