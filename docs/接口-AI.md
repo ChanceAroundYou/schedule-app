@@ -53,7 +53,7 @@
     "summary": "新建「买菜」", "calId": "…" } ] }
 ```
 
-### `GET` / `PUT` / `DELETE /api/ai/memory`
+### `GET` / `PUT` / `DELETE /api/ai/memory/:id`
 
 ```jsonc
 // GET 响应
