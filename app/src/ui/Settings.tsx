@@ -454,7 +454,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                 data-cal-name="1"
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
-                className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5 disabled:opacity-60"
+                className="min-w-0 h-[30px] flex-1 bg-transparent disabled:opacity-60"
               />
               {manage && (
                 <Btn variant="chip" size="sm" data-cal-save="1" onClick={saveName} disabled={busy || name.trim() === cal.name}>
@@ -537,7 +537,7 @@ function CalItem({ cal, active, open, invites, onToggle, onInvites }: {
                   spellCheck={false}
                   onChange={(e) => setInviteName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void invite(); }}
-                  className="min-w-0 flex-1 rounded-[var(--r-sm)] bg-transparent py-1.5"
+                  className="min-w-0 h-[30px] flex-1 bg-transparent"
                 />
                 <Chips<Role>
                   value={inviteRole}
@@ -780,10 +780,18 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               />
             </div>
             <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12.5px]">
-              <dt className="text-[var(--text-3)]">网络</dt>
-              <dd>{online ? '在线' : '离线'}</dd>
-              <dt className="text-[var(--text-3)]">待上传</dt>
-              <dd>{state.outbox.length ? `${state.outbox.length} 条` : '没有待上传的改动'}</dd>
+              <dt className="flex items-center gap-1.5 text-[var(--text-3)]">
+                {online ? <Wifi size={13} className="text-[var(--ok)]" /> : <WifiOff size={13} className="text-[var(--danger)]" />}
+                网络
+              </dt>
+              <dd className={online ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}>{online ? '在线' : '离线'}</dd>
+              <dt className="flex items-center gap-1.5 text-[var(--text-3)]">
+                <CloudUpload size={13} className={state.outbox.length ? 'text-[var(--warn)]' : 'text-[var(--text-3)]'} />
+                待上传
+              </dt>
+              <dd className={state.outbox.length ? 'text-[var(--warn)]' : 'text-[var(--text-2)]'}>
+                {state.outbox.length ? `${state.outbox.length} 条` : '没有待上传的改动'}
+              </dd>
             </div>
           </div>
         </Card>
