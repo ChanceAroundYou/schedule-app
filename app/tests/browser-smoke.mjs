@@ -2071,7 +2071,7 @@ try {
     };
   `);
   // 抽屉里那只**不缩小**：`.clock-pop` 的 278px 宽度是按 246 的表盘配出来的
-  // （见 legacy.css 那段注释），给它套上 `.wp-clock` 那套小字会顶到边
+  // （见 styles/quick-add.css 那段注释），给它套上 `.wp-clock` 那套小字会顶到边
   ok(dface.size === 246, '抽屉里那只表盘仍是 246px（没被面板那套小字带跑），实际 ' + dface.size);
   ok(Math.abs(dface.left - dface.right) < 1,
     '表盘在弹层里居中，实际 左 ' + dface.left + ' / 右 ' + dface.right);

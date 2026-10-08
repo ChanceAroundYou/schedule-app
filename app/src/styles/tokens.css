@@ -74,12 +74,6 @@
   --shadow-up-sm: 0 -2px 12px rgba(16, 24, 40, .06);
   --shadow-sticky: 0 4px 10px -8px rgba(0, 0, 0, .35);
   --wide: 920px;
-
-  --chip-date-bg: #e9eeff; --chip-date-fg: #3a5bd9;
-  --chip-time-bg: #e4f6ee; --chip-time-fg: #117d55;
-  --chip-dur-bg: #f0eaff; --chip-dur-fg: #6b45c8;
-  --chip-pri-bg: #fdecec; --chip-pri-fg: #c6383e;
-  --chip-rep-bg: #fdf2e3; --chip-rep-fg: #9d6118;
 }
 
 [data-theme="dark"] {
@@ -107,11 +101,6 @@
   --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
   --on-primary: #14120f;
-  --chip-date-bg: #223052; --chip-date-fg: #9db4ff;
-  --chip-time-bg: #1c3b30; --chip-time-fg: #6fd6a8;
-  --chip-dur-bg: #2c2445; --chip-dur-fg: #bfa4ff;
-  --chip-pri-bg: #40262a; --chip-pri-fg: #ff9ba0;
-  --chip-rep-bg: #3a2c19; --chip-rep-fg: #f0bd7a;
 }
 
 /* ================= 色板轴 =================

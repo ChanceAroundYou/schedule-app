@@ -29,15 +29,6 @@
 }
 .group-title.over { color: var(--danger); }
 .group-count { font-size: 11px; background: var(--panel-3); color: var(--text-2); border-radius: var(--r-md); padding: 1px 7px; font-weight: 400; }
-.gt-day.today { color: var(--primary); }
-.group-sub { font-size: 11px; color: var(--text-3); font-weight: 400; }
-.group-load {
-  font-size: 11px; color: var(--text-2); font-weight: 400;
-  margin-left: auto; padding: 1px 7px; border-radius: var(--r-md); background: var(--panel-3);
-  font-variant-numeric: tabular-nums;
-}
-.group-load.over { color: var(--warn); background: var(--warn-soft); }
-.sub-title { font-size: 11px; color: var(--text-3); padding: 8px 0 5px; letter-spacing: .3px; }
 
 /* ===== 每日打卡条（今天顶部） ===== */
 .checkin-strip {
@@ -173,14 +164,6 @@
 .od-row { border-left: 3px solid var(--danger); }
 .od-row .od-late { color: var(--danger); font-weight: 600; }
 .od-quick { display: inline-flex; gap: 4px; margin-left: 4px; }
-.od-btn {
-  padding: 1px 8px; border-radius: var(--r-md); white-space: nowrap;
-  background: var(--panel-3); color: var(--text-2);
-  font-size: 11px; line-height: 17px; transition: background .12s, color .12s;
-}
-.od-btn:hover { background: var(--primary); color: var(--on-primary); }
-.od-btn.ghost { background: transparent; border: var(--border-w) solid var(--input); }
-.od-btn.ghost:hover { background: var(--panel-3); color: var(--text); border-color: var(--input); }
 
 .check-btn {
   width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
@@ -221,16 +204,6 @@
   35% { transform: scale(1.35); }
   100% { transform: scale(1); }
 }
-
-.chip {
-  padding: 4px 10px; border: var(--border-w) solid var(--input); background: var(--panel);
-  border-radius: var(--r-sm); color: var(--text-2); font-size: 12px;
-  transition: border-color .14s, color .14s, background .14s;
-}
-.chip:hover { border-color: var(--primary); color: var(--primary); }
-.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-.chip.tiny { padding: 2px 8px; font-size: 11px; }
-.chip.danger { color: var(--danger); border-color: var(--danger); }
 
 /* ================= 垃圾箱 ================= */
 

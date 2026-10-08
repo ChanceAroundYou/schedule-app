@@ -80,7 +80,7 @@ const SEMANTIC = [
 
 /**
  * 压在语义色上的文字色。**亮色白、暗色近黑** —— 暗色的 --primary (#6d8bff) 是个亮蓝，
- * 白字只有 3.09，枚举证明单色无解（见 legacy.css 头部那段）。所以多一个变量。
+ * 白字只有 3.09，枚举证明单色无解（见 styles/tokens.css 头部那段）。所以多一个变量。
  */
 export const ON_ACCENT = '--on-primary';
 

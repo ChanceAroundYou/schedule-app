@@ -4,7 +4,7 @@
 /* 去掉移动端点击时的灰色高亮方块 */
 * { -webkit-tap-highlight-color: transparent; }
 /* 禁掉双击缩放与双击滚动等待，让点击更跟手 */
-button, .nav-item, .tab, .ms-item, .jp-cell, .round-btn, .text-btn {
+button, .nav-item, .tab, .ms-item, .jp-cell {
   touch-action: manipulation;
 }
 /* 数字输入在 iOS 上默认有放大行为，16px 以下会强制放大页面 */
@@ -20,22 +20,19 @@ input, select, textarea { font-size: max(14px, 16px); }
   .tl-event:hover .ev-resize { opacity: .8; }
   .task-row::after { opacity: .4; }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
-  .jump-btn:hover, .text-btn:hover, .round-btn:hover { background: none; border-color: var(--input); color: var(--text-2); }
-  .view-switch button:hover, .jp-cell:hover, .jp-nav:hover, .od-btn:hover { background: none; }
+  .view-switch button:hover, .jp-cell:hover, .jp-nav:hover { background: none; }
   .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
   .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover, .quick-add:hover,
-  .icon-btn:hover, .jp-go:hover, .primary-btn:hover, .danger-btn:hover,
-  .sidebar-footer .ghost-btn:hover, .today-btn.on:hover { background: none; color: inherit; }
+  .icon-btn:hover, .jp-go:hover,
+  .sidebar-footer .ghost-btn:hover { background: none; color: inherit; }
   .quick-add:hover { background: var(--primary); color: var(--on-primary); }
   .quick-add:active { transform: none; }
   .month-cell.today:hover { background: var(--primary-pale); }
   .cell-date:hover { background: none; }
   .jp-go:hover { background: var(--primary); }
-  .primary-btn:hover { transform: none; }
-  .today-btn.on:hover { background: var(--primary-pale); }
-  .drawer:hover .field input, .drawer:hover .field select, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
+  .drawer:hover .field input, .drawer:hover .field textarea { border-color: var(--input); background: var(--panel-2); }
   .search-box:hover { border-color: var(--input); background: var(--panel-2); }
   .checkin-strip:hover, .allday-zone:hover, .tl-wrap:hover, .week-view:hover { box-shadow: var(--shadow); }
 }
@@ -191,9 +188,10 @@ body.sheet-open .tab:active { background: none; }
   .cal-subhead .view-switch { flex: 0 0 auto; }
 
   /* 触控目标太小，点不准。**一排控件一起放到 34px**（原先 36 / 34 / 34 三档），
-     只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架 */
-  .round-btn { width: 34px; height: 34px; }
-  .text-btn, .view-switch button { height: 34px; }
+     只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架。
+     选择器要落在 `.btn` 上：这排按钮由 Btn 渲染，没有 round-btn / text-btn 那些类。 */
+  .cal-subhead .date-nav .btn { height: 34px; }
+  .view-switch button { height: 34px; }
 
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
@@ -264,7 +262,6 @@ body.sheet-open .tab:active { background: none; }
   .drawer-title { font-size: 17px; }
   .drawer-body { padding: 15px; }
   .drawer-foot { padding: 12px 15px calc(12px + env(safe-area-inset-bottom, 0px)); }
-  .primary-btn, .danger-btn { padding: 11px 18px; }
   .field-row { gap: 10px; }
 
   /* 时钟弹窗：手机上居中铺开一点，好按。
@@ -299,7 +296,6 @@ body.sheet-open .tab:active { background: none; }
   .view-title { font-size: 16px; }
   /* 日期组和视图切换可能还是挤，允许换行 */
   .cal-subhead .date-nav { flex-wrap: wrap; }
-  .today-btn { margin-left: 2px; }
   .list-group { margin-bottom: 15px; }
   .group-title { padding-bottom: 7px; }
   .row-meta { font-size: 11.5px; }
@@ -379,7 +375,6 @@ body.sheet-open .tab:active { background: none; }
   .topbar-right { gap: 8px; }
   /* 顶栏挤不下时先舍掉日期长文本，保住按钮本身 */
   .date-nav .date-range { display: none; }
-  .jump-btn { padding: 6px 9px; }
 }
 @media (max-width: 1000px) and (min-width: 901px) {
   .sidebar { width: 208px; flex-basis: 208px; }

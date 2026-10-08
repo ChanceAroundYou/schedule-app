@@ -47,13 +47,6 @@
   cursor: grab;
 }
 .nav-item:hover { background: var(--panel-3); }
-/* 拖动排序：整块保持原色，只加一点浮起阴影，方便看清拖到哪 */
-.nav-item.nav-dragging { opacity: 1; cursor: grabbing; background: var(--panel-3); box-shadow: 0 6px 16px rgb(from var(--primary) r g b / .22); }
-/* 落点提示：一条细插入线，不给整片底色 */
-.nav-ins {
-  height: 2px; margin: 1px 6px; border-radius: var(--r-xs);
-  background: var(--primary); flex: 0 0 auto;
-}
 .nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 550; }
 .nav-item.active::before {
   content: ''; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
@@ -109,47 +102,27 @@
 .view-title { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.2px; }
 .date-nav { display: flex; align-items: center; gap: 4px; }
 /* 顶栏空间不够时，别把按钮里的字挤成竖排 —— 宁可先藏日期文字 */
-.date-nav .round-btn, .date-nav .text-btn, .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
+.date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }
 .date-range { margin-left: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 /* 副header 那排控件（上一/下一个 · 今 · 找日期 · 日周月）**必须同高、同字号、
    同圆角、同描边**。它们并排站在一行里，任何一个高一点或字大一点，
    整行看着就是歪的。
 
-   高度写死 30px，不用 padding 推：12.5px 的 `line-height: normal` 各浏览器
-   差 1~2px，光靠 padding 永远对不齐。里面只有一个图标，所以用 flex 居中 ——
-   靠 `line-height: 1` 加内联 SVG 的对齐会偏 1~2px，看着就是「没居中」。 */
-.round-btn {
-  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-  border: var(--border-w) solid var(--input); background: none;
-  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
-  transition: background .14s, color .14s, border-color .14s;
+   高度由 Btn 组件的 sm size（30px）统一控制，这里只管选中态的配色。 */
+/* 「今」按钮选中（就在今天）时亮起，和日 / 周 / 月那三个视图档的 `.on` 是同一套语义。
+   判据是 `aria-pressed` 而不是类名：这个按钮由 Btn 渲染，没有自己的类。 */
+.date-nav [aria-pressed="true"] {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-pale);
+  font-weight: 600;
 }
-.round-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
-.text-btn {
-  height: 30px; padding: 0 10px; display: inline-flex; align-items: center;
-  border: var(--border-w) solid var(--input); background: none;
-  border-radius: var(--r-md); color: var(--text-2); font-size: 12.5px;
-  transition: background .14s, color .14s, border-color .14s;
-}
-.text-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
-/* 「今天」按钮：**选中就是今天时亮起**（需求 6）。
-   默认（不在今天）压暗 —— 它此刻没有指向任何东西；
-   就在今天时亮起来，表示「你现在看的就是今天」，和日 / 周 / 月那三个
-   视图档的 `.on` 是同一套语义。 */
-.today-btn { margin-left: 4px; color: var(--text-3); border-color: transparent; }
-.today-btn.on {
-  color: var(--primary); border-color: var(--primary);
-  background: var(--primary-pale); font-weight: 600;
-}
-.today-btn.on:hover { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+.date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
 
 /* ================= 顶栏「找日期」跳转面板 ================= */
 
 .jump-wrap { position: relative; display: flex; margin-left: 4px; }
-.jump-btn { display: flex; align-items: center; gap: 5px; }
 .jb-ico { font-size: 12px; line-height: 1; }
-.jump-btn:hover { color: var(--primary); border-color: var(--primary); }
-.jump-btn.on { background: var(--primary-pale); color: var(--primary); border-color: var(--primary); }
 
 .jump-pop {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;

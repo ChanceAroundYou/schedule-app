@@ -233,7 +233,7 @@ function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
           onChange={(e) => { setText(e.target.value); setBad(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter') go(text); }}
         />
-        {/* 「跳转」保持原样：它有自己的 @media (hover:none) 触屏规则（legacy.css
+        {/* 「跳转」保持原样：它有自己的 @media (hover:none) 触屏规则（styles/shell.css
             里那几条 .jp-go），换成 Btn 就得把那些选择器一起改 —— 而它是
             输入框的提交伙伴，跟 .fast-clock / .clear-search 同一类 */}
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
@@ -340,7 +340,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
           <ChevronRight size={15} />
         </Btn>
         {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `aria-pressed` 那一档配色
-            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 legacy.css
+            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 styles/shell.css
             里 `.date-nav [aria-pressed="true"]`。
             **就在今天才亮**（需求 6）：和日 / 周 / 月三个视图档同一个语义。 */}
         <Btn
