@@ -20,7 +20,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import {
   DndContext, MouseSensor, TouchSensor, KeyboardSensor,
-  useSensor, useSensors, useDraggable, useDroppable,
+  useSensor, useSensors, useDraggable, useDroppable, DragOverlay,
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core';
 import {
@@ -182,7 +182,8 @@ export function useSortableItem(id: string) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    // 同 SortableItem：只要位移，不要缩放
+    transform: CSS.Translate.toString(transform),
     transition,
   };
 
@@ -208,8 +209,10 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
   scope?: string;
 }) {
   const sensors = useDragSensors();
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const onDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIndex = items.indexOf(String(active.id));
@@ -220,8 +223,15 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
     }
   }, [items, onReorder]);
 
+  const activeItem = activeId ? renderItem(activeId) : null;
+
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
       <SortableContext items={items} strategy={rectSortingStrategy}>
         <div className={className} data-scope={scope}>
           {items.map((id) => (
@@ -231,6 +241,14 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
           ))}
         </div>
       </SortableContext>
+
+      {/* 浮层跟着指针走，**不受 over 限制**。少了它，被拖的那块只在
+          `over` 落在某个兄弟身上时才有 transform（见 useSortable 的
+          `displaceItem = ... && isValidIndex(overIndex)`）—— 一离开容器，
+          over 变 null，transform 整个丢掉，卡片就「飞回原位」。
+          落点判定用的 `dragOverlay.rect` 量的是**浮层自己**，所以浮层里
+          必须真有内容（renderItem 的结果），空 div 量出来 0×0。 */}
+      <DragOverlay className="drag-overlay" dropAnimation={null}>{activeItem}</DragOverlay>
     </DndContext>
   );
 }
@@ -240,7 +258,11 @@ function SortableItem({ id, children }: { id: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    /* **只取位移，丢掉缩放。** `rectSortingStrategy` 会返回
+       `scaleX/scaleY = 新位置尺寸 / 旧位置尺寸`，`CSS.Transform.toString`
+       把它们一起烤进 transform —— 卡片落到高度不同的行上就被压扁 / 拉长。
+       卡片必须保持刚提起时的形状，所以走 `CSS.Translate`。 */
+    transform: CSS.Translate.toString(transform),
     transition,
   };
 
@@ -250,7 +272,7 @@ function SortableItem({ id, children }: { id: string; children: ReactNode }) {
       style={style}
       {...attributes}
       {...listeners}
-      className={isDragging ? 'opacity-40' : undefined}
+      className={'sortable-item' + (isDragging ? ' opacity-40' : '')}
     >
       {children}
     </div>

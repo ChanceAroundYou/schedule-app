@@ -17,8 +17,13 @@
   .habit-list.mc { display: grid; }
   /* 行内块元素（打卡条、逾期提示、已完成标题、垃圾箱头）不参与分列 */
   .checkin-strip, .od-strip, .today-done, .trash-head, .habit-add, .empty { grid-column: 1 / -1; }
-  /* 分列后行与行之间靠 grid gap，任务行自身的下边距要去掉 */
-  .mc > .task-row, .mc > .habit-row { margin-bottom: 0; align-self: start; }
+  /* 分列后行与行之间靠 grid gap，任务行自身的下边距要去掉。
+     **可拖动时 grid 的直接子元素不是 .task-row，而是 dndkit.tsx 的
+     .sortable-item 包装层**（SortableItem 每条都套一层 div，transform 挂
+     在它上面）。所以 align-self 必须落在包装层上，落在 .task-row 上永远
+     不生效 —— 之前那版就是这么白写的。 */
+  .mc > .sortable-item, .mc > .task-row, .mc > .habit-row { margin-bottom: 0; align-self: start; }
+  .mc > .sortable-item > .task-row, .mc > .sortable-item > .habit-row { margin-bottom: 0; }
   .mc { row-gap: 7px; }
 }
 
@@ -250,8 +255,12 @@
   transition: transform .18s cubic-bezier(.22, .61, .36, 1);
 }
 /* 正在被拖的那条：压暗 + 轻微缩放，像被「拿起来了」。
-   .drag-muted 是让位开始后追加的 —— 它马上要让位，别再抢注意力。 */
-.task-row.dragging, .task-pill.dragging, .habit-row.dragging {
+   .drag-muted 是让位开始后追加的 —— 它马上要让位，别再抢注意力。
+   **这两条现在由 DragOverlay 里的那份副本承担**（见 dndkit.tsx 的
+   SortableList）：原位的元素保持不动当「出处」锚点，跟着指针走的是浮层，
+   所以浮层里那份才需要「拿起来了」的观感。 */
+.task-row.dragging, .task-pill.dragging, .habit-row.dragging,
+.drag-overlay .task-row, .drag-overlay .task-pill, .drag-overlay .habit-row {
   opacity: .96;
   cursor: grabbing;
   box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);

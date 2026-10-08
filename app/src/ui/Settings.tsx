@@ -195,7 +195,8 @@ function SortableNavRow({ id, on, narrow, onToggle }: {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    // 只要位移，不要缩放（同 dndkit.tsx 的 SortableItem，理由见那里）
+    transform: CSS.Translate.toString(transform),
     transition,
   };
 
