@@ -2862,11 +2862,11 @@ try {
     })()
   `, '快捷时间落盘', 8000);
   const quickTime = await evalJs(page, `
-    (() => {
+    return (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(rowId)});
       return t ? t.time : null;
-    })()
+    })();
   `);
   ok(quickTime === '09:00', '点快捷时间「上午 9:00」落盘，实际 ' + JSON.stringify(quickTime));
   ok(await evalJs(page, `return document.querySelector('.drawer .tp-q.on')?.textContent?.includes('9:00');`),
@@ -2884,12 +2884,24 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '15')`);
   await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '60')`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
-  const dialTime = await evalJs(page, `
+  /* 这里必须等 **localStorage**，不能只看表盘收没收起。
+     persist() 有 250ms 去抖（store.ts），表盘收起那一刻数据还没落盘，
+     紧接着读 localStorage 拿到的是上一次的值 —— 症状是「表盘明明选了
+     15:00，读回来还是 09:00」。上面「快捷时间落盘」那处等的就是
+     localStorage，这里跟它对齐。 */
+  await waitFor(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(rowId)});
-      return t ? t.time : null;
+      return t && t.time === '15:00' ? t.time : null;
     })()
+  `, '表盘时间落盘', 8000);
+  const dialTime = await evalJs(page, `
+    return (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t ? t.time : null;
+    })();
   `);
   ok(dialTime === '15:00', '表盘选 15:00 落盘，实际 ' + JSON.stringify(dialTime));
 
@@ -2902,6 +2914,55 @@ try {
       return t && t.time === null;
     })() ? 1 : null
   `, '清除时间落盘', 8000);
+
+  /* 抽屉里**一个原生日期 / 时间输入框都不许有**（2026-10-09）。原生
+     `<input type="date">` / `<input type="time">` 会在桌面端弹系统控件、
+     样式各浏览器一套，主题令牌一律管不到；时钟按钮那层浮层也一并去掉了。
+     一条断言把整个抽屉盖住 —— 以后谁再塞一个回来就红。
+     顺带把「重复 → 到某天」算进去：那个格子一度是抽屉里最后一个漏网的。 */
+  const nativeInputs = await evalJs(page, `
+    return [...document.querySelectorAll('.drawer input[type="date"], .drawer input[type="time"], .drawer input[type="datetime-local"]')]
+      .map((el) => el.type);
+  `);
+  ok(nativeInputs.length === 0,
+    '抽屉里没有原生日期 / 时间输入框（日期和时间都用自带的 .dp / .tp），实际 ' + JSON.stringify(nativeInputs));
+
+  // 「重复 → 到某天」走的是 `DatePicker` 的 `plain` 一档：只有那个日期按钮，
+  // 没有「今天 / 明天」快捷键（结束日期只有一个方向），也没有清除（清掉就没有
+  // 结束日期了，那是「不限」那一档的事）。
+  await clickEl(page, `document.querySelector('.drawer [data-pick="week"]')`);
+  await waitFor(page, `document.querySelector('.drawer .repeat-panel') ? 1 : null`, '重复面板展开', 8000);
+  await clickEl(page, `document.querySelector('.drawer .rp-row [data-pick="date"]')`);
+  await waitFor(page, `document.querySelector('.drawer .rp-row .dp-btn') ? 1 : null`, '「到某天」的日期按钮出来了', 8000);
+  const rpPlain = await evalJs(page, `
+    return (() => {
+      const dp = [...document.querySelectorAll('.drawer .rp-row .dp')].pop();
+      if (!dp) return null;
+      return {
+        quick: !!dp.querySelector('.dp-quick'),
+        clear: !!dp.querySelector('.dp-clear'),
+        btn: !!dp.querySelector('.dp-btn'),
+      };
+    })();
+  `);
+  ok(rpPlain && rpPlain.btn && !rpPlain.quick && !rpPlain.clear,
+    '「到某天」是自带的 `plain` 一档（有日期按钮，没有快捷键也没有清除），实际 ' + JSON.stringify(rpPlain));
+
+  // 结构对了不等于能用：真的点开月历、点一天，落进 `repeat.end.date`
+  await clickEl(page, `[...document.querySelectorAll('.drawer .rp-row .dp-btn')].pop()`);
+  await waitFor(page, `document.querySelector('.drawer .rp-row .dp-pop') ? 1 : null`, '「到某天」的月历弹出来', 8000);
+  await clickEl(page, `(() => {
+    const cells = [...document.querySelectorAll('.drawer .rp-row .dp-pop .dp-cell:not(.out)')];
+    return cells[Math.min(20, cells.length - 1)];
+  })()`);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.end && t.repeat.end.type === 'date' && !!t.repeat.end.date ? t.repeat.end.date : null;
+    })()
+  `, '「到某天」选的日期落进 repeat.end.date', 8000);
+  ok(true, '「到某天」点得动、存得下（不是只画了个按钮）');
 
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '把抽屉关掉', 8000);
@@ -3881,6 +3942,106 @@ try {
     '刷新后项目还在');
   ok((await evalJs(page, `return document.querySelector('[data-lane] .pj-col[data-scope$=":doing"] .pj-card') ? 1 : null;`)) === 1,
     '刷新后卡片还在「进行中」列');
+
+  /* ---------- 一个能写的集都没有时：那一句提示得真的出现 ----------
+     勾选切到一个只读集之后，新建项目浮层里选择器是空的、创建按钮禁用 ——
+     而**禁用的按钮本身不解释任何事**，用户只看到「点不动」。所以开浮层要弹
+     一句 toast。锁三件事：真的弹了、说的是那一句、浮层开着时它盖得住
+     （`ToastHost` 挂在 Shell 外面、z-90 > 浮层的 z-70）。
+
+     放这一节**最后**是必须的：勾选决定项目可见性（`useScopedState` 按
+     `p.calId` 过滤），中途切走会让泳道上的项目消失，后面拖拽与刷新的断言
+     全断。做完再切回有写权限的集。 */
+
+  const roCal = await evalJs(page, `
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    const canWrite = (r) => r === 'owner' || r === 'editor';
+    const ro = (st.cals || []).find((c) => !canWrite(c.role));
+    return ro ? ro.id : '';`);
+  ok(roCal !== '', '有一个只读日程集可用来制造「无处可建」');
+
+  if (roCal !== '') {
+    await evalJs(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多')).click(); return true;`);
+    await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+    await evalJs(page, `document.querySelector('[data-cal-sheet-open]').click(); return true;`);
+    await waitFor(page, `!!document.querySelector('[role="dialog"] [data-cal-row]')`, '日程集多选面板');
+    /* 先勾上只读那个，再取消勾别的 —— 反过来的话「至少留一个」会把取消挡下 */
+    await evalJs(page, `
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const rows = () => [...document.querySelectorAll('[role="dialog"] [data-cal-row]')];
+      const want = ${JSON.stringify(roCal)};
+      const hit = rows().find((r) => r.dataset.calRow === want);
+      if (hit && hit.getAttribute('aria-pressed') !== 'true') { hit.click(); await sleep(80); }
+      for (const r of rows()) {
+        if (r.dataset.calRow !== want && r.getAttribute('aria-pressed') === 'true') { r.click(); await sleep(80); }
+      }
+      return true;`);
+    await evalJs(page, `
+      const d = document.querySelector('[role="dialog"]');
+      const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+      if (btn) btn.click();
+      return true;`);
+    await waitFor(page, `!document.querySelector('[role="dialog"]')`, '面板关掉了');
+    await waitForUi('只读集成了唯一勾着的',
+      `(() => {
+        const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+        const ro = (st.cals || []).find((c) => c.id === ${JSON.stringify(roCal)});
+        const writable = ro && (ro.role === 'owner' || ro.role === 'editor');
+        return ro && !writable && st.ui.cals.length === 1 && st.ui.cals[0] === ${JSON.stringify(roCal)}
+          ? 1 : null;
+      })()`);
+
+    await clickEl(page, `document.querySelector('.pj-top .btn')`);
+    await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层又打开了');
+    /* 那句话是**逐字**的：用户照着这句去排查，差一个字就指错方向。
+       纯通知的 toast 只活 2.6 秒，waitFor 每 100ms 轮询一次，抓得到。 */
+    const toastText = await waitFor(page, `
+      [...document.querySelectorAll('[role="status"]')].map((t) => t.textContent)
+        .find((t) => t.includes('写入权限')) || null`,
+      '弹出「无写入权限」那一句 toast');
+    ok(toastText.includes('所选日程集均无写入权限，无法新建项目'),
+      '弹的是那一句，逐字：' + JSON.stringify(toastText));
+    ok(await evalJs(page, `
+      const t = [...document.querySelectorAll('[role="status"]')].find((x) => x.textContent.includes('写入权限'));
+      if (!t) return null;
+      const r = t.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? 1 : null;`),
+    'toast 浮层开着时也看得见（盖在浮层之上，不是被遮住）');
+    ok(await evalJs(page, `
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '创建');
+      return b && b.disabled ? 1 : null;`),
+    '一个能写的集都没有时，创建是禁用的');
+    await evalJs(page, `
+      const d = document.querySelector('[role="dialog"]');
+      const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+      if (btn) btn.click();
+      return true;`);
+    await waitFor(page, `!document.querySelector('[role="dialog"]')`, '浮层关掉了');
+
+    // 切回有写权限的集 —— 后面的节还要在上面改东西
+    await evalJs(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多')).click(); return true;`);
+    await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+    await evalJs(page, `document.querySelector('[data-cal-sheet-open]').click(); return true;`);
+    await waitFor(page, `!!document.querySelector('[role="dialog"] [data-cal-row]')`, '日程集多选面板');
+    await evalJs(page, `
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const rows = () => [...document.querySelectorAll('[role="dialog"] [data-cal-row]')];
+      const want = ${JSON.stringify(pjCal)};
+      const hit = rows().find((r) => r.dataset.calRow === want);
+      if (hit && hit.getAttribute('aria-pressed') !== 'true') { hit.click(); await sleep(80); }
+      for (const r of rows()) {
+        if (r.dataset.calRow !== want && r.getAttribute('aria-pressed') === 'true') { r.click(); await sleep(80); }
+      }
+      return true;`);
+    await evalJs(page, `
+      const d = document.querySelector('[role="dialog"]');
+      const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+      if (btn) btn.click();
+      return true;`);
+    await waitFor(page, `!document.querySelector('[role="dialog"]')`, '面板关掉了');
+    await waitForUi('切回有写权限的集',
+      `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cal === ${JSON.stringify(pjCal)} ? 1 : null`);
+  }
 
   console.log('\n二十、修改密码：改完还登录着，别的设备被踢出去');
 

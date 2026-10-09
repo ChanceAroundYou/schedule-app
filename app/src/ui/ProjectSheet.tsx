@@ -63,7 +63,7 @@ export function ProjectSheet({ state, id, onClose }: {
    */
   useEffect(() => {
     if (cur || writableShown.length) return;
-    toast('勾着的日程集都没有写权限，勾一个你能写的才能建项目。');
+    toast('所选日程集均无写入权限，无法新建项目');
   }, [cur, writableShown.length]);
 
   /** 权限被挡时 store 那边已经计了数、App 会弹提示 —— 这里只管关掉浮层 */
