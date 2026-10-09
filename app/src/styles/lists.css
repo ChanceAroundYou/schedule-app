@@ -312,23 +312,24 @@
 body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 
 /* 时间轴上的落点指示（只画线，不改底色）。
-   `left: 0` 与红线 `.tl-now` 对齐；左端圆点复刻 `.tl-now i`，落在卡片区内。 */
+   `left: 0` 与红线 `.tl-now` 对齐；左端圆点复刻 `.tl-now i`，刚好放在线的尽头。 */
 .tl-guide {
   position: absolute; left: 0; right: 0; height: 0;
   border-top: 1.5px dashed var(--primary); z-index: 10; pointer-events: none;
 }
 .tl-guide::before {
-  content: ''; position: absolute; left: 4px; top: -4.5px;
+  content: ''; position: absolute; left: 0; top: -4.5px;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--primary); box-shadow: 0 0 0 3px rgb(from var(--primary) r g b / .16);
 }
 
 /* 左侧时间轴上的时间标签（显示绿线对应几点）。
-   挂在 `.timeline` 上，`left: -56px` 与红线 `.tl-now span` 完全一致。 */
+   挂在 `.timeline` 上，`left: -56px` 与红线 `.tl-now span` 完全一致。
+   字体字号字重与 .tl-label 严格一致，只有颜色不同。 */
 .tl-cursor {
   position: absolute; left: -56px; top: -8px;
   width: 44px; text-align: right;
-  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 11px; font-variant-numeric: tabular-nums;
   color: var(--primary); pointer-events: none; z-index: 11;
 }
 

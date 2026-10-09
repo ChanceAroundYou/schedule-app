@@ -73,11 +73,12 @@
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
 .tl-busy { position: absolute; left: 0; right: 0; border-radius: var(--r-sm); }
 
-/* 红线左端对齐时间轴左缘（left:0），圆点落在卡片区内（left:4px），
-   时间标签在 -56px —— 与 .tl-label 完全同一位置，不再偏 8px。 */
+/* 红线左端对齐时间轴左缘（left:0），圆点刚好放在线的尽头（left:0），
+   时间标签在 -56px —— 与 .tl-label 完全同一位置、同一字体字号字重，
+   只有颜色不同。 */
 .tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
-.tl-now i { position: absolute; left: 4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
-.tl-now span { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--danger); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tl-now i { position: absolute; left: 0; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
+.tl-now span { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--danger); font-variant-numeric: tabular-nums; }
 
 /* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让有时间卡片
    比无时间卡片短一截。卡片宽度由 .tl-event 的 width 控制。 */
