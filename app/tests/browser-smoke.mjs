@@ -16,15 +16,57 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync, mkdtempSync, rmSync } from 'node:fs';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = path.join(ROOT, 'dist');
-const API_PORT = 25701;      // 临时后端
-const WEB_PORT = 5198;       // 静态 + 代理
-const CDP_PORT = 9223;
+/* 端口**默认还是那三个，被占了自动让开**；也能用环境变量钉死 —— 原来写死（踩坑 40），
+   两个 session 同时跑探针就只能等：谁后跑谁拿不到端口，前一个崩掉以后还会
+   留下占着端口的孤儿进程（浏览器已经没了，它还在等 CDP）。改端口即可并行：
+   `SMOKE_API_PORT=25711 SMOKE_WEB_PORT=5199 SMOKE_CDP_PORT=9233 node tests/browser-smoke.mjs`。
+   数据本来就按 run 隔离（SCHEDULE_DATA_DIR），所以并行互不干扰。 */
+/**
+ * listen，被占了就退回内核分配，返回**真实**那个端口。
+ *
+ * 为什么光有 `freePort` 不够：假模型那个服务器是**第十二节才起的**，
+ * 而 `freePort` 在探针开头就把号放掉了 —— 中间隔了几十秒，
+ * 那个号很可能已经被别人占上（本机同时跑两趟探针就必然如此）。
+ * `freePort` 只能解决「起之前就占着」，解决不了「起之前空着、起的时候被抢」。
+ * 所以两个 listen 都走这里：**真被抢走要响，不要无声无息地卡死**。
+ */
+function listenFree(srv, preferred) {
+  return new Promise((res, rej) => {
+    srv.once('error', (e) => {
+      if (e.code !== 'EADDRINUSE') return rej(e);
+      srv.listen(0, '127.0.0.1', () => res(srv.address().port));   // 让内核挑
+    });
+    srv.listen(preferred, '127.0.0.1', () => res(srv.address().port));
+  });
+}
+
+/** 试着占一下 preferred，占不到就往后挨个试，再不行让内核给一个空闲端口 */
+async function freePort(preferred) {
+  const attempt = (port) => new Promise((res) => {
+    const s = net.createServer();
+    s.once('error', () => res(0));          // EADDRINUSE 之类 → 当这个号不可用
+    s.listen(port, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+  });
+  /* 首选通就还是那个熟悉的号 —— 没有别的理由改变它 */
+  if (await attempt(preferred)) return preferred;
+  /* 首选被占：往后找，但**按 pid 错开起点**。两个探针几乎同时起时，它们在同一
+     瞬间都会觉得首选是空的；从同一个号开始找就会挑到同一个，然后第二个的子进程
+     bind 失败 —— 那正是这个机制本来要挡的那件事。 */
+  const skip = 1 + (process.pid % 16);
+  for (let i = 0; i < 24; i++) { const p = await attempt(preferred + skip + i); if (p) return p; }
+  return attempt(0);                        // 一片都占了，让内核挑
+}
+const API_PORT = +(process.env.SMOKE_API_PORT || await freePort(25701));   // 临时后端
+let WEB_PORT = +(process.env.SMOKE_WEB_PORT || await freePort(5198));    // 静态 + 代理
+const CDP_PORT = +(process.env.SMOKE_CDP_PORT || await freePort(9223));
+let MODEL_PORT = +(process.env.SMOKE_MODEL_PORT || await freePort(25711));
 const CHROME = process.env.CHROME || '/opt/google/chrome/chrome';
 
 const MIME = {
@@ -70,7 +112,9 @@ function serveDist() {
     res.writeHead(200, head);
     createReadStream(p).pipe(res);
   });
-  return new Promise((r) => srv.listen(WEB_PORT, '127.0.0.1', () => r(srv)));
+  /* listenFree 给回的是**真实**端口：抢走时会换一个 —— WEB_PORT 得跟着改，
+     后面那些 Page.navigate 用的就是它。返回的仍然是 server 本身（调用方要 close）。 */
+  return listenFree(srv, WEB_PORT).then((port) => { WEB_PORT = port; return srv; });
 }
 
 /* ------------------------------------------------------------ CDP */
@@ -255,6 +299,12 @@ try {
   procs[procs.length - 1].stdout.on('data', (d) => process.stderr.write('[bo] ' + d));
   web = await serveDist();
   procs.push({ kill: () => { if (web && web.listening) web.close(); } });
+
+  /* 把这一趟实际用的端口打出来：自动避让之后它们**可能不是**文档里那三个，
+     撞了端口要靠这一行定位是哪一趟占的（踩坑 40 说的就是「残留的孤儿进程」）。 */
+  const mark = (got, want) => (got === want ? '' : `（首选 ${want} 被占，已让开）`);
+  console.log(`\n端口：后端 ${API_PORT}${mark(API_PORT, 25701)} · 页面 ${WEB_PORT}${mark(WEB_PORT, 5198)}`
+    + ` · CDP ${CDP_PORT}${mark(CDP_PORT, 9223)} · 假模型 ${MODEL_PORT}${mark(MODEL_PORT, 25711)}`);
 
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${API_PORT}/api/health`)).ok) break; } catch (_) { /* 等 */ }
@@ -1217,7 +1267,6 @@ try {
   // **一条报错都没有** —— 文本是合法响应，只是没有提案。探针里偶发过一次
   // （约 1/9），就是这个形态。换成看对话内容之后，重试和串扰都不再影响判定。
   console.log('\n十二、AI：假模型提一条改动 → 确认 → 服务器上真有');
-  const MODEL_PORT = 25711;
   let modelCalls = 0;
   const modelSrv = createServer((req, res) => {
     if (req.method !== 'POST' || !req.url.includes('/chat/completions')) {
@@ -1249,7 +1298,7 @@ try {
       res.end();
     });
   });
-  await new Promise((r) => modelSrv.listen(MODEL_PORT, '127.0.0.1', r));
+  MODEL_PORT = await listenFree(modelSrv, MODEL_PORT);   // 抢走了就用它给回来的那个号
   track({ kill: () => modelSrv.close() });
 
   // 把 AI 设置指向假模型（token 从浏览器里读，Node 侧没有 localStorage）
