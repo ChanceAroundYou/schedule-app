@@ -111,18 +111,19 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
   return (
     <>
-      <div className="allday-zone osb" ref={(el) => { alldayZone.ref(el); osbAllday(el); }} data-zone-id={`allday:${iso}`} data-date={iso}>
-        <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
-          {allday.map((t) => <TaskPill key={t.id} task={t} />)}
-          {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
+      <div className="day-panel">
+        <div className="allday-zone osb" ref={(el) => { alldayZone.ref(el); osbAllday(el); }} data-zone-id={`allday:${iso}`} data-date={iso}>
+          <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
+            {allday.map((t) => <TaskPill key={t.id} task={t} />)}
+            {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
+          </div>
         </div>
-      </div>
 
-      <div className="tl-wrap">
-        <div
-          className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`}
-          data-date={iso} data-from={win.from} data-to={win.to}
-        >
+        <div className="tl-wrap">
+          <div
+            className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`}
+            data-date={iso} data-from={win.from} data-to={win.to}
+          >
           {hours.map((h) => (
             <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / spanOf(win)) * 100 + '%' }}>
               <span className="tl-label">{pad2(h)}:00</span>
@@ -162,6 +163,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
               <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} isDragSrc={activeId === e.item.id} />
             ))}
           </div>
+        </div>
         </div>
       </div>
     </>

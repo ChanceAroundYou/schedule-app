@@ -420,16 +420,20 @@ function clearTimeCursor(): void {
   document.querySelectorAll('.tl-cursor').forEach((el) => el.remove());
 }
 
-/** 卡片左下角持续时间标签 */
+/** 卡片外侧下方持续时间标签 */
 function showDurationTag(card: HTMLElement, taskId: string): void {
   const task = store.get().tasks[taskId];
   if (!task) return;
-  let tag = card.querySelector<HTMLElement>('.tl-dur-tag');
+  let tag = document.querySelector<HTMLElement>('.tl-dur-tag[data-task="' + taskId + '"]');
   if (!tag) {
     tag = document.createElement('div');
     tag.className = 'tl-dur-tag';
-    card.appendChild(tag);
+    tag.dataset.task = taskId;
+    document.body.appendChild(tag);
   }
+  const r = card.getBoundingClientRect();
+  tag.style.left = r.left + 'px';
+  tag.style.top = (r.bottom + 2) + 'px';
   tag.textContent = D.fmtDuration(task.duration || 60);
 }
 

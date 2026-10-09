@@ -333,24 +333,6 @@ function SearchInput({ kw, setKw, autoFocus }: {
   );
 }
 
-/** 移动端搜索浮条：点击搜索图标后弹出。
- *  **必须包在调用方那个 `position: relative` 的锚里**：`.search-pop` 是
- *  `right: 100%`，相对锚（就包着放大镜那一个钮）向左伸出去 —— 见 shell.css。
- *  锚不 relative 的话，浮条会跑到最近的定位祖先那里去，跑到顶栏外头。 */
-function SearchPop({ open, kw, setKw, onClose, triggerRef }: {
-  open: boolean; kw: string; setKw: (v: string) => void; onClose: () => void;
-  triggerRef?: React.RefObject<HTMLElement | null>;
-}) {
-  const box = useRef<HTMLDivElement>(null);
-  useOutsideClose(box, open, onClose, triggerRef);
-  if (!open) return null;
-  return (
-    <div className="search-pop" ref={box}>
-      <SearchInput kw={kw} setKw={setKw} autoFocus />
-    </div>
-  );
-}
-
 /**
  * 日程页副header：日期导航 + 视图切换 + 找日期
  *
@@ -437,8 +419,18 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   const ui = state.ui;
   const online = useOnline();
   const [kw, setKw] = useSearchValue(ui.search, onSearch);
-  /** 搜索键自己。SearchPop 的 outside-close 要拿它当例外，否则点它关不掉 */
+  /** 搜索键自己。搜索槽的 outside-close 要拿它当例外，否则点它关不掉 */
   const searchBtn = useRef<HTMLButtonElement>(null);
+  /** 整个搜索槽（钮 + 输入框）。outside-close 认它，点输入框里面不算点到外面 */
+  const slotRef = useRef<HTMLDivElement>(null);
+  useOutsideClose(slotRef, searchOpen, () => setSearchOpen(false), searchBtn);
+  /* 输入框**一直在 DOM 里**（靠宽度 0 收起），`autoFocus` 只在挂载那一下生效 ——
+     所以张开时得自己把焦点送进去。不送的话：键盘用户 Tab 不到、Esc 那条路也是断的。 */
+  useEffect(() => {
+    if (!searchOpen) return;
+    const el = slotRef.current?.querySelector('input');
+    if (el) el.focus();
+  }, [searchOpen]);
 
   // 标题写**具体日期**，不写「日 / 周 / 月」。后者跟侧栏那一项重复，
   // 而用户在日程页真正想确认的就是「我现在看的是哪天」。
@@ -452,9 +444,10 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
-  // 设置页的 tab 栏就是那一页的 header，顶栏不再写「设置」——
-  // 两行都写「设置」看起来像两个 header（用户报过）。
-  else if (ui.nav === 'settings') { title = ''; range = ''; }
+  // 页名归**顶栏**（用户 2026-10-09：「设置页的 header 的左上角没有设置字样」，
+  // 要求就是写进 header 里）。设置页那张 tab 栏是**页内的分段开关**，不是 header，
+  // 所以页名只此一处 —— 顶栏写、页面里就别再写一遍，否则两行都是「设置」。
+  else if (ui.nav === 'settings') { title = '设置'; range = ''; }
   else if (ui.nav === 'calendar') {
     // 日期长文本归顶栏（就在这一行）—— 副header 只放控件，别把同一天写两遍
     const ws = D.weekStart(ui.cursor);
@@ -479,30 +472,29 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
             窄屏不渲染 —— 那边走「更多」抽屉里的入口 + 弹窗面板。 */}
         {!narrow && <CalMenu state={state} />}
         {narrow ? (
-          <>
-            {/* 这个 span 是 `.search-pop` 的**定位锚**：`position: relative` +
-                宽度就一个钮（44px）。浮条 `right: 100%` 从这里向左伸出去，
-                所以框长在顶栏里、不往下掉 —— 见 shell.css 的 `.search-pop` 注释。
-                **别把它合并进 `.topbar-right`**（那会变成相对整行定位）。 */}
-            <span className="search-anchor">
-              <IconBtn
-                ref={searchBtn}
-                label="搜索任务"
-                className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
-                aria-expanded={searchOpen}
-                onClick={() => setSearchOpen(!searchOpen)}
-              >
-                <Search size={16} />
-              </IconBtn>
-            </span>
-            <SearchPop
-              open={searchOpen}
-              kw={kw}
-              setKw={setKw}
-              onClose={() => setSearchOpen(false)}
-              triggerRef={searchBtn}
-            />
-          </>
+          /* 放大镜**原地变成**输入框、向左伸出去（用户 2026-10-09：「应该是把原来的
+             搜索图标原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」）。
+             做法：槽里并排放「钮」和「输入框」，**输入框的宽度从 0 过渡到全宽**。
+             槽站在 `.topbar-right` 里（那一行靠右对齐），所以宽度长出来是**往左**长
+             —— 右沿钉在原地不动，看着就是钮变成了框，中间那条边往左扫过去。
+             **别做成浮层**：浮层要 `position: absolute` + 一个定位锚，放大镜原地不动、
+             框从它左边飘出去，两者看着是分开的两个东西，也没有「长出来」的动势。 */
+          <div className={'search-slot' + (searchOpen ? ' open' : '')} ref={slotRef}>
+            {/* 输入框**排在钮前面**：槽在 `.topbar-right` 里靠右对齐，宽度往左长，
+                排在**后面**的那个钮才钉在原地不动 —— 排前面的话它会被顶得往左挪。 */}
+            <div className="search-slot-field">
+              <SearchInput kw={kw} setKw={setKw} />
+            </div>
+            <IconBtn
+              ref={searchBtn}
+              label="搜索任务"
+              className="icon-btn search-toggle"
+              aria-expanded={searchOpen}
+              onClick={() => setSearchOpen(!searchOpen)}
+            >
+              <Search size={16} />
+            </IconBtn>
+          </div>
         ) : (
           <SearchInput kw={kw} setKw={setKw} />
         )}

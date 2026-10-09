@@ -325,9 +325,9 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   color: var(--primary); pointer-events: none; z-index: 11;
 }
 
-/* 卡片左下角持续时间标签 */
+/* 卡片外侧下方持续时间标签 */
 .tl-dur-tag {
-  position: absolute; left: 4px; bottom: 2px;
+  position: fixed; z-index: 70;
   padding: 1px 5px; border-radius: var(--r-xs);
   background: rgb(0 0 0 / .55); color: #fff;
   font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;

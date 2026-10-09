@@ -12,8 +12,7 @@
    子选择器照样断链）。它 display:contents 意味着这两个块确实是 #content 的
    flex 子项，所以后代选择器命中的就是对的元素。 */
 .content-day { overflow: hidden; display: flex; flex-direction: column; }
-.content-day .allday-zone { flex: 0 0 auto; max-height: 34%; overflow-y: auto; }
-.content-day .tl-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.content-day .day-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .content-day .tl-wrap > .timeline { flex: 1 1 auto; min-height: 0; height: auto; }
 
 .empty {
@@ -26,25 +25,31 @@
 
 /* ================= 日视图 ================= */
 
-.allday-zone {
+/* 日视图整体面板（未定时任务区 + 时间轴融合为同一个面板） */
+.day-panel {
   background: var(--panel); border: var(--border-w) solid var(--border);
-  border-radius: var(--r-lg); padding: 12px 16px; margin-bottom: 12px;
-  box-shadow: var(--shadow);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+}
+
+.allday-zone {
+  flex: 0 0 auto; overflow-y: auto; max-height: 120px;
+  padding: 6px 10px;
+  border-bottom: var(--border-w) solid var(--border);
 }
 /* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
    不至于把下面的时间轴挤出屏幕。行内按「先上后下、先左后右」的顺序读。 */
 .allday-items {
   display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  gap: 6px 10px; min-height: 32px; align-content: start;
+  gap: 3px 8px; min-height: 20px; align-content: start;
 }
-.allday-items .task-pill { width: 100%; padding: 6px 9px; min-width: 0; }
+.allday-items .task-pill { width: 100%; padding: 2px 6px; min-width: 0; font-size: 11px; }
 .allday-items .task-pill:hover { transform: none; }
-.zone-empty { font-size: 12px; color: var(--text-3); padding: 5px 0; grid-column: 1 / -1; }
+.zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
 .tl-wrap {
-  background: var(--panel); border: var(--border-w) solid var(--border);
-  border-radius: var(--r-lg); padding: 16px 14px 16px 62px;
-  box-shadow: var(--shadow);
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  padding: 10px 12px 12px 60px;
 }
 /* 兜底高度。真正的高度是 `.content-day .tl-wrap > .timeline` 那条 flex 给的
    （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。

@@ -160,8 +160,7 @@
 .cal-menu-btn:hover { background: var(--panel-3); color: var(--text); }
 .cal-menu-btn.on { border-color: var(--primary); background: var(--panel); color: var(--primary); }
 
-/* 往**左**开（right: 0）—— 它在顶栏最右边，往右开会顶出视口。
-   定位算法跟 .search-pop 同一套。 */
+/* 往**下**开、靠右缘对齐（right: 0）—— 它在顶栏最右边，往右开会顶出视口。 */
 .cal-menu-pop {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
   width: max-content; max-width: min(280px, calc(100vw - 44px));
@@ -261,12 +260,39 @@
 .view-switch button:hover { background: var(--panel-3); }
 .view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
-/* 移动端搜索的**定位锚**：只包着放大镜那一个钮。`.search-pop` 是 `right: 100%`，
-   相对它向左伸出去（见 Shell.tsx 里那段注释）。宽度必须就一个钮 —— 所以是
-   `inline-flex` 而不是 `flex`（后者会撑满整行）。 */
-.search-anchor { position: relative; display: inline-flex; }
+/* ================= 移动端搜索：放大镜原地变成输入框 ================= */
 
-/* ================= 日程副header ================= */
+/* 放大镜**原地变成**输入框、向左伸出去（用户 2026-10-09：「应该是把原来的搜索图标
+   原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」）。
+   槽里并排放「钮」和「输入框」，**输入框宽度从 0 过渡到全宽**；槽站在 `.topbar-right`
+   里（那一行靠右对齐），所以长出来是**往左**长 —— 右沿钉在原地不动。
+   别做成浮层：浮层要 `position: absolute` + 定位锚，放大镜和框是分开的两样东西。 */
+.search-slot { position: relative; display: flex; align-items: center; }
+.search-slot-field {
+  width: 0; overflow: hidden; opacity: 0; visibility: hidden;
+  transition: width .18s ease, opacity .14s ease, visibility 0s linear .18s;
+}
+/* 顶栏内边距 13 + 槽与右缘之间还有状态点，一起让出来；视口再小也留 90px 给标题 */
+.search-slot.open .search-slot-field {
+  width: min(232px, calc(100vw - 158px));
+  opacity: 1; visibility: visible;
+  transition: width .18s ease, opacity .14s ease, visibility 0s;
+}
+.search-slot-field .search-box { width: 100%; }
+/* 放大镜由右边那个钮当，输入框里那枚藏起来 —— 并排放着就是两个放大镜 */
+.search-slot-field .search-ico { display: none; }
+/* 张开之后钮和框连成**一个**搜索框：描边、底色、圆角都接上，中间那条竖线不画 */
+.search-slot.open .search-box {
+  border-right: none; border-radius: var(--r-md) 0 0 var(--r-md);
+}
+.search-slot.open .search-toggle {
+  height: 30px; padding: 0 8px;
+  border: var(--border-w) solid var(--input); border-left: none;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  background: var(--panel-2); color: var(--text-3);
+}
+.search-slot.open .search-toggle.on { color: var(--primary); border-color: var(--primary); }
+.search-toggle.on { color: var(--primary); border-color: var(--primary); }
 
 .cal-subhead {
   display: flex; align-items: center; justify-content: space-between;
@@ -275,28 +301,3 @@
 }
 .cal-subhead .date-nav { flex: 1 1 auto; min-width: 0; }
 .cal-subhead .view-switch { flex: 0 0 auto; }
-
-/* ================= 搜索浮条（移动端） ================= */
-
-/* 移动端搜索：**在顶栏里原地向左伸出去**，不是掉到顶栏下面
-   （用户 2026-10-09：「移动端的搜索请在原地向左伸出去一个搜索框，现在变成了在 header 下面，
-   需要在 header 内部」）。
-   包含块是 Shell.tsx 里那个 `position: relative` 的锚（就包着放大镜那一个钮），
-   所以 `right: 100%` 把浮条右沿钉在锚的左沿上 —— 放大镜原地不动，框从它左边长出来。
-   `top: 50% + translateY(-50%)` 让它和放大镜**同高**，看着就是「钮变成了框」。
-   宽度按视口收：`100vw - 116px` = 左边距 22 + 钮 44 + 间距 12 + 右边距 22 + 余量。 */
-.search-toggle.on { color: var(--primary); border-color: var(--primary); }
-.search-pop {
-  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
-  margin-right: 12px; z-index: 60;
-  width: min(260px, calc(100vw - 116px));
-  /* 上下 8px：浮条总高 = 30（搜索框）+ 16（padding）+ 2（上下各 1px 描边）= 48，
-     **正好等于顶栏的高度**，于是它垂直居中时上下都不出顶栏。
-     写 9px 就是 50px，比顶栏高 2px，上下各探出去 1px。 */
-  padding: 8px 10px;
-  background: var(--panel); border: var(--border-w) solid var(--border);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
-}
-.search-pop .search-box { width: 100%; }
-.search-pop .search-box input { width: 100%; }
-

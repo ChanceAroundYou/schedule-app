@@ -526,9 +526,14 @@ try {
   /* 设置页自己的 header 左上角要写页名（用户 2026-10-09：「设置页的 header 的左上角
      没有设置字样」）。**写在页面里、不写在顶栏** —— 顶栏那一栏再写一遍「设置」，
      两行同一个词看着像两个 header。所以这里查的是 `#content` 里那个 h1。 */
-  ok(await evalJs(page, `return (document.querySelector('#content h1') || {}).textContent;`) === '设置',
-    '设置页内容区左上角写着页名「设置」，实际 '
-    + JSON.stringify(await evalJs(page, `return (document.querySelector('#content h1') || {}).textContent;`)));
+  /* 页名归**顶栏**（用户 2026-10-09：「设置页的 header 的左上角没有设置字样」，
+     要求就是写进 header 里）。设置页那张 tab 栏是**页内的分段开关**、不是 header，
+     所以页面里不写第二遍 —— 两行都是「设置」看着像两个 header。 */
+  ok(await evalJs(page, `return (document.querySelector('.topbar .view-title') || {}).textContent;`) === '设置',
+    '顶栏左上角写着页名「设置」，实际 '
+    + JSON.stringify(await evalJs(page, `return (document.querySelector('.topbar .view-title') || {}).textContent;`)));
+  ok(await evalJs(page, `return !document.querySelector('#content h1');`),
+    '页面里不再写第二遍「设置」');
   await evalJs(page, `document.querySelector('[data-settings-tab="cals"]').click(); return true;`);
   // 当前集默认就是展开的（CalsTab 的 openId 初始值就是 ui.cal）。
   // **名字框此刻不在** —— 改名搬进标题行之后，平时是「一段字 + 铅笔」，
@@ -3045,38 +3050,65 @@ try {
   // 顶栏重构）。这一小节顺带锁住 Esc 那一层 —— `searchOpen` 原先漏在键盘
   // effect 的依赖数组之外，于是闭包里读到的永远是 false：浮条开着按 Esc 关不掉。
   // 它必须**靠 CDP 派发**，因为要的就是「按真实焦点送一个 Escape 进 document」。
-  ok(await evalJs(page, `return !document.querySelector('.topbar .search-box');`),
-    '窄屏顶栏不摆常驻搜索框，只留图标');
+  /* 搜索框**一直在 DOM 里**（靠宽度 0 收起），所以判据不是「没有 .search-box」，
+     而是「它收着、0 宽」—— 顶栏那一行只看得见放大镜。 */
+  ok(await evalJs(page, `
+    const b = document.querySelector('.topbar .search-box');
+    return !b || b.getBoundingClientRect().width < 1;`),
+    '窄屏顶栏的搜索框收着（0 宽），只看得见放大镜');
   ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
     '窄屏顶栏有搜索图标');
-  await waitFor(page, `!!document.querySelector('.search-pop input')`, '搜索浮条弹出来了');
-  /* 浮条要**长在顶栏那一行里**（用户 2026-10-09：「移动端的搜索请在原地向左伸出去
-     一个搜索框，现在变成了在 header 下面，需要在 header 内部」）。判据三条：
-     ① 上下边都落在顶栏的上下边之内 —— 它曾经是 `top: calc(100% + 8px)`，等于
-        另起一行挂在 header 底下，把内容往下挤；现在是 `top:50%` + 居中平移；
-     ② 在搜索图标**左边**（「原地向左伸出去」）；
-     ③ 竖直跟图标对齐。
-     浮条总高刻意做成 48 = 顶栏高（30 的框 + 上下 8 padding + 上下 1 描边）——
-     多 1px 就会上下各探出去一点。容差给 2px：它挂在搜索图标上居中，而图标中心
-     未必正好是顶栏的几何中心（实测差 1px）。 */
+  /* 先记下收起时放大镜的位置 —— 张开之后要证明它**原地不动**（用户 2026-10-09：
+     「应该是把原来的搜索图标原地变成带搜索图标的输入框」） */
+  const btnAt = () => evalJs(page, `
+    const b = document.querySelector('.search-slot .search-toggle').getBoundingClientRect();
+    return { left: b.left, right: b.right };`);
+  const btnClosed = await btnAt();
+  ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
+    '窄屏顶栏有搜索图标');
+  await waitFor(page, `!!document.querySelector('.search-slot.open input')`, '搜索槽张开了');
+  await new Promise((r) => setTimeout(r, 300));   // 等宽度过渡跑完再量
+  /* 搜索框是**放大镜原地变出来**的，不是旁边飘着的一个浮层
+     （用户 2026-10-09：「把原来的搜索图标原地变成带搜索图标的输入框，带有动态的
+     向左伸出去的动画」）。判据五条：
+     ① 放大镜**原地不动** —— 张开前后它的左右沿都一样，动的是输入框那条左边；
+     ② 输入框从放大镜**左边**长出去，右沿贴着放大镜左沿（两者连成一个框）；
+     ③ 输入框宽度带过渡 —— 「动态地伸出去」，不是啪地跳出来；
+     ④ 整个落在顶栏那一行里（上下都不出顶栏）；
+     ⑤ 输入框里那枚放大镜是藏起来的 —— 并排摆着就是两个。 */
   const spBox = await evalJs(page, `
-    const p = document.querySelector('.search-pop').getBoundingClientRect();
+    const p = document.querySelector('.search-slot-field').getBoundingClientRect();
     const t = document.querySelector('.topbar').getBoundingClientRect();
     const g = document.querySelector('.search-toggle').getBoundingClientRect();
+    const cs = getComputedStyle(document.querySelector('.search-slot-field'));
+    const ico = getComputedStyle(document.querySelector('.search-slot-field .search-ico'));
     return { top: +p.top.toFixed(1), bottom: +p.bottom.toFixed(1),
              tTop: +t.top.toFixed(1), tBottom: +t.bottom.toFixed(1),
+             框左: +p.left.toFixed(1), 框右: +p.right.toFixed(1),
              在图标左边: p.right <= g.left,
-             垂直中心差: +(((p.top + p.bottom) / 2) - ((g.top + g.bottom) / 2)).toFixed(1) };
-  `);
+             贴住放大镜: p.right <= g.left + 1,
+             垂直中心差: +(((p.top + p.bottom) / 2) - ((g.top + g.bottom) / 2)).toFixed(1),
+             宽度过渡: cs.transitionDuration,
+             过渡含width: cs.transitionProperty.indexOf('width') >= 0,
+             放大镜藏起来: ico.display === 'none' };`);
+  const btnOpen = await btnAt();
+  ok(Math.abs(btnOpen.left - btnClosed.left) < 1 && Math.abs(btnOpen.right - btnClosed.right) < 1,
+    '放大镜**原地不动**（收起 ' + btnClosed.left + '–' + btnClosed.right
+    + ' → 张开 ' + btnOpen.left + '–' + btnOpen.right + '）');
+  ok(spBox.在图标左边 && spBox.贴住放大镜,
+    '输入框从放大镜**左边**长出去、右沿贴着它（连成一个框），实际 框 '
+    + spBox.框左 + '–' + spBox.框右 + ' / 放大镜 ' + btnOpen.left + '–' + btnOpen.right);
+  ok(spBox.过渡含width && parseFloat(spBox.宽度过渡) > 0.1,
+    '输入框宽度带过渡（动态地伸出去），实际 ' + spBox.宽度过渡);
   ok(spBox.top >= spBox.tTop - 2 && spBox.bottom <= spBox.tBottom + 2,
-    '窄屏搜索浮条整个落在顶栏那一行里（不再另起一行挂在 header 下面），实际 浮条 '
+    '窄屏搜索框整个落在顶栏那一行里（不出顶栏），实际 框 '
     + spBox.top + '–' + spBox.bottom + ' / 顶栏 ' + spBox.tTop + '–' + spBox.tBottom);
-  ok(spBox.在图标左边, '浮条从搜索图标原地往左伸出去，实际 ' + JSON.stringify(spBox));
   ok(Math.abs(spBox.垂直中心差) <= 1,
-    '浮条跟搜索图标竖直居中对齐，实际差 ' + spBox.垂直中心差 + 'px');
+    '搜索框跟放大镜竖直居中对齐，实际差 ' + spBox.垂直中心差 + 'px');
+  ok(spBox.放大镜藏起来, '输入框里那枚放大镜藏起来了（并排摆着就是两个）');
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-  await waitFor(page, `document.querySelector('.search-pop') ? null : 1`, 'Esc 关掉了搜索浮条');
+  await waitFor(page, `document.querySelector('.search-slot.open') ? null : 1`, 'Esc 关掉了搜索框');
 
   const tabsNow = () => evalJs(page, `
     return [...document.querySelectorAll('.tabbar .tab')].map((x) => x.textContent.replace(/\\d+/g, '').trim());
@@ -3944,7 +3976,7 @@ try {
   await clickEl(page, `document.querySelector('.fast-fab')`);
   await waitFor(page, `!!document.querySelector('.fast-add.open')`, '再展开横条（规矩 2）', 8000);
   await realClick(await centerOf('.topbar .search-toggle'));
-  await waitFor(page, `document.querySelector('.topbar .search-pop') ? 1 : null`,
+  await waitFor(page, `document.querySelector('.search-slot.open') ? 1 : null`,
     '规矩 2：横条开着，点顶栏搜索键也能打开搜索框', 8000);
   ok(await evalJs(page, `return !!document.querySelector('.fast-add.open');`),
     '规矩 2：顶栏当例外 —— 这一下既没被吞（搜索框开了），也没把横条收掉');
@@ -3952,7 +3984,7 @@ try {
   // 先滚回顶部再点，否则这一下落在 <html> 上，会被当成「点空白」把横条收掉
   await evalJs(page, `window.scrollTo(0, 0); return 1;`);
   await realClick(await centerOf('.topbar .search-toggle'));
-  await waitFor(page, `document.querySelector('.topbar .search-pop') ? null : 1`, '收起搜索框', 8000);
+  await waitFor(page, `document.querySelector('.search-slot.open') ? null : 1`, '收起搜索框', 8000);
 
   // 规矩 3：面板开着时，顶栏也不再是例外
   await clickEl(page, `document.querySelector('.fast-clock')`);
@@ -3961,7 +3993,7 @@ try {
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '规矩 3：点顶栏先把面板收掉', 8000);
   const r3 = await evalJs(page, `return {
     c: window.__c.length,
-    pop: !!document.querySelector('.topbar .search-pop'),
+    pop: !!document.querySelector('.search-slot.open'),
     open: !!document.querySelector('.fast-add.open'),
   };`);
   ok(r3.pop === false, '规矩 3：顶栏的搜索**没有**被点开 —— 面板开着时它也在例外之外');
