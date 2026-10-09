@@ -21,7 +21,7 @@ import * as D from '../domain/date.ts';
 import { DAY_H, HOUR_H, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, type DayWindow, type Slot } from '../domain/layout.ts';
 import { dayLoad, tasksOn, untimedOn } from '../domain/model.ts';
 import { CheckBtn, TaskPill, loadLevel } from './parts.tsx';
-import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
+import { useDraggableEvent, useDroppableZone, useDragSession, useClampedDraggableEvent } from '../ui/dndkit.tsx';
 
 /* ============================== 小工具 ============================== */
 
@@ -35,8 +35,8 @@ function hours24(): number[] {
 
 type LayoutEvent = { item: Task; start: number; end: number; col: number; cols: number };
 
-function TimelineEvent({ e, isToday, nowMin, win }: { e: LayoutEvent; isToday: boolean; nowMin: number; win: DayWindow }) {
-  const drag = useDraggableEvent(e.item.id);
+function TimelineEvent({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isToday: boolean; nowMin: number; win: DayWindow; isDragSrc: boolean }) {
+  const drag = useClampedDraggableEvent(e.item.id);
   const t = e.item;
   /* 纵向一律走**百分比**：时间轴高度由容器决定（锁单屏），写死 px 会在
      窗口一缩放就整体错位。完全在窗外的整条不画，跨过窗沿的按窗沿截断。 */
@@ -49,7 +49,7 @@ function TimelineEvent({ e, isToday, nowMin, win }: { e: LayoutEvent; isToday: b
   const roomy = box.height >= 3.4;
   return (
     <div
-      className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '')}
+      className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       ref={drag.ref}
       style={{ ...drag.style, top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
       {...drag.attributes}
@@ -96,6 +96,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
   const timelineZone = useDroppableZone(`timeline:${iso}`);
   const alldayZone = useDroppableZone(`allday:${iso}`);
+  const { activeId } = useDragSession();
 
   /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。 */
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to);
@@ -129,7 +130,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
               if (!box) return null;
               return (
                 <div
-                  className="tl-busy"
+                  className={'tl-busy' + (activeId === e.item.id ? ' drag-src' : '')}
                   key={e.item.id}
                   data-busy={e.item.id}
                   style={{
@@ -152,7 +153,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
           <div className="tl-events">
             {events.map((e) => (
-              <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} />
+              <TimelineEvent key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} isDragSrc={activeId === e.item.id} />
             ))}
           </div>
         </div>

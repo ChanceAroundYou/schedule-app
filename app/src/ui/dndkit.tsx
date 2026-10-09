@@ -289,14 +289,53 @@ function SortableItem({ id, children }: { id: string; children: ReactNode }) {
  */
 export function useDraggableEvent(id: string) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  const x = transform?.x ?? 0;
+  const y = transform?.y ?? 0;
   /* **只取位移。** core 的 DndContext 里有一句
      `adjustScale(appliedTranslate, over?.rect, activeNodeRect)`，把 transform 的
      scaleX/scaleY 定成「落点 ÷ 自己」的尺寸比。日视图的落点是 `.timeline`
      （整天 1536px 高），方块只有几十像素高 → scaleY 能到 25 以上，
      一拖起来就铺满整屏。`CSS.Transform.toString` 会把这个比值一起烤进
      transform；`CSS.Translate` 只出 translate3d，尺寸锁死在提起时那一刻。 */
-  const style: React.CSSProperties = { transform: CSS.Translate.toString(transform) };
+  const style: React.CSSProperties = { transform: `translate3d(${x}px, ${y}px, 0px)` };
   return { ref: setNodeRef, style, isDragging, attributes, listeners };
+}
+
+/**
+ * 水平钳制在父容器内的拖拽项。
+ *
+ * 只有日视图需要——周视图和泳道要水平拖动（跨列）。
+ * `offsetLeft` / `offsetWidth` 是**未变换**的布局值，
+ * 所以钳制跟当前 transform 无关，不会累积漂移。
+ */
+export function useClampedDraggableEvent(id: string) {
+  const drag = useDraggableEvent(id);
+  const nodeRef = useRef<HTMLElement | null>(null);
+
+  const setRef = useCallback((el: HTMLElement | null) => {
+    nodeRef.current = el;
+    drag.ref(el);
+  }, [drag.ref]);
+
+  const m = drag.style.transform?.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
+  const x = m ? parseFloat(m[1]) : 0;
+  const y = m ? parseFloat(m[2]) : 0;
+
+  let clampedX = x;
+  if (drag.isDragging && nodeRef.current) {
+    const node = nodeRef.current;
+    const parent = node.offsetParent as HTMLElement | null;
+    if (parent) {
+      const maxX = parent.offsetWidth - node.offsetLeft - node.offsetWidth;
+      clampedX = Math.max(-node.offsetLeft, Math.min(x, maxX));
+    }
+  }
+
+  return {
+    ...drag,
+    ref: setRef,
+    style: { transform: `translate3d(${clampedX}px, ${y}px, 0px)` },
+  };
 }
 
 /**
@@ -402,15 +441,34 @@ export function useTimelineDrag() {
   const onDragEnd = useCallback((event: DragEndEvent) => {
     const over = event.over;
     clearTimeGuide();
-    if (!over) return;
+
+    const activeId = String(event.active.id);
+    const activatorEvent = event.activatorEvent as PointerEvent;
+    const currentY = activatorEvent.clientY + event.delta.y;
+    const currentX = activatorEvent.clientX + event.delta.x;
+
+    /* 拖出外框（over 为 null）时**不去原位**：只要指针还横在时间轴上方，
+       就按纵向最近的位置落 —— 拖到下方之外就落到最下方，拖到上方之外就落到最上方。
+       `yToMin` 自己会收进窗内并对齐 15 分钟，所以「最近的位置」是免费的。 */
+    if (!over) {
+      const task = store.get().tasks[activeId];
+      if (!task || !task.date) return;
+      const tl = document.querySelector<HTMLElement>(`.timeline[data-zone-id="timeline:${task.date}"]`);
+      if (tl) {
+        const rect = tl.getBoundingClientRect();
+        if (currentX >= rect.left && currentX <= rect.right) {
+          const min = minFromY(tl, currentY);
+          store.patchTask(activeId, { date: task.date, time: D.minToTime(min) });
+          toast(`已改到 ${D.minToTime(min)}`);
+        }
+      }
+      return;
+    }
 
     const overId = String(over.id);
     const zone = document.querySelector<HTMLElement>(`[data-zone-id="${overId}"]`);
     if (!zone) return;
 
-    const activeId = String(event.active.id);
-    const activatorEvent = event.activatorEvent as PointerEvent;
-    const currentY = activatorEvent.clientY + event.delta.y;
     const date = zone.dataset.date || null;
 
     if (overId.startsWith('timeline:')) {
