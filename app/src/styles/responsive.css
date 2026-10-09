@@ -218,8 +218,6 @@ body.sheet-open .tab:active { background: none; }
   .check-btn.on::after { width: 5px; height: 9px; }
   .row-title { font-size: 14.5px; }
   .task-pill { padding: 5px 7px; font-size: 12.5px; }
-  .allday-items .task-pill { padding: 4px 6px; }
-  .allday-items { gap: 3px 4px; }
 
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
@@ -243,17 +241,22 @@ body.sheet-open .tab:active { background: none; }
   .list-group { margin-bottom: 18px; }
   .empty { padding: 50px 0; }
 
-  /* 日程时间轴：左侧刻度占太宽，缩窄 */
-  .tl-wrap { padding: 14px 8px 14px 48px; position: relative; z-index: 1; }
-  .tl-label, .tl-now span { left: -44px; width: 38px; }
-  .tl-event { padding: 5px 8px; }
-  .ev-title { font-size: 13px; }
-  .ev-time { font-size: 11px; }
+  /* 日程时间轴：移动端只改变量值，规则本身在 calendar.css 里用 var() 引用。 */
+  :root {
+    --allday-zone-pad: 6px 8px 6px 48px;
+    --allday-items-gap: 3px 4px;
+    --allday-pill-pad: 4px 6px;
+    --tl-wrap-pad: 14px 8px 14px 48px;
+    --tl-label-left: -44px;
+    --tl-label-width: 38px;
+    --tl-event-pad: 5px 8px;
+    --ev-title-size: 13px;
+    --ev-time-size: 11px;
+    --tl-wrap-z: 1;
+    --allday-zone-z: 2;
+  }
   /* 触屏没有 hover，拖拽抓手常显会误触，改为整体隐藏 */
   .ev-resize { display: none; }
-  /* 未定时任务区：左内边距与 .tl-wrap 一致（48px），整体压缩。
-     z-index:2 让拖动的卡片不被下面的时间面板遮挡。 */
-  .allday-zone { padding: 6px 8px 6px 48px; position: relative; z-index: 2; }
 
   /* 任务抽屉：从底部整块弹出 */
   .drawer {
