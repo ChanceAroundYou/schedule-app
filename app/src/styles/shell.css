@@ -260,39 +260,50 @@
 .view-switch button:hover { background: var(--panel-3); }
 .view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
-/* ================= 移动端搜索：放大镜原地变成输入框 ================= */
+/* ============ 移动端搜索：放大镜原地张开成**桌面端那个搜索框** ============ */
 
-/* 放大镜**原地变成**输入框、向左伸出去（用户 2026-10-09：「应该是把原来的搜索图标
-   原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」）。
-   槽里并排放「钮」和「输入框」，**输入框宽度从 0 过渡到全宽**；槽站在 `.topbar-right`
-   里（那一行靠右对齐），所以长出来是**往左**长 —— 右沿钉在原地不动。
-   别做成浮层：浮层要 `position: absolute` + 定位锚，放大镜和框是分开的两样东西。 */
+/* 放大镜**原地张开成桌面端那个搜索框**（用户 2026-10-09 两轮：「把原来的搜索图标
+   原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」+「移动端打开最好和
+   桌面端完全一样」）。槽里并排放「输入框」和「放大镜钮」，槽在 `.topbar-right` 里
+   靠右对齐，所以输入框长出来是**往左**长 —— 右沿钉在原地不动。
+   张开后钮收掉，剩下的就是桌面端那个 `.search-box` 本身：同一个组件、同一套样式，
+   放大镜在左边、输入框 130px、清空键在右 —— 不是「照着画的」。
+   关搜索走框里那个清空键（`SearchInput` 的 `onClose`）：移动端这个框是临时张开的，
+   总得有个关的地方；清空键于是**常驻**，没字时按它就是「关闭搜索」。 */
 .search-slot { position: relative; display: flex; align-items: center; }
+
+/* 收起：0 宽 + 裁掉 + 藏起来。
+   过渡量的是 `max-width` 不是 `width` —— 张开后这个框的宽度是**内容撑的**
+   （跟桌面端一样：空着 176px，清空键一出现再长 19px）。写死 `width` 就只能在
+   两者里挑一个，挑哪个都和桌面端差一截；`max-width` 从 0 涨上去，过渡照样是
+   动态的，涨到内容宽度就停 —— 于是张开后**逐像素等于桌面端**。
+   移动端清空键常驻，所以张开后是 195px 那一档（= 桌面端**有字时**的宽度）。 */
 .search-slot-field {
-  width: 0; overflow: hidden; opacity: 0; visibility: hidden;
-  transition: width .18s ease, opacity .14s ease, visibility 0s linear .18s;
+  max-width: 0; overflow: hidden; opacity: 0; visibility: hidden;
+  transition: max-width .18s ease, opacity .14s ease, visibility 0s linear .18s;
 }
-/* 顶栏内边距 13 + 槽与右缘之间还有状态点，一起让出来；视口再小也留 90px 给标题 */
+/* 上界给足余量（内容 176 / 带清空键 195），好让过渡几乎线性地走完那 176px；
+   视口再小也留 150px 给标题 —— 390px 的手机上这条不生效（390-150 = 240 > 195）。 */
 .search-slot.open .search-slot-field {
-  width: min(232px, calc(100vw - 158px));
+  max-width: min(240px, calc(100vw - 150px));
   opacity: 1; visibility: visible;
-  transition: width .18s ease, opacity .14s ease, visibility 0s;
+  transition: max-width .18s ease, opacity .14s ease, visibility 0s;
 }
-.search-slot-field .search-box { width: 100%; }
-/* 放大镜由右边那个钮当，输入框里那枚藏起来 —— 并排放着就是两个放大镜 */
-.search-slot-field .search-ico { display: none; }
-/* 张开之后钮和框连成**一个**搜索框：描边、底色、圆角都接上，中间那条竖线不画 */
-.search-slot.open .search-box {
-  border-right: none; border-radius: var(--r-md) 0 0 var(--r-md);
+
+/* 张开后那个钮**收掉**：放大镜归了框（在框左边），钮再留着就是第二个。
+   宽度归零 + 淡出，整条槽的宽度于是 = 框的宽度，右沿钉在原地 ——
+   看着就是钮往左长成了一个框。 */
+.search-toggle {
+  overflow: hidden; flex: 0 0 auto;
+  transition: width .18s ease, padding .18s ease, opacity .14s ease, visibility 0s;
 }
+/* 缩的过程中别把图标压扁 —— `flex-shrink` 会把正方形的放大镜挤成 14×16
+   （用户 2026-10-09：「用的搜索图片变小了还变形了」就是这一条）。 */
+.search-toggle svg { flex: none; }
 .search-slot.open .search-toggle {
-  height: 30px; padding: 0 8px;
-  border: var(--border-w) solid var(--input); border-left: none;
-  border-radius: 0 var(--r-md) var(--r-md) 0;
-  background: var(--panel-2); color: var(--text-3);
+  width: 0; padding: 0; opacity: 0; visibility: hidden;
+  transition: width .18s ease, padding .18s ease, opacity .14s ease, visibility 0s linear .18s;
 }
-.search-slot.open .search-toggle.on { color: var(--primary); border-color: var(--primary); }
-.search-toggle.on { color: var(--primary); border-color: var(--primary); }
 
 .cal-subhead {
   display: flex; align-items: center; justify-content: space-between;

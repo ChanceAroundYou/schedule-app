@@ -3050,63 +3050,135 @@ try {
   // 顶栏重构）。这一小节顺带锁住 Esc 那一层 —— `searchOpen` 原先漏在键盘
   // effect 的依赖数组之外，于是闭包里读到的永远是 false：搜索开着按 Esc 关不掉。
   // 它必须**靠 CDP 派发**，因为要的就是「按真实焦点送一个 Escape 进 document」。
+
+  /* 先把**桌面端那个搜索框**量下来当基准（用户 2026-10-09：「移动端打开最好和
+     桌面端完全一样」）—— 切回真宽屏量一次再切回来。两处要特别小心：
+     · 底色得拿**聚焦态**比 —— 移动端张开后输入框是自动聚焦的，
+       `.search-box:focus-within` 会换底色；
+     · 移动端张开后清空键**常驻**，所以对的是桌面端**有字时**那一档（195px），
+       不是空着那一档（176px）。 */
+  await reloadAs(false, '切回真宽屏量桌面端搜索框');
+  await evalJs(page, `document.querySelector('.topbar .search-box input').focus(); return 1;`);
+  await new Promise((r) => setTimeout(r, 250));
+  const measureDesk = () => evalJs(page, `
+    const b = document.querySelector('.topbar .search-box');
+    const r = b.getBoundingClientRect();
+    const i = b.querySelector('.search-ico svg').getBoundingClientRect();
+    const inp = b.querySelector('input').getBoundingClientRect();
+    const cs = getComputedStyle(b);
+    const x = b.querySelector('.clear-search');
+    const xr = x ? x.getBoundingClientRect() : null;
+    return { 宽: +r.width.toFixed(1), 高: +r.height.toFixed(1),
+             放大镜: +i.width.toFixed(1) + 'x' + +i.height.toFixed(1),
+             放大镜偏移: +(i.left - r.left).toFixed(1),
+             输入宽: +inp.width.toFixed(1),
+             清空键: xr ? +(xr.left - r.left).toFixed(1) : null,
+             描边: cs.borderTopWidth, 圆角: cs.borderRadius,
+             底色: cs.backgroundColor, 内边距: cs.paddingLeft + '/' + cs.paddingRight };`);
+  const deskEmpty = await measureDesk();
+  await evalJs(page, `
+    const el = document.querySelector('.topbar .search-box input');
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(el, '报告'); el.dispatchEvent(new Event('input', { bubbles: true }));
+    return 1;`);
+  await new Promise((r) => setTimeout(r, 250));
+  const deskFull = await measureDesk();
+  /* 量完**必须把字清掉**：`ui.search` 是**持久化**的（`App.tsx` 的 `onSearch` 会
+     `store.setUi({ search })`），留着「报告」后面整趟探针看到的任务列表都被过滤成
+     只剩匹配项 —— 实测后面「回车交完任务」那节会等不到新任务出现。 */
+  await evalJs(page, `
+    const el = document.querySelector('.topbar .search-box input');
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true }));
+    return 1;`);
+  await new Promise((r) => setTimeout(r, 300));   // 等 onSearch 那个 180ms 防抖落地
+  await reloadAs(true, '再切回伪窄屏');
+
   /* 搜索框**一直在 DOM 里**（靠宽度 0 收起），所以判据不是「没有 .search-box」，
      而是「它收着、0 宽」—— 顶栏那一行只看得见放大镜。
-     量 `.search-slot-field`（真正带宽度过渡的那一层），不是 `.search-box`：
-     后者是 flex 容器，`min-width: auto` 让它停在内容的最小宽度上（约 150px），
-     靠父层的 `overflow: hidden` 裁掉 —— 量它永远量到 150，跟收没收起没关系。 */
+     量 `.search-slot-field`（真正带 `max-width` 过渡的那层），不是 `.search-box`：
+     后者是 flex 容器，`min-width: auto` 让它停在内容的最小宽度上，靠父层的
+     `overflow: hidden` 裁掉 —— 量它永远量到内容宽度，跟收没收起没关系。 */
   ok(await evalJs(page, `
     const f = document.querySelector('.topbar .search-slot-field');
     return !f || f.getBoundingClientRect().width < 1;`),
     '窄屏顶栏的搜索框收着（0 宽），只看得见放大镜');
-  ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
-    '窄屏顶栏有搜索图标');
-  /* 先记下收起时放大镜的位置 —— 张开之后要证明它**原地不动**（用户 2026-10-09：
-     「应该是把原来的搜索图标原地变成带搜索图标的输入框」） */
   const btnAt = () => evalJs(page, `
     const b = document.querySelector('.search-slot .search-toggle').getBoundingClientRect();
-    return { left: b.left, right: b.right };`);
+    return { left: b.left, right: b.right, w: b.width };`);
   const btnClosed = await btnAt();
+  ok(btnClosed.w >= 24, '窄屏顶栏有搜索图标（命中区 ' + btnClosed.w + 'px）');
+  /* 点开。中途采三次样 —— 宽度得是**过渡**出来的，不能一步到位
+     （用户 2026-10-09：「带有动态的向左伸出去的动画」）。 */
+  await evalJs(page, `document.querySelector('.topbar .search-toggle').click(); return 1;`);
+  const midW = [];
+  for (let i = 0; i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 55));
+    midW.push(await evalJs(page, `return +document.querySelector('.search-slot-field').getBoundingClientRect().width.toFixed(1);`));
+  }
   await waitFor(page, `!!document.querySelector('.search-slot.open input')`, '搜索槽张开了');
-  await new Promise((r) => setTimeout(r, 300));   // 等宽度过渡跑完再量
-  /* 搜索框是**放大镜原地变出来**的，不是旁边飘着的一个浮层
-     （用户 2026-10-09：「把原来的搜索图标原地变成带搜索图标的输入框，带有动态的
-     向左伸出去的动画」）。判据五条：
-     ① 放大镜**原地不动** —— 张开前后它的左右沿都一样，动的是输入框那条左边；
-     ② 输入框从放大镜**左边**长出去，右沿贴着放大镜左沿（两者连成一个框）；
-     ③ 输入框宽度带过渡 —— 「动态地伸出去」，不是啪地跳出来；
-     ④ 整个落在顶栏那一行里（上下都不出顶栏）；
-     ⑤ 输入框里那枚放大镜是藏起来的 —— 并排摆着就是两个。 */
-  const spBox = await evalJs(page, `
-    const p = document.querySelector('.search-slot-field').getBoundingClientRect();
-    const t = document.querySelector('.topbar').getBoundingClientRect();
-    const g = document.querySelector('.search-toggle').getBoundingClientRect();
-    const cs = getComputedStyle(document.querySelector('.search-slot-field'));
-    const ico = getComputedStyle(document.querySelector('.search-slot-field .search-ico'));
-    return { top: +p.top.toFixed(1), bottom: +p.bottom.toFixed(1),
-             tTop: +t.top.toFixed(1), tBottom: +t.bottom.toFixed(1),
-             框左: +p.left.toFixed(1), 框右: +p.right.toFixed(1),
-             在图标左边: p.right <= g.left,
-             贴住放大镜: p.right <= g.left + 1,
-             垂直中心差: +(((p.top + p.bottom) / 2) - ((g.top + g.bottom) / 2)).toFixed(1),
-             宽度过渡: cs.transitionDuration,
-             过渡含width: cs.transitionProperty.indexOf('width') >= 0,
-             放大镜藏起来: ico.display === 'none' };`);
+  await new Promise((r) => setTimeout(r, 320));   // 等过渡跑完再量
+  /* 张开后就是桌面端那个 `.search-box` **本身**（用户 2026-10-09：「移动端打开最好
+     和桌面端完全一样」）。判据：
+     ① 框的宽 / 高 / 描边 / 圆角 / 内边距 / 底色逐项等于桌面端（同一个组件、同一套
+        样式，不是照着画的）；
+     ② 输入框宽度一样（130）；
+      ③ 放大镜**三处同尺寸同位置** —— 桌面端那枚、收起时那个钮里那枚、张开后框里
+         这枚，都是 16×16 的正方形，离框左沿都是 12px；
+      ④ 框从钮的位置**往左**长出去、右沿钉在原地（「原地变成输入框」那一层意思）；
+      ⑤ 那个钮收掉了 —— 放大镜归了框（在框左边），钮再留着就是第二个。
+      ⑥ 框里那枚清空键**常驻**，位置和桌面端有字时那枚一模一样 —— 没字时按它是
+         「关闭搜索」（移动端这个框是临时的，总得有个关的地方）。 */
+  const openBox = await evalJs(page, `
+    const b = document.querySelector('.search-slot-field .search-box');
+    const r = b.getBoundingClientRect();
+    const i = b.querySelector('.search-ico svg').getBoundingClientRect();
+    const inp = b.querySelector('input').getBoundingClientRect();
+    const cs = getComputedStyle(b);
+    const x = b.querySelector('.clear-search');
+    const xr = x ? x.getBoundingClientRect() : null;
+    const t = document.querySelector('.search-slot .search-toggle').getBoundingClientRect();
+    const ti = document.querySelector('.search-slot .search-toggle svg').getBoundingClientRect();
+    return { 宽: +r.width.toFixed(1), 高: +r.height.toFixed(1), 右: +r.right.toFixed(1),
+             放大镜: +i.width.toFixed(1) + 'x' + +i.height.toFixed(1),
+             放大镜偏移: +(i.left - r.left).toFixed(1),
+             输入宽: +inp.width.toFixed(1),
+             清空键: xr ? +(xr.left - r.left).toFixed(1) : null,
+             描边: cs.borderTopWidth, 圆角: cs.borderRadius,
+             底色: cs.backgroundColor, 内边距: cs.paddingLeft + '/' + cs.paddingRight,
+             钮宽: +t.width.toFixed(1),
+             钮里放大镜: +ti.width.toFixed(1) + 'x' + +ti.height.toFixed(1) };`);
   const btnOpen = await btnAt();
-  ok(Math.abs(btnOpen.left - btnClosed.left) < 1 && Math.abs(btnOpen.right - btnClosed.right) < 1,
-    '放大镜**原地不动**（收起 ' + btnClosed.left + '–' + btnClosed.right
-    + ' → 张开 ' + btnOpen.left + '–' + btnOpen.right + '）');
-  ok(spBox.在图标左边 && spBox.贴住放大镜,
-    '输入框从放大镜**左边**长出去、右沿贴着它（连成一个框），实际 框 '
-    + spBox.框左 + '–' + spBox.框右 + ' / 放大镜 ' + btnOpen.left + '–' + btnOpen.right);
-  ok(spBox.过渡含width && parseFloat(spBox.宽度过渡) > 0.1,
-    '输入框宽度带过渡（动态地伸出去），实际 ' + spBox.宽度过渡);
-  ok(spBox.top >= spBox.tTop - 2 && spBox.bottom <= spBox.tBottom + 2,
-    '窄屏搜索框整个落在顶栏那一行里（不出顶栏），实际 框 '
-    + spBox.top + '–' + spBox.bottom + ' / 顶栏 ' + spBox.tTop + '–' + spBox.tBottom);
-  ok(Math.abs(spBox.垂直中心差) <= 1,
-    '搜索框跟放大镜竖直居中对齐，实际差 ' + spBox.垂直中心差 + 'px');
-  ok(spBox.放大镜藏起来, '输入框里那枚放大镜藏起来了（并排摆着就是两个）');
+  /* 对的是 `deskFull`（桌面端**有字时**）—— 移动端清空键常驻，宽度是 195 那一档 */
+  ok(openBox.宽 === deskFull.宽 && openBox.高 === deskFull.高,
+    '张开后框的宽高和桌面端有字时一模一样，实际 ' + openBox.宽 + '×' + openBox.高
+    + ' / 桌面端 ' + deskFull.宽 + '×' + deskFull.高 + '（空着是 ' + deskEmpty.宽 + '）');
+  ok(openBox.描边 === deskFull.描边 && openBox.圆角 === deskFull.圆角
+    && openBox.内边距 === deskFull.内边距 && openBox.底色 === deskFull.底色,
+    '描边 / 圆角 / 内边距 / 底色也逐项等于桌面端，实际 '
+    + JSON.stringify({ 描边: openBox.描边, 圆角: openBox.圆角, 内边距: openBox.内边距, 底色: openBox.底色 })
+    + ' / 桌面端 ' + JSON.stringify({ 描边: deskFull.描边, 圆角: deskFull.圆角,
+        内边距: deskFull.内边距, 底色: deskFull.底色 }));
+  ok(openBox.输入宽 === deskFull.输入宽,
+    '输入框宽度一样（' + openBox.输入宽 + 'px），实际桌面端 ' + deskFull.输入宽);
+  ok(openBox.清空键 === deskFull.清空键 && openBox.清空键 !== null,
+    '清空键位置和桌面端有字时那枚一样（离框左 ' + openBox.清空键 + 'px），实际桌面端 '
+    + deskFull.清空键);
+  ok(openBox.放大镜 === deskFull.放大镜 && openBox.放大镜 === openBox.钮里放大镜
+    && openBox.放大镜 === '16x16' && openBox.放大镜偏移 === deskFull.放大镜偏移,
+    '放大镜三处同尺寸同位置（桌面端 / 收起时那个钮 / 张开后框里），实际 '
+    + JSON.stringify({ 桌面端: deskFull.放大镜, 钮: openBox.钮里放大镜, 框里: openBox.放大镜,
+        框里偏移: openBox.放大镜偏移, 桌面端偏移: deskFull.放大镜偏移 }));
+  ok(btnOpen.w < 1 && openBox.钮宽 < 1,
+    '张开后那个钮收掉了（不是并排两个放大镜），实际 钮宽 ' + openBox.钮宽);
+  ok(Math.abs(openBox.右 - btnClosed.right) < 1,
+    '框从钮的位置往左长出来、右沿钉在原地，实际 框右 ' + openBox.右
+    + ' / 收起时钮右 ' + btnClosed.right);
+  ok(openBox.右 - openBox.宽 < btnClosed.right - 100,
+    '框确实是往**左**长出去的，实际 框左 ' + (openBox.右 - openBox.宽)
+    + ' / 收起时钮右 ' + btnClosed.right);
+  ok(midW.some((w) => w > 1 && w < openBox.宽 - 1) && midW[0] <= midW[1] && midW[1] <= midW[2],
+    '宽度是过渡出来的（不是一步到位），中途采样 ' + JSON.stringify(midW));
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await waitFor(page, `document.querySelector('.search-slot.open') ? null : 1`, 'Esc 关掉了搜索框');
@@ -3984,7 +4056,9 @@ try {
   // 搜索框的 autoFocus 会把页面滚下去，顶栏按钮就跑到视口外了 ——
   // 先滚回顶部再点，否则这一下落在 <html> 上，会被当成「点空白」把横条收掉
   await evalJs(page, `window.scrollTo(0, 0); return 1;`);
-  await realClick(await centerOf('.topbar .search-toggle'));
+  // 张开后那个钮收掉了（放大镜归了框），关搜索走框里那枚**常驻**的清空键 ——
+  // 没字时按它就是「关闭搜索」。它也在 `.search-slot` 里，所以这一下同样不该把横条收掉
+  await realClick(await centerOf('.topbar .search-box .clear-search'));
   await waitFor(page, `document.querySelector('.search-slot.open') ? null : 1`, '收起搜索框', 8000);
 
   // 规矩 3：面板开着时，顶栏也不再是例外

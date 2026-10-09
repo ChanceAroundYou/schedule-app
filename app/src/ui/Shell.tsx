@@ -309,13 +309,22 @@ function useSearchValue(initial: string, onSearch: (kw: string) => void) {
   return [kw, setKw] as const;
 }
 
-/** 搜索输入框（桌面常驻 / 移动浮条共用） */
-function SearchInput({ kw, setKw, autoFocus }: {
-  kw: string; setKw: (v: string) => void; autoFocus?: boolean;
+/** 搜索输入框（桌面常驻 / 移动端张开后共用）——
+ *  **桌面端和移动端张开后是同一个东西**，不是「长得像」：同一个组件、同一套样式。
+ *  放大镜 16px 也是**三处同一个尺寸**（桌面端 / 移动端收起时那个钮 / 移动端张开后
+ *  框里这枚）—— 用户 2026-10-09：「请使用完全一致的放大镜图片，桌面端 移动端收起
+ *  移动端打开一致」。这里原先写的是 14，和钮里的 16 对不上。
+ *  `onClose` 是移动端专用：清空键**常驻**（桌面端只在有字时才出现）。没字时按它是
+ *  「关闭搜索」—— 移动端这个框是临时张开的，总得有个关的地方；有字时按它还是清空，
+ *  和桌面端一个意思。 */
+function SearchInput({ kw, setKw, autoFocus, onClose }: {
+  kw: string; setKw: (v: string) => void; autoFocus?: boolean; onClose?: () => void;
 }) {
+  const showClear = !!kw || !!onClose;
+  const clearName = kw ? '清空' : '关闭搜索';
   return (
     <div className="search-box">
-      <span className="search-ico"><Search size={14} /></span>
+      <span className="search-ico"><Search size={16} /></span>
       <Input
         type="text"
         value={kw}
@@ -324,8 +333,13 @@ function SearchInput({ kw, setKw, autoFocus }: {
         autoFocus={autoFocus}
         onChange={(e) => setKw(e.target.value)}
       />
-      {!!kw && (
-        <button className="clear-search" title="清空" onClick={() => setKw('')}>
+      {showClear && (
+        <button
+          className="clear-search"
+          title={clearName}
+          aria-label={clearName}
+          onClick={onClose ? (kw ? () => setKw('') : onClose) : () => setKw('')}
+        >
           <X size={13} />
         </button>
       )}
@@ -472,18 +486,20 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
             窄屏不渲染 —— 那边走「更多」抽屉里的入口 + 弹窗面板。 */}
         {!narrow && <CalMenu state={state} />}
         {narrow ? (
-          /* 放大镜**原地变成**输入框、向左伸出去（用户 2026-10-09：「应该是把原来的
-             搜索图标原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」）。
-             做法：槽里并排放「钮」和「输入框」，**输入框的宽度从 0 过渡到全宽**。
-             槽站在 `.topbar-right` 里（那一行靠右对齐），所以宽度长出来是**往左**长
-             —— 右沿钉在原地不动，看着就是钮变成了框，中间那条边往左扫过去。
-             **别做成浮层**：浮层要 `position: absolute` + 一个定位锚，放大镜原地不动、
-             框从它左边飘出去，两者看着是分开的两个东西，也没有「长出来」的动势。 */
+          /* 放大镜**原地张开成桌面端那个搜索框**（用户 2026-10-09 两轮：
+             ①「把原来的搜索图标原地变成带搜索图标的输入框，带有动态的向左伸出去的
+             动画」；②「移动端打开最好和桌面端完全一样」）。
+             做法：槽里并排放「输入框」和「放大镜钮」，**输入框从 0 过渡到内容宽度**，
+             槽在 `.topbar-right` 里靠右对齐，所以是**往左**长、右沿钉在原地。
+             张开后钮收掉 —— 剩下的就是桌面端那个 `.search-box` 本身（放大镜在左边、
+             输入框 130px、清空键在右），**同一个组件同一套样式**，不是照着画的。
+             **别做成浮层**：浮层要 `position: absolute` + 一个定位锚，放大镜和框
+             看着是分开的两样东西，也没有「长出来」的动势。 */
           <div className={'search-slot' + (searchOpen ? ' open' : '')} ref={slotRef}>
-            {/* 输入框**排在钮前面**：槽在 `.topbar-right` 里靠右对齐，宽度往左长，
-                排在**后面**的那个钮才钉在原地不动 —— 排前面的话它会被顶得往左挪。 */}
+            {/* 输入框**排在钮前面**：槽靠右对齐、宽度往左长，排在**后面**的那个钮
+                才钉在右沿不动 —— 排前面的话它会被顶得往左挪。 */}
             <div className="search-slot-field">
-              <SearchInput kw={kw} setKw={setKw} />
+              <SearchInput kw={kw} setKw={setKw} onClose={() => setSearchOpen(false)} />
             </div>
             <IconBtn
               ref={searchBtn}
