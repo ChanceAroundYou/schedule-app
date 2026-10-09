@@ -163,14 +163,20 @@ export function fallbackVars() {
  * 第三道：`.tsx` 里不许出现 Tailwind 自带的圆角工具类（`rounded` / `rounded-lg`
  * / `rounded-2xl` …）。它们写死像素，切到 flat（零圆角）/ notion（小圆角）时
  * 原地不动 —— 和上面那两类一样，不报错、不崩，只是「这一块没跟着风格走」。
- * 圆角一律走 `rounded-[var(--r-*)]`。
+ * 圆角一律走 `rounded-[var(--r-md)]` 这种写法（`rounded-` 接一个 `var()` 任意值，
+ * 值取 `--r-xs` 到 `--r-pill` 那一档）。
+ *
+ * **注释里也别写占位符**：Tailwind 的扫描器是裸文本匹配，注释里的示例照样被当成
+ * 真类名 —— 早先这里用星号当通配（`rounded-` 接 `var(--r-` 三个横杠一个星号）写过
+ * 一次，构建就报两条 `Unexpected token` 警告，还生成了两条**非法** CSS。
+ * 要举例就写个真令牌，别写占位符。
  */
 export function roundedClasses() {
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
   const out = [];
   for (const f of walk(SRC).filter((f) => /\.tsx$/.test(f))) {
     readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
-      // `rounded-[var(...)]` 是我们要的写法；`rounded-full` 是正圆/胶囊，不算
+      // 带 `var(` 任意值的是我们要的写法；`rounded-full` 是正圆/胶囊，不算
       for (const m of line.matchAll(/\brounded(?:-[a-z0-9]+|-\[[^\]]*\])*/g)) {
         const cls = m[0];
         if (cls.includes('[var(') || cls === 'rounded-full' || cls === 'rounded-none') continue;
