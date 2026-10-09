@@ -34,7 +34,7 @@
 
 .allday-zone {
   flex: 0 0 auto; overflow-y: auto; max-height: 100px;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 60px;
   border-bottom: var(--border-w) solid var(--border);
 }
 /* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
@@ -52,7 +52,7 @@
 
 .tl-wrap {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
-  padding: 10px 12px 12px 60px;
+  padding: 10px 12px 12px 60px; position: relative;
 }
 /* 兜底高度。真正的高度是 `.content-day .tl-wrap > .timeline` 那条 flex 给的
    （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。
@@ -63,9 +63,7 @@
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
-.tl-busy { position: absolute; left: 0; right: 0; background: var(--primary-pale); border-radius: var(--r-sm); }
-/* 正在拖动的那一段，底纹立刻让位给方块，原位置不再留一块颜色 */
-.tl-busy.drag-src { display: none; }
+.tl-busy { position: absolute; left: 0; right: 0; border-radius: var(--r-sm); }
 
 .tl-now { position: absolute; left: -8px; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
 .tl-now i { position: absolute; left: -4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }

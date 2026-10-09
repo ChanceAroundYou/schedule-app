@@ -319,7 +319,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 
 /* 左侧时间轴上的时间标签（显示绿线对应几点） */
 .tl-cursor {
-  position: absolute; left: -56px; top: -9px;
+  position: absolute; left: -56px; top: -8px;
   width: 44px; text-align: right;
   font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
   color: var(--primary); pointer-events: none; z-index: 11;

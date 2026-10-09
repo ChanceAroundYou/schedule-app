@@ -612,7 +612,11 @@ export function useTimelineDrag() {
     const date = zone.dataset.date || null;
 
     if (overId.startsWith('timeline:')) {
-      const min = minFromY(zone, currentY);
+      /* 落点跟绿线一致：用卡片顶部坐标，不用手指坐标 */
+      const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+      const min = card
+        ? minFromY(zone, card.getBoundingClientRect().top)
+        : minFromY(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.minToTime(min)}`);
       return;
