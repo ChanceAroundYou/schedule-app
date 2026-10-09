@@ -3359,25 +3359,34 @@ try {
     `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.navHidden.length === 2 ? 1 : null`);
   const navKeys = () => evalJs(page,
     `return [...document.querySelectorAll('[data-nav-row]')].map((x) => x.dataset.navRow);`);
-  ok((await uiNow()).navHidden.join() === 'ai,done',
-    'navHidden 记下了藏起来的两项，实际 ' + JSON.stringify((await uiNow()).navHidden));
-  ok((await navKeys()).slice(-2).join() === 'ai,done',
-    '被藏的两项排到网格最后，实际 ' + JSON.stringify(await navKeys()));
+  /* 期望值**算出来**，不写死字符串：网格次序的定义就是「`navOrder` 里显示中的
+     按原序在前、被隐藏的按原序在后」。写死的话，前面几步一动 `navOrder`，这里
+     就变成在测我抄的那串常量，而不是在测代码。 */
+  const ui2 = await uiNow();
+  const hid = new Set(ui2.navHidden);
+  const shownKeys = ui2.navOrder.filter((k) => !hid.has(k));
+  const hiddenKeys = ui2.navOrder.filter((k) => hid.has(k));
+  ok(ui2.navHidden.slice().sort().join() === 'ai,done' && shownKeys.length === 7 && hiddenKeys.length === 2,
+    'navHidden 记下了藏起来的两项（显示组 7 · 隐藏组 2），实际 ' + JSON.stringify(ui2.navHidden));
+  const grid0 = [...shownKeys, ...hiddenKeys];
+  ok((await navKeys()).join() === grid0.join(),
+    '网格次序 = 「显示中的在前 + 被隐藏的按原序在后」（不再交叉排列），实际 '
+    + JSON.stringify(await navKeys()));
   const wOn = await navOn();
   ok(wOn.slice(0, 7).every(Boolean) && wOn.slice(7).every((v) => !v),
-    '前 7 格显示中、后 2 格隐藏（不再交叉排列），实际 ' + JSON.stringify(wOn));
+    '前 7 格显示中、后 2 格隐藏，实际 ' + JSON.stringify(wOn));
 
   // ③ 跨组落位：**拖是自由的，落点被钳回本组**。显示项拖进隐藏区 → 落到显示组
   //    末位；隐藏项拖进显示区 → 落到隐藏组最前位。原先两组混着排。
-  const head = (await navKeys())[0];
-  await dragNav(head, 'done');
-  const afterShown = await navKeys();
-  ok(afterShown[6] === head && afterShown.slice(7).join() === 'ai,done',
-    '显示项拖进隐藏区 → 落到显示组末位，实际 ' + JSON.stringify(afterShown));
-  await dragNav('done', afterShown[0]);
-  const afterHidden = await navKeys();
-  ok(afterHidden.slice(7).join() === 'done,ai',
-    '隐藏项拖进显示区 → 落到隐藏组最前位，实际 ' + JSON.stringify(afterHidden));
+  await dragNav(shownKeys[0], hiddenKeys[hiddenKeys.length - 1]);
+  const shownAfter1 = [...shownKeys.slice(1), shownKeys[0]];
+  ok((await navKeys()).join() === [...shownAfter1, ...hiddenKeys].join(),
+    '显示项拖进隐藏区 → 落到显示组末位，实际 ' + JSON.stringify(await navKeys()));
+  const lastHidden = hiddenKeys[hiddenKeys.length - 1];
+  await dragNav(lastHidden, shownAfter1[0]);
+  const grid2 = [...shownAfter1, lastHidden, ...hiddenKeys.slice(0, -1)];
+  ok((await navKeys()).join() === grid2.join(),
+    '隐藏项拖进显示区 → 落到隐藏组最前位，实际 ' + JSON.stringify(await navKeys()));
   const wOn2 = await navOn();
   ok(wOn2.slice(0, 7).every(Boolean) && wOn2.slice(7).every((v) => !v),
     '落位之后仍然是显示中的在前');
@@ -3385,19 +3394,35 @@ try {
   // ④ 侧栏底部的「更多」：桌面没有底栏那个抽屉，被藏起来的项得有个地方够得着
   ok(await evalJs(page, `return !!document.querySelector('.sidebar [data-nav-more]');`),
     '有隐藏项时侧栏底部出现「更多」入口');
-  const sideLabels = () => evalJs(page,
-    `return [...document.querySelectorAll('.sidebar #nav .nav-item .label')].map((x) => x.textContent);`);
-  ok(!(await sideLabels()).includes('AI'),
-    '被藏起来的项确实不在侧栏主列里，实际 ' + JSON.stringify(await sideLabels()));
+  const sideKeys = () => evalJs(page,
+    `return [...document.querySelectorAll('.sidebar #nav .nav-item')].map((x) => x.dataset.nav);`);
+  ok(!(await sideKeys()).includes('ai') && !(await sideKeys()).includes('done'),
+    '被藏起来的项确实不在侧栏主列里，实际 ' + JSON.stringify(await sideKeys()));
   await clickEl(page, `document.querySelector('.sidebar [data-nav-more]')`);
   await waitFor(page, `!!document.querySelector('.side-more-pop')`, '侧栏「更多」浮层打开');
-  const tuckedNow = () => evalJs(page,
-    `return [...document.querySelectorAll('.side-more-pop .nav-item .label')].map((x) => x.textContent);`);
-  ok((await tuckedNow()).join() === '已完成,AI',
-    '浮层里列出的正是被藏起来的那两项，实际 ' + JSON.stringify(await tuckedNow()));
-  await clickEl(page, `[...document.querySelectorAll('.side-more-pop .nav-item')].find((x) => x.dataset.nav === 'ai')`);
+  /* 「开得出来」还不够：浮层开在**侧栏里面**，而 `.sidebar` 是 `overflow-y: auto`
+     —— 按规范一个轴不是 `visible` 时，另一个轴的 `visible` 会算成 `auto`，横向
+     也会裁。所以量一下它真的落在侧栏的盒子里、而且开在触发键上方（挂在侧栏最
+     底下，往下开会顶出视口）。 */
+  const popBox = await evalJs(page, `
+    const p = document.querySelector('.side-more-pop').getBoundingClientRect();
+    const s = document.querySelector('.sidebar').getBoundingClientRect();
+    const b = document.querySelector('.sidebar [data-nav-more]').getBoundingClientRect();
+    return { dxLeft: p.left - s.left, dxRight: p.right - s.right, dy: p.bottom - b.top };
+  `);
+  ok(popBox.dxLeft >= -0.5 && popBox.dxRight <= 0.5,
+    '浮层没有横向溢出侧栏（`.sidebar` 是 overflow-y: auto，横向跟着裁），实际 ' + JSON.stringify(popBox));
+  ok(popBox.dy <= 0.5, '浮层开在触发键**上方**，实际 ' + JSON.stringify(popBox));
+  const tuckedKeys = () => evalJs(page,
+    `return [...document.querySelectorAll('.side-more-pop .nav-item')].map((x) => x.dataset.nav);`);
+  ok((await tuckedKeys()).join() === grid2.slice(7).join(),
+    '浮层里列出的正是被藏起来的那两项（顺序跟 navOrder），实际 '
+    + JSON.stringify(await tuckedKeys()));
+  ok(await evalJs(page, `return [...document.querySelectorAll('.side-more-pop .nav-item .label')].every((x) => x.textContent.trim());`),
+    '浮层里每一项都画出了名字（不是一排空按钮）');
+  await clickEl(page, `[...document.querySelectorAll('.side-more-pop .nav-item')].find((x) => x.dataset.nav === ${JSON.stringify(lastHidden)})`);
   await waitForUi('点浮层里那一项切过去了',
-    `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.nav === 'ai' ? 1 : null`);
+    `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.nav === ${JSON.stringify(lastHidden)} ? 1 : null`);
   ok(await evalJs(page, `return !document.querySelector('.side-more-pop');`),
     '点完浮层自己收掉（不然它会盖着新页面）');
 
