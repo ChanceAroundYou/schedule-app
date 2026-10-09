@@ -402,18 +402,19 @@ function drawTimeGuide(zone: HTMLElement, min: number, win: DayWindow): void {
   guideLine.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
 }
 
-/** 左侧时间轴上的时间标签（显示绿线对应几点） */
+/** 左侧时间轴上的时间标签（显示绿线对应几点）。
+ *  **挂在 `.timeline` 上，不是 `.tl-wrap`**：红线 `.tl-now span` 的基准是
+ *  `.timeline`（`left: -56px` 相对 `.tl-now`，而 `.tl-now` 是 `.timeline` 的子元素）。
+ *  挂在 `.tl-wrap` 上会差一个 padding-left（60px），时间标签和红线对不齐。 */
 function drawTimeCursor(zone: HTMLElement, min: number, win: DayWindow): void {
-  const wrap = zone.closest<HTMLElement>('.tl-wrap');
-  if (!wrap) return;
-  let cursor = wrap.querySelector<HTMLElement>('.tl-cursor');
+  let cursor = zone.querySelector<HTMLElement>('.tl-cursor');
   if (!cursor) {
     cursor = document.createElement('div');
     cursor.className = 'tl-cursor';
-    wrap.appendChild(cursor);
+    zone.appendChild(cursor);
   }
   cursor.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
-  cursor.innerHTML = '<i></i>' + D.minToTime(min);
+  cursor.textContent = D.minToTime(min);
 }
 
 function clearTimeCursor(): void {
