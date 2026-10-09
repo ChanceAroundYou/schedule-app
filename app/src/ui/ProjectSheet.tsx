@@ -8,8 +8,8 @@
  * 最常用的一个动作，进浮层改等于白走一趟）；进度留一个空框表示「按任务自动算」，
  * 填了就是手改覆盖 —— 空 vs 0 是两回事，所以用 `''` 而不是 0 表达「自动」。
  */
-import { useId, useState } from 'react';
-import { Btn, Chips, Input, Sheet, SheetPicker, Textarea, useConfirm } from './kit.tsx';
+import { useEffect, useId, useState } from 'react';
+import { Btn, Chips, Input, Sheet, SheetPicker, Textarea, toast, useConfirm } from './kit.tsx';
 import * as store from '../data/store.ts';
 import { STATUS_LABEL, roleOf } from '../domain/model.ts';
 import { canWrite } from '../domain/types.ts';
@@ -52,6 +52,19 @@ export function ProjectSheet({ state, id, onClose }: {
     () => (canWrite(roleOf(state, state.ui.cal)) ? state.ui.cal || ''
       : writableShown[0]?.id || ''),
   );
+
+  /*
+   * 一个能写的集都没有时，上面那个选择器是空的、创建按钮也是禁用的 ——
+   * 而**禁用的按钮本身不解释任何事**，用户只看到「点不动」，不知道该去哪儿。
+   * 这里补一句。
+   *
+   * 依赖写 `[cur, writableShown.length]` 两个原始值：`writableShown` 每次渲染
+   * 都是新数组，拿它当依赖会每渲染弹一次。编辑模式不弹（那时没这个限制）。
+   */
+  useEffect(() => {
+    if (cur || writableShown.length) return;
+    toast('勾着的日程集都没有写权限，勾一个你能写的才能建项目。');
+  }, [cur, writableShown.length]);
 
   /** 权限被挡时 store 那边已经计了数、App 会弹提示 —— 这里只管关掉浮层 */
   const save = () => {
