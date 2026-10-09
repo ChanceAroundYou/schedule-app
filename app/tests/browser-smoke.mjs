@@ -3046,15 +3046,18 @@ try {
   };
   await reloadAs(true, '窄屏模式下底栏渲染出来了');
 
-  // 窄屏顶栏是「标题 + 搜索图标 + 状态」，搜索框收成点开的小浮条（2026-10-07
+  // 窄屏顶栏是「标题 + 搜索图标 + 状态」，搜索框收成点开的一格（2026-10-07
   // 顶栏重构）。这一小节顺带锁住 Esc 那一层 —— `searchOpen` 原先漏在键盘
-  // effect 的依赖数组之外，于是闭包里读到的永远是 false：浮条开着按 Esc 关不掉。
+  // effect 的依赖数组之外，于是闭包里读到的永远是 false：搜索开着按 Esc 关不掉。
   // 它必须**靠 CDP 派发**，因为要的就是「按真实焦点送一个 Escape 进 document」。
   /* 搜索框**一直在 DOM 里**（靠宽度 0 收起），所以判据不是「没有 .search-box」，
-     而是「它收着、0 宽」—— 顶栏那一行只看得见放大镜。 */
+     而是「它收着、0 宽」—— 顶栏那一行只看得见放大镜。
+     量 `.search-slot-field`（真正带宽度过渡的那一层），不是 `.search-box`：
+     后者是 flex 容器，`min-width: auto` 让它停在内容的最小宽度上（约 150px），
+     靠父层的 `overflow: hidden` 裁掉 —— 量它永远量到 150，跟收没收起没关系。 */
   ok(await evalJs(page, `
-    const b = document.querySelector('.topbar .search-box');
-    return !b || b.getBoundingClientRect().width < 1;`),
+    const f = document.querySelector('.topbar .search-slot-field');
+    return !f || f.getBoundingClientRect().width < 1;`),
     '窄屏顶栏的搜索框收着（0 宽），只看得见放大镜');
   ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
     '窄屏顶栏有搜索图标');
@@ -3064,8 +3067,6 @@ try {
     const b = document.querySelector('.search-slot .search-toggle').getBoundingClientRect();
     return { left: b.left, right: b.right };`);
   const btnClosed = await btnAt();
-  ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
-    '窄屏顶栏有搜索图标');
   await waitFor(page, `!!document.querySelector('.search-slot.open input')`, '搜索槽张开了');
   await new Promise((r) => setTimeout(r, 300));   // 等宽度过渡跑完再量
   /* 搜索框是**放大镜原地变出来**的，不是旁边飘着的一个浮层
