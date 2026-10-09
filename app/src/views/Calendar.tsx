@@ -22,6 +22,7 @@ import { DAY_H, HOUR_H, layoutOverlap, minToPct, pctRange, spanOf, timeRange, wi
 import { dayLoad, tasksOn, untimedOn } from '../domain/model.ts';
 import { CheckBtn, TaskPill, loadLevel } from './parts.tsx';
 import { useDraggableEvent, useDroppableZone, useDragSession, useClampedDraggableEvent } from '../ui/dndkit.tsx';
+import { useOverlayScrollbar } from '../ui/scroll.ts';
 
 /* ============================== 小工具 ============================== */
 
@@ -96,16 +97,21 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
   const timelineZone = useDroppableZone(`timeline:${iso}`);
   const alldayZone = useDroppableZone(`allday:${iso}`);
+  /* 全天区自己会滚（max-height 34%），换浮条 —— 见 ui/scroll.ts */
+  const osbAllday = useOverlayScrollbar<HTMLElement>();
   const { activeId } = useDragSession();
 
-  /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。 */
-  const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to);
+  /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。
+     **自适应疏密**：时间窗太长时标签会挤在一起，按总小时数动态调整间隔。 */
+  const totalHours = (win.to - win.from) / 60;
+  const step = totalHours > 18 ? 3 : totalHours > 12 ? 2 : 1;
+  const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to && h % step === 0);
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
   return (
     <>
-      <div className="allday-zone" ref={alldayZone.ref} data-zone-id={`allday:${iso}`} data-date={iso}>
+      <div className="allday-zone osb" ref={(el) => { alldayZone.ref(el); osbAllday(el); }} data-zone-id={`allday:${iso}`} data-date={iso}>
         <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
           {allday.map((t) => <TaskPill key={t.id} task={t} />)}
           {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
@@ -217,11 +223,13 @@ function WunCell({ state, d, today }: { state: LocalState; d: string; today: str
 
 function WeekView({ state, iso }: { state: LocalState; iso: string }) {
   const start = D.weekStart(iso);
+  /* 周视图自己滚（整屏时间轴），换浮条 —— 见 ui/scroll.ts */
+  const osbWeek = useOverlayScrollbar<HTMLDivElement>();
   const days = Array.from({ length: 7 }, (_, i) => D.addDays(start, i));
   const today = D.today();
 
   return (
-    <div className="week-view" id="weekView">
+    <div className="week-view osb" id="weekView" ref={osbWeek}>
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
         <div className="week-head-cols">

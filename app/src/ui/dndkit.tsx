@@ -397,13 +397,44 @@ function drawTimeGuide(zone: HTMLElement, min: number, win: DayWindow): void {
   if (!guideLine) {
     guideLine = document.createElement('div');
     guideLine.className = 'tl-guide';
-    const span = document.createElement('span');
-    guideLine.appendChild(span);
     zone.appendChild(guideLine);
   }
   guideLine.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
-  const span = guideLine.querySelector('span');
-  if (span) span.textContent = D.minToTime(min);
+}
+
+/** 左侧时间轴上的时间标签（显示绿线对应几点） */
+function drawTimeCursor(zone: HTMLElement, min: number, win: DayWindow): void {
+  const wrap = zone.closest<HTMLElement>('.tl-wrap');
+  if (!wrap) return;
+  let cursor = wrap.querySelector<HTMLElement>('.tl-cursor');
+  if (!cursor) {
+    cursor = document.createElement('div');
+    cursor.className = 'tl-cursor';
+    wrap.appendChild(cursor);
+  }
+  cursor.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
+  cursor.textContent = D.minToTime(min);
+}
+
+function clearTimeCursor(): void {
+  document.querySelectorAll('.tl-cursor').forEach((el) => el.remove());
+}
+
+/** 卡片左下角持续时间标签 */
+function showDurationTag(card: HTMLElement, taskId: string): void {
+  const task = store.get().tasks[taskId];
+  if (!task) return;
+  let tag = card.querySelector<HTMLElement>('.tl-dur-tag');
+  if (!tag) {
+    tag = document.createElement('div');
+    tag.className = 'tl-dur-tag';
+    card.appendChild(tag);
+  }
+  tag.textContent = D.fmtDuration(task.duration || 60);
+}
+
+function clearDurationTags(): void {
+  document.querySelectorAll('.tl-dur-tag').forEach((el) => el.remove());
 }
 
 function clearTimeGuide(): void {
@@ -473,24 +504,38 @@ export function useTimelineDrag() {
 
   const onDragOver = useCallback((event: DragOverEvent) => {
     const over = event.over;
-    if (!over) { zoneRef.current = null; clearTimeGuide(); return; }
+    if (!over) { zoneRef.current = null; clearTimeGuide(); clearTimeCursor(); return; }
 
     const overId = String(over.id);
     const zone = document.querySelector<HTMLElement>(`[data-zone-id="${overId}"]`);
     if (!zone) return;
 
-    const currentY = eventY(event);
-    if (currentY === null) return;
+    /* **绿线跟卡片顶部，不跟手指。** 手指在卡片中间时，绿线画在手指位置，
+       用户看到的落点和卡片顶部对不上。改成读卡片实际顶部坐标。 */
+    const activeId = String(event.active.id);
+    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+    let min: number;
+    if (card) {
+      min = minFromY(zone, card.getBoundingClientRect().top);
+      showDurationTag(card, activeId);
+    } else {
+      const currentY = eventY(event);
+      if (currentY === null) return;
+      min = minFromY(zone, currentY);
+    }
 
     if (overId.startsWith('timeline:')) {
       zoneRef.current = { el: zone, id: overId };
-      drawTimeGuide(zone, minFromY(zone, currentY), zoneWindow(zone));
+      const win = zoneWindow(zone);
+      drawTimeGuide(zone, min, win);
+      drawTimeCursor(zone, min, win);
     } else if (overId.startsWith('week:')) {
       zoneRef.current = { el: zone, id: overId };
-      drawTimeGuide(zone, weekGuideMin(zone, currentY), FULL_DAY);
+      drawTimeGuide(zone, weekGuideMin(zone, min), FULL_DAY);
     } else {
       zoneRef.current = null;
       clearTimeGuide();
+      clearTimeCursor();
     }
   }, []);
 
@@ -502,12 +547,26 @@ export function useTimelineDrag() {
   const onDragMove = useCallback((event: DragMoveEvent) => {
     const z = zoneRef.current;
     if (!z) return;
-    const currentY = eventY(event);
-    if (currentY === null) return;
+
+    /* 绿线跟卡片顶部，不跟手指 */
+    const activeId = String(event.active.id);
+    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+    let min: number;
+    if (card) {
+      min = minFromY(z.el, card.getBoundingClientRect().top);
+      showDurationTag(card, activeId);
+    } else {
+      const currentY = eventY(event);
+      if (currentY === null) return;
+      min = minFromY(z.el, currentY);
+    }
+
     if (z.id.startsWith('timeline:')) {
-      drawTimeGuide(z.el, minFromY(z.el, currentY), zoneWindow(z.el));
+      const win = zoneWindow(z.el);
+      drawTimeGuide(z.el, min, win);
+      drawTimeCursor(z.el, min, win);
     } else if (z.id.startsWith('week:')) {
-      drawTimeGuide(z.el, weekGuideMin(z.el, currentY), FULL_DAY);
+      drawTimeGuide(z.el, weekGuideMin(z.el, min), FULL_DAY);
     }
   }, []);
 
@@ -515,6 +574,8 @@ export function useTimelineDrag() {
     const over = event.over;
     zoneRef.current = null;
     clearTimeGuide();
+    clearTimeCursor();
+    clearDurationTags();
 
     const activeId = String(event.active.id);
     const currentY = eventY(event);
@@ -588,6 +649,8 @@ export function useTimelineDrag() {
   const onDragCancel = useCallback(() => {
     zoneRef.current = null;
     clearTimeGuide();
+    clearTimeCursor();
+    clearDurationTags();
   }, []);
 
   return { onDragOver, onDragMove, onDragEnd, onDragCancel };

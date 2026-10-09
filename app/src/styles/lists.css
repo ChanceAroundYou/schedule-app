@@ -181,12 +181,19 @@
 }
 .check-btn:hover { border-color: var(--primary); transform: scale(1.08); }
 .check-btn.on { background: var(--primary); border-color: var(--primary); }
+/* 勾**居中**：`left/top` 摆的是盒子的左上角，不是中心 —— 原来写 `left: 5px; top: 2px`
+   等于把勾的左上角钉在那儿，勾中心落在 (7, 6)，圆心在 (9, 9)，于是勾整体
+   偏左上 2×3px（用户 2026-10-09：「打勾的图标的勾并不居中」）。
+   改成按中心对：`left/top: 50%` + `translate(-50%,-50%)`，旋转照转。
+   **三个尺寸（18 / .sm 14 / 响应式 22）都得这么写**，只改一个是换个地方歪。 */
 .check-btn.on::after {
-  content: ''; position: absolute; left: 5px; top: 2px;
-  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 .check-btn.sm { width: 14px; height: 14px; flex-basis: 14px; }
-.check-btn.sm.on::after { left: 3.5px; top: 1px; width: 3px; height: 6px; }
+/* 小一号：勾也按比例缩，位置同上（按中心对） */
+.check-btn.sm.on::after { width: 3px; height: 6px; }
 
 /* 命中区补到 24×24（WCAG 2.5.8 的下限），**视觉尺寸不变**。
    这是全应用点得最多的一个控件（勾任务、勾打卡），而它本体只有 18px，
@@ -307,13 +314,23 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 /* 时间轴上的落点指示（只画线，不改底色） */
 .tl-guide {
   position: absolute; left: 0; right: 0; height: 0;
-  border-top: 1.5px dashed var(--primary); z-index: 6; pointer-events: none;
+  border-top: 1.5px dashed var(--primary); z-index: 10; pointer-events: none;
 }
-.tl-guide span {
-  position: absolute; left: 6px; top: -9px;
-  padding: 1px 6px; border-radius: var(--r-sm);
-  background: var(--primary); color: var(--on-primary);
-  font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
-  box-shadow: var(--shadow-md);
+
+/* 左侧时间轴上的时间标签（显示绿线对应几点） */
+.tl-cursor {
+  position: absolute; left: -56px; top: -9px;
+  width: 44px; text-align: right;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--primary); pointer-events: none; z-index: 11;
+}
+
+/* 卡片左下角持续时间标签 */
+.tl-dur-tag {
+  position: absolute; left: 4px; bottom: 2px;
+  padding: 1px 5px; border-radius: var(--r-xs);
+  background: rgb(0 0 0 / .55); color: #fff;
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+  pointer-events: none; line-height: 1.4;
 }
 
