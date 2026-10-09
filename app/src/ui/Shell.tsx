@@ -33,7 +33,7 @@ import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } f
 import { CalMenu, CalSheet } from './Calendars.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
 import { WhenPop } from './WhenPop.tsx';
-import { Input, Textarea, Btn, IconBtn } from './kit.tsx';
+import { Input, Textarea, Btn } from './kit.tsx';
 import { useOverlayScrollbar } from './scroll.ts';
 
 /* ============================== 导航表 ============================== */
@@ -313,15 +313,13 @@ function useSearchValue(initial: string, onSearch: (kw: string) => void) {
  *  **桌面端和移动端张开后是同一个东西**，不是「长得像」：同一个组件、同一套样式。
  *  放大镜 16px 也是**三处同一个尺寸**（桌面端 / 移动端收起时那个钮 / 移动端张开后
  *  框里这枚）—— 用户 2026-10-09：「请使用完全一致的放大镜图片，桌面端 移动端收起
- *  移动端打开一致」。这里原先写的是 14，和钮里的 16 对不上。
- *  `onClose` 是移动端专用：清空键**常驻**（桌面端只在有字时才出现）。没字时按它是
- *  「关闭搜索」—— 移动端这个框是临时张开的，总得有个关的地方；有字时按它还是清空，
- *  和桌面端一个意思。 */
-function SearchInput({ kw, setKw, autoFocus, onClose }: {
-  kw: string; setKw: (v: string) => void; autoFocus?: boolean; onClose?: () => void;
+ *  移动端打开一致」。这里原先写的是 14，和收起时那枚 16 对不上。
+ *  移动端收起时那枚放大镜**就是这里这枚**：窄屏的 `.search-slot .search-box` 收成
+ *  28px 宽、描边和底色全透明，露出来的正好是它 —— 所以「三处」其实是同一枚，
+ *  尺寸和位置不可能对不上。 */
+function SearchInput({ kw, setKw, autoFocus }: {
+  kw: string; setKw: (v: string) => void; autoFocus?: boolean;
 }) {
-  const showClear = !!kw || !!onClose;
-  const clearName = kw ? '清空' : '关闭搜索';
   return (
     <div className="search-box">
       <span className="search-ico"><Search size={16} /></span>
@@ -333,13 +331,8 @@ function SearchInput({ kw, setKw, autoFocus, onClose }: {
         autoFocus={autoFocus}
         onChange={(e) => setKw(e.target.value)}
       />
-      {showClear && (
-        <button
-          className="clear-search"
-          title={clearName}
-          aria-label={clearName}
-          onClick={onClose ? (kw ? () => setKw('') : onClose) : () => setKw('')}
-        >
+      {!!kw && (
+        <button className="clear-search" title="清空" aria-label="清空" onClick={() => setKw('')}>
           <X size={13} />
         </button>
       )}
@@ -486,30 +479,38 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
             窄屏不渲染 —— 那边走「更多」抽屉里的入口 + 弹窗面板。 */}
         {!narrow && <CalMenu state={state} />}
         {narrow ? (
-          /* 放大镜**原地张开成桌面端那个搜索框**（用户 2026-10-09 两轮：
+          /* 放大镜**原地张开成桌面端那个搜索框**（用户 2026-10-09 三轮：
              ①「把原来的搜索图标原地变成带搜索图标的输入框，带有动态的向左伸出去的
-             动画」；②「移动端打开最好和桌面端完全一样」）。
-             做法：槽里并排放「输入框」和「放大镜钮」，**输入框从 0 过渡到内容宽度**，
-             槽在 `.topbar-right` 里靠右对齐，所以是**往左**长、右沿钉在原地。
-             张开后钮收掉 —— 剩下的就是桌面端那个 `.search-box` 本身（放大镜在左边、
-             输入框 130px、清空键在右），**同一个组件同一套样式**，不是照着画的。
+             动画」；②「移动端打开最好和桌面端完全一样」；③「动画还是太跳了，
+             大幅度平滑，包括形状的移动」）。
+             做法：**只有一样东西** —— 桌面端那个 `.search-box` 本身。收起时它是
+             28px 宽、描边和底色全透明、放大镜居中，看着就是顶栏那个裸放大镜；
+             张开时它自己长到 176px、描边底色显出来、放大镜挪到 12px 处 —— 形状是
+             **连续**长出来的，不是「一个东西淡出、另一个淡入」，中途也不会被裁掉
+             半条边。槽在 `.topbar-right` 里靠右对齐，所以是**往左**长、右沿钉在原地。
+             那个钮**自己不画图标**，只是一层透明命中区 —— 收起时你看到的那枚放大镜
+             就是框里这枚，所以三处永远是同一枚、同一个尺寸、同一个位置。
              **别做成浮层**：浮层要 `position: absolute` + 一个定位锚，放大镜和框
              看着是分开的两样东西，也没有「长出来」的动势。 */
-          <div className={'search-slot' + (searchOpen ? ' open' : '')} ref={slotRef}>
-            {/* 输入框**排在钮前面**：槽靠右对齐、宽度往左长，排在**后面**的那个钮
-                才钉在右沿不动 —— 排前面的话它会被顶得往左挪。 */}
+          <div
+            className={'search-slot' + (searchOpen ? ' open' : '') + (kw ? ' has-kw' : '')}
+            ref={slotRef}
+          >
             <div className="search-slot-field">
-              <SearchInput kw={kw} setKw={setKw} onClose={() => setSearchOpen(false)} />
+              <SearchInput kw={kw} setKw={setKw} />
             </div>
-            <IconBtn
+            {/* 这里不用 `IconBtn`：它要 `children`，而这个钮**故意没有图标**
+                （图标归框，否则收起和张开是两枚、尺寸位置迟早对不上）。
+                名字照样有 —— `aria-label` 就是它的可访问名字。 */}
+            <button
               ref={searchBtn}
-              label="搜索任务"
-              className="icon-btn search-toggle"
+              type="button"
+              aria-label="搜索任务"
+              title="搜索任务"
               aria-expanded={searchOpen}
+              className="icon-btn search-toggle"
               onClick={() => setSearchOpen(!searchOpen)}
-            >
-              <Search size={16} />
-            </IconBtn>
+            />
           </div>
         ) : (
           <SearchInput kw={kw} setKw={setKw} />

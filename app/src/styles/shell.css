@@ -260,50 +260,69 @@
 .view-switch button:hover { background: var(--panel-3); }
 .view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
-/* ============ 移动端搜索：放大镜原地张开成**桌面端那个搜索框** ============ */
+/* ============ 移动端搜索：放大镜**原地张开成桌面端那个搜索框** ============ */
 
-/* 放大镜**原地张开成桌面端那个搜索框**（用户 2026-10-09 两轮：「把原来的搜索图标
-   原地变成带搜索图标的输入框，带有动态的向左伸出去的动画」+「移动端打开最好和
-   桌面端完全一样」）。槽里并排放「输入框」和「放大镜钮」，槽在 `.topbar-right` 里
-   靠右对齐，所以输入框长出来是**往左**长 —— 右沿钉在原地不动。
-   张开后钮收掉，剩下的就是桌面端那个 `.search-box` 本身：同一个组件、同一套样式，
-   放大镜在左边、输入框 130px、清空键在右 —— 不是「照着画的」。
-   关搜索走框里那个清空键（`SearchInput` 的 `onClose`）：移动端这个框是临时张开的，
-   总得有个关的地方；清空键于是**常驻**，没字时按它就是「关闭搜索」。 */
+/* 用户 2026-10-09 三轮：①「把原来的搜索图标原地变成带搜索图标的输入框，带有动态的
+   向左伸出去的动画」；②「移动端打开最好和桌面端完全一样」；③「动画还是太跳了，
+   大幅度平滑，包括形状的移动」。
+   做法：**只有一样东西** —— 桌面端那个 `.search-box` 本身。
+   · 收起时它是 28px 宽、描边和底色**全透明**、放大镜居中（1px 边框 + 5px 内边距
+     = 6px），输入框被裁在右边看不见 —— 看着就是顶栏那个裸放大镜图标；
+   · 张开时它自己长到 176px、描边和底色显出来、放大镜挪到 12px 处 —— 和桌面端
+     **逐像素**一样（同一个组件、同一套样式，不是照着画的）。
+   于是「形状」是**连续**长出来的：不是「一个东西淡出、另一个淡入」，中途也不会
+   被裁掉半条边（描边画在框自己身上，不是画在外面套的那层上）。
+   槽靠右对齐、宽度由框撑，所以是**往左**长、右沿钉在原地。
+   **别做成浮层**：浮层要 `position: absolute` + 一个定位锚，放大镜和框看着是分开的
+   两样东西，也没有「长出来」的动势。 */
 .search-slot { position: relative; display: flex; align-items: center; }
+.search-slot-field { display: flex; flex: none; }
 
-/* 收起：0 宽 + 裁掉 + 藏起来。
-   过渡量的是 `max-width` 不是 `width` —— 张开后这个框的宽度是**内容撑的**
-   （跟桌面端一样：空着 176px，清空键一出现再长 19px）。写死 `width` 就只能在
-   两者里挑一个，挑哪个都和桌面端差一截；`max-width` 从 0 涨上去，过渡照样是
-   动态的，涨到内容宽度就停 —— 于是张开后**逐像素等于桌面端**。
-   移动端清空键常驻，所以张开后是 195px 那一档（= 桌面端**有字时**的宽度）。 */
-.search-slot-field {
-  max-width: 0; overflow: hidden; opacity: 0; visibility: hidden;
-  transition: max-width .18s ease, opacity .14s ease, visibility 0s linear .18s;
+/* 过渡量的是**框自己的 `width`**，不是外面套一层的 `max-width`：
+   套一层时上界（原先写 240px）和内容宽度（176px）对不上，缓动还没走完宽度就顶到
+   内容宽度了，剩下半程一动不动 —— 用户说的「跳」有一半是这条。
+   时长给到 .34s：位移有 148px，太短就是「啪」一下。
+   描边和底色比几何快一档（.12s）—— 形状先在放大镜周围显出来，再往左长出去。 */
+.search-slot .search-box {
+  width: 28px; overflow: clip;
+  padding-left: 5px;
+  border-color: transparent; background: none;
+  transition: width .34s cubic-bezier(.4, 0, .2, 1),
+              padding-left .34s cubic-bezier(.4, 0, .2, 1),
+              border-color .12s ease, background .12s ease;
 }
-/* 上界给足余量（内容 176 / 带清空键 195），好让过渡几乎线性地走完那 176px；
-   视口再小也留 150px 给标题 —— 390px 的手机上这条不生效（390-150 = 240 > 195）。 */
-.search-slot.open .search-slot-field {
-  max-width: min(240px, calc(100vw - 150px));
-  opacity: 1; visibility: visible;
-  transition: max-width .18s ease, opacity .14s ease, visibility 0s;
+.search-slot.open .search-box {
+  width: 176px; padding-left: 11px;
+  border-color: var(--input); background: var(--panel-2);
 }
+/* 清空键一出现框就长 19px —— 桌面端是内容撑的，这里是显式的同一个数。
+   由 `.tsx` 给槽挂 `has-kw`，不用 `:has()`：判据本来就是 React 手里那个 `kw`。 */
+.search-slot.open.has-kw .search-box { width: 195px; }
+/* 焦点态得自己写一条：上面 `.search-slot.open .search-box` 的特异度压过了全局那条
+   `.search-box:focus-within` */
+.search-slot.open .search-box:focus-within { border-color: var(--primary); background: var(--panel); }
+/* 裁的过程中别让内容跟着缩 —— `flex-shrink` 会把正方形的放大镜挤成 14×16
+   （用户 2026-10-09：「用的搜索图片变小了还变形了」就是这一条）。
+   不缩就只是被 `overflow: clip` 裁掉，尺寸永远是对的。
+   用 `clip` 不用 `hidden`：`hidden` 会建滚动容器，输入框一聚焦浏览器就把内容
+   滚过去把放大镜顶出视野。 */
+.search-slot .search-box > * { flex: none; }
 
-/* 张开后那个钮**收掉**：放大镜归了框（在框左边），钮再留着就是第二个。
-   宽度归零 + 淡出，整条槽的宽度于是 = 框的宽度，右沿钉在原地 ——
-   看着就是钮往左长成了一个框。 */
-.search-toggle {
-  overflow: hidden; flex: 0 0 auto;
-  transition: width .18s ease, padding .18s ease, opacity .14s ease, visibility 0s;
+/* 那个钮**自己不画图标**，只是一层透明命中区：收起时你看到的那枚放大镜就是框里
+   这枚，所以三处（桌面端 / 收起 / 张开）永远是同一枚、同一个尺寸、同一个位置。
+   张开后框里有输入框了，它就让开（`visibility: hidden` + `pointer-events: none`），
+   别挡着框里那个清空键。 */
+.search-slot .search-toggle {
+  position: absolute; top: 0; right: 0; width: 28px; height: 100%;
+  background: none;
 }
-/* 缩的过程中别把图标压扁 —— `flex-shrink` 会把正方形的放大镜挤成 14×16
-   （用户 2026-10-09：「用的搜索图片变小了还变形了」就是这一条）。 */
-.search-toggle svg { flex: none; }
+.search-slot:not(.open) .search-toggle:hover {
+  background: var(--panel-3); border-radius: var(--r-md);
+}
 .search-slot.open .search-toggle {
-  width: 0; padding: 0; opacity: 0; visibility: hidden;
-  transition: width .18s ease, padding .18s ease, opacity .14s ease, visibility 0s linear .18s;
+  visibility: hidden; pointer-events: none; background: none;
 }
+
 
 .cal-subhead {
   display: flex; align-items: center; justify-content: space-between;
