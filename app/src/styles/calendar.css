@@ -34,7 +34,7 @@
 
 .allday-zone {
   flex: 0 0 auto; overflow-y: auto; max-height: 100px;
-  padding: 4px 8px 4px 60px;
+  padding: 4px 12px 4px 60px;
   border-bottom: var(--border-w) solid var(--border);
 }
 /* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
@@ -49,8 +49,13 @@
   /* 与有时间卡片 `.tl-event .ev-title` 逐项对齐（12.5px / 550）：
      少了 font-weight 会退成 400，两张卡片并排时一粗一细。 */
   font-size: 12.5px; font-weight: 550;
+  /* 过渡只留 background / box-shadow。**去掉 transform .14s** ——
+     拖拽松手时 transform 归零，有过渡就是弹跳。 */
+  transition: background .14s, box-shadow .14s;
 }
 .allday-items .task-pill:hover { transform: none; }
+/* 拖中的未定时卡片：与有时间卡片 .tl-event.dragging 同一套样式 */
+.allday-items .task-pill.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 .zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
 .tl-wrap {
@@ -68,20 +73,26 @@
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
 .tl-busy { position: absolute; left: 0; right: 0; border-radius: var(--r-sm); }
 
-.tl-now { position: absolute; left: -8px; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
-.tl-now i { position: absolute; left: -4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
+/* 红线左端对齐时间轴左缘（left:0），圆点落在卡片区内（left:4px），
+   时间标签在 -56px —— 与 .tl-label 完全同一位置，不再偏 8px。 */
+.tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px solid var(--danger); z-index: 3; pointer-events: none; }
+.tl-now i { position: absolute; left: 4px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
 .tl-now span { position: absolute; left: -56px; top: -8px; width: 44px; text-align: right; font-size: 11px; color: var(--danger); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.tl-events { position: absolute; top: 0; bottom: 0; left: 4px; right: 6px; }
+/* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让有时间卡片
+   比无时间卡片短一截。卡片宽度由 .tl-event 的 width 控制。 */
+.tl-events { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
 
 .tl-event {
   position: absolute; border-radius: var(--r-sm); padding: 4px 7px;
   background: var(--primary-soft); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
   overflow: hidden; cursor: pointer; min-height: 12px;
-  /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线） */
+  /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
+     **过渡只有 box-shadow，没有 transform**：松手时 transform 从
+     translate3d(x,y,0) 归零，有过渡就会看到弹跳（用户报「松开时跳一下」）。 */
   display: flex; flex-direction: column; justify-content: center; gap: 1px;
-  transition: box-shadow .14s, transform .14s;
+  transition: box-shadow .14s;
 }
 .tl-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
 .tl-event.done { opacity: .5; }

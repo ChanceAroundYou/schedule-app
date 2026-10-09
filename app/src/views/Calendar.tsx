@@ -36,6 +36,28 @@ function hours24(): number[] {
 
 type LayoutEvent = { item: Task; start: number; end: number; col: number; cols: number };
 
+/** 未定时卡片 —— 可拖动，直接拖到时间区即变成有时间卡片。
+ *  视觉与 `.tl-event` 严格对齐（同宽、同 padding、同字号字重），
+ *  只是没有第二行时间。 */
+function UntimedCard({ task: t }: { task: Task }) {
+  const drag = useDraggableEvent(t.id);
+  return (
+    <div
+      className={'task-pill task-el' + (t.done ? ' done' : '') + (drag.isDragging ? ' dragging' : '')}
+      ref={drag.ref}
+      style={drag.style}
+      {...drag.attributes}
+      {...drag.listeners}
+      data-id={t.id}
+      data-untimed="1"
+      title={t.title}
+    >
+      <CheckBtn id={t.id} on={!!t.done} sm />
+      <span className="pill-title">{t.title}</span>
+    </div>
+  );
+}
+
 function TimelineEvent({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isToday: boolean; nowMin: number; win: DayWindow; isDragSrc: boolean }) {
   const drag = useClampedDraggableEvent(e.item.id);
   const t = e.item;
@@ -52,7 +74,7 @@ function TimelineEvent({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent;
     <div
       className={'tl-event task-el' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       ref={drag.ref}
-      style={{ ...drag.style, top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `calc(${w}% - 4px)` }}
+      style={{ ...drag.style, top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `${w}%` }}
       {...drag.attributes}
       {...drag.listeners}
       data-id={t.id}
@@ -128,7 +150,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
       <div className="day-panel">
         <div className="allday-zone osb" ref={(el) => { alldayZone.ref(el); osbAllday(el); }} data-zone-id={`allday:${iso}`} data-date={iso}>
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
-            {allday.map((t) => <TaskPill key={t.id} task={t} />)}
+            {allday.map((t) => <UntimedCard key={t.id} task={t} />)}
             {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
           </div>
         </div>

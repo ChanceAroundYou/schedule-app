@@ -526,9 +526,10 @@ export function useTimelineDrag() {
     if (!zone) return;
 
     /* **绿线跟卡片顶部，不跟手指。** 手指在卡片中间时，绿线画在手指位置，
-       用户看到的落点和卡片顶部对不上。改成读卡片实际顶部坐标。 */
+       用户看到的落点和卡片顶部对不上。改成读卡片实际顶部坐标。
+       未定时卡片（.task-pill）和定时卡片（.tl-event）都支持拖拽。 */
     const activeId = String(event.active.id);
-    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"], .task-pill[data-id="${activeId}"]`);
     let min: number;
     if (card) {
       min = minFromY(zone, card.getBoundingClientRect().top);
@@ -565,7 +566,7 @@ export function useTimelineDrag() {
 
     /* 绿线跟卡片顶部，不跟手指 */
     const activeId = String(event.active.id);
-    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+    const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"], .task-pill[data-id="${activeId}"]`);
     let min: number;
     if (card) {
       min = minFromY(z.el, card.getBoundingClientRect().top);
@@ -625,8 +626,9 @@ export function useTimelineDrag() {
     if (overId.startsWith('timeline:')) {
       /* 落点跟绿线一致：用卡片顶部坐标，不用手指坐标。
          **不对齐 15 分钟**：拖拽时卡片跟指针走，松手时如果对齐到 15 分钟，
-         卡片会从指针位置跳到对齐位置，产生跳变。直接用当前卡片位置。 */
-      const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
+         卡片会从指针位置跳到对齐位置，产生跳变。直接用当前卡片位置。
+         未定时卡片（.task-pill）拖到时间区也走这个分支。 */
+      const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"], .task-pill[data-id="${activeId}"]`);
       const min = card
         ? minFromYNoSnap(zone, card.getBoundingClientRect().top)
         : minFromYNoSnap(zone, currentY);
