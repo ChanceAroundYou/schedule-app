@@ -5,28 +5,28 @@
  * 鼠标走 MouseSensor、触摸走 TouchSensor（长按提起），键盘走 KeyboardSensor ——
  * 三条通路分开配，见 useDragSensors()。
  *
- * ## 加新的可拖东西：从这三个 hook 里挑一个，别自己写 useSortable/useDraggable
+ * ## 加新的可拖东西：从这几个 hook 里挑一个，别自己写 useSortable/useDraggable
  *
- * | 要做的事            | 用哪个                      | 现在用在                        |
- * |---------------------|-----------------------------|---------------------------------|
- * | 列表里换顺序        | `SortableList`（整份）      | 待办箱 / 今天 / 逾期 / 已完成   |
- * | 列表里换顺序（自己排版）| `useSortableItem`        | 设置页功能区                    |
- * | 改时间 / 改位置     | `useDraggableEvent`        | 周视图方块、泳道卡片            |
- * | 同上但水平不许出框  | `useClampedDraggableEvent` | 日视图方块                      |
+ * | 要做的事                | 用哪个                      | 现在用在                        |
+ * |-------------------------|-----------------------------|---------------------------------|
+ * | 列表里换顺序            | `SortableList`（整份）      | 待办箱 / 今天 / 逾期 / 已完成   |
+ * | 列表里换顺序（自己排版）| `SortableZone` + `useSortableItem` | 设置页功能区               |
+ * | 改时间 / 改位置         | `useDraggableEvent`        | 周视图方块、泳道卡片            |
+ * | 同上但水平不许出框      | `useClampedDraggableEvent` | 日视图方块                      |
  *
  * **为什么不自己写**：每个 hook 都要复述同两条规矩 —— transform 只取位移
  * （`CSS.Translate`，丢掉 `adjustScale` 的 scale，否则一拖就铺满整屏）、
- * 被拖的那一项不给 transition（给了就迟滞半拍，用户说「不跟手」）。
- * 抄一遍就有一份会漂，漂了还查不出来（两套都「看着能用」）。
+ * 被拖的那一项不给 transition（给了就迟滞半拍，用户说「不跟手」），而其余
+ * 让位项**必须**给（不给就闪现）。抄一遍就有一份会漂，漂了还查不出来
+ * （两套都「看着能用」）。
  *
  * 架构分层：
- *   DndProvider（包裹整棵应用）
- *   ├── DndScope（嵌套区域注册自己的 onDragEnd —— 设置页）
- *   ├── SortableList / useSortableItem（列表排序）
+ *   DndProvider（包裹整棵应用，**不挂 DragOverlay**，见那里的注释）
+ *   ├── SortableZone / SortableList（内层 context：排序，自带浮层）
+ *   ├── useSortableItem（列表里的每一项）
  *   ├── useDraggableEvent（时间轴方块）
  *   ├── useDroppableZone（放置区）
- *   ├── useTimelineDrag（日 / 周 / 泳道的落点计算）
- *   └── （不挂 DragOverlay —— 碰撞检测会退化成 0×0，见 DndProvider 里的注释）
+ *   └── useTimelineDrag（日 / 周 / 泳道的落点计算）
  *
  * **长按和拖拽的分工不在这个文件里**，在 App.tsx 的 `lp`（`moved` 判据）。
  * 简述：TouchSensor 配的是 `{delay: 480ms, tolerance: 8}`，手指按住不动到点
@@ -37,11 +37,11 @@
  * `if (isDragging()) return` 照旧工作。
  */
 
-import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import {
   DndContext, MouseSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, useDraggable, useDroppable, DragOverlay,
-  type DragStartEvent, type DragEndEvent, type DragOverEvent,
+  type DragStartEvent, type DragOverEvent, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, useSortable, rectSortingStrategy,
@@ -93,39 +93,24 @@ export function useDragSession(): DragState {
 
 interface DndProviderProps {
   children: ReactNode;
-  onDragStart?: (event: DragStartEvent) => void;
   onDragOver?: (event: DragOverEvent) => void;
   onDragEnd?: (event: DragEndEvent) => void;
   onDragCancel?: () => void;
 }
 
-/**
- * 拖拽回调 context —— 让嵌套的拖拽区域（如设置页）可以注册自己的 onDragEnd。
- * 外层 DndProvider 的 onDragEnd 会调用这个 context 中注册的回调。
- */
-interface DndCallbacks {
-  register: (onDragEnd: ((event: DragEndEvent) => void) | null) => void;
-}
-
-const DndCallbacksCtx = createContext<DndCallbacks>({ register: () => {} });
-
-export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDragCancel }: DndProviderProps) {
+export function DndProvider({ children, onDragOver, onDragEnd, onDragCancel }: DndProviderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const nestedCallbackRef = useRef<((event: DragEndEvent) => void) | null>(null);
 
   const sensors = useDragSensors();
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setDragging(true);
-    onDragStart?.(event);
-  }, [onDragStart]);
+  }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setActiveId(null);
     setDragging(false);
-    // 先调用嵌套的回调（如设置页），再调用外层的回调
-    nestedCallbackRef.current?.(event);
     onDragEnd?.(event);
   }, [onDragEnd]);
 
@@ -134,10 +119,6 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
     setDragging(false);
     onDragCancel?.();
   }, [onDragCancel]);
-
-  const register = useCallback((onDragEnd: ((event: DragEndEvent) => void) | null) => {
-    nestedCallbackRef.current = onDragEnd;
-  }, []);
 
   return (
     <DndContext
@@ -160,34 +141,10 @@ export function DndProvider({ children, onDragStart, onDragOver, onDragEnd, onDr
       跟着走（和迁移前 `.touch-drag` 的行为一致）。
       */}
       <DragCtx.Provider value={{ activeId, activeKind: null }}>
-        <DndCallbacksCtx.Provider value={{ register }}>
-          {children}
-        </DndCallbacksCtx.Provider>
+        {children}
       </DragCtx.Provider>
     </DndContext>
   );
-}
-
-/**
- * 嵌套拖拽区域 —— 让设置页等组件可以注册自己的 onDragEnd 回调，
- * 而不需要创建新的 DContext。
- *
- * 用法：
- *   <DndScope onDragEnd={handleDragEnd}>
- *     <SortableContext items={items} strategy={rectSortingStrategy}>
- *       ...
- *     </SortableContext>
- *   </DndScope>
- */
-export function DndScope({ children, onDragEnd }: { children: ReactNode; onDragEnd: (event: DragEndEvent) => void }) {
-  const { register } = useContext(DndCallbacksCtx);
-
-  useEffect(() => {
-    register(onDragEnd);
-    return () => register(null);
-  }, [register, onDragEnd]);
-
-  return <>{children}</>;
 }
 
 /* ============================ 可排序项 ============================ */
@@ -197,19 +154,8 @@ export function DndScope({ children, onDragEnd }: { children: ReactNode; onDragE
  *
  * 用于：设置页功能区、任务列表、打卡、项目泳道。
  * 时间轴方块用 useDraggableEvent（不是排序，是改时间）。
- *
- * `animate` 决定给不给 `transition`（让位动画），两个值都得对：
- *
- *   · `false`（默认）—— **被拖的那一项**。transition 会让它跟着手指迟滞半拍，
- *     用户看到的就是「完全不跟手」。设置页功能区原来就是这个症状。
- *   · `true` —— **让位的那几项**，它们不在跟手指走，动画正是要的效果。
- *     `SortableList` 内部走这条（它整个列表都是让位动画）。
- *
- * 为什么不给就默认 `false`：`useSortable` 返回的 transition 在**被拖项上是
- * undefined**，两种情况下代码长得一样、效果差很远，凭「有没有值」判不出来。
- * 显式传一次，比在每个调用点重新推导一次可靠。
  */
-export function useSortableItem(id: string, animate = false) {
+export function useSortableItem(id: string) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
@@ -218,21 +164,78 @@ export function useSortableItem(id: string, animate = false) {
        把它们一起烤进 transform —— 卡片落到高度不同的行上就被压扁 / 拉长。
        卡片必须保持刚提起时的形状，所以走 `CSS.Translate`。 */
     transform: CSS.Translate.toString(transform),
-    transition: animate ? transition : undefined,
+    /* **被拖的那一项永远不给 transition。** 它在跟手指走，transition 会让它
+       迟滞半拍，用户看到的就是「完全不跟手」。其余项（让位的那几项）不在跟
+       手指走，动画正是要的效果 —— 这是「丝滑」的来源，缺了就变成闪现。
+       判据是 `isDragging` 而不是让调用方传参：每一项自己就知道自己是不是被
+       拖的那个，让调用点猜就等于给回归留个口子（设置页原来是「全不给」，让位
+       全靠瞬移；曾经试过传 `animate`，参数本身就是个可以传错的东西）。 */
+    transition: isDragging ? undefined : transition,
   };
 
   return { ref: setNodeRef, style, isDragging, attributes, listeners };
 }
 
+/* ============================ 排序区外壳 ============================ */
+
+/**
+ * 排序区外壳：自己一套 `DndContext` + `SortableContext` + `DragOverlay`。
+ *
+ * **为什么不共用顶层那个**：顶层的 `DndProvider` 故意不挂 `DragOverlay`
+ * （见那里的注释：碰撞检测量的是浮层自己的 rect，空 div 量成 0×0，`over`
+ * 永远是 null）。所以「跟着手指走的那一份」只能由**内层** context 承担 ——
+ * 这样时间轴 / 泳道那条改时间的通路不受影响。
+ *
+ * 用法：
+ *   <SortableZone items={ids} onDragEnd={fn} renderGhost={(id) => <Row id={id} />}>
+ *     <ul>{ids.map((id) => <Chip key={id} id={id} />)}</ul>   // 每项自己 useSortableItem(id)
+ *   </SortableZone>
+ *
+ * 出来是两样，和任务列表一模一样：**被拖的那一项留在原位**当「出处」锚点
+ * （压暗 + 虚线 = 占位虚影），跟着指针走的是 `renderGhost` 画的那一份。
+ */
+export function SortableZone({ items, onDragEnd, renderGhost, children }: {
+  items: string[];
+  onDragEnd: (event: DragEndEvent) => void;
+  /** 浮层里跟着指针走的那一份。**必须量得出矩形**（空 div 是 0×0，落点永远 null） */
+  renderGhost: (id: string) => ReactNode;
+  children: ReactNode;
+}) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const sensors = useDragSensors();
+
+  return (
+    <DndContext
+      sensors={sensors}
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+      onDragEnd={(e) => { setActiveId(null); onDragEnd(e); }}
+      onDragCancel={() => setActiveId(null)}
+    >
+      <SortableContext items={items} strategy={rectSortingStrategy}>
+        {children}
+      </SortableContext>
+
+      {/* 浮层跟着指针走，**不受 over 限制**。少了它，被拖的那块只在
+          `over` 落在某个兄弟身上时才有 transform（见 useSortable 的
+          `displaceItem = ... && isValidIndex(overIndex)`）—— 一离开容器，
+          over 变 null，transform 整个丢掉，卡片就「飞回原位」。 */}
+      <DragOverlay className="drag-overlay" dropAnimation={null}>
+        {activeId ? renderGhost(activeId) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
 /* ============================ 可排序列表 ============================ */
 
 /**
- * 一个完整的可排序列表：DndContext + SortableContext + onDragEnd 落库。
+ * 一个完整的可排序列表 = `SortableZone` + 套一层 `<div class="sortable-item">`。
  *
  * 用法：
  *   <SortableList items={ids} onReorder={fn} renderItem={(id) => <Row id={id} />} />
  *
  * `onReorder` 收到的是**新的 id 顺序**，调用方负责把它写进 store。
+ * 自己排版（要 `<li>`、要网格）的地方直接用 `SortableZone`。
  */
 export function SortableList({ items, onReorder, renderItem, className, scope }: {
   items: string[];
@@ -242,11 +245,7 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
   /** 渲染成容器上的 `data-scope`。探针靠它定位列表，也是拖动作用域的标识 */
   scope?: string;
 }) {
-  const sensors = useDragSensors();
-  const [activeId, setActiveId] = useState<string | null>(null);
-
   const onDragEnd = useCallback((event: DragEndEvent) => {
-    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIndex = items.indexOf(String(active.id));
@@ -257,41 +256,22 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
     }
   }, [items, onReorder]);
 
-  const activeItem = activeId ? renderItem(activeId) : null;
-
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={(e) => setActiveId(String(e.active.id))}
-      onDragEnd={onDragEnd}
-      onDragCancel={() => setActiveId(null)}
-    >
-      <SortableContext items={items} strategy={rectSortingStrategy}>
-        <div className={className} data-scope={scope}>
-          {items.map((id) => (
-            <SortableItem key={id} id={id}>
-              {renderItem(id)}
-            </SortableItem>
-          ))}
-        </div>
-      </SortableContext>
-
-      {/* 浮层跟着指针走，**不受 over 限制**。少了它，被拖的那块只在
-          `over` 落在某个兄弟身上时才有 transform（见 useSortable 的
-          `displaceItem = ... && isValidIndex(overIndex)`）—— 一离开容器，
-          over 变 null，transform 整个丢掉，卡片就「飞回原位」。
-          落点判定用的 `dragOverlay.rect` 量的是**浮层自己**，所以浮层里
-          必须真有内容（renderItem 的结果），空 div 量出来 0×0。 */}
-      <DragOverlay className="drag-overlay" dropAnimation={null}>{activeItem}</DragOverlay>
-    </DndContext>
+    <SortableZone items={items} onDragEnd={onDragEnd} renderGhost={renderItem}>
+      <div className={className} data-scope={scope}>
+        {items.map((id) => (
+          <SortableItem key={id} id={id}>
+            {renderItem(id)}
+          </SortableItem>
+        ))}
+      </div>
+    </SortableZone>
   );
 }
 
-/** SortableList 内部的单个可排序项。
-    走 `useSortableItem(id, true)`：这里是**整份列表**在让位，动画正是要的
-    （被拖的那一项 transition 本来就是 undefined，所以开着也没有副作用）。 */
+/** SortableList 内部的单个可排序项 */
 function SortableItem({ id, children }: { id: string; children: ReactNode }) {
-  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id, true);
+  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id);
 
   return (
     <div

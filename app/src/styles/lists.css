@@ -282,6 +282,24 @@
   outline-offset: -2px;
   border-radius: var(--r-lg);
 }
+/* 设置页「功能区」那一格，同一套做法（同上）。
+   跟着手指走的是 SortableZone 浮层里那份，这一条管的是**留在原位**的那一格：
+   压暗 + 虚线描边当出处锚点。`transform: none !important` 是必须的 ——
+   SortableContext 照样会给被拖项算 transform，原位锚点跟着挪的话就变成
+   「虚影跟着走、原来的位置空出来」，比不做让位更乱。 */
+.nav-chip.nav-chip-drag {
+  opacity: .4;
+  transform: none !important;
+  outline: 1.5px dashed var(--input);
+  outline-offset: -2px;
+  cursor: grabbing;
+}
+/* 浮层里跟着手指走的那一份：抬起感（投影 + 抓手型）。 */
+.drag-overlay .nav-chip {
+  cursor: grabbing;
+  box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
+  z-index: 8;
+}
 /* 拖动中禁止文字选中，否则拖过的地方会留下一片选区高亮 */
 body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 

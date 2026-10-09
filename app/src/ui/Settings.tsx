@@ -22,7 +22,7 @@ import {
   AlertTriangle, ChevronDown, Wifi, WifiOff, CloudUpload, Clock, Star,
 } from 'lucide-react';
 import { type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { arrayMove } from '@dnd-kit/sortable';
 import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode, UiPrefs } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX, resolveDefaultCal } from '../domain/model.ts';
@@ -35,7 +35,7 @@ import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
-import { DndScope, useSortableItem } from './dndkit.tsx';
+import { SortableZone, useSortableItem } from './dndkit.tsx';
 import { cx } from './cx.ts';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
@@ -125,20 +125,45 @@ function NavCard({ state }: { state: LocalState }) {
   return (
     <Card icon={<PanelTop size={14} />} title="功能区">
       <Field label={narrow ? `底栏 · 最多 ${TAB_MAX} 项（点选 + 拖拽）` : '侧栏 · 点选 + 拖拽'}>
-        <DndScope onDragEnd={onDragEnd}>
-          <SortableContext items={rows} strategy={rectSortingStrategy}>
-            {/* 三列网格而不是每项一行：九项一行一个要占 280px 高，一屏就没了。
-                网格还有个好处 —— 每格等宽，拖拽时让位的落点是规则的。 */}
-            <ul className="grid grid-cols-3 gap-1.5">
-              {rows.map((k) => (
-                <SortableNavChip key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndScope>
+        {/* 自己一套 context（SortableZone）而不是挂在顶层那个上：跟着手指走的
+            那一份必须是浮层，顶层故意不挂浮层（挂了时间轴那条就废了）。
+            顺带白拿让位动画和原位的占位虚影 —— 见 dndkit.tsx 的 SortableZone。 */}
+        <SortableZone
+          items={rows}
+          onDragEnd={onDragEnd}
+          renderGhost={(id) => <div className={cx('nav-chip', CHIP_CX, chipTone(isOn(id)))}><NavChipBody id={id} on={isOn(id)} /></div>}
+        >
+          {/* 三列网格而不是每项一行：九项一行一个要占 280px 高，一屏就没了。
+              网格还有个好处 —— 每格等宽，拖拽时让位的落点是规则的。 */}
+          <ul className="grid grid-cols-3 gap-1.5">
+            {rows.map((k) => (
+              <SortableNavChip key={k} id={k} on={isOn(k)} narrow={narrow} onToggle={toggle} />
+            ))}
+          </ul>
+        </SortableZone>
       </Field>
     </Card>
   );
+}
+
+/**
+ * 一格的样子。**行本体和浮层里跟着手指走的那一份必须一模一样** ——
+ * 抄两遍尺寸就会漂，而落点判定量的正是浮层自己那份的矩形。
+ */
+const CHIP_CX = 'flex items-center gap-1 rounded-[var(--r-md)] border-[length:var(--border-w)] px-1.5 py-1 text-[12.5px] select-none';
+const chipTone = (on: boolean) => (on
+  ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
+  : 'border-[var(--border)] text-[var(--text-3)] ' + HOVER);
+
+/** 一格的内容。行和浮层里那份共用 —— 两份长得不一样，拖起来像换了个东西。 */
+function NavChipBody({ id, on }: { id: string; on: boolean }) {
+  return (<>
+    <span className="shrink-0 text-[var(--text-3)]">
+      <GripVertical size={12} />
+    </span>
+    <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>
+    {on && <Check size={12} className="shrink-0" />}
+  </>);
 }
 
 /**
@@ -150,8 +175,11 @@ function NavCard({ state }: { state: LocalState }) {
  * 视觉提示作用。
  *
  * 走共享的 `useSortableItem`（不另写一份 useSortable + CSS.Translate）：
- * 「只取位移不要缩放」和「被拖项不给 transition」这两条规则都在那个 hook 里，
- * 这里再抄一遍就一定会和它漂。
+ * 「只取位移不要缩放」「被拖项不给 transition、其余让位项给 transition」
+ * 这两条规则都在那个 hook 里，这里再抄一遍就一定会和它漂。
+ *
+ * **拖起来时这一格留在原位**，由 `.nav-chip-drag` 画成虚线虚影当出处锚点，
+ * 跟着手指走的是 `SortableZone` 浮层里那份 —— 和任务列表那套一样。
  *
  * `data-nav-row` / `data-tab` 是探针认的锚点，别改。`attributes`（带
  * `role="button"`）也照旧挂着 —— 键盘那条路靠它。
@@ -174,20 +202,9 @@ function SortableNavChip({ id, on, narrow, onToggle }: {
       data-tab={narrow ? id : undefined}
       onClick={() => onToggle(id)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
-      className={cx(
-        'flex cursor-grab select-none items-center gap-1 rounded-[var(--r-md)] px-1.5 py-1 text-[12.5px]',
-        'border-[length:var(--border-w)]',
-        isDragging && 'cursor-grabbing opacity-40',
-        on
-          ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
-          : 'border-[var(--border)] text-[var(--text-3)] ' + HOVER,
-      )}
+      className={cx('nav-chip cursor-grab', CHIP_CX, chipTone(on), isDragging && 'nav-chip-drag')}
     >
-      <span className="shrink-0 text-[var(--text-3)]">
-        <GripVertical size={12} />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>
-      {on && <Check size={12} className="shrink-0" />}
+      <NavChipBody id={id} on={on} />
     </li>
   );
 }

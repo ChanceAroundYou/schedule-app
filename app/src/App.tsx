@@ -765,8 +765,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       <div
         onClick={onClick}
         onPointerDown={pointerDown}
-        onPointerMove={clearLp}
         onPointerUp={pointerUp}
+        /* 这两个只会在 pointerup / 窗口 onMove 都接不住的时候兜底（滚动被浏览器
+           取消、指针直接飞出容器），所以照旧清空 —— 它们不动 `fired`，
+           而 `fired` 只有长按真的到点才会是 true。 */
         onPointerCancel={clearLp}
         onPointerLeave={clearLp}
         style={{ display: 'contents' }}

@@ -1019,6 +1019,14 @@ try {
   const after = await inbox();
   ok(after.join('') !== '甲乙丙', '拖完顺序真的变了，实际 ' + JSON.stringify(after));
   ok(after[after.length - 1] === '甲', '被拖的「甲」到了最后一位，实际 ' + JSON.stringify(after));
+  /* **拖拽和长按只能有一个赢。** 触摸上这两件事开头一模一样：TouchSensor 配的是
+     `{delay: 480ms, tolerance: 8}`，手指按住不动到点，长按 timer 和 dnd-kit
+     会**同时**到点（所以「有没有触发 onDragStart」区分不开）。唯一能分的是
+     手指有没有挪过 —— 这一条就是那个判据。
+     少了这条断言，上面那句「顺序变了」和长按弹出操作层是可以同时成立的：
+     拖成了，浮层也跟着弹出来了。 */
+  ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`),
+    '拖完没有弹出长按操作层（两者不能同时触发）');
   // 落库了才算数：不能只是视觉上挪了一下
   const saved = await evalJs(page, `
     const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
@@ -3161,8 +3169,33 @@ try {
     return true;
   `);
   await new Promise((r) => setTimeout(r, 60));
-  ok(await evalJs(page, `return ${navRow('trash')}.className.includes('opacity-40');`),
-    '拖起来了（isDragging → opacity-40）');
+  ok(await evalJs(page, `return ${navRow('trash')}.className.includes('nav-chip-drag');`),
+    '拖起来了（被拖的那一格留在原位当出处锚点）');
+  /* 让位动画：被拖的那一格**不给** transition（它跟手指走，迟滞半拍就是
+     「不跟手」），让位的那几格**要给**（不给就是闪现）。读的是内联样式的
+     计算结果 —— `useSortable` 没在拖的时候返回 undefined，压根没有这个属性。 */
+  ok(await evalJs(page, `return ${navRow('trash')}.style.transition === '';`),
+    '被拖的那一格没有 transition（跟手，不迟滞）');
+  ok(await evalJs(page, `return !!${navRow('today')}.style.transition;`),
+    '让位的那几格有 transition（滑过去，不是闪现），实际 '
+      + JSON.stringify(await evalJs(page, `return ${navRow('today')}.style.transition;`)));
+  /* 占位虚影：原位那一格虚线化、压暗，跟手指走的是浮层里那份。判据看
+     **算出来的样式**，不是看类名 —— 类名改了样式没跟上，探针照样绿。 */
+  const navGhost = await evalJs(page, `
+    const li = ${navRow('trash')};
+    const cs = getComputedStyle(li);
+    const ov = document.querySelector('.drag-overlay .nav-chip');
+    return {
+      outline: cs.outlineStyle + ' ' + cs.outlineWidth,
+      opacity: Number(cs.opacity),
+      shadow: ov ? getComputedStyle(ov).boxShadow : null,
+      overlayText: ov ? ov.textContent.trim() : null,
+    };
+  `);
+  ok(/dashed/.test(navGhost.outline) && navGhost.opacity < 0.6,
+    '原位那一格是虚线占位虚影（压暗 + 虚线描边），实际 ' + JSON.stringify(navGhost));
+  ok(!!navGhost.shadow && navGhost.overlayText,
+    '跟着手指走的是浮层里那一份，实际 ' + JSON.stringify(navGhost.overlayText));
   await evalJs(page, `
     const el = document.elementFromPoint(${navDst.x}, ${navDst.y});
     el.dispatchEvent(new MouseEvent('mousemove', {
