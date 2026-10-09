@@ -799,6 +799,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         id={openId}
         onClose={() => setOpenId(null)}
         onPatch={patch}
+        onMoveToCal={(id, calId) => store.moveToCal('task', id, calId)}
         onToggle={(id) => store.toggleTask(id)}
         onDelete={removeTask}
         onDismissConflict={store.dismissConflict}

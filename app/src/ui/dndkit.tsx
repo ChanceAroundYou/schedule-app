@@ -413,7 +413,7 @@ function drawTimeCursor(zone: HTMLElement, min: number, win: DayWindow): void {
     wrap.appendChild(cursor);
   }
   cursor.style.top = ((min - win.from) / spanOf(win) * 100) + '%';
-  cursor.textContent = D.minToTime(min);
+  cursor.innerHTML = '<i></i>' + D.minToTime(min);
 }
 
 function clearTimeCursor(): void {
@@ -475,6 +475,16 @@ function eventY(event: DragOverEvent | DragEndEvent): number | null {
 function minFromY(zone: HTMLElement, clientY: number): number {
   const rect = zone.getBoundingClientRect();
   return yToMin(clientY - rect.top, rect.height, zoneWindow(zone));
+}
+
+/** 纵坐标 → 分钟（**不对齐 15 分钟**）。拖拽落点用 —— 对齐会让卡片从指针位置跳到网格，产生跳变。 */
+function minFromYNoSnap(zone: HTMLElement, clientY: number): number {
+  const rect = zone.getBoundingClientRect();
+  const win = zoneWindow(zone);
+  const y = clientY - rect.top;
+  if (rect.height <= 0) return win.from;
+  const raw = win.from + (y / rect.height) * spanOf(win);
+  return Math.max(win.from, Math.min(win.to - 1, raw));
 }
 
 /** 周视图整列都是 24 小时、像素高度固定 —— 那一套还成立 */
@@ -612,11 +622,13 @@ export function useTimelineDrag() {
     const date = zone.dataset.date || null;
 
     if (overId.startsWith('timeline:')) {
-      /* 落点跟绿线一致：用卡片顶部坐标，不用手指坐标 */
+      /* 落点跟绿线一致：用卡片顶部坐标，不用手指坐标。
+         **不对齐 15 分钟**：拖拽时卡片跟指针走，松手时如果对齐到 15 分钟，
+         卡片会从指针位置跳到对齐位置，产生跳变。直接用当前卡片位置。 */
       const card = document.querySelector<HTMLElement>(`.tl-event[data-id="${activeId}"]`);
       const min = card
-        ? minFromY(zone, card.getBoundingClientRect().top)
-        : minFromY(zone, currentY);
+        ? minFromYNoSnap(zone, card.getBoundingClientRect().top)
+        : minFromYNoSnap(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.minToTime(min)}`);
       return;

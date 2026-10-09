@@ -15,26 +15,27 @@
  * **也没有「今天 / 明天」「12 点」这类快捷格**。时间选两次：开始、结束 ——
  * 结束时间设了就是一条持续任务，没设就是默认的一小时。
  *
- * 重复设置收在一个 Sheet 里，不再摊成一片 chips + 面板。
+ * 重复设置收在字段旁的复合浮层里，不再摊成一片 chips + 面板。
  */
 
-import { useEffect, useId, useRef, useState } from 'react';
-import { Trash2, Check, Repeat, History } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Trash2, Check, Repeat, History, X } from 'lucide-react';
 import { DatePicker } from './DatePicker.tsx';
 import { TimePicker } from './TimePicker.tsx';
+import { WheelPicker } from './WheelPicker.tsx';
+import { MiniCalendar } from './MiniCalendar.tsx';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
+import { canWrite } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { liveProjects } from '../domain/model.ts';
-import { Chips, IconBtn, Input, Sheet, SheetPicker, Textarea, useConfirm } from './kit.tsx';
+import { Chips, Dropdown, IconBtn, Input, SheetPicker, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 import { useOverlayScrollbar } from './scroll.ts';
 
 /** 没设结束时间时的默认时长。`duration` 是 `number`、不是可空的，
  *  所以「没有结束时间」只能表达成「一小时」—— 建任务那一版就是这个行为。 */
 const DEFAULT_DURATION = 60;
-/** 结束时间比起始时间还早时兜到这儿。时间轴的最小步进是 15 分钟。 */
-const MIN_DURATION = 15;
 
 /**
  * 「另一台设备也改过这里」。
@@ -84,11 +85,12 @@ function showVal(field: string, v: unknown): string {
   return String(v);
 }
 
-export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDismissConflict }: {
+export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onDelete, onDismissConflict }: {
   state: LocalState;
   id: string | null;
   onClose: () => void;
   onPatch: (id: string, fields: Partial<Task>) => void;
+  onMoveToCal: (id: string, calId: string) => void;
   /**
    * 勾选完成。**必须走 `store.toggleTask()`，不能自己 patch `done`。**
    *
@@ -118,9 +120,14 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
   // 标题是本地草稿：每敲一个字就写库会让输入框在重渲染里跳光标（旧版踩过）
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [endTime, setEndTime] = useState<string | null>(null);
   const [repOpen, setRepOpen] = useState(false);
-  /* 浮条：抽屉正文会滚 —— 见 ui/scroll.ts */
+  const repAnchor = useRef<HTMLButtonElement>(null);
+  const repPanel = useRef<HTMLDivElement>(null);
+  /* 浮条：抽屉正文和「重复」面板都会滚 —— 见 ui/scroll.ts */
   const osbBody = useOverlayScrollbar<HTMLDivElement>();
+  const osbRep = useOverlayScrollbar<HTMLDivElement>(repPanel);
+  const [repPos, setRepPos] = useState<{ top: number; left: number } | null>(null);
   const lastId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -129,6 +136,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
     lastId.current = task.id;
     setTitle(task.title);
     setNote(task.note || '');
+    setEndTime(null);
   }, [task]);
 
   useEffect(() => {
@@ -137,6 +145,38 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [id, onClose]);
+
+  useLayoutEffect(() => {
+    if (!repOpen || !repAnchor.current || !repPanel.current) { setRepPos(null); return; }
+    const r = repAnchor.current.getBoundingClientRect();
+    const w = repPanel.current.offsetWidth;
+    const h = repPanel.current.offsetHeight;
+    let top = r.bottom + 6;
+    let left = r.left;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+    setRepPos({ top, left });
+  }, [repOpen, task?.repeat.unit, task?.repeat.n, task?.repeat.end?.type]);
+
+  useEffect(() => {
+    if (!repOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!repPanel.current?.contains(t) && !repAnchor.current?.contains(t)) setRepOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setRepOpen(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [repOpen]);
 
   /**
    * 开的时候把焦点送进来、关的时候还回去。
@@ -175,20 +215,22 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
    */
   const nextOcc = rep.unit !== 'none' ? repeatNext(task, task.date || D.today()) : null;
 
-  /**
-   * 结束时间 = 开始时间 + 时长。**开始时间一改，结束时间跟着走** —— 不变的是
-   * 时长，那才是「持续任务」的本体；开始 / 结束只是它的两个视图。
-   *
-   * 没有开始时间就没有结束时间（`null`），那一行也不出现。
-   */
   const startMin = D.timeToMin(task.time);
-  const endMin = startMin == null ? null : startMin + task.duration;
   const setEnd = (v: string | null) => {
     const s = startMin;
-    if (v == null || s == null) { patch({ duration: DEFAULT_DURATION }); return; }
+    if (v == null || s == null) {
+      setEndTime(null);
+      patch({ duration: DEFAULT_DURATION });
+      return;
+    }
     const e = D.timeToMin(v);
-    if (e == null) { patch({ duration: DEFAULT_DURATION }); return; }
-    patch({ duration: Math.max(MIN_DURATION, e - s) });
+    if (e == null) {
+      setEndTime(null);
+      patch({ duration: DEFAULT_DURATION });
+      return;
+    }
+    setEndTime(v);
+    patch({ duration: e > s ? e - s : e - s + 1440 });
   };
 
   const remove = async () => {
@@ -258,38 +300,52 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             />
           </div>
 
-          {/* 时间选**两次**：开始、结束。结束那行只有在开始定了之后才出现 ——
-              没有开始时间的任务落在时间轴上方的全天区，给它一个结束时间没意义。 */}
           <div className="field">
-            <span className="flabel">开始时间</span>
-            <TimePicker
-              value={task.time}
-              onChange={(v) => patch({
-                time: v,
-                ...(v === null ? { duration: DEFAULT_DURATION } : {}),
-              })}
-            />
-          </div>
-
-          {task.time && (
-            <div className="field">
-              <span className="flabel">结束时间 <span className="sub">（可不设）</span></span>
+            <span className="flabel">时间</span>
+            <div className="time-row">
               <TimePicker
-                value={endMin == null ? null : D.minToTime(endMin)}
-                onChange={setEnd}
+                value={task.time}
+                onChange={(v) => {
+                  setEndTime(null);
+                  patch({ time: v, ...(v === null ? { duration: DEFAULT_DURATION } : {}) });
+                }}
               />
+              {task.time && (
+                <>
+                  <span className="time-sep" aria-hidden="true">–</span>
+                  <TimePicker
+                    value={endTime}
+                    onChange={setEnd}
+                  />
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="field">
             <span className="flabel" id={fid + '-rep-l'}>重复</span>
             {/* 一个按钮开一个 Sheet。原先是 chips + 一整个面板摊在抽屉里 ——
                 展开之后比「项目」和「备注」加起来还长。 */}
             <button
-              className="rep-open"
+              ref={repAnchor}
+              type="button"
+              className={'rep-open' + (rep.unit !== 'none' ? ' on' : '')}
               aria-labelledby={fid + '-rep-l'}
               onClick={() => setRepOpen(true)}
-            >{rep.unit === 'none' ? '不重复' : repeatLabel(rep)}</button>
+            >
+              <span className="rep-label">{rep.unit === 'none' ? '不重复' : repeatLabel(rep)}</span>
+              {rep.unit !== 'none' && (
+                <span
+                  className="rep-x"
+                  aria-label="清除重复"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    patch({ repeat: toRepeat({ unit: 'none', n: 1, end: null }, task.date) });
+                    setRepOpen(false);
+                  }}
+                >✕</span>
+              )}
+            </button>
           </div>
 
           {/*
@@ -297,6 +353,18 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             拖进泳道列只换「哪一列」，搬归属是这条下拉的职责 ——
             拖动顺手把「搬家」也做掉，比什么都不做更让人措手不及。
           */}
+          <div className="field">
+            <span className="flabel" id={fid + '-cal-l'}>日程集</span>
+            <Dropdown
+              value={task.calId}
+              options={state.cals.filter((c) => canWrite(c.role)).map((c) => ({ value: c.id, label: c.name }))}
+              onPick={(v) => onMoveToCal(task.id, v)}
+              label="日程集"
+              labelledBy={fid + '-cal-l'}
+              className="w-full"
+            />
+          </div>
+
           <div className="field">
             <span className="flabel" id={fid + '-proj-l'}>项目</span>
             <SheetPicker<string>
@@ -313,9 +381,9 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
 
           <div className="field">
             <label htmlFor={fid + '-note'}>备注</label>
-            <Textarea
+            <Input
               id={fid + '-note'}
-              rows={5}
+              type="text"
               placeholder="补充说明…"
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -331,28 +399,35 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
         </div>
       </aside>
 
-      {/* 重复设置的复合浮层。频率 / 间隔 / 周几 / 每月几号 / 结束方式都在这儿，
-          一层一层的 chips 不往外摊 —— 见上面 repOpen 那段。 */}
-      <Sheet open={repOpen} onClose={() => setRepOpen(false)} title="重复">
-        <Chips<RepeatRule['unit']>
-          value={rep.unit}
-          options={REPEAT_UNITS.map((u) => u.value)}
-          onPick={(unit) => {
-            patch({ repeat: toRepeat({ ...rep, unit, n: 1, end: null }, task.date) });
-          }}
-          labelOf={(u) => REPEAT_UNITS.find((x) => x.value === u)?.label || u}
-          label="重复频率"
-        />
-        {rep.unit !== 'none' && (
-          <div className="repeat-panel">
+      {/* 重复设置的复合浮层。两个滚轮 + 下方自适应内容。 */}
+      {repOpen && <div ref={osbRep} className="repeat-pop osb" role="dialog" aria-label="重复" style={{ top: repPos ? repPos.top : 0, left: repPos ? repPos.left : 0, visibility: repPos ? 'visible' : 'hidden' }}>
+        <div className="repeat-pop-head"><strong>重复</strong><IconBtn label="关闭" onClick={() => setRepOpen(false)}><X size={15} /></IconBtn></div>
+        {rep.unit === 'none' ? (
+          <div className="repeat-none">
+            <button
+              type="button"
+              className="repeat-none-btn"
+              onClick={() => patch({ repeat: toRepeat({ unit: 'day', n: 1, end: null }, task.date) })}
+            >不重复</button>
+          </div>
+        ) : (
+          <>
             <div className="rp-row">
               <span>每</span>
-              <input
-                type="number" min={1} max={99} value={rep.n}
-                aria-label="重复间隔"
-                onChange={(e) => patch({ repeat: { ...rep, n: Math.max(1, +e.target.value || 1) } })}
+              <WheelPicker
+                leftOptions={Array.from({ length: 99 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+                rightOptions={REPEAT_UNITS.filter((u) => u.value !== 'none').map((u) => ({ value: u.value, label: u.label }))}
+                leftValue={String(rep.n)}
+                rightValue={rep.unit}
+                onLeftChange={(n) => {
+                  patch({ repeat: { ...rep, n: Math.max(1, +n || 1) } });
+                }}
+                onRightChange={(unit) => {
+                  patch({ repeat: toRepeat({ ...rep, unit, n: 1, end: null }, task.date) });
+                }}
+                leftLabel="每"
+                rightLabel="单位"
               />
-              <span>{{ day: '天', week: '周', month: '个月', year: '年', none: '' }[rep.unit]}</span>
             </div>
             {rep.unit === 'week' && (
               <div className="rp-row rp-wd">
@@ -375,27 +450,55 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                 })}
               </div>
             )}
-            {/* 「每月 N 号」这一格重构时漏了，而 repeat.ts 一直在读
-                `monthday` —— 值照旧生效，只是用户看不到、也改不了。
-                任务改期之后 monthday 还停在旧日期，就成了没法解释的行为 */}
             {rep.unit === 'month' && (
               <div className="rp-row">
                 <span>每月</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={rep.monthday || 1}
-                  aria-label="每月几号"
-                  onChange={(e) => patch({
-                    repeat: {
-                      ...rep,
-                      monthday: Math.max(1, Math.min(31, +e.target.value || 1)),
-                    },
-                  })}
+                <MiniCalendar
+                  month={D.monthStart(task.date || D.today())}
+                  value={String(rep.monthday || 1)}
+                  todayIso={D.today()}
+                  loadOf={() => 0}
+                  onMonth={() => {}}
+                  onPick={(iso) => {
+                    const day = D.parseISO(iso).getDate();
+                    patch({ repeat: { ...rep, monthday: day } });
+                  }}
                 />
-                <span className="sub">号，当月没这天就取最后一天</span>
               </div>
+            )}
+            {rep.unit === 'year' && (
+              <>
+                <div className="rp-row">
+                  <span>每年</span>
+                  <select
+                    value={rep.yearMonth || 1}
+                    aria-label="每年几月"
+                    onChange={(e) => patch({
+                      repeat: {
+                        ...rep,
+                        yearMonth: Math.max(1, Math.min(12, +e.target.value || 1)),
+                      },
+                    })}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>{i + 1} 月</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rp-row">
+                  <MiniCalendar
+                    month={`${new Date().getFullYear()}-${D.pad(rep.yearMonth || 1)}-01`}
+                    value={String(rep.monthday || 1)}
+                    todayIso={D.today()}
+                    loadOf={() => 0}
+                    onMonth={() => {}}
+                    onPick={(iso) => {
+                      const day = D.parseISO(iso).getDate();
+                      patch({ repeat: { ...rep, monthday: day } });
+                    }}
+                  />
+                </div>
+              </>
             )}
             <div className="rp-row">
               <span>结束</span>
@@ -431,9 +534,9 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
               )}
             </div>
             {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
-          </div>
+          </>
         )}
-      </Sheet>
+      </div>}
     </>
   );
 }

@@ -323,7 +323,9 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   width: 44px; text-align: right;
   font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
   color: var(--primary); pointer-events: none; z-index: 11;
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
 }
+.tl-cursor i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px rgb(from var(--primary) r g b / .16); flex-shrink: 0; }
 
 /* 卡片外侧下方持续时间标签 */
 .tl-dur-tag {

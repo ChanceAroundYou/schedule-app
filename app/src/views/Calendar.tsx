@@ -104,7 +104,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。
      **自适应疏密**：时间窗太长时标签会挤在一起，按总小时数动态调整间隔。 */
   const totalHours = (win.to - win.from) / 60;
-  const step = totalHours > 18 ? 3 : totalHours > 12 ? 2 : 1;
+  const step = totalHours > 22 ? 3 : totalHours > 16 ? 2 : 1;
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to && h % step === 0);
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);

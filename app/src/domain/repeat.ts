@@ -32,11 +32,13 @@ const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 /** 生成一份空的重复规则 */
 export function emptyRepeat(date: string | null): RepeatRule {
+  const d = date ? D.parseISO(date) : D.parseISO(D.today());
   return {
     unit: 'none',
     n: 1,
     weekdays: [],
-    monthday: date ? D.parseISO(date).getDate() : D.parseISO(D.today()).getDate(),
+    monthday: d.getDate(),
+    yearMonth: d.getMonth() + 1,
     end: null,
   };
 }
@@ -61,6 +63,7 @@ export function toRepeat(old: unknown, date: string | null): RepeatRule {
     r.n = Math.max(1, Number(o.n) || 1);
     r.weekdays = Array.isArray(o.weekdays) ? o.weekdays.slice() : [];
     r.monthday = o.monthday || r.monthday;
+    r.yearMonth = o.yearMonth || r.yearMonth;
     r.end = o.end || null;
   }
   return r;
@@ -82,7 +85,10 @@ export function repeatLabel(r: RepeatRule | null | undefined): string {
     const md = r.monthday ? r.monthday + ' 号' : '';
     return n === 1 ? ('每月' + (md ? ' ' + md : '')) : ('每 ' + n + ' 个月' + (md ? ' ' + md : ''));
   }
-  return n === 1 ? '每年' : '每 ' + n + ' 年';
+  const ym = r.yearMonth ? r.yearMonth + ' 月' : '';
+  const ymd = r.monthday ? r.monthday + ' 号' : '';
+  const ymStr = (ym || ymd) ? ' ' + ym + (ym && ymd ? ' ' : '') + ymd : '';
+  return n === 1 ? ('每年' + ymStr) : ('每 ' + n + ' 年' + ymStr);
 }
 
 /** 单步推进：返回 base 之后的下一个发生日 */
@@ -111,7 +117,12 @@ export function repeatAdvance(rule: RepeatRule, base: string): string | null {
     return anchor.getFullYear() + '-' + D.pad(anchor.getMonth() + 1) + '-' + D.pad(Math.min(day, last));
   }
 
-  return D.addMonths(base, 12 * n);
+  // year：用 yearMonth 指定月份，monthday 指定几号
+  const month = rule.yearMonth || (D.parseISO(base).getMonth() + 1);
+  const day = rule.monthday || D.parseISO(base).getDate();
+  const targetYear = D.parseISO(base).getFullYear() + n;
+  const last = D.lastDayOfMonth(targetYear, month);
+  return targetYear + '-' + D.pad(month) + '-' + D.pad(Math.min(day, last));
 }
 
 /**

@@ -26,6 +26,8 @@ export interface RepeatRule {
   weekdays: number[];
   /** unit='month' 时生效。注意它和 task.date 是两回事，见 repeat.ts */
   monthday: number;
+  /** unit='year' 时生效。1-12，表示每年的哪个月 */
+  yearMonth?: number;
   end: null | { type: 'date'; date: string } | { type: 'count'; count: number };
 }
 

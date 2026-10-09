@@ -229,22 +229,15 @@
    写法是「居中的那一组自己是个 span，现在走绝对定位」——
    把「现在」当第三个 flex 子元素的话，justify-content:center 会把
    三个一起居中，上午 / 下午 整组就左偏了，而这两个键的居中是面板的基准线。 */
-.cp-ampm { position: relative; display: flex; justify-content: center; margin-top: 12px; margin-bottom: 9px; }
-.cp-apm { display: flex; gap: 6px; position: relative; }
-.cp-ap {
-  padding: 4px 16px; border: none; border-radius: var(--r-md); cursor: pointer;
-  background: var(--panel-2); color: var(--text-2); font-size: 12px;
-  transition: background .14s, color .14s;
-}
-.cp-ap:hover { background: var(--panel-3); }
-.cp-ap.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
-
+.cp-tools { display: flex; justify-content: center; margin: 8px 0; }
 .cp-face {
   position: relative; width: 246px; height: 246px; margin: 0 auto;
   border-radius: 50%; background: var(--panel-2); border: var(--border-w) solid var(--border);
 }
+.cp-face.cp-h { background: var(--panel-2); }
+.cp-face.cp-m { background: var(--panel-2); }
 .cp-hand {
-  position: absolute; left: 50%; top: 50%; margin-top: -1px; height: 2px;
+  position: absolute; left: 50%; top: 50%; margin-top: -0.5px; height: 1px;
   background: var(--primary); transform-origin: left center; border-radius: var(--r-xs);
   transition: transform .18s cubic-bezier(.3, .8, .3, 1);
 }
@@ -269,8 +262,7 @@
   background: none; color: var(--text-2); font-size: 11px; line-height: 1;
   transition: background .14s, color .14s;
 }
-.cp-num:hover { background: var(--primary-soft); color: var(--primary); }
-.cp-num.on { background: var(--primary); color: var(--on-primary); font-weight: 600; box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
+.cp-num.on { background: var(--primary); color: var(--on-primary); box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
 /* 表盘下面**不再有说明文字**（需求 7）。原先那行 `.cp-tip` 写的是
    「选小时（12 在顶部）」「选分钟，每格 5 分钟（顶端 60 就是 0 分）」——
    表盘上就画着 12 在顶部、数出来就是每格 5 分钟，写出来只是把人当不会看。

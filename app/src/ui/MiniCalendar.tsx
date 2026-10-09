@@ -34,13 +34,13 @@ export function MiniCalendar({ month, value, todayIso, loadOf, onMonth, onPick }
   return (
     <>
       <div className="jp-head">
-        <button className="jp-nav" title="上个月" onClick={() => onMonth(D.addMonths(month, -1))}>
+        <button className="jp-nav" type="button" aria-label="上个月" title="上个月" onClick={() => onMonth(D.addMonths(month, -1))}>
           <ChevronLeft size={14} />
         </button>
         <span className="jp-label">
           {D.parseISO(month).getFullYear()} 年 {D.parseISO(month).getMonth() + 1} 月
         </span>
-        <button className="jp-nav" title="下个月" onClick={() => onMonth(D.addMonths(month, 1))}>
+        <button className="jp-nav" type="button" aria-label="下个月" title="下个月" onClick={() => onMonth(D.addMonths(month, 1))}>
           <ChevronRight size={14} />
         </button>
       </div>

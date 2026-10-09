@@ -908,16 +908,6 @@ export function QuickAdd({ state, onSubmit }: {
                 if (e.key === 'Escape') { e.currentTarget.blur(); }
               }}
             />
-            {/* 选了日期 / 时间就把 hint 换成确认句 —— 一眼能看出「这一条会带上
-                10月20日 15:00」，不然只有那个小按钮显示，很容易漏看。
-                句尾**不再缀「再点时钟图标可改」**：那个按钮就在旁边，图标是只表，
-                用户看得见（需求 7）。 */}
-            <span className="fast-hint">
-              {hasWhen
-                ? [effDate && '日期 ' + D.fmtMD(effDate), effTime && '时间 ' + effTime]
-                    .filter(Boolean).join(' · ')
-                : 'Ctrl + Enter 打开详细设置'}
-            </span>
           </div>
           {/* 时间/保存按钮上下叠放（需求 4）：时间在上，保存在下，固定位置 */}
           <div className="fast-side">

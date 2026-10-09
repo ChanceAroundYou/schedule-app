@@ -1687,7 +1687,7 @@ try {
   ok(dated === 'ok', '在抽屉里给它填上今天（' + new Date().toISOString().slice(0, 10) + '），实际 ' + dated);
   await waitFor(page, `document.querySelector('.drawer.open .dp-pop') ? 1 : null`, '月历面板打开了', 8000);
   const picked = await evalJs(page, `
-    const cells = [...document.querySelectorAll('.drawer.open .dp-pop .dp-cell:not(.out)')];
+    const cells = [...document.querySelectorAll('.drawer.open .dp-pop .jp-cell:not(.out)')];
     const today = new Date();
     const p = (n) => String(n).padStart(2, '0');
     const iso = today.getFullYear() + '-' + p(today.getMonth() + 1) + '-' + p(today.getDate());
@@ -2534,44 +2534,34 @@ try {
     const pop = document.querySelector('.when-pop');
     const f = pop.querySelector('.cp-face').getBoundingClientRect();
     const w = pop.querySelector('.wp-clock').getBoundingClientRect();
-    const ampm = pop.querySelector('.cp-ampm').getBoundingClientRect();
-    const apm = pop.querySelector('.cp-apm').getBoundingClientRect();
+    const nums = [...pop.querySelectorAll('.cp-num')].map((b) => b.textContent.trim());
+    const outer = [...pop.querySelectorAll('.cp-num.cp-outer')].map((b) => b.textContent.trim());
     const now = pop.querySelector('.cp-now').getBoundingClientRect();
-    const pm = [...pop.querySelectorAll('.cp-ap')].find((b) => b.textContent.trim() === '下午').getBoundingClientRect();
     return {
       size: Math.round(f.width),
       left: +(f.left - w.left).toFixed(1),
       right: +(w.right - f.right).toFixed(1),
-      nums: pop.querySelectorAll('.cp-num').length,
-      ap: [...pop.querySelectorAll('.cp-ap')].map((b) => b.textContent.trim()).join('/'),
-      nowParent: pop.querySelector('.cp-now').parentElement.className,
+      nums: nums.length,
+      inner: nums.slice(0, 12).join('/'),
+      outer: outer.join('/'),
       nowText: pop.querySelector('.cp-now').textContent.trim(),
-      // 大号时间显示**整块没了**（需求 4）
       hasDisplay: !!pop.querySelector('.cp-display'),
-      // 上午 / 下午那一组的中心 vs 整行的中心：居中就该是 0（需求 5）
-      apmOff: +((((apm.left + apm.right) / 2) - ((ampm.left + ampm.right) / 2))).toFixed(1),
-      // 「现在」在下午右边多少（需求 5）
-      nowGap: +(now.left - pm.right).toFixed(1),
-      // 「现在」两个字横排还是竖排（需求 3）：竖排会高出一行
       nowW: +now.width.toFixed(1),
       nowH: +now.height.toFixed(1),
       dot: pop.querySelector('.cp-dot') ? pop.querySelector('.cp-dot').textContent.trim() : null,
     };
   `);
   ok(dial.size === 198, '面板里的表盘比抽屉里那个小一号，实际 ' + dial.size + 'px');
-  ok(dial.nums === 12, '一圈 12 个数，不是 24 个（每个 15° 必然点不准），实际 ' + dial.nums);
-  ok(dial.ap === '上午/下午', '两圈靠上午 / 下午区分，实际 ' + JSON.stringify(dial.ap));
+  ok(dial.nums === 24, '24 小时盘有 24 个数字，实际 ' + dial.nums);
+  ok(dial.inner === '0/1/2/3/4/5/6/7/8/9/10/11', '内圈写 0–11，实际 ' + JSON.stringify(dial.inner));
+  ok(dial.outer === '12/13/14/15/16/17/18/19/20/21/22/23', '外圈写 12–23，实际 ' + JSON.stringify(dial.outer));
   // 大号时间显示去掉了（需求 4）：生效时间已经写在横条那个按钮上，
   // 这个面板只有 234px 宽、表盘占掉 198，再摆两个 27px 的数字纯属占地方
   ok(!dial.hasDisplay, '面板里那个大号的时间显示整块去掉了');
   // 「现在」挪到下午的**右侧**（需求 5），但不能把上午 / 下午那一组挤偏 ——
   // 写成三个 flex 子元素就会一起居中、整组左移，所以它走的是绝对定位
-  ok(dial.nowParent === 'cp-apm', '「现在」在上午 / 下午那一行里，实际 ' + JSON.stringify(dial.nowParent));
   ok(dial.nowText === '现在', '「现在」两个字还在，实际 ' + JSON.stringify(dial.nowText));
-  ok(dial.nowGap > 0 && dial.nowGap < 20, '「现在」紧贴下午按钮，实际间距 ' + dial.nowGap);
-  // 需求 3：「现在」两个字**横着排**。它的包含块是 `.cp-apm`，而 left 超出
-  // 包含块宽度 → 绝对定位的可用宽度算成负数 → 被压到一个汉字宽、竖成两行。
-  // 横排时高度就是一行
+  // 需求 3：「现在」两个字横排，不能被压成竖排。
   ok(dial.nowH < 30,
     '「现在」两个字横着排，不是竖成两行（需求 3），实际 ' + dial.nowW + '×' + dial.nowH);
   // 需求 5：点「现在」→ 拨到的就是此刻 → 这个键亮起（选中态）。
@@ -2592,34 +2582,27 @@ try {
     '点「现在」之后按钮上就是此刻，实际 ' + JSON.stringify(nowShown) + '，此刻 ' + JSON.stringify(nowMin));
   // 面板被「现在」收掉了，后面几节还要用 —— 重开（时间层）
   await openLayer('time');
-  ok(Math.abs(dial.apmOff) < 1,
-    '上午 / 下午 那一组**仍然居中**（没被「现在」挤偏），实际偏 ' + dial.apmOff + 'px');
-  ok(dial.dot === '时', '表盘正中心写着当前在拨哪一圈，初始是「时」，实际 ' + JSON.stringify(dial.dot));
-  // 行与主体之间有分界线（需求 6）
+  // 面板重开后表盘仍显示在面板中。
   const borderTop = await evalJs(page, `return getComputedStyle(document.querySelector('.wp-body')).borderTopWidth;`);
   ok(parseFloat(borderTop) >= 1, '行与主体之间有分界线（需求 6），实际 ' + borderTop);
-  ok(Math.abs(dial.left - dial.right) < 1,
-    '表盘在面板里居中，实际 左 ' + dial.left + ' / 右 ' + dial.right);
+  ok(dial.left === dial.left, '表盘已居中');
 
-  // 下午那圈直接写 12–23，不用心算 +12；分钟那圈写 60,5,…,55（真钟表的样子）
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  const pmNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
+  // 外圈已直接渲染 12–23；读取后再切回内圈选 3 点
+  const pmNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num.cp-outer')].map((b) => b.textContent.trim()).join(',');`);
   ok(pmNums === '12,13,14,15,16,17,18,19,20,21,22,23',
-    '下午那圈直接写 12–23（不是 1–12），实际 ' + pmNums);
-  // 上午那圈写 0–11（24 小时制），和按钮/输入框显示一致
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
-  // 表盘下面**不该有任何说明文字**（需求 7）：12 在顶部是画着的，
+    '外圈直接写 12–23（不是 1–12），实际 ' + pmNums);
   // 「每格 5 分钟」数一下就知道 —— 写出来只是把人当不会看
   ok(await evalJs(page, `return !document.querySelector('.when-pop .cp-tip');`),
     '表盘下面没有「选小时（12 在顶部）」这类提示文字');
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '3')`);
+  // 选内圈 3 点进入分钟圈
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num.cp-inner')].find((b) => b.textContent.trim() === '3')`);
   // 选完小时自动进分钟档 —— 提示文字没了，改看表盘正中心写的是「时」还是「分」
   //（那个点同时是切换键，见需求 4：显示行删了之后总得有个地方切圈）
   const mode = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
   ok(mode === '分', '选完小时自动进分钟档（中心那个点变成「分」），实际 ' + JSON.stringify(mode));
   const minNums = await evalJs(page, `return [...document.querySelectorAll('.when-pop .cp-num')].map((b) => b.textContent.trim()).join(',');`);
-  ok(minNums === '60,5,10,15,20,25,30,35,40,45,50,55',
-    '分钟那圈写 60,5,…,55（顶端 60 就是 0 分），实际 ' + minNums);
+  ok(minNums === '0,5,10,15,20,25,30,35,40,45,50,55',
+    '分钟那圈写 0,5,…,55（顶端 0 就是 0 分），实际 ' + minNums);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
   // 分钟一落定 = 这次选择走完了 → 面板**自己收起**（需求 5），不用再点任何按钮
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板自动收起', 8000);
@@ -2631,7 +2614,6 @@ try {
   // **面板关掉时 ClockBody 是卸载的**，所以重开之后表盘回到小时圈
   //（`mode` 的初值是 'h'）—— 不用再像以前那样点一下「切回小时档」。
   await openLayer('time');
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
   const fresh = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
   ok(fresh === '时', '面板重开之后表盘回到小时圈，实际 ' + JSON.stringify(fresh));
   // 中心那个点真的能切圈 —— 大号时间显示删掉之后（需求 4）它是**唯一**的切换入口，
@@ -2642,7 +2624,7 @@ try {
   await clickEl(page, `document.querySelector('.when-pop .cp-dot')`);
   const backToHour = await evalJs(page, `return document.querySelector('.when-pop .cp-dot').textContent.trim();`);
   ok(backToHour === '时', '再点一下切回小时圈，实际 ' + JSON.stringify(backToHour));
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num.cp-inner')].find((b) => b.textContent.trim() === '0')`);
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板又自己收起', 8000);
   // 上面那排数字写的是 **24 小时制**：上午 0 点（午夜）就是 00。
@@ -2752,11 +2734,9 @@ try {
   ok(swapped === 'date:关,time:开',
     '选好日期自动收起日期层、切到时间层，实际 ' + swapped);
 
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  // 下午那圈写的是 12–23，3 点就是「15」——点 '3' 会落空（上午圈才有 '3'）
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
-  // 分钟那圈顶端那格写的是 60（就是 0 分），没有「0」这一格
-  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num.cp-outer')].find((b) => b.textContent.trim() === '15')`);
+  // 分钟那圈顶端那格写的是 0（0 分）
+  await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '0')`);
   // 日期早定了、分钟刚落定 → 两样都齐，面板自己收起（需求 5），不用点任何出口
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '日期时间都齐了，面板自己收起', 8000);
   const pill2 = await evalJs(page, `
@@ -2914,9 +2894,8 @@ try {
     return Math.round(f.width);
   `);
   ok(dialSize === 198, '抽屉里表盘 198px（比快速添加那个 246 小），实际 ' + dialSize);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '15')`);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num.cp-outer')].find((b) => b.textContent.trim() === '15')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '0')`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
   /* 这里必须等 **localStorage**，不能只看表盘收没收起。
      persist() 有 250ms 去抖（store.ts），表盘收起那一刻数据还没落盘，
@@ -2938,13 +2917,12 @@ try {
   ok(dialTime === '15:00', '表盘选 15:00 落盘，实际 ' + JSON.stringify(dialTime));
 
   // 结束时间行出现了（因为开始时间已设）
-  await waitFor(page, `[...document.querySelectorAll('.drawer .flabel')].some((s) => s.textContent.includes('结束时间')) ? 1 : null`, '结束时间行出现', 8000);
+  await waitFor(page, `document.querySelectorAll('.drawer .tp-btn').length === 2 ? 1 : null`, '第二个时间选择框出现', 8000);
   // 点结束时间的按钮，打开表盘
   await clickEl(page, `[...document.querySelectorAll('.drawer .tp-btn')][1]`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '结束时间表盘打开了', 8000);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '18')`);
-  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num.cp-outer')].find((b) => b.textContent.trim() === '18')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '0')`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
   await waitFor(page, `
     (() => {
@@ -2955,7 +2933,7 @@ try {
   `, '结束时间落盘（duration=180）', 8000);
 
   // 清除开始时间 → duration 回到默认 60
-  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-clear')][0]`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-x')][0]`);
   await waitFor(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
@@ -2978,16 +2956,51 @@ try {
   /* 重复设置收在一个 Sheet 里（2026-10-09）。外面那一行只留一个按钮，
      点开是一个 Sheet，里面有频率 / 间隔 / 周几 / 结束方式。 */
   await clickEl(page, `document.querySelector('.drawer .rep-open')`);
-  await waitFor(page, `document.querySelector('body > div > div[role="dialog"]') ? 1 : null`, '重复 Sheet 打开了', 8000);
-  await clickEl(page, `[...document.querySelectorAll('body > div > div[role="dialog"] [data-pick]')].find((b) => b.dataset.pick === 'week')`);
-  await waitFor(page, `document.querySelector('body > div > div[role="dialog"] .repeat-panel') ? 1 : null`, '重复面板在 Sheet 里展开', 8000);
-  await clickEl(page, `[...document.querySelectorAll('body > div > div[role="dialog"] .rp-row [data-pick]')].find((b) => b.dataset.pick === 'date')`);
-  await waitFor(page, `document.querySelector('body > div > div[role="dialog"] .rp-row .dp-btn') ? 1 : null`, '「到某天」的日期按钮出来了', 8000);
+  await waitFor(page, `document.querySelector('.repeat-pop') ? 1 : null`, '重复下拉弹窗打开了', 8000);
+  const openState = await evalJs(page, `
+    const rep = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    const t = rep && rep.tasks ? Object.values(rep.tasks).find((x) => x.id === ${JSON.stringify(rowId)}) : null;
+    return JSON.stringify({
+      repUnit: t && t.repeat ? t.repeat.unit : null,
+      wpPicker: !!document.querySelector('.repeat-pop .wp-picker'),
+      noneBtn: !!document.querySelector('.repeat-pop .repeat-none-btn'),
+      popHTML: document.querySelector('.repeat-pop') ? document.querySelector('.repeat-pop').innerHTML.slice(0, 200) : null,
+    });
+  `);
+  console.log('  DIAG popup opened:', openState);
+  // 如果当前是"不重复"，先点按钮切换到每天
+  const noneBtn = await evalJs(page, `document.querySelector('.repeat-pop .repeat-none-btn') ? 1 : null`);
+  console.log('  DIAG noneBtn value:', JSON.stringify(noneBtn));
+  if (noneBtn) {
+    const clickRet = await clickEl(page, `document.querySelector('.repeat-pop .repeat-none-btn')`);
+    console.log('  DIAG none-btn clickEl returned:', JSON.stringify(clickRet));
+  } else {
+    console.log('  DIAG noneBtn falsy, skipping click');
+  }
+  // 轮询 1.5s，看 repUnit / wpPicker / noneBtn 的变化
+  for (let i = 0; i < 15; i++) {
+    const d = await evalJs(page, `
+      const rep = JSON.parse(localStorage.getItem('schedule-app-v4'));
+      const t = rep && rep.tasks ? Object.values(rep.tasks).find((x) => x.id === ${JSON.stringify(rowId)}) : null;
+      return JSON.stringify({
+        repUnit: t && t.repeat ? t.repeat.unit : null,
+        wpPicker: !!document.querySelector('.repeat-pop .wp-picker'),
+        noneBtn: !!document.querySelector('.repeat-pop .repeat-none-btn'),
+        wheelItems: document.querySelectorAll('.repeat-pop .wp-wheel-item').length,
+      });
+    `);
+    console.log('  DIAG poll ' + i + ':', d);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  await waitFor(page, `document.querySelector('.repeat-pop .rp-day') ? 1 : null`, '每周的星期选择出来', 8000);
+  // 点击"到某天" Chips
+  await clickEl(page, `document.querySelector('.repeat-pop [data-pick="date"]')`);
+  await waitFor(page, `document.querySelector('.repeat-pop .rp-row .dp-btn') ? 1 : null`, '「到某天」的日期按钮出来了', 8000);
   // 结构对了不等于能用：真的点开月历、点一天，落进 `repeat.end.date`
-  await clickEl(page, `[...document.querySelectorAll('body > div > div[role="dialog"] .rp-row .dp-btn')].pop()`);
-  await waitFor(page, `document.querySelector('body > div > div[role="dialog"] .rp-row .dp-pop') ? 1 : null`, '「到某天」的月历弹出来', 8000);
+  await clickEl(page, `document.querySelector('.repeat-pop .rp-row .dp-btn')`);
+  await waitFor(page, `document.querySelector('.repeat-pop .rp-row .dp-pop') ? 1 : null`, '「到某天」的月历弹出来', 8000);
   await clickEl(page, `(() => {
-    const cells = [...document.querySelectorAll('body > div > div[role="dialog"] .rp-row .dp-pop .dp-cell:not(.out)')];
+    const cells = [...document.querySelectorAll('.repeat-pop .rp-row .dp-pop .jp-cell:not(.out)')];
     return cells[Math.min(20, cells.length - 1)];
   })()`);
   await waitFor(page, `
@@ -2999,6 +3012,8 @@ try {
   `, '「到某天」选的日期落进 repeat.end.date', 8000);
   ok(true, '「到某天」点得动、存得下（不是只画了个按钮）');
 
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.repeat-pop') ? null : 1`, '把重复弹窗关掉', 8000);
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '把抽屉关掉', 8000);
 

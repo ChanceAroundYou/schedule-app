@@ -280,7 +280,7 @@
   display: flex; align-items: center; gap: 5px;
   padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
   border: var(--border-w) solid var(--border); border-left: 3px solid var(--primary);
-  font-size: 12px; cursor: pointer; max-width: 100%; overflow: hidden;
+  font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
 }
 .task-pill:hover { background: var(--primary-soft); box-shadow: var(--shadow); transform: translateY(-1px); }

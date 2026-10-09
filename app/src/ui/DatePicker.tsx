@@ -10,6 +10,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as D from '../domain/date.ts';
+import { MiniCalendar } from './MiniCalendar.tsx';
 
 export function DatePicker({ value, onChange }: {
   /** 当前日期 'YYYY-MM-DD'，null = 待定 */
@@ -63,22 +64,17 @@ export function DatePicker({ value, onChange }: {
   }, [open]);
 
   const today = D.today();
-  const grid = D.monthMatrix(`${view.y}-${String(view.m).padStart(2, '0')}-01`);
 
   return (
     <div className="dp">
-      <div className="dp-cur">
-        <button
-          ref={anchor}
-          className={'dp-btn' + (value ? ' on' : '')}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {value ? D.fmtMD(value) : '选日期'}
-        </button>
-        {value && (
-          <button className="dp-clear" onClick={() => onChange(null)}>✕</button>
-        )}
-      </div>
+      <button
+        ref={anchor}
+        className={'dp-btn' + (value ? ' on' : '')}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="dp-label">{value ? D.fmtMD(value) : '选日期'}</span>
+        {value && <span className="dp-x" aria-label="清除日期" onClick={(e) => { e.stopPropagation(); onChange(null); }}>✕</span>}
+      </button>
       {open && (
         <div
           ref={panel}
@@ -90,46 +86,17 @@ export function DatePicker({ value, onChange }: {
             visibility: pos ? 'visible' : 'hidden',
           }}
         >
-          <div className="dp-nav">
-            <button
-              className="dp-nav-btn"
-              onClick={() => setView((v) => {
-                const m = v.m - 1;
-                return m < 1 ? { y: v.y - 1, m: 12 } : { y: v.y, m };
-              })}
-            >‹</button>
-            <span className="dp-nav-label">{view.y} 年 {view.m} 月</span>
-            <button
-              className="dp-nav-btn"
-              onClick={() => setView((v) => {
-                const m = v.m + 1;
-                return m > 12 ? { y: v.y + 1, m: 1 } : { y: v.y, m };
-              })}
-            >›</button>
-          </div>
-          <div className="dp-week">
-            {['一', '二', '三', '四', '五', '六', '日'].map((w) => <span key={w}>{w}</span>)}
-          </div>
-          <div className="dp-grid">
-            {grid.map((iso) => {
-              const d = Number(iso.split('-')[2]);
-              const inMonth = iso.startsWith(`${view.y}-${String(view.m).padStart(2, '0')}`);
-              const on = value === iso;
-              const isToday = iso === today;
-              return (
-                <button
-                  key={iso}
-                  className={
-                    'dp-cell'
-                    + (on ? ' on' : '')
-                    + (isToday ? ' today' : '')
-                    + (!inMonth ? ' out' : '')
-                  }
-                  onClick={() => { onChange(iso); setOpen(false); }}
-                >{d}</button>
-              );
-            })}
-          </div>
+          <MiniCalendar
+            month={`${view.y}-${String(view.m).padStart(2, '0')}-01`}
+            value={value}
+            todayIso={today}
+            loadOf={() => 0}
+            onMonth={(iso) => {
+              const [y, m] = iso.split('-').map(Number);
+              setView({ y, m });
+            }}
+            onPick={(iso) => { onChange(iso); setOpen(false); }}
+          />
         </div>
       )}
     </div>

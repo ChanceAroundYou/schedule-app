@@ -32,10 +32,10 @@
 .icon-btn { border: none; background: none; color: var(--text-3); font-size: 14px; padding: 5px; border-radius: var(--r-sm); transition: background .14s, color .14s; }
 .icon-btn:hover { color: var(--text); background: var(--panel-3); }
 
-.drawer-body { flex: 1; overflow-y: auto; padding: 17px; }
-.field-row { display: flex; gap: 12px; margin-bottom: 15px; }
-.field { flex: 1; min-width: 0; margin-bottom: 15px; }
-.field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 6px; letter-spacing: .2px; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 14px; }
+.field-row { display: flex; gap: 12px; margin-bottom: 12px; }
+.field { flex: 1; min-width: 0; margin-bottom: 12px; }
+.field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px; letter-spacing: .2px; }
 .field .sub { color: var(--text-3); }
 /* Field 组件的提示 / 错误行。hint 是格式示例那类常驻说明，
    error 是校验失败 —— 有错误时顶掉提示，不同时出现。 */
@@ -57,36 +57,56 @@
 .field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }
 .field textarea { resize: vertical; line-height: 1.6; }
 .field input:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
-.drawer-meta { font-size: 11px; color: var(--text-3); padding-top: 10px; border-top: 1px solid var(--border); }
+.time-row { display: flex; align-items: center; gap: 6px; }
+.time-row .tp { min-width: 0; }
+.time-sep { color: var(--text-3); font-size: 13px; }
+.repeat-pop {
+  position: fixed; z-index: 70; width: min(300px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px); overflow-y: auto; padding: 14px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+}
+.repeat-pop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 
 /* 「重复」那一行的一个按钮，点开一个 Sheet。**没有 chips 也没有内联面板**
    （2026-10-09）—— 重复是大多数人根本不碰的字段，不该在抽屉里占一整屏。
    样式跟 `.dp-btn` / `.tp-btn` 同源：同一个抽屉里三种「选一下」的按钮。 */
 .rep-open {
-  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 72px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
 }
 .rep-open:hover { background: var(--panel-3); color: var(--text); }
-.rep-open.on, .rep-open:not(:empty) { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.rep-open.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.rep-label { flex: 1; text-align: left; }
+.rep-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.rep-x:hover { background: var(--panel-3); color: var(--text); }
 
 /* ================= DatePicker ================= */
 
 .dp { display: flex; flex-direction: column; gap: 8px; }
-.dp-cur { display: flex; align-items: center; gap: 6px; }
 .dp-btn {
-  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 72px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
 }
 .dp-btn:hover { background: var(--panel-3); color: var(--text); }
 .dp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
-.dp-clear {
-  width: 24px; height: 24px; border: none; background: none; color: var(--text-3);
-  font-size: 12px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+.dp-label { flex: 1; text-align: left; }
+.dp-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
   transition: background .14s, color .14s;
 }
-.dp-clear:hover { background: var(--panel-3); color: var(--text); }
+.dp-x:hover { background: var(--panel-3); color: var(--text); }
 .dp-pop {
   position: fixed; z-index: 70; width: 268px; padding: 12px;
   background: var(--panel); border: var(--border-w) solid var(--border);
@@ -111,26 +131,36 @@
 .dp-cell:hover { background: var(--panel-3); }
 .dp-cell.out { color: var(--text-3); opacity: .5; }
 .dp-cell.today { border-color: var(--primary); }
-.dp-cell.on { background: var(--primary); color: var(--on-primary); }
+.dp-pop .jp-head { margin: 0 0 6px; }
+.dp-pop .jp-cell { height: 30px; line-height: 28px; font-size: 12.5px; }
+.dp-pop .jp-cell.has { background: none; font-weight: 400; }
+.dp-pop .jp-cell.cur { background: var(--primary); color: var(--on-primary); }
 
 /* ================= TimePicker ================= */
 
 .tp { display: flex; flex-direction: column; gap: 8px; }
-.tp-cur { display: flex; align-items: center; gap: 6px; }
 .tp-btn {
-  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 96px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
 }
 .tp-btn:hover { background: var(--panel-3); color: var(--text); }
 .tp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
-.tp-dial { display: flex; justify-content: center; padding: 8px 0; }
-.tp-clear {
-  width: 24px; height: 24px; border: none; background: none; color: var(--text-3);
-  font-size: 12px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+.tp-label { flex: 1; text-align: left; }
+.tp-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
   transition: background .14s, color .14s;
 }
-.tp-clear:hover { background: var(--panel-3); color: var(--text); }
+.tp-x:hover { background: var(--panel-3); color: var(--text); }
+.tp-dial {
+  position: fixed; z-index: 70; width: auto; padding: 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  display: flex; justify-content: center;
+}
 
 /* ================= toast ================= */
 
@@ -143,4 +173,36 @@
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 .toast button { border: none; background: none; color: var(--toast-link); font-size: 13px; font-weight: 500; }
+
+/* ================= WheelPicker 滚轮选择器 ================= */
+
+.wp-picker {
+  display: flex; gap: 16px; padding: 12px 0;
+}
+.wp-wheel-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.wp-wheel-label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.wp-wheel {
+  width: 100%; max-width: 140px; height: 160px; overflow-y: auto; scroll-snap-type: y mandatory;
+  border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+  background: var(--panel-2);
+  scrollbar-width: none;
+}
+.wp-wheel::-webkit-scrollbar { display: none; }
+.wp-wheel-spacer { height: 64px; flex-shrink: 0; }
+.wp-wheel-item {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 32px; border: none; background: none;
+  color: var(--text-2); font-size: 13px; scroll-snap-align: center;
+  transition: background .14s, color .14s;
+}
+.wp-wheel-item.on { background: var(--primary); color: var(--on-primary); font-weight: 500; }
+
+.repeat-none { padding: 24px 0; text-align: center; }
+.repeat-none-btn {
+  display: inline-block; padding: 8px 20px; border: var(--border-w) solid var(--input);
+  border-radius: var(--r-md); background: var(--panel-2); color: var(--text-2);
+  font-size: 13px; cursor: pointer; transition: border-color .14s, background .14s, color .14s;
+}
+.repeat-none-btn:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.repeat-unit-label { text-align: center; color: var(--text-3); font-size: 12px; margin: -4px 0 8px; }
 
