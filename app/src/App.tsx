@@ -709,6 +709,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   return (
     <DndProvider
       onDragOver={timelineDrag.onDragOver}
+      onDragMove={timelineDrag.onDragMove}
       onDragEnd={timelineDrag.onDragEnd}
       onDragCancel={timelineDrag.onDragCancel}
     >

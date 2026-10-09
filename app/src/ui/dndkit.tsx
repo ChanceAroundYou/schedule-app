@@ -41,7 +41,7 @@ import { createContext, useContext, useState, useCallback, useRef, type ReactNod
 import {
   DndContext, MouseSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, useDraggable, useDroppable, DragOverlay,
-  type DragStartEvent, type DragOverEvent, type DragEndEvent,
+  type DragStartEvent, type DragOverEvent, type DragMoveEvent, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, useSortable, rectSortingStrategy,
@@ -95,11 +95,13 @@ export function useDragSession(): DragState {
 interface DndProviderProps {
   children: ReactNode;
   onDragOver?: (event: DragOverEvent) => void;
+  /** 每次 pointer 移动都触发 —— 引导线要连续跟指针，只能靠它（见 useTimelineDrag） */
+  onDragMove?: (event: DragMoveEvent) => void;
   onDragEnd?: (event: DragEndEvent) => void;
   onDragCancel?: () => void;
 }
 
-export function DndProvider({ children, onDragOver, onDragEnd, onDragCancel }: DndProviderProps) {
+export function DndProvider({ children, onDragOver, onDragMove, onDragEnd, onDragCancel }: DndProviderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useDragSensors();
@@ -126,6 +128,7 @@ export function DndProvider({ children, onDragOver, onDragEnd, onDragCancel }: D
       sensors={sensors}
       onDragStart={handleDragStart}
       onDragOver={onDragOver}
+      onDragMove={onDragMove}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
@@ -311,7 +314,15 @@ export function useDraggableEvent(id: string) {
      （整天 1536px 高），方块只有几十像素高 → scaleY 能到 25 以上，
      一拖起来就铺满整屏。`CSS.Transform.toString` 会把这个比值一起烤进
      transform；`CSS.Translate` 只出 translate3d，尺寸锁死在提起时那一刻。 */
-  const style: React.CSSProperties = { transform: `translate3d(${x}px, ${y}px, 0px)` };
+  const style: React.CSSProperties = {
+    transform: `translate3d(${x}px, ${y}px, 0px)`,
+    /* **被拖的那一项必须显式关掉 transition。** `.tl-event` 自带
+       `transition: transform .14s`，不关的话方块跟指针之间差 140ms ——
+       用户报「日视图拖动不跟手，明显和其他视图不同」：列表的被拖项在
+       `useSortableItem` 里显式关了 transition，周视图的 `.wk-event` 压根
+       没有 transform transition，只有日视图的 `.tl-event` 有，所以只有它迟滞。 */
+    transition: isDragging ? 'none' : undefined,
+  };
   /* 原始位移一起交出去：`useClampedDraggableEvent` 要改 x，不必去
      正则解析这条刚拼出来的字符串（那是自己给自己下套）。 */
   return { ref: setNodeRef, style, isDragging, attributes, listeners, x, y };
@@ -346,7 +357,10 @@ export function useClampedDraggableEvent(id: string) {
   return {
     ...drag,
     ref: setRef,
-    style: { transform: `translate3d(${clampedX}px, ${y}px, 0px)` },
+    /* **展开 `drag.style` 再覆盖 transform，别重新拼一个对象** —— 重新拼会把
+       useDraggableEvent 里那句 `transition: 'none'` 弄丢，被拖的那一项又变回
+       140ms 迟滞（日视图用的就是这个 hook）。 */
+    style: { ...drag.style, transform: `translate3d(${clampedX}px, ${y}px, 0px)` },
   };
 }
 
@@ -452,9 +466,14 @@ function weekGuideMin(zone: HTMLElement, clientY: number): number {
  *   proj:{pid}:{col}  — 项目泳道列
  */
 export function useTimelineDrag() {
+  /* 当前指针压着的 zone。`onDragMove` 每次 pointer 移动都触发，但它**不带
+     `over`**，所以引导线要连续跟指针，就得在这儿记下 `onDragOver` 找到的
+     那个 zone（元素 + id —— id 用来区分 timeline / week 两种算法）。 */
+  const zoneRef = useRef<{ el: HTMLElement; id: string } | null>(null);
+
   const onDragOver = useCallback((event: DragOverEvent) => {
     const over = event.over;
-    if (!over) { clearTimeGuide(); return; }
+    if (!over) { zoneRef.current = null; clearTimeGuide(); return; }
 
     const overId = String(over.id);
     const zone = document.querySelector<HTMLElement>(`[data-zone-id="${overId}"]`);
@@ -464,18 +483,37 @@ export function useTimelineDrag() {
     if (currentY === null) return;
 
     if (overId.startsWith('timeline:')) {
-      const min = minFromY(zone, currentY);
-      drawTimeGuide(zone, min, zoneWindow(zone));
+      zoneRef.current = { el: zone, id: overId };
+      drawTimeGuide(zone, minFromY(zone, currentY), zoneWindow(zone));
     } else if (overId.startsWith('week:')) {
-      const min = weekGuideMin(zone, currentY);
-      drawTimeGuide(zone, min, FULL_DAY);
+      zoneRef.current = { el: zone, id: overId };
+      drawTimeGuide(zone, weekGuideMin(zone, currentY), FULL_DAY);
     } else {
+      zoneRef.current = null;
       clearTimeGuide();
+    }
+  }, []);
+
+  /* **引导线跟着指针走的唯一机会。** `onDragOver` 只在 `over` **变化**时触发 ——
+     日视图的落点是整条时间轴，指针在轴内上下移动时 `over` 不变，
+     `onDragOver` 不重复触发，绿线就停在进入那一刻不动（用户报「落点对应
+     时间的绿线没有跟着动，到松手才出现」）。`onDragMove` 每次 pointer 移动
+     都触发，连续更新只能放这儿。 */
+  const onDragMove = useCallback((event: DragMoveEvent) => {
+    const z = zoneRef.current;
+    if (!z) return;
+    const currentY = eventY(event);
+    if (currentY === null) return;
+    if (z.id.startsWith('timeline:')) {
+      drawTimeGuide(z.el, minFromY(z.el, currentY), zoneWindow(z.el));
+    } else if (z.id.startsWith('week:')) {
+      drawTimeGuide(z.el, weekGuideMin(z.el, currentY), FULL_DAY);
     }
   }, []);
 
   const onDragEnd = useCallback((event: DragEndEvent) => {
     const over = event.over;
+    zoneRef.current = null;
     clearTimeGuide();
 
     const activeId = String(event.active.id);
@@ -548,8 +586,9 @@ export function useTimelineDrag() {
   }, []);
 
   const onDragCancel = useCallback(() => {
+    zoneRef.current = null;
     clearTimeGuide();
   }, []);
 
-  return { onDragOver, onDragEnd, onDragCancel };
+  return { onDragOver, onDragMove, onDragEnd, onDragCancel };
 }
