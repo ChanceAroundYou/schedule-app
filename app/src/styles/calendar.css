@@ -33,17 +33,20 @@
 }
 
 .allday-zone {
-  flex: 0 0 auto; overflow-y: auto; max-height: 120px;
-  padding: 6px 10px;
+  flex: 0 0 auto; overflow-y: auto; max-height: 100px;
+  padding: 4px 8px;
   border-bottom: var(--border-w) solid var(--border);
 }
 /* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
    不至于把下面的时间轴挤出屏幕。行内按「先上后下、先左后右」的顺序读。 */
 .allday-items {
   display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  gap: 3px 8px; min-height: 20px; align-content: start;
+  gap: 2px 6px; min-height: 18px; align-content: start;
 }
-.allday-items .task-pill { width: 100%; padding: 2px 6px; min-width: 0; font-size: 11px; }
+.allday-items .task-pill {
+  width: 100%; padding: 4px 7px; min-width: 0;
+  background: var(--primary-soft);
+}
 .allday-items .task-pill:hover { transform: none; }
 .zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
