@@ -1,5 +1,5 @@
 /**
- * ClockBody / ClockPop —— 12 小时制时间转盘
+ * ClockBody —— 12 小时制时间转盘
  *
  * 这是从旧版 `legacy/clock.js` 移植过来的，重构时丢过一次。
  *
@@ -17,10 +17,12 @@
  * 用户会以为点错了。上午圈写 0–11（午夜是 0，不是 12），和按钮/输入框
  * 显示的 HH:MM 完全一致 —— 标签就是点下去得到的那个值。
  *
- * 两处分身，**表盘本体只有一份**：
- *   · `ClockBody` —— 表盘本身，不带定位、不带「确定 / 取消」。谁要谁嵌。
- *   · `ClockPop`  —— 任务抽屉里那个贴着按钮弹出的浮层（`position: fixed`）。
- *   快速添加里那个面板用的是 `ClockBody`，嵌在 `ui/WhenPop.tsx` 的「时间」层里。
+ * 表盘本体只有一份（`ClockBody`），谁要谁嵌，自带直径参数：
+ *   · 快速添加 —— 嵌在 `ui/WhenPop.tsx` 的「时间」层里，246px；
+ *   · 任务抽屉 —— 嵌在 `ui/TimePicker.tsx` 里（快捷按钮 + 表盘 + 清除），
+ *     198px，比快速添加那层面板窄，放得进抽屉的 410px。
+ * 抽屉原先是「一个小时钟按钮 → 弹一个 `.clock-pop` 浮层」，浮层连同
+ * 它的定位、「确定 / 取消」攒稿逻辑已随那次重构一并删掉。
  *
  * 三个口径上的决定（改之前先看，都是被问过的）：
  *
@@ -40,12 +42,10 @@
  *    这类话 —— 表盘自己就画着 12 在顶部，用户看得见；写出来只是把人当不会看。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import * as D from '../domain/date.ts';
-import { Btn } from './kit.tsx';
 
-/** 抽屉里那个浮层的表盘直径。`.clock-pop` 的 278px 宽度就是按它配出来的
- *  （278 扣掉两条 1px 边框和左右各 15px 内边距 = 246），见 styles/quick-add.css 那段注释 */
+/** 快速添加那层面板的表盘直径 */
 const FACE_POP = 246;
 /** 数字环离表盘边缘的距离。246/2 - 29 = 94，正是重构前写死的那个半径 */
 const R_INSET = 29;
@@ -174,93 +174,5 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
         })}
       </div>
     </>
-  );
-}
-
-/* ============================== 抽屉里那个浮层 ============================== */
-
-export interface ClockPopProps {
-  open: boolean;
-  /** 弹层贴着哪个元素出现。为空就不渲染 */
-  anchor: HTMLElement | null;
-  /** 当前值 'HH:MM'，null = 未定时 */
-  value: string | null;
-  /** 点「确定」回传 'HH:MM'，点「清除」回传 null */
-  onChange: (v: string | null) => void;
-  onClose: () => void;
-}
-
-export function ClockPop({ open, anchor, value, onChange, onClose }: ClockPopProps) {
-  const box = useRef<HTMLDivElement>(null);
-  // 表盘是实时的，但抽屉里要「取消 = 反悔」：所以先攒在这儿，点确定才交出去
-  const [draft, setDraft] = useState<string | null>(value);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  /* 每次打开都从当前值重新起步（上次点开拨了一半又取消的那半截不能留下） */
-  useEffect(() => {
-    if (open) setDraft(value);
-  }, [open, value]);
-
-  /* 定位要在 useLayoutEffect 里量：放到 useEffect 会先画在左上角再跳过来，
-     窄屏那一帧的闪动很明显 */
-  useLayoutEffect(() => {
-    if (!open || !anchor || !box.current) { setPos(null); return; }
-    const r = anchor.getBoundingClientRect();
-    const w = box.current.offsetWidth;
-    const h = box.current.offsetHeight;
-    let top = r.bottom + 6;
-    let left = r.left;
-    // 下方放不下就翻到上面；右边超出就往左收。都留 8px 边距
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-    if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
-    setPos({ top, left });
-  }, [open, anchor]);
-
-  /* 点外面关掉 / Esc 关掉。Esc 要 stopImmediatePropagation ——
-     否则 App 那层的 Esc 会跟着再关一次抽屉 */
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (box.current?.contains(t)) return;
-      if (anchor?.contains(t)) return;   // 点按钮本身由按钮自己 toggle
-      onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      onClose();
-    };
-    document.addEventListener('mousedown', onDown, true);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open, anchor, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="clock-pop"
-      ref={box}
-      style={{
-        top: pos ? pos.top : 0,
-        left: pos ? pos.left : 0,
-        // 量之前先藏起来，免得在左上角闪一帧
-        visibility: pos ? 'visible' : 'hidden',
-      }}
-    >
-      <ClockBody value={value} onChange={setDraft} />
-
-      <div className="cp-foot">
-        <Btn variant="normal" size="sm" onClick={() => { onChange(null); onClose(); }}>清除</Btn>
-        <span className="grow" />
-        <Btn variant="ghost" onClick={onClose}>取消</Btn>
-        <Btn variant="primary" onClick={() => { onChange(draft); onClose(); }}>确定</Btn>
-      </div>
-    </div>
   );
 }

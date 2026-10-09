@@ -220,17 +220,6 @@
 .wp-clock .cp-ap { padding: 3px 13px; }
 .wp-clock .cp-now { padding: 3px 13px; font-size: 11px; }
 
-.clock-pop {
-  position: fixed; z-index: 70;
-  /* 278 不是随手挑的数：`* { box-sizing: border-box }`，所以这个宽里已经扣掉了
-     两条 1px 边框和左右各 15px 的内边距，剩下恰好 246 —— 正好等于 `.cp-face`
-     那个写死的 246px（C = 123 = 它的一半，见 ui/Clock.tsx）。
-     写成 274 时内容盒只有 242，表盘比它宽 4px，`margin: 0 auto` 塌成 0，
-     表盘就整体偏右 2px（探针第十七节量左右空隙，差超过 1px 就红）。 */
-  width: 278px;
-  background: var(--panel); border: var(--border-w) solid var(--border);
-  border-radius: var(--r-xl); box-shadow: var(--shadow-lg); padding: 15px;
-}
 /* `.cp-display` / `.cp-cell` / `.cp-colon` 三块**整组删了**（需求 4）：
    表盘上面那两个 27px 的大数字没有了。生效时间早就写在横条那个按钮上
    （`.fast-clock .fc-t`），面板里再重复一遍纯属占地方 —— 这个面板只有
@@ -309,9 +298,6 @@
    此刻，这个键都该是选中态 —— 和上午 / 下午那对 `.cp-ap.on` 同一套语义。 */
 .cp-now.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 .cp-now.on:hover { background: var(--primary); color: var(--on-primary); }
-.cp-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.cp-foot .grow { flex: 1; }
-.cp-foot .ghost-btn { padding: 6px 13px; font-size: 12px; }
 
 /* ================= 重复规则面板 ================= */
 
@@ -320,13 +306,14 @@
   background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
 }
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
-.rp-row input[type="number"], .rp-row input[type="date"] {
+.rp-row input[type="number"] {
   padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
   background: var(--panel); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
 .rp-row input:focus { border-color: var(--primary); }
 .rp-row input[type="number"] { width: 66px; }
-.rp-row input[type="date"] { flex: 1; min-width: 122px; }
+/* 「到某天」那个日期框也已经换成 `ui/DatePicker.tsx` 了（`plain` 一档），
+   原来的 `.rp-row input[type="date"]` 跟着一起删 */
 .rp-preview { font-size: 12px; color: var(--primary); }
 

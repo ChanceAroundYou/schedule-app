@@ -267,11 +267,6 @@ body.sheet-open .tab:active { background: none; }
   .drawer-foot { padding: 12px 15px calc(12px + env(safe-area-inset-bottom, 0px)); }
   .field-row { gap: 10px; }
 
-  /* 时钟弹窗：手机上居中铺开一点，好按。
-     这里曾经还有一条 `.cp-cell { min-width: 58px; font-size: 25px }` ——
-     显示行删掉之后（需求 4）那个类名已经不存在了，规则一起删。 */
-  .clock-pop { width: min(300px, calc(100vw - 40px)); }
-
   /* 习惯页：热力点放大一点 */
   .heat-dot { width: 15px; height: 15px; }
   .habit-row { padding: 13px 14px; }

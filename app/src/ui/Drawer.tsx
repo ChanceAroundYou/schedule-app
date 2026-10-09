@@ -7,14 +7,15 @@
  * `confirm()` 一律不用 —— 原生 confirm 在 PWA 里会被静默吞掉，用户点删除
  * 完全没反应。走 useConfirm()。
  *
- * 时间选择用原生 `<input type="time">`，不再自造 12 小时制时钟：
- * 系统选择器在手机上更好用，也省掉 300 行 clock.js。时长仍旧是固定档位的
- * 下拉 —— 自由输入迟早会有人填 7 分钟，而 15 分钟是时间轴的最小步进。
+ * 日期和时间用自定义控件（DatePicker / TimePicker），不用原生 input。
+ * 时长仍旧是固定档位的 Chips —— 自由输入迟早会有人填 7 分钟，而 15 分钟是
+ * 时间轴的最小步进。
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Trash2, Check, Repeat, History, Clock } from 'lucide-react';
-import { ClockPop } from './Clock.tsx';
+import { Trash2, Check, Repeat, History } from 'lucide-react';
+import { DatePicker } from './DatePicker.tsx';
+import { TimePicker } from './TimePicker.tsx';
 import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
@@ -107,8 +108,6 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const lastId = useRef<string | null>(null);
-  const [clockOpen, setClockOpen] = useState(false);
-  const clockBtn = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!task) return;
@@ -216,47 +215,20 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             onDismiss={(field) => onDismissConflict(task.id, field)}
           />
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor={fid + '-date'}>日期</label>
-              <Input
-                id={fid + '-date'}
-                type="date"
-                value={task.date || ''}
-                onChange={(e) => patch({ date: e.target.value || null })}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor={fid + '-time'}>时间 <span className="sub">（可留空）</span></label>
-              {/* 原生输入框留着（可以直接敲、读屏也认），旁边补一个表盘入口。
-                  重构时只留了原生框，把表盘整个丢了 —— 而「把 9 点挪到 10 点」
-                  这种一格的事，点两下表盘比开系统控件快得多 */}
-              <div className="field-inline">
-                <Input
-                  id={fid + '-time'}
-                  type="time"
-                  value={task.time || ''}
-                  step={900}
-                  onChange={(e) => patch({ time: e.target.value || null })}
-                />
-                <button
-                  ref={clockBtn}
-                  className={'fast-clock' + (task.time ? ' on' : '')}
-                  type="button"
-                  title="用表盘选择时间"
-                  onClick={() => setClockOpen((v) => !v)}
-                >
-                  <Clock size={14} />
-                </button>
-                <ClockPop
-                  open={clockOpen}
-                  anchor={clockBtn.current}
-                  value={task.time || null}
-                  onChange={(v) => { patch({ time: v }); setClockOpen(false); }}
-                  onClose={() => setClockOpen(false)}
-                />
-              </div>
-            </div>
+          <div className="field">
+            <span className="flabel">日期</span>
+            <DatePicker
+              value={task.date}
+              onChange={(v) => patch({ date: v })}
+            />
+          </div>
+
+          <div className="field">
+            <span className="flabel">时间 <span className="sub">（可留空）</span></span>
+            <TimePicker
+              value={task.time}
+              onChange={(v) => patch({ time: v })}
+            />
           </div>
 
           <div className="field">
@@ -353,9 +325,16 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
                     label="重复结束方式"
                   />
                   {rep.end?.type === 'date' && (
-                    <Input
-                      type="date" value={rep.end.date}
-                      onChange={(e) => patch({ repeat: { ...rep, end: { type: 'date', date: e.target.value } } })}
+                    /* 跟上面那个日期字段同一只控件，但 `plain` 一档 ——
+                       结束日期没有「今天 / 明天」这种方向性，也没有「清除」
+                       （清掉就没有结束日期了，那是上面「不限」那一档的事）。
+                       空值一律不往 onChange 传，免得 end 整个塌成 null。 */
+                    <DatePicker
+                      plain
+                      value={rep.end.date}
+                      onChange={(v) => {
+                        if (v) patch({ repeat: { ...rep, end: { type: 'date', date: v } } });
+                      }}
                     />
                   )}
                   {rep.end?.type === 'count' && (
