@@ -22,8 +22,7 @@ import {
   AlertTriangle, ChevronDown, Wifi, WifiOff, CloudUpload, Clock, Star,
 } from 'lucide-react';
 import { type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import type { AccentKey, Cal, Invite, LocalState, Member, PublicUser, StyleKey, ThemeMode, UiPrefs } from '../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../domain/types.ts';
 import { TAB_MAX, resolveDefaultCal } from '../domain/model.ts';
@@ -36,7 +35,7 @@ import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../data/api.ts';
 import { navDef } from './Shell.tsx';
 import { useIsNarrow, useOnline } from './hooks.ts';
-import { DndScope } from './dndkit.tsx';
+import { DndScope, useSortableItem } from './dndkit.tsx';
 import { cx } from './cx.ts';
 
 /** 构建期注入，见 vite-env.d.ts。取不到（比如被别的打包器吃掉）时不要显示空白 */
@@ -145,9 +144,17 @@ function NavCard({ state }: { state: LocalState }) {
 /**
  * 功能区里一格可排序的导航项。
  *
- * `data-nav-row` / `.cursor-grab` / dnd-kit 的 `attributes`（带 `role="button"`）
- * 三样都是探针认的锚点，别改。`data-tab` 只在窄屏出 —— 探针靠它证明
- * 「宽屏设置页不渲染底栏胶囊」。
+ * **整行都是拖拽命中区**（`listeners` 在 `<li>` 上），不是只有那个 grip 图标。
+ * 原先 listeners 只挂在 12px 的 grip `<span>` 上 —— 必须精确按住那个小图标
+ * 才拖得动，按行的其余部分完全没反应，用户报「完全不跟手」。把手现在只剩
+ * 视觉提示作用。
+ *
+ * 走共享的 `useSortableItem`（不另写一份 useSortable + CSS.Translate）：
+ * 「只取位移不要缩放」和「被拖项不给 transition」这两条规则都在那个 hook 里，
+ * 这里再抄一遍就一定会和它漂。
+ *
+ * `data-nav-row` / `data-tab` 是探针认的锚点，别改。`attributes`（带
+ * `role="button"`）也照旧挂着 —— 键盘那条路靠它。
  */
 function SortableNavChip({ id, on, narrow, onToggle }: {
   id: string;
@@ -155,33 +162,28 @@ function SortableNavChip({ id, on, narrow, onToggle }: {
   narrow: boolean;
   onToggle: (k: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    // 只要位移，不要缩放（同 dndkit.tsx 的 SortableItem，理由见那里）
-    transform: CSS.Translate.toString(transform),
-    transition,
-  };
+  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id);
 
   return (
     <li
-      ref={setNodeRef}
+      ref={ref}
       style={style}
       {...attributes}
+      {...listeners}
       data-nav-row={id}
       data-tab={narrow ? id : undefined}
       onClick={() => onToggle(id)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
       className={cx(
-        'flex cursor-pointer select-none items-center gap-1 rounded-[var(--r-md)] px-1.5 py-1 text-[12.5px] transition',
+        'flex cursor-grab select-none items-center gap-1 rounded-[var(--r-md)] px-1.5 py-1 text-[12.5px]',
         'border-[length:var(--border-w)]',
-        isDragging && 'opacity-40',
+        isDragging && 'cursor-grabbing opacity-40',
         on
           ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
           : 'border-[var(--border)] text-[var(--text-3)] ' + HOVER,
       )}
     >
-      <span {...listeners} className="shrink-0 cursor-grab text-[var(--text-3)]">
+      <span className="shrink-0 text-[var(--text-3)]">
         <GripVertical size={12} />
       </span>
       <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>

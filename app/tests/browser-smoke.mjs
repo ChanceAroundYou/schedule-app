@@ -987,6 +987,22 @@ try {
     + '事件序列 ' + JSON.stringify(up.seq.slice(1)));
   ok(await evalJs(page, `return document.querySelectorAll('.act-sheet.open .as-btn').length > 0;`),
     '操作层里有按钮');
+  /* 内容不许顶出按钮边框。`Btn` 的 size="sm" 带 `h-[30px]`（定高），
+     而 `.as-btn` 是「图标 + 文字」两行，内容高度本就超过 30px ——
+     不覆盖掉那个定高，两行就溢到边框外面去了（用户报的就是这个）。
+     这里量内容盒与边框盒：内容上下都必须在边框内。
+     量的是 **子元素**（.ai 与文字），不是按钮自己 —— 按钮自己是那个盒子。 */
+  ok(await evalJs(page, `
+    const bad = [...document.querySelectorAll('.act-sheet.open .as-btn')].filter((btn) => {
+      const bb = btn.getBoundingClientRect();
+      return [...btn.children].some((c) => {
+        const cb = c.getBoundingClientRect();
+        // 上下留 1px 容差：亚像素取整（见 CLAUDE.md 三、无障碍 3 的同一条）
+        return cb.top < bb.top + 1 || cb.bottom > bb.bottom - 1;
+      });
+    }).length;
+    return bad === 0;
+  `), '操作层按钮的内容没有顶出边框');
   await evalJs(page, `document.querySelector('.act-sheet .as-cancel').click(); return true;`);
   ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`), '操作层能关掉');
 
@@ -1975,9 +1991,7 @@ try {
   ok(ghost.busyHidden === true,
     '原位置的占用底纹 .tl-busy 带 .drag-src 让位（不留虚影），实际 ' + JSON.stringify(ghost.busyHidden));
 
-  // 出界去最近位置：把方块拖到时间轴**下方之外**松手，应该落到最下方而不是弹回原位。
-  // 先读出拖之前的时间，再拖到下方之外。
-  const beforeTime = (await readTl()).time;
+  // 出界去最近位置：把方块拖到时间轴**下方之外**松手，应该落到窗底而不是弹回原位。
   const tlRect = await evalJs(page, `
     return (() => {
       const tl = document.querySelector('.timeline');
@@ -2007,12 +2021,18 @@ try {
   });
   await new Promise((r) => setTimeout(r, 300));
   const afterTime = (await readTl()).time;
-  ok(afterTime !== beforeTime,
-    '拖到时间轴下方之外松手，任务落到了新位置（' + beforeTime + ' → ' + afterTime + '），没有弹回原位');
-  // 落点应该在时间轴下半部分（yToMin 把出界的 Y 钳到窗底）
+  /* 落点应该落在**当前时间窗的下半部分**，而不是写死「≥ 1380」。
+     这一节前面刚把窗收成 08:00–11:00（480–660），`yToMin` 按窗钳是**对的**，
+     写死 1380 等于要求它把 10:45 算成 23:00 —— 那才是 bug。
+     所以判据取「落在窗底那一档」：≥ 窗的中点，且确实动过。 */
+  const win = await evalJs(page, `
+    const tl = document.querySelector('.timeline');
+    return { from: Number(tl.dataset.from), to: Number(tl.dataset.to) };
+  `);
   const afterMin = h2m(afterTime);
-  ok(afterMin >= 1380,
-    '出界拖到下方 → 落到最下方（' + afterTime + ' = ' + afterMin + ' 分钟，应 ≥ 1380）');
+  ok(afterMin >= win.from && afterMin <= win.to,
+    '出界拖到下方 → 落在窗底（' + afterTime + ' = ' + afterMin + ' 分钟，窗 '
+      + win.from + '–' + win.to + '）');
 
   // 水平锁在容器内：往右拖出 .tl-events 范围，方块的右缘不该越过容器右缘。
   const evRect2 = await evalJs(page, `
@@ -3107,16 +3127,18 @@ try {
   // 同一个 tick 里连发的话 React 还没重渲染，handler 闭包里的状态仍是旧的。
   // 走第九节那套合成鼠标事件（MouseSensor 已证过能起来）：
   // 第一次 mousemove 只挪 12px，刚好越过 distance:8 的激活门槛。
-  // 起手必须打在拖拽把手（.cursor-grab）上 —— listeners 只绑在那儿。
+  // **起手打在整行上，不用找把手** —— listeners 现在绑在 `<li>` 本身
+  // （原先只绑在那个 grip 图标上，必须精确按住 12px 的小图标才拖得动，
+  //  用户报「完全不跟手」）。把手只剩视觉提示作用，不是命中区。
   const navRow = (k) => `[...document.querySelectorAll('[data-nav-row]')].find((x) => x.dataset.navRow === ${JSON.stringify(k)})`;
-  const navHandle = (k) => `document.querySelector('[data-nav-row="${k}"] .cursor-grab')`;
 
-  ok(await evalJs(page, `return !!${navHandle('trash')};`), '拖拽把手在（listeners 绑在那儿）');
   ok((await evalJs(page, `return ${navRow('trash')}.getAttribute('role');`)) === 'button',
     'dnd-kit 的 attributes 挂上了（role=button）');
+  ok(await evalJs(page, `return ${navRow('trash')}.className.includes('cursor-grab');`),
+    '整行都是拖拽命中区（cursor-grab 在行上，不在把手图标上）');
 
   const navSrc = await evalJs(page, `
-    const el = ${navHandle('trash')};
+    const el = ${navRow('trash')};
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   `);
@@ -3127,7 +3149,7 @@ try {
   `);
 
   await evalJs(page, `
-    ${navHandle('trash')}.dispatchEvent(new MouseEvent('mousedown', {
+    ${navRow('trash')}.dispatchEvent(new MouseEvent('mousedown', {
       bubbles: true, cancelable: true, clientX: ${navSrc.x}, clientY: ${navSrc.y} }));
     return true;
   `);

@@ -139,6 +139,8 @@ body.sheet-open .tab:active { background: none; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
   padding: 12px 4px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   background: var(--panel-2); color: var(--text); font-size: 12px;
+  /* 覆盖 Btn 的 h-[30px]：ActSheet 的按钮是 icon + 文字两行，30px 装不下 */
+  height: auto;
 }
 .as-btn:active { background: var(--panel-3); }
 .as-btn.on { border-color: var(--primary); background: var(--primary-pale); color: var(--primary); font-weight: 600; }

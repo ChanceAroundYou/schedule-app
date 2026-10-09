@@ -105,8 +105,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 拖放 -------- */
   const timelineDrag = useTimelineDrag();
-  // 长按定时器与 dnd-kit 拖拽的协调：拖拽开始时取消长按
-  const dragStartedRef = useRef(false);
 
   /* -------- 导航 -------- */
   const nav = useCallback((k: string) => {
@@ -179,22 +177,42 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   }, []);
 
   /* -------- 长按（触屏没有 hover；拖拽走 dnd 那条 pointer 通路）-------- */
-  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; x: number; y: number }>(
-    { timer: null, fired: false, x: 0, y: 0 });
+  /* `moved` 是「这一下长按里手指有没有真的挪过」。
+     **判据是移动量，不是 dnd-kit 的 onDragStart** —— TouchSensor 配的是
+     `{delay: 480ms, tolerance: 8}`，手指按住不动到点，dnd-kit 自己也会开拖，
+     所以「有没有触发 onDragStart」根本区分不开长按和拖拽：按住不动也会触发。
+     用户看到的就是「今天页上想长按改时间，一按就跟着开始拖，还弹出操作层」。
+     真要区分只有两条路：**挪过 = 拖拽**，没挪 = 长按。 */
+  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; moved: boolean; x: number; y: number }>(
+    { timer: null, fired: false, moved: false, x: 0, y: 0 });
   const clearLp = () => { if (lp.current.timer) { clearTimeout(lp.current.timer); lp.current.timer = null; } };
-  const handleDragStart = useCallback(() => {
-    dragStartedRef.current = true;
-    clearLp();
-  }, []);
   const pointerUp = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'mouse' && lp.current.fired && !dragStartedRef.current) {
+    /* `!moved` 是「这一下不是拖拽」的唯一判据 —— 不用 dnd-kit 的 onDragStart，
+       理由见上面 `moved` 那段。 */
+    if (e.pointerType !== 'mouse' && lp.current.fired && !lp.current.moved) {
       const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el');
       const id = el?.dataset.id;
       if (id) setActId(id);
     }
-    dragStartedRef.current = false;
     clearLp();
   };
+
+  /* 按住之后手指一挪，这一按就不是长按了 —— 长按 timer 直接撤掉。
+     阈值 8px 与 TouchSensor 的 `tolerance` 取同一个值：dnd-kit 容忍的范围内
+     它还当没动，我们也不能当拖拽，两边的判据必须一致，否则会出现
+     「dnd-kit 认拖、我们认长按」或反过来，两种错法都会露出来。 */
+  const LP_MOVE_SLOP = 8;
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!lp.current.timer || e.pointerType === 'mouse') return;
+      if (Math.abs(e.clientX - lp.current.x) < LP_MOVE_SLOP
+        && Math.abs(e.clientY - lp.current.y) < LP_MOVE_SLOP) return;
+      lp.current.moved = true;
+      clearLp();
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
 
   /* 抬手那一下浏览器会补一整套兼容鼠标事件（mousedown / mouseup / click）。
      长按之后这套必须整串掐掉 —— 操作层这时已经盖在手指底下，那记 click
@@ -225,6 +243,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     const el = (e.target as HTMLElement).closest<HTMLElement>('.task-el, .habit-row');
     const id = el?.dataset.id;
     if (!id || !el) return;
+    lp.current.moved = false;
     lp.current.x = e.clientX;
     lp.current.y = e.clientY;
     clearLp();
@@ -241,10 +260,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       // 认不出 userActivation 的老浏览器（`!ua`）维持原样。
       const ua = navigator.userActivation;
       if ((!ua || ua.hasBeenActive) && typeof navigator.vibrate === 'function') navigator.vibrate(12);
-      // 长按触发：dnd-kit 的 TouchSensor 会在移动时自动开始拖拽
-      // 原地松手时由 onPointerUp 弹操作层
-      // 注意：长按后如果用户开始移动，dnd-kit 会接管拖拽，
-      // 这时 lp.current.fired 会被 handleDragStart 清除
+      // 长按触发。**移动不归这里管**：TouchSensor 会在 480ms 后自己开拖，
+      // 「这一下到底算长按还是拖拽」由 lp.current.moved 判（见上面的说明）
     }, LONG_PRESS_MS);
   };
 
@@ -691,7 +708,6 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   return (
     <DndProvider
-      onDragStart={handleDragStart}
       onDragOver={timelineDrag.onDragOver}
       onDragEnd={timelineDrag.onDragEnd}
       onDragCancel={timelineDrag.onDragCancel}

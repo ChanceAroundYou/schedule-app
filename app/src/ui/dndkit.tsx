@@ -1,17 +1,37 @@
 /**
- * dndkit.ts —— 基于 @dnd-kit 的拖放系统
+ * dndkit.tsx —— 基于 @dnd-kit 的拖放系统
  *
  * 替代 ui/dnd.ts 的那套「HTML5 drag + 自定义 pointer」双通路。
  * 鼠标走 MouseSensor、触摸走 TouchSensor（长按提起），键盘走 KeyboardSensor ——
  * 三条通路分开配，见 useDragSensors()。
  *
+ * ## 加新的可拖东西：从这三个 hook 里挑一个，别自己写 useSortable/useDraggable
+ *
+ * | 要做的事            | 用哪个                      | 现在用在                        |
+ * |---------------------|-----------------------------|---------------------------------|
+ * | 列表里换顺序        | `SortableList`（整份）      | 待办箱 / 今天 / 逾期 / 已完成   |
+ * | 列表里换顺序（自己排版）| `useSortableItem`        | 设置页功能区                    |
+ * | 改时间 / 改位置     | `useDraggableEvent`        | 周视图方块、泳道卡片            |
+ * | 同上但水平不许出框  | `useClampedDraggableEvent` | 日视图方块                      |
+ *
+ * **为什么不自己写**：每个 hook 都要复述同两条规矩 —— transform 只取位移
+ * （`CSS.Translate`，丢掉 `adjustScale` 的 scale，否则一拖就铺满整屏）、
+ * 被拖的那一项不给 transition（给了就迟滞半拍，用户说「不跟手」）。
+ * 抄一遍就有一份会漂，漂了还查不出来（两套都「看着能用」）。
+ *
  * 架构分层：
  *   DndProvider（包裹整棵应用）
- *   ├── SortableContext（列表排序：设置页功能区 / 任务列表 / 打卡 / 项目泳道）
- *   │   └── useSortableItem（每个可拖拽项）
- *   ├── useDraggableEvent（时间轴方块，Phase 4 实现）
- *   ├── useDroppableZone（放置区，Phase 4 实现）
+ *   ├── DndScope（嵌套区域注册自己的 onDragEnd —— 设置页）
+ *   ├── SortableList / useSortableItem（列表排序）
+ *   ├── useDraggableEvent（时间轴方块）
+ *   ├── useDroppableZone（放置区）
+ *   ├── useTimelineDrag（日 / 周 / 泳道的落点计算）
  *   └── （不挂 DragOverlay —— 碰撞检测会退化成 0×0，见 DndProvider 里的注释）
+ *
+ * **长按和拖拽的分工不在这个文件里**，在 App.tsx 的 `lp`（`moved` 判据）。
+ * 简述：TouchSensor 配的是 `{delay: 480ms, tolerance: 8}`，手指按住不动到点
+ * dnd-kit 自己也会开拖，所以「有没有触发 onDragStart」区分不开长按和拖拽 ——
+ * 唯一能分的是**手指有没有挪过**。
  *
  * 同步守卫：setDragging / isDragging 接口不变，engine.ts 的
  * `if (isDragging()) return` 照旧工作。
@@ -173,18 +193,32 @@ export function DndScope({ children, onDragEnd }: { children: ReactNode; onDragE
 /* ============================ 可排序项 ============================ */
 
 /**
- * 列表排序用的可拖拽项。
+ * 列表排序用的可拖拽项 —— **排序类拖拽的唯一入口**。
  *
  * 用于：设置页功能区、任务列表、打卡、项目泳道。
- * 时间轴方块用 useDraggableEvent（Phase 4 实现）。
+ * 时间轴方块用 useDraggableEvent（不是排序，是改时间）。
+ *
+ * `animate` 决定给不给 `transition`（让位动画），两个值都得对：
+ *
+ *   · `false`（默认）—— **被拖的那一项**。transition 会让它跟着手指迟滞半拍，
+ *     用户看到的就是「完全不跟手」。设置页功能区原来就是这个症状。
+ *   · `true` —— **让位的那几项**，它们不在跟手指走，动画正是要的效果。
+ *     `SortableList` 内部走这条（它整个列表都是让位动画）。
+ *
+ * 为什么不给就默认 `false`：`useSortable` 返回的 transition 在**被拖项上是
+ * undefined**，两种情况下代码长得一样、效果差很远，凭「有没有值」判不出来。
+ * 显式传一次，比在每个调用点重新推导一次可靠。
  */
-export function useSortableItem(id: string) {
+export function useSortableItem(id: string, animate = false) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
-    // 同 SortableItem：只要位移，不要缩放
+    /* **只取位移，丢掉缩放。** `rectSortingStrategy` 会返回
+       `scaleX/scaleY = 新位置尺寸 / 旧位置尺寸`，`CSS.Transform.toString`
+       把它们一起烤进 transform —— 卡片落到高度不同的行上就被压扁 / 拉长。
+       卡片必须保持刚提起时的形状，所以走 `CSS.Translate`。 */
     transform: CSS.Translate.toString(transform),
-    transition,
+    transition: animate ? transition : undefined,
   };
 
   return { ref: setNodeRef, style, isDragging, attributes, listeners };
@@ -253,22 +287,15 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
   );
 }
 
-/** SortableList 内部的单个可排序项 */
+/** SortableList 内部的单个可排序项。
+    走 `useSortableItem(id, true)`：这里是**整份列表**在让位，动画正是要的
+    （被拖的那一项 transition 本来就是 undefined，所以开着也没有副作用）。 */
 function SortableItem({ id, children }: { id: string; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    /* **只取位移，丢掉缩放。** `rectSortingStrategy` 会返回
-       `scaleX/scaleY = 新位置尺寸 / 旧位置尺寸`，`CSS.Transform.toString`
-       把它们一起烤进 transform —— 卡片落到高度不同的行上就被压扁 / 拉长。
-       卡片必须保持刚提起时的形状，所以走 `CSS.Translate`。 */
-    transform: CSS.Translate.toString(transform),
-    transition,
-  };
+  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id, true);
 
   return (
     <div
-      ref={setNodeRef}
+      ref={ref}
       style={style}
       {...attributes}
       {...listeners}
@@ -298,7 +325,9 @@ export function useDraggableEvent(id: string) {
      一拖起来就铺满整屏。`CSS.Transform.toString` 会把这个比值一起烤进
      transform；`CSS.Translate` 只出 translate3d，尺寸锁死在提起时那一刻。 */
   const style: React.CSSProperties = { transform: `translate3d(${x}px, ${y}px, 0px)` };
-  return { ref: setNodeRef, style, isDragging, attributes, listeners };
+  /* 原始位移一起交出去：`useClampedDraggableEvent` 要改 x，不必去
+     正则解析这条刚拼出来的字符串（那是自己给自己下套）。 */
+  return { ref: setNodeRef, style, isDragging, attributes, listeners, x, y };
 }
 
 /**
@@ -309,17 +338,13 @@ export function useDraggableEvent(id: string) {
  * 所以钳制跟当前 transform 无关，不会累积漂移。
  */
 export function useClampedDraggableEvent(id: string) {
-  const drag = useDraggableEvent(id);
+  const { x, y, ...drag } = useDraggableEvent(id);
   const nodeRef = useRef<HTMLElement | null>(null);
 
   const setRef = useCallback((el: HTMLElement | null) => {
     nodeRef.current = el;
     drag.ref(el);
   }, [drag.ref]);
-
-  const m = drag.style.transform?.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
-  const x = m ? parseFloat(m[1]) : 0;
-  const y = m ? parseFloat(m[2]) : 0;
 
   let clampedX = x;
   if (drag.isDragging && nodeRef.current) {
