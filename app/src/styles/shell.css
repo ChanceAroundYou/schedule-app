@@ -26,12 +26,18 @@
 .brand-name { font-size: 14.5px; font-weight: 650; letter-spacing: .2px; }
 
 .nav { display: flex; flex-direction: column; gap: 2px; }
+/* 侧栏这列**不能拖**，光标就别装作能拖。
+   `cursor: grab` 是从旧版带过来的残留 —— `legacy/index.html` 里的 `.nav-item`
+   是真的写着 `draggable="true"`，React 重写时拖拽没了、光标留下了，于是桌面端
+   鼠标一划过侧栏就是个抓手，试着拖却毫无反应（用户 2026-10-09 报「已经不能
+   拖拽功能区了」）。排序只有设置页那张网格能做，见 ui/Settings.tsx 的 NavCard。
+   对照 `.pj-card`：那条的抓手光标**写着理由**（「draggable 是真的」），这条没有。
+   光标回落成 `button` 那条全局的 `pointer`（styles/tokens.css 末尾）。 */
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; border: none; background: none; position: relative;
   border-radius: var(--r-md); color: var(--text); font-size: 13.5px; text-align: left;
   transition: background .14s, color .14s;
-  cursor: grab;
 }
 .nav-item:hover { background: var(--panel-3); }
 .nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 550; }
@@ -78,6 +84,27 @@
 .ghost-btn.danger { color: var(--danger); border-color: var(--danger); }
 .tip { width: 100%; padding: 8px 2px 0; font-size: 11px; color: var(--text-3); line-height: 1.5; }
 
+/* ---- 侧栏「更多」：被藏起来的功能项仍然够得着 ----
+   窄屏那个「更多」是底栏最后一格的抽屉（`.more-sheet`）；桌面没有底栏，
+   原先一勾掉就只剩设置页能找回来（用户 2026-10-09 报「桌面端没有更多，
+   不显示的功能区就看不见了」）。这里只补一个入口，内容就是 `navHidden` 那几项。
+
+   往**上**开（`bottom: calc(100% + 8px)`）—— 它挂在侧栏最底下，往下开会顶出视口。
+   视觉与定位跟顶栏那个 `.cal-menu-pop` 同一套（同一档 z-index、同一个动画、
+   同一份描边与影子），免得两个下拉长得不像一家人。 */
+.side-more { position: relative; flex: 1; display: flex; }
+.side-more-pop {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
+  width: max-content; min-width: 100%; max-width: min(280px, calc(100vw - 44px));
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: fadeUp .14s ease;
+}
+/* 行就是侧栏那条 `.nav-item`（同一个组件画的）—— 点开看到的东西和点之前
+   那一列长得一样，用户不用重新认一遍。只在面板里把内边距收一点。 */
+.side-more-pop .nav-item { padding: 7px 9px; }
+
 /* ================= 顶栏 ================= */
 
 .topbar {
@@ -106,6 +133,32 @@
   font-weight: 600;
 }
 .date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
+
+/* ================= 顶栏「日程集」下拉多选 ================= */
+
+/* 高度 / 字号 / 圆角 / 描边与 .search-box、.view-switch 同一档 —— 它们并排
+   站在顶栏右边，任何一个高一点或字大一点，整行看着就是歪的。 */
+.cal-menu { position: relative; display: flex; }
+.cal-menu-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 10px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2);
+  font-size: 12.5px; transition: border-color .14s, background .14s, color .14s;
+}
+.cal-menu-btn:hover { background: var(--panel-3); color: var(--text); }
+.cal-menu-btn.on { border-color: var(--primary); background: var(--panel); color: var(--primary); }
+
+/* 往**左**开（right: 0）—— 它在顶栏最右边，往右开会顶出视口。
+   定位算法跟 .search-pop 同一套。 */
+.cal-menu-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: max-content; max-width: min(280px, calc(100vw - 44px));
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: fadeUp .14s ease;
+}
 
 /* ================= 顶栏「找日期」跳转面板 ================= */
 

@@ -1,28 +1,20 @@
 /**
  * DatePicker —— 自定义日期选择器（替代原生 `<input type="date">`）
  *
- * 三档：快捷日期（今天/明天/后天/大后天）→ 自定义日期面板 → 清除。
- * 面板用月视图网格，和「找日期」的 `.jump-pop` 同一套交互。
+ * 一个日期按钮 + 一个月历浮层 + 一个清除。
+ *
+ * **没有「今天 / 明天 / 后天 / 大后天」快捷键**（2026-10-09 去掉）：日程是
+ * 「选出来的」不是「猜出来的」，那四个格子只覆盖极少数情况，却让控件从一行
+ * 变成三行、把真正的月历挤到第二屏。要「明天」的人翻一页月历就是一下。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as D from '../domain/date.ts';
 
-const QUICK = [
-  { value: 0, label: '今天' },
-  { value: 1, label: '明天' },
-  { value: 2, label: '后天' },
-  { value: 3, label: '大后天' },
-];
-
-export function DatePicker({ value, onChange, plain = false }: {
+export function DatePicker({ value, onChange }: {
   /** 当前日期 'YYYY-MM-DD'，null = 待定 */
   value: string | null;
   onChange: (v: string | null) => void;
-  /** **只要那个日期按钮**，不要「今天 / 明天 / 后天 / 大后天」快捷键，也不要清除。
-   *  重复规则的「到某天」用的就是这一档：结束日期只有「在起始日之后」一种
-   *  取值方向，给它摆「今天 / 明天」等于暗示「从今天起」。 */
-  plain?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -75,21 +67,6 @@ export function DatePicker({ value, onChange, plain = false }: {
 
   return (
     <div className="dp">
-      {!plain && (
-        <div className="dp-quick">
-          {QUICK.map((q) => {
-            const iso = D.addDays(today, q.value);
-            const on = value === iso;
-            return (
-              <button
-                key={q.value}
-                className={'dp-q' + (on ? ' on' : '')}
-                onClick={() => onChange(iso)}
-              >{q.label}</button>
-            );
-          })}
-        </div>
-      )}
       <div className="dp-cur">
         <button
           ref={anchor}
@@ -98,7 +75,7 @@ export function DatePicker({ value, onChange, plain = false }: {
         >
           {value ? D.fmtMD(value) : '选日期'}
         </button>
-        {value && !plain && (
+        {value && (
           <button className="dp-clear" onClick={() => onChange(null)}>✕</button>
         )}
       </div>
@@ -109,6 +86,7 @@ export function DatePicker({ value, onChange, plain = false }: {
           style={{
             top: pos ? pos.top : 0,
             left: pos ? pos.left : 0,
+            // 量之前先藏起来，免得在左上角闪一帧
             visibility: pos ? 'visible' : 'hidden',
           }}
         >

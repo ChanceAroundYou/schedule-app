@@ -301,14 +301,15 @@
 
 /* ================= 重复规则面板 ================= */
 
+/* 面板现在住在「重复」那个 Sheet 里（2026-10-09），Sheet 自己就是一张卡片 ——
+   这儿再描一圈边框、铺一层底色就是套娃。只留间距。 */
 .repeat-panel {
-  margin-top: 10px; padding: 12px 14px;
-  background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+  margin-top: 12px;
 }
 .rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .rp-row input[type="number"] {
   padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
-  background: var(--panel); outline: none; font-size: 13px; color: var(--text);
+  background: var(--panel-2); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
 .rp-row input:focus { border-color: var(--primary); }
@@ -316,4 +317,14 @@
 /* 「到某天」那个日期框也已经换成 `ui/DatePicker.tsx` 了（`plain` 一档），
    原来的 `.rp-row input[type="date"]` 跟着一起删 */
 .rp-preview { font-size: 12px; color: var(--primary); }
+
+/* 「每周」那七个星期按钮。**命中区 ≥24×24（WCAG 2.5.8）** —— 32px 的圆，
+   视觉尺寸紧凑但点起来不费劲。选中态用 primary 底色 + 白字。 */
+.rp-day {
+  width: 32px; height: 32px; border: var(--border-w) solid var(--input); border-radius: 50%;
+  background: var(--panel-2); color: var(--text-2); font-size: 12px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.rp-day:hover { border-color: var(--primary); color: var(--primary); }
+.rp-day.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
 

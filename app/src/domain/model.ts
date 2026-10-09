@@ -520,6 +520,29 @@ export const TAB_MAX = 4;
  */
 const DEFAULT_TABS: readonly string[] = ['inbox', 'today', 'overdue', 'calendar'];
 
+/**
+ * 底栏成员 = `ui.tabs` 按 `navOrder` 重排、只留认得的键、截到 `TAB_MAX`。
+ *
+ * **这个派生关系只有一个出口。** `ui.tabs` 里存的是「勾了哪几个」，顺序一律
+ * 由 `navOrder` 说了算（侧栏拖个序，底栏跟着变 —— 两个列表没必要让用户各记一套）。
+ *
+ * 为什么必须是函数、不能只在 `normalizeUi` 里写一遍：`normalizeUi` **只在载入 /
+ * 导入时跑**，而 `store.setUi()` 是个裸的浅合并（不归一）。于是「拖完侧栏，
+ * 底栏顺序没变，刷新一下才对」—— 见踩坑 49。凡是会动 `navOrder` 或 `tabs` 的
+ * 地方（`normalizeUi`、设置页的拖拽与勾选）都必须从这里过一遍。
+ *
+ * 兜底：过滤后一项都不剩 → 回落到 `DEFAULT_TABS`。**空栏没有合法解释**
+ * （底栏空着等于没有导航），所以这里不区分 `[]` 与「没设置过」，与 `navBottom`
+ * 那条「空数组是用户有意为之」正好相反。
+ */
+export function orderTabs(order: readonly string[], tabs: readonly string[]): string[] {
+  const keep = new Set(
+    Array.isArray(tabs) ? tabs.filter((k) => CUSTOMIZABLE.includes(k)) : [],
+  );
+  const list = order.filter((k) => keep.has(k)).slice(0, TAB_MAX);
+  return list.length ? list : DEFAULT_TABS.slice();
+}
+
 /* 外观轴的白名单。**故意与 ui/theme.ts 的 ACCENTS / STYLES 重复** ——
    domain/ 不许引 ui/（那一层碰 DOM），而这两个列表的职责不同：
    那边是「渲染哪些选项」（Record<Key, …>，少一个键编译不过），
@@ -664,13 +687,9 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，
   // 两个列表各排各的，用户不知道为什么。
   //
-  // 与 navBottom 不同：**这里空栏没有合法解释**（底栏空着等于没有
-  // 导航），所以 [] 与「没设置」一样回落到默认，不区分。
-  const tabSet = new Set(
-    Array.isArray(ui.tabs) ? ui.tabs.filter((k) => CUSTOMIZABLE.includes(k)) : [],
-  );
-  const tabList = order.filter((k) => tabSet.has(k)).slice(0, TAB_MAX);
-  ui.tabs = tabList.length ? tabList : DEFAULT_TABS.slice();
+  // 口径在 `orderTabs()` 里，**设置页那两处写入方用的是同一个函数** ——
+  // 在这里就地写一遍的话，那两处迟早和这里漂开（踩坑 49 就是这么来的）。
+  ui.tabs = orderTabs(order, ui.tabs);
 
   return ui;
 }

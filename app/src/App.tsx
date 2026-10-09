@@ -394,6 +394,33 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     }
   }, [confirm, nav]);
 
+  /* -------- 事件委托挂到 #content（原生事件）--------
+   *
+   * 原先挂在 `display:contents` 的 div 上，但 React 18 的事件委托会跳过
+   * 不生成盒子的元素（合成事件路径里没有它），所以那个 onClick 从来没触发过。
+   * 挂到 #content（普通元素，有盒子）上用原生事件，行为一致。 */
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const hClick = (e: MouseEvent) => {
+      onClick(e as unknown as React.MouseEvent);
+    };
+    const hDown = (e: PointerEvent) => pointerDown(e as unknown as React.PointerEvent);
+    const hUp = (e: PointerEvent) => pointerUp(e as unknown as React.PointerEvent);
+    el.addEventListener('click', hClick);
+    el.addEventListener('pointerdown', hDown);
+    el.addEventListener('pointerup', hUp);
+    el.addEventListener('pointercancel', clearLp);
+    el.addEventListener('pointerleave', clearLp);
+    return () => {
+      el.removeEventListener('click', hClick);
+      el.removeEventListener('pointerdown', hDown);
+      el.removeEventListener('pointerup', hUp);
+      el.removeEventListener('pointercancel', clearLp);
+      el.removeEventListener('pointerleave', clearLp);
+    };
+  }, [onClick, pointerDown, pointerUp, clearLp]);
+
   /* -------- 「改到…」：离屏 input + showPicker ---------- */
   function pickDate(id: string): void {
     const inp = document.createElement('input');
@@ -763,17 +790,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         />
       }
     >
-      <div
-        onClick={onClick}
-        onPointerDown={pointerDown}
-        onPointerUp={pointerUp}
-        /* 这两个只会在 pointerup / 窗口 onMove 都接不住的时候兜底（滚动被浏览器
-           取消、指针直接飞出容器），所以照旧清空 —— 它们不动 `fired`，
-           而 `fired` 只有长按真的到点才会是 true。 */
-        onPointerCancel={clearLp}
-        onPointerLeave={clearLp}
-        style={{ display: 'contents' }}
-      >
+      <div style={{ display: 'contents' }}>
         {body}
       </div>
 

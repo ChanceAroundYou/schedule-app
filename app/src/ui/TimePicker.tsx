@@ -1,57 +1,31 @@
 /**
- * TimePicker —— 自定义时间选择器（替代原生 `<input type="time">` + 时钟按钮浮层）
+ * TimePicker —— 自定义时间选择器（替代原生 `<input type="time">`）
  *
- * 快捷 Chips（常用时间）→ ClockBody 表盘（内嵌，不用浮层）→ 清除。
- * 表盘用 ClockBody，face 调小到 198px 适配抽屉宽度。
+ * 一个时间按钮 + 一个 12 小时制转盘 + 一个清除。选完分钟转盘自己收起。
+ *
+ * **没有 09:00 / 12:00 / 15:00 / 18:00 快捷格**（2026-10-09 去掉）：同
+ * DatePicker 的理由 —— 四个格子覆盖不到的时刻才是多数，而它们让控件从一行
+ * 变成三行。拨表盘本来就是点两下的事。
  */
 
 import { useState } from 'react';
 import { ClockBody } from './Clock.tsx';
 
-const QUICK = [
-  { value: '09:00', label: '上午 9:00' },
-  { value: '12:00', label: '中午 12:00' },
-  { value: '15:00', label: '下午 3:00' },
-  { value: '18:00', label: '下午 6:00' },
-];
-
-export function TimePicker({ value, onChange }: {
-  /** 当前时间 'HH:MM'，null = 不限 */
-  value: string | null;
-  onChange: (v: string | null) => void;
-}) {
-  const [custom, setCustom] = useState(false);
-
+export function TimePicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="tp">
-      <div className="tp-quick">
-        {QUICK.map((q) => {
-          const on = value === q.value;
-          return (
-            <button
-              key={q.value}
-              className={'tp-q' + (on ? ' on' : '')}
-              onClick={() => onChange(q.value)}
-            >{q.label}</button>
-          );
-        })}
-        <button
-          className={'tp-q' + (custom ? ' on' : '')}
-          onClick={() => setCustom((v) => !v)}
-        >{value && !QUICK.some((q) => q.value === value) ? value : '其他'}</button>
+      <div className="tp-cur">
+        <button className={'tp-btn' + (value ? ' on' : '')} onClick={() => setOpen((v) => !v)}>
+          {value || '选时间'}
+        </button>
+        {value && <button className="tp-clear" onClick={() => onChange(null)}>✕</button>}
       </div>
-      {custom && (
+      {open && (
         <div className="tp-dial">
-          <ClockBody
-            value={value}
-            face={198}
-            onChange={(v) => onChange(v)}
-            onMinutePick={() => setCustom(false)}
-          />
+          {/* 分钟一落定 = 这次选择走完了 → 收起（跟快速添加那层面板同一套语义） */}
+          <ClockBody value={value} face={198} onChange={(v) => onChange(v)} onMinutePick={() => setOpen(false)} />
         </div>
-      )}
-      {value && !custom && (
-        <button className="tp-clear" onClick={() => onChange(null)}>✕</button>
       )}
     </div>
   );

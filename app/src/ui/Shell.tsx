@@ -23,14 +23,14 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AlarmClock, CalendarCheck, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudOff,
   Flame, FolderKanban, Inbox, Loader2, MailPlus,
-  MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock,
+  MoreHorizontal, Plus, Search, Settings, Sparkles, Sun, Trash2, X, Clock, Layers,
 } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { counts, liveTasks, CUSTOMIZABLE, quickDefaults } from '../domain/model.ts';
 import { parse, type ParseOut } from '../domain/parse.ts';
 import { useFocusTrap, useIsNarrow, useOutsideClose, useDebounced, useOnline } from './hooks.ts';
-import { CalSwitcher } from './Calendars.tsx';
+import { CalMenu, CalSheet } from './Calendars.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
 import { WhenPop } from './WhenPop.tsx';
 import { Input, Textarea, Btn, IconBtn } from './kit.tsx';
@@ -136,7 +136,28 @@ function Sidebar({ state, onNav }: {
   const main = shown.filter((k) => !bottom.includes(k));
   const bottoms = bottom.filter((k) => !hidden.has(k)).map(navDef);
 
-  const item = (k: string) => {
+  /* 被藏起来的那几项 —— 侧栏底部「更多」列的就是它（顺序跟着 navOrder）。
+     桌面没有底栏那个「更多」抽屉，不给个入口的话一勾掉就只剩设置页能找回来。 */
+  const tucked = order.filter((k) => hidden.has(k));
+
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRoot = useRef<HTMLDivElement>(null);
+  const moreBtn = useRef<HTMLButtonElement>(null);
+  useOutsideClose(moreRoot, moreOpen, () => setMoreOpen(false));
+  /* Esc 关掉并把焦点还给触发键 —— 同 CalMenu（不还的话焦点掉到 body 上，
+     键盘用户得从页首重新 Tab 一遍）。 */
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMoreOpen(false); moreBtn.current?.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [moreOpen]);
+
+  /* `onPick` 只有「更多」浮层里那份要传（点完得把浮层收掉）。浮层里的行也挂
+     `data-nav`：它**就是**一条导航项，没必要另立一个锚点。 */
+  const item = (k: string, onPick?: () => void) => {
     const def = navDef(k);
     const n = def.count ? (c as unknown as Record<string, number>)[def.count] : 0;
     const b = badge(n);
@@ -148,7 +169,7 @@ function Sidebar({ state, onNav }: {
         /* 当前在哪一页：视觉上靠 .active 那点底色，读屏只认这个属性。
            侧栏和底部标签栏指同一件事（同一份 ui.nav），两处都写。 */
         aria-current={state.ui.nav === k ? 'page' : undefined}
-        onClick={() => onNav(k)}
+        onClick={onPick || (() => onNav(k))}
       >
         <span className="ico">{def.icon}</span>
         <span className="label">{def.label}</span>
@@ -164,11 +185,10 @@ function Sidebar({ state, onNav }: {
         <div className="brand-name">日程清单</div>
       </div>
 
-      {/* 日程集在导航之上：下面的日程 / 打卡 / 已完成是**按勾选的集**过滤的，
-          先选集再选页面，顺序跟用户脑子里的模型一致 */}
-      <CalSwitcher state={state} />
-
-      <nav className="nav" id="nav">{main.map(item)}</nav>
+      {/* 日程集多选**不在侧栏**：侧栏顺序是用户自己排的，塞个常驻控件进去会跟
+          「底栏挑哪几项」抢位置。桌面在顶栏（CalMenu），移动端在「更多」里
+          （CalSheet）—— 两处都见 Calendars.tsx。 */}
+      <nav className="nav" id="nav">{main.map((k) => item(k))}</nav>
       <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
 
       <Pulse state={state} />
@@ -180,6 +200,28 @@ function Sidebar({ state, onNav }: {
         <Btn variant="ghost" className="ghost-btn" data-nav="settings" onClick={() => onNav('settings')}>
           <Settings size={13} /> 设置
         </Btn>
+        {/* 一个都没藏就不画 —— 空浮层比没有更费解。 */}
+        {!!tucked.length && (
+          <div className="side-more" ref={moreRoot}>
+            <Btn
+              ref={moreBtn}
+              variant="ghost"
+              className="ghost-btn"
+              data-nav-more="1"
+              aria-haspopup="true"
+              aria-expanded={moreOpen}
+              aria-label="更多功能"
+              onClick={() => setMoreOpen(!moreOpen)}
+            >
+              <MoreHorizontal size={13} /> 更多
+            </Btn>
+            {moreOpen && (
+              <div className="side-more-pop" role="group" aria-label="更多功能">
+                {tucked.map((k) => item(k, () => { onNav(k); setMoreOpen(false); }))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="tip">数据已同步到服务器，本机也留了一份</div>
       </div>
     </aside>
@@ -426,6 +468,9 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
       </div>
 
       <div className="topbar-right">
+        {/* 日程集多选：全局状态，顶栏哪儿都看得见（今天 / 逾期 / 待办箱是跨集的）。
+            窄屏不渲染 —— 那边走「更多」抽屉里的入口 + 弹窗面板。 */}
+        {!narrow && <CalMenu state={state} />}
         {narrow ? (
           <>
             <IconBtn
@@ -517,9 +562,9 @@ export function Tabbar({ state, onNav, onMore }: {
  * **深浅 / 导入 / 导出 / 退出登录不在这儿**：它们只有设置页一个入口
  * （外观卡、数据卡、账户卡）。抽屉里再放一份就是第二套入口，两边迟早说不到一起。
  */
-export function MoreSheet({ state, open, onClose, onNav, onInvites }: {
+export function MoreSheet({ state, open, onClose, onNav, onInvites, onCals }: {
   state: LocalState; open: boolean; onClose: () => void; onNav: (k: string) => void;
-  onInvites: () => void;
+  onInvites: () => void; onCals: () => void;
 }) {
   const c = counts(state);
   const panel = useRef<HTMLDivElement>(null);
@@ -589,6 +634,13 @@ export function MoreSheet({ state, open, onClose, onNav, onInvites }: {
               <span className="mc">{badge(pending)}</span>
             </button>
           )}
+          {/* 日程集多选：窄屏侧栏收起，桌面那个下拉多选框不存在 —— 没有这一格
+              手机上就没有任何地方能改「显示哪几个集」。徽标写「勾了几个 / 共几个」，
+              因为「勾了哪几个」正是这个入口唯一要传达的事。 */}
+          <button className="ms-item" data-cal-sheet-open onClick={() => { onCals(); onClose(); }}>
+            <span className="mi"><Layers size={20} /></span><span className="mt">日程集</span>
+            <span className="mc">{state.ui.cals.length}/{state.cals.length}</span>
+          </button>
           <button className="ms-item" data-nav="settings" onClick={() => goto('settings')}>
             <span className="mi"><Settings size={20} /></span><span className="mt">设置</span>
           </button>
@@ -929,6 +981,11 @@ export function Shell({
 }) {
   const narrow = useIsNarrow();
 
+  /** 日程集多选弹窗（移动端「更多」里那格点出来的）。开关留在这一层：
+   *  它和「更多」抽屉**互斥**（开它就关抽屉，见 MoreSheet 里那格），
+   *  所以没有 Esc 顺序问题 —— 不用像 invOpen 那样提到 App 去。 */
+  const [calOpen, setCalOpen] = useState(false);
+
   // 抽屉开着时给 body 一个标记：窄屏下 `.tab:active` 要压住，别在抽屉后面乱闪。
   // 旧版就有这个约定，重构时漏了，连带那条 CSS 规则一起成了死代码
   useEffect(() => {
@@ -957,7 +1014,10 @@ export function Shell({
       <MoreSheet
         state={state} open={more && narrow} onClose={() => setMore(false)}
         onNav={onNav} onInvites={onInvites}
+        onCals={() => setCalOpen(true)}
       />
+      {/* 只在窄屏开：桌面走顶栏那个下拉多选框，两边同时出现就是两套入口 */}
+      <CalSheet state={state} open={calOpen && narrow} onClose={() => setCalOpen(false)} />
     </div>
   );
 }

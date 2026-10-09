@@ -26,13 +26,13 @@
  * **不做「最近用过的日期」快捷推荐**：这个面板里再塞一行 chips 就放不下了，
  * 而且这是个日程管理软件 —— 日期是**选出来**的，不是**猜出来**的。
  *
- * 定位照抄原来的 DatePop / ClockPop：`position: fixed` + 按 anchor 实算，
+ * 定位照抄原来的 DatePop：`position: fixed` + 按 anchor 实算，
  * 下方放不下就翻到上面、右边超出就往左收。不新造一套定位逻辑。
  *
  * 日期层用的月历格子是**独立组件** `ui/MiniCalendar.tsx`（需求 4），与顶栏
  * 「找日期」（JumpPop）共用同一份；密度短横的 `loadOf` 也是同一个 `jumpLoad`，
  * 所以那个指示只有一处实现。时间层用的表盘是 `ui/Clock.tsx` 的 `ClockBody`，
- * 抽屉里那个浮层（ClockPop）用的是同一只。
+ * 抽屉里的 `ui/TimePicker.tsx` 嵌的也是同一只。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';

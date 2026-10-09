@@ -1,8 +1,10 @@
 /**
- * Calendars.tsx —— 侧栏的日程集勾选 + 邀请收件箱
+ * Calendars.tsx —— 日程集多选（桌面下拉 / 移动弹窗）+ 邀请收件箱
  *
- * 两部分：
- *   CalSwitcher  侧栏里那一列：勾选显示哪几个集（**只有勾选**，没有别的）
+ * 三部分：
+ *   CalRow   一行一个集，两种容器**共用**（各画一遍的下场是改了这边忘那边）
+ *   CalMenu  桌面端：顶栏里的下拉多选框
+ *   CalSheet 移动端：「更多」里那个按钮点出来的多选弹窗面板
  *   InviteSheet  待我处理的邀请，接受或谢绝
  *
  * 「改名 / 成员 / 权限 / 退出 / 删除」**不在这里** —— 设置页的「日程集管理」
@@ -16,14 +18,15 @@
  * 权限判断一律用 types.ts 的 canWrite / canManage，别在这里写 role === 'owner'。
  */
 
-import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
-import type { Invite, LocalState } from '../domain/types.ts';
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
+import type { Cal, Invite, LocalState } from '../domain/types.ts';
 import { ROLE_HINT, ROLE_LABEL } from '../domain/types.ts';
 import { api, ApiError } from '../data/api.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import { Btn, Sheet, toast } from './kit.tsx';
+import { useOutsideClose } from './hooks.ts';
 
 /* 角色选项与角色说明在 Members.tsx —— 成员 / 邀请那两块整体走 MembersSection，
    这里不再各留一份 ROLES / ROLE_HINT。 */
@@ -32,64 +35,124 @@ function say(e: unknown): string {
   return e instanceof ApiError ? e.message : '操作失败，请重试';
 }
 
-/* ============================== 侧栏那一段 ============================== */
+/* ============================== 日程集多选 ============================== */
 
 /**
- * 侧栏那一段：**只管勾选显示哪几个集**，没有别的。
- *
- * 这里曾经有个「管理当前日程集」按钮（改名 / 成员 / 邀请 / 退出 / 删除），
- * 但设置页的「日程集管理」（Settings.tsx 的 CalsTab）**本来就是同一套东西**，
- * 连 MembersSection 都是抽出来共用的一份 —— 侧栏那一份是纯重复入口，删掉。
- * 新建集、邀请收件箱同样只在设置页有：它们是低频动作，不值得占侧栏常驻位置。
+ * 一行一个集。桌面下拉多选与移动端弹窗面板**共用这一份** —— 两处各画一遍的
+ * 下场是改了选中态忘了改另一边。
  *
  * 勾选只影响**显示**（见 ui/hooks.ts 的 useScopedState）；新东西落在 `ui.cal`，
  * 也就是最后一次点开的那个集 —— toggleCal 里顺手设好。
+ *
+ * 默认日程集（「我的日程」）也列出来 —— 它是真实存在的集，勾不勾是用户的
+ * 自由。原先按「注册时自动建的」把它藏掉，那是在单选模型下的判断（它是
+ * 兜底的那个，不用切过去）；多选之后这条理由不成立了。
  */
-export function CalSwitcher({ state }: { state: LocalState }) {
-  const shown = state.ui.cals;
-  /**
-   * 默认日程集（「我的日程」）也列出来 —— 它是真实存在的集，勾不勾是用户的
-   * 自由。原先按「注册时自动建的」把它藏掉，那是在单选模型下的判断（它是
-   * 兜底的那个，不用切过去）；多选之后这条理由不成立了。
-   */
+function CalRow({ c, on }: { c: Cal; on: boolean }) {
+  return (
+    <button
+      type="button"
+      data-cal-row={c.id}
+      onClick={() => store.toggleCal(c.id)}
+      aria-pressed={on}
+      className={
+        'flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-left text-[13px] transition '
+        + (on
+          ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
+          : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text-2)]')
+      }
+    >
+      {/* 勾选圈走 CheckBtn 那套（命中区 ≥24，视觉不变），见 views/parts.tsx。
+          这里用 span 而不是 input[type=checkbox]：整个按钮就是控件，
+          再塞一个真 checkbox 会让 Tab 多停一格、读屏念两遍。 */}
+      <span className={'check-btn' + (on ? ' on' : '')} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+      {c.role !== 'owner' && (
+        <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+          {ROLE_LABEL[c.role]}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** 触发按钮上那行字。只写「全家」看不出还有别的集也勾着 —— 「勾了哪几个」
+ *  就是这个按钮唯一要传达的事，所以全勾时报总数、部分勾时报头一个加「等 N 个」。 */
+function calSummary(visible: Cal[], shown: string[]): string {
+  const on = visible.filter((c) => shown.includes(c.id));
+  if (on.length === visible.length) return `全部 ${visible.length} 个`;
+  if (on.length === 1) return on[0].name;
+  return `${on[0].name} 等 ${on.length} 个`;
+}
+
+/**
+ * 桌面端：顶栏里的**下拉多选框**。
+ *
+ * 为什么不在侧栏：侧栏顺序是用户自己排的（`ui.navOrder`），塞个常驻控件进去
+ * 会跟「底栏挑哪几项」抢位置；而「我在看哪几个集」是**全局**状态 —— 今天 /
+ * 逾期 / 待办箱本来就跨集，放在顶栏哪儿都看得见。
+ *
+ * 移动端没有这个按钮：那边走「更多」抽屉里的入口 + 弹窗面板（CalSheet）。
+ */
+export function CalMenu({ state }: { state: LocalState }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  useOutsideClose(root, open, () => setOpen(false));
+  /* Esc 关掉并把焦点还给触发键 —— 不还的话焦点掉到 body，键盘用户得从
+     页首重新 Tab 一遍（同 Drawer / Sheet 那条约定）。 */
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); btn.current?.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
   const visible = state.cals;
+  const shown = state.ui.cals;
 
   return (
-    <div className="mb-2 flex flex-col gap-[2px]">
-      <div className="px-3 pt-3 pb-1">
-        <span className="text-[11px] tracking-wide text-[var(--text-3)]">显示的日程集</span>
-      </div>
-
-      {visible.map((c) => {
-        const on = shown.includes(c.id);
-        return (
-          <button
-            type="button"
-            key={c.id}
-            data-cal={c.id}
-            onClick={() => store.toggleCal(c.id)}
-            aria-pressed={on}
-            className={
-              'flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-left text-[13px] transition '
-              + (on
-                ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
-                : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text-2)]')
-            }
-          >
-            {/* 勾选圈走 CheckBtn 那套（命中区 ≥24，视觉不变），见 views/parts.tsx。
-                这里用 span 而不是 input[type=checkbox]：整个按钮就是控件，
-                再塞一个真 checkbox 会让 Tab 多停一格、读屏念两遍。 */}
-            <span className={'check-btn' + (on ? ' on' : '')} aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{c.name}</span>
-            {c.role !== 'owner' && (
-              <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
-                {ROLE_LABEL[c.role]}
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className="cal-menu" ref={root}>
+      <button
+        ref={btn}
+        type="button"
+        data-cal-menu
+        className={'cal-menu-btn' + (open ? ' on' : '')}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label="显示的日程集"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="min-w-0 max-w-[10rem] truncate">{calSummary(visible, shown)}</span>
+        <ChevronDown size={13} className="shrink-0 opacity-60" />
+      </button>
+      {open && (
+        <div className="cal-menu-pop" role="group" aria-label="显示的日程集">
+          {visible.map((c) => <CalRow key={c.id} c={c} on={shown.includes(c.id)} />)}
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * 移动端：「更多」抽屉里那个按钮点出来的**多选弹窗面板**。
+ *
+ * 窄屏侧栏是收起的，桌面那个下拉多选框根本不存在 —— 没有这个面板的话，
+ * 手机上就没有任何地方能改「显示哪几个集」。
+ */
+export function CalSheet({ state, open, onClose }: {
+  state: LocalState; open: boolean; onClose: () => void;
+}) {
+  const shown = state.ui.cals;
+  return (
+    <Sheet open={open} onClose={onClose} title="显示的日程集">
+      <div className="flex flex-col gap-[2px]">
+        {state.cals.map((c) => <CalRow key={c.id} c={c} on={shown.includes(c.id)} />)}
+      </div>
+    </Sheet>
   );
 }
 

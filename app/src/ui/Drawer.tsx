@@ -7,9 +7,15 @@
  * `confirm()` 一律不用 —— 原生 confirm 在 PWA 里会被静默吞掉，用户点删除
  * 完全没反应。走 useConfirm()。
  *
- * 日期和时间用自定义控件（DatePicker / TimePicker），不用原生 input。
- * 时长仍旧是固定档位的 Chips —— 自由输入迟早会有人填 7 分钟，而 15 分钟是
- * 时间轴的最小步进。
+ * **底部没有按钮**（2026-10-09 精简）：每个字段都是就地改、失焦即存，
+ * 「完成」只是关掉抽屉 —— 用标题栏那个打勾。删除也上移到标题栏。
+ * 底部那排按钮唯一的用处是让人确认「我改完了」，可改完本来就不用确认。
+ *
+ * 日期和时间用自定义控件（DatePicker / TimePicker），不用原生 input，
+ * **也没有「今天 / 明天」「12 点」这类快捷格**。时间选两次：开始、结束 ——
+ * 结束时间设了就是一条持续任务，没设就是默认的一小时。
+ *
+ * 重复设置收在一个 Sheet 里，不再摊成一片 chips + 面板。
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
@@ -20,10 +26,14 @@ import type { FieldConflict, LocalState, RepeatRule, Task } from '../domain/type
 import * as D from '../domain/date.ts';
 import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repeat.ts';
 import { liveProjects } from '../domain/model.ts';
-import { Btn, Chips, IconBtn, Input, SheetPicker, Textarea, useConfirm } from './kit.tsx';
+import { Chips, IconBtn, Input, Sheet, SheetPicker, Textarea, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
 
-const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
+/** 没设结束时间时的默认时长。`duration` 是 `number`、不是可空的，
+ *  所以「没有结束时间」只能表达成「一小时」—— 建任务那一版就是这个行为。 */
+const DEFAULT_DURATION = 60;
+/** 结束时间比起始时间还早时兜到这儿。时间轴的最小步进是 15 分钟。 */
+const MIN_DURATION = 15;
 
 /**
  * 「另一台设备也改过这里」。
@@ -107,6 +117,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
   // 标题是本地草稿：每敲一个字就写库会让输入框在重渲染里跳光标（旧版踩过）
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [repOpen, setRepOpen] = useState(false);
   const lastId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -161,6 +172,22 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
    */
   const nextOcc = rep.unit !== 'none' ? repeatNext(task, task.date || D.today()) : null;
 
+  /**
+   * 结束时间 = 开始时间 + 时长。**开始时间一改，结束时间跟着走** —— 不变的是
+   * 时长，那才是「持续任务」的本体；开始 / 结束只是它的两个视图。
+   *
+   * 没有开始时间就没有结束时间（`null`），那一行也不出现。
+   */
+  const startMin = D.timeToMin(task.time);
+  const endMin = startMin == null ? null : startMin + task.duration;
+  const setEnd = (v: string | null) => {
+    const s = startMin;
+    if (v == null || s == null) { patch({ duration: DEFAULT_DURATION }); return; }
+    const e = D.timeToMin(v);
+    if (e == null) { patch({ duration: DEFAULT_DURATION }); return; }
+    patch({ duration: Math.max(MIN_DURATION, e - s) });
+  };
+
   const remove = async () => {
     const ok = await confirm({
       title: '删除这个任务？',
@@ -204,7 +231,12 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { const v = title.trim() || '未命名任务'; setTitle(v); if (v !== task.title) patch({ title: v }); }}
           />
-          <IconBtn label="关闭" className="icon-btn" onClick={onClose}>
+          {/* 标题栏右边两个图标：删除、完成。**底部那排按钮整个删了** ——
+              字段都是就地改、失焦即存，「完成」只是关掉抽屉。 */}
+          <IconBtn label="删除任务" className="icon-btn" onClick={remove}>
+            <Trash2 size={15} />
+          </IconBtn>
+          <IconBtn label="完成" className="icon-btn" onClick={onClose}>
             <Check size={16} />
           </IconBtn>
         </div>
@@ -223,130 +255,38 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             />
           </div>
 
+          {/* 时间选**两次**：开始、结束。结束那行只有在开始定了之后才出现 ——
+              没有开始时间的任务落在时间轴上方的全天区，给它一个结束时间没意义。 */}
           <div className="field">
-            <span className="flabel">时间 <span className="sub">（可留空）</span></span>
+            <span className="flabel">开始时间</span>
             <TimePicker
               value={task.time}
-              onChange={(v) => patch({ time: v })}
+              onChange={(v) => patch({
+                time: v,
+                ...(v === null ? { duration: DEFAULT_DURATION } : {}),
+              })}
             />
           </div>
 
-          <div className="field">
-            <span className="flabel" id={fid + '-dur-l'}>时长</span>
-            <Chips<number>
-              value={task.duration || 60}
-              options={DURATIONS}
-              onPick={(v) => patch({ duration: v })}
-              labelOf={(v) => D.fmtDuration(v)}
-              labelledBy={fid + '-dur-l'}
-            />
-          </div>
+          {task.time && (
+            <div className="field">
+              <span className="flabel">结束时间 <span className="sub">（可不设）</span></span>
+              <TimePicker
+                value={endMin == null ? null : D.minToTime(endMin)}
+                onChange={setEnd}
+              />
+            </div>
+          )}
 
           <div className="field">
             <span className="flabel" id={fid + '-rep-l'}>重复</span>
-            <Chips<RepeatRule['unit']>
-              value={rep.unit}
-              options={REPEAT_UNITS.map((u) => u.value)}
-              onPick={(unit) => {
-                patch({ repeat: toRepeat({ ...rep, unit, n: 1, end: null }, task.date) });
-              }}
-              labelOf={(u) => REPEAT_UNITS.find((x) => x.value === u)?.label || u}
-              labelledBy={fid + '-rep-l'}
-            />
-            {rep.unit !== 'none' && (
-              <div className="repeat-panel">
-                <div className="rp-row">
-                  <span>每</span>
-                  <input
-                    type="number" min={1} max={99} value={rep.n}
-                    aria-label="重复间隔"
-                    onChange={(e) => patch({ repeat: { ...rep, n: Math.max(1, +e.target.value || 1) } })}
-                  />
-                  <span>{{ day: '天', week: '周', month: '个月', year: '年', none: '' }[rep.unit]}</span>
-                </div>
-                {rep.unit === 'week' && (
-                  <div className="rp-row rp-wd">
-                    {['一', '二', '三', '四', '五', '六', '日'].map((w, i) => {
-                      const v = i === 6 ? 0 : i + 1;
-                      const on = rep.weekdays.includes(v);
-                      return (
-                        <button
-                          className={'rp-day' + (on ? ' on' : '')}
-                          key={w}
-                          onClick={() => patch({
-                            repeat: {
-                              ...rep,
-                              weekdays: on ? rep.weekdays.filter((x) => x !== v) : [...rep.weekdays, v],
-                            },
-                          })}
-                        >{w}</button>
-                      );
-                    })}
-                  </div>
-                )}
-                {/* 「每月 N 号」这一格重构时漏了，而 repeat.ts 一直在读
-                    `monthday` —— 值照旧生效，只是用户看不到、也改不了。
-                    任务改期之后 monthday 还停在旧日期，就成了没法解释的行为 */}
-                {rep.unit === 'month' && (
-                  <div className="rp-row">
-                    <span>每月</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={rep.monthday || 1}
-                      aria-label="每月几号"
-                      onChange={(e) => patch({
-                        repeat: {
-                          ...rep,
-                          monthday: Math.max(1, Math.min(31, +e.target.value || 1)),
-                        },
-                      })}
-                    />
-                    <span className="sub">号，当月没这天就取最后一天</span>
-                  </div>
-                )}
-                <div className="rp-row">
-                  <span>结束</span>
-                  <Chips<string>
-                    value={rep.end?.type || 'never'}
-                    options={['never', 'date', 'count']}
-                    onPick={(v) => {
-                      patch({
-                        repeat: {
-                          ...rep,
-                          end: v === 'date' ? { type: 'date', date: D.addMonths(D.today(), 3) }
-                            : v === 'count' ? { type: 'count', count: 10 }
-                              : null,
-                        },
-                      });
-                    }}
-                    labelOf={(v) => ({ never: '不限', date: '到某天', count: '重复几次' } as Record<string, string>)[v] || v}
-                    label="重复结束方式"
-                  />
-                  {rep.end?.type === 'date' && (
-                    /* 跟上面那个日期字段同一只控件，但 `plain` 一档 ——
-                       结束日期没有「今天 / 明天」这种方向性，也没有「清除」
-                       （清掉就没有结束日期了，那是上面「不限」那一档的事）。
-                       空值一律不往 onChange 传，免得 end 整个塌成 null。 */
-                    <DatePicker
-                      plain
-                      value={rep.end.date}
-                      onChange={(v) => {
-                        if (v) patch({ repeat: { ...rep, end: { type: 'date', date: v } } });
-                      }}
-                    />
-                  )}
-                  {rep.end?.type === 'count' && (
-                    <Input
-                      type="number" min={1} max={999} value={rep.end.count}
-                      onChange={(e) => patch({ repeat: { ...rep, end: { type: 'count', count: Math.max(1, +e.target.value || 1) } } })}
-                    />
-                  )}
-                </div>
-                {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
-              </div>
-            )}
+            {/* 一个按钮开一个 Sheet。原先是 chips + 一整个面板摊在抽屉里 ——
+                展开之后比「项目」和「备注」加起来还长。 */}
+            <button
+              className="rep-open"
+              aria-labelledby={fid + '-rep-l'}
+              onClick={() => setRepOpen(true)}
+            >{rep.unit === 'none' ? '不重复' : repeatLabel(rep)}</button>
           </div>
 
           {/*
@@ -386,12 +326,111 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
             {task.createdAt > 0 && <span>· 创建于 {D.fmtMD(D.isoOfTs(task.createdAt))}</span>}
           </div>
         </div>
-
-        <div className="drawer-foot">
-          <Btn variant="danger" onClick={remove}><Trash2 size={14} /> 删除任务</Btn>
-          <Btn variant="primary" onClick={onClose}>完成</Btn>
-        </div>
       </aside>
+
+      {/* 重复设置的复合浮层。频率 / 间隔 / 周几 / 每月几号 / 结束方式都在这儿，
+          一层一层的 chips 不往外摊 —— 见上面 repOpen 那段。 */}
+      <Sheet open={repOpen} onClose={() => setRepOpen(false)} title="重复">
+        <Chips<RepeatRule['unit']>
+          value={rep.unit}
+          options={REPEAT_UNITS.map((u) => u.value)}
+          onPick={(unit) => {
+            patch({ repeat: toRepeat({ ...rep, unit, n: 1, end: null }, task.date) });
+          }}
+          labelOf={(u) => REPEAT_UNITS.find((x) => x.value === u)?.label || u}
+          label="重复频率"
+        />
+        {rep.unit !== 'none' && (
+          <div className="repeat-panel">
+            <div className="rp-row">
+              <span>每</span>
+              <input
+                type="number" min={1} max={99} value={rep.n}
+                aria-label="重复间隔"
+                onChange={(e) => patch({ repeat: { ...rep, n: Math.max(1, +e.target.value || 1) } })}
+              />
+              <span>{{ day: '天', week: '周', month: '个月', year: '年', none: '' }[rep.unit]}</span>
+            </div>
+            {rep.unit === 'week' && (
+              <div className="rp-row rp-wd">
+                {['一', '二', '三', '四', '五', '六', '日'].map((w, i) => {
+                  const v = i === 6 ? 0 : i + 1;
+                  const on = rep.weekdays.includes(v);
+                  return (
+                    <button
+                      className={'rp-day' + (on ? ' on' : '')}
+                      key={w}
+                      aria-pressed={on}
+                      onClick={() => patch({
+                        repeat: {
+                          ...rep,
+                          weekdays: on ? rep.weekdays.filter((x) => x !== v) : [...rep.weekdays, v],
+                        },
+                      })}
+                    >{w}</button>
+                  );
+                })}
+              </div>
+            )}
+            {/* 「每月 N 号」这一格重构时漏了，而 repeat.ts 一直在读
+                `monthday` —— 值照旧生效，只是用户看不到、也改不了。
+                任务改期之后 monthday 还停在旧日期，就成了没法解释的行为 */}
+            {rep.unit === 'month' && (
+              <div className="rp-row">
+                <span>每月</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={rep.monthday || 1}
+                  aria-label="每月几号"
+                  onChange={(e) => patch({
+                    repeat: {
+                      ...rep,
+                      monthday: Math.max(1, Math.min(31, +e.target.value || 1)),
+                    },
+                  })}
+                />
+                <span className="sub">号，当月没这天就取最后一天</span>
+              </div>
+            )}
+            <div className="rp-row">
+              <span>结束</span>
+              <Chips<string>
+                value={rep.end?.type || 'never'}
+                options={['never', 'date', 'count']}
+                onPick={(v) => {
+                  patch({
+                    repeat: {
+                      ...rep,
+                      end: v === 'date' ? { type: 'date', date: D.addMonths(D.today(), 3) }
+                        : v === 'count' ? { type: 'count', count: 10 }
+                          : null,
+                    },
+                  });
+                }}
+                labelOf={(v) => ({ never: '不限', date: '到某天', count: '重复几次' } as Record<string, string>)[v] || v}
+                label="重复结束方式"
+              />
+              {rep.end?.type === 'date' && (
+                <DatePicker
+                  value={rep.end.date}
+                  onChange={(v) => {
+                    if (v) patch({ repeat: { ...rep, end: { type: 'date', date: v } } });
+                  }}
+                />
+              )}
+              {rep.end?.type === 'count' && (
+                <Input
+                  type="number" min={1} max={999} value={rep.end.count}
+                  onChange={(e) => patch({ repeat: { ...rep, end: { type: 'count', count: Math.max(1, +e.target.value || 1) } } })}
+                />
+              )}
+            </div>
+            {nextOcc && <div className="rp-preview">下一次：{D.fmtMD(nextOcc)}</div>}
+          </div>
+        )}
+      </Sheet>
     </>
   );
 }

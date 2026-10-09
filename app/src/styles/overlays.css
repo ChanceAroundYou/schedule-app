@@ -58,7 +58,79 @@
 .field textarea { resize: vertical; line-height: 1.6; }
 .field input:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
 .drawer-meta { font-size: 11px; color: var(--text-3); padding-top: 10px; border-top: 1px solid var(--border); }
-.drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--border); }
+
+/* 「重复」那一行的一个按钮，点开一个 Sheet。**没有 chips 也没有内联面板**
+   （2026-10-09）—— 重复是大多数人根本不碰的字段，不该在抽屉里占一整屏。
+   样式跟 `.dp-btn` / `.tp-btn` 同源：同一个抽屉里三种「选一下」的按钮。 */
+.rep-open {
+  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.rep-open:hover { background: var(--panel-3); color: var(--text); }
+.rep-open.on, .rep-open:not(:empty) { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+
+/* ================= DatePicker ================= */
+
+.dp { display: flex; flex-direction: column; gap: 8px; }
+.dp-cur { display: flex; align-items: center; gap: 6px; }
+.dp-btn {
+  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.dp-btn:hover { background: var(--panel-3); color: var(--text); }
+.dp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.dp-clear {
+  width: 24px; height: 24px; border: none; background: none; color: var(--text-3);
+  font-size: 12px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+  transition: background .14s, color .14s;
+}
+.dp-clear:hover { background: var(--panel-3); color: var(--text); }
+.dp-pop {
+  position: fixed; z-index: 70; width: 268px; padding: 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+}
+.dp-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dp-nav-btn {
+  width: 28px; height: 28px; border: none; background: none; color: var(--text-2);
+  font-size: 16px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+  transition: background .14s, color .14s;
+}
+.dp-nav-btn:hover { background: var(--panel-3); color: var(--text); }
+.dp-nav-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.dp-week { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.dp-week span { text-align: center; font-size: 10.5px; color: var(--text-3); padding: 4px 0; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-cell {
+  height: 30px; border: 1px solid transparent; background: none; border-radius: var(--r-sm);
+  color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.dp-cell:hover { background: var(--panel-3); }
+.dp-cell.out { color: var(--text-3); opacity: .5; }
+.dp-cell.today { border-color: var(--primary); }
+.dp-cell.on { background: var(--primary); color: var(--on-primary); }
+
+/* ================= TimePicker ================= */
+
+.tp { display: flex; flex-direction: column; gap: 8px; }
+.tp-cur { display: flex; align-items: center; gap: 6px; }
+.tp-btn {
+  padding: 6px 12px; border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.tp-btn:hover { background: var(--panel-3); color: var(--text); }
+.tp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.tp-dial { display: flex; justify-content: center; padding: 8px 0; }
+.tp-clear {
+  width: 24px; height: 24px; border: none; background: none; color: var(--text-3);
+  font-size: 12px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+  transition: background .14s, color .14s;
+}
+.tp-clear:hover { background: var(--panel-3); color: var(--text); }
 
 /* ================= toast ================= */
 
