@@ -69,7 +69,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
       >
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-[var(--r-xl)]
-                          bg-[var(--primary)] text-[var(--on-primary)]">
+                          bg-[linear-gradient(140deg,var(--primary),var(--purple))] text-[var(--on-primary)]">
             <CalendarCheck size={24} />
           </div>
           <div className="text-lg font-semibold">日程清单</div>
