@@ -285,5 +285,24 @@ b, strong { font-variant-numeric: tabular-nums; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* ---- 浮条：滚动条不占位（用户 2026-10-09 报「滚动条不要占位置，不要挤现有元素」）----
+   原生滚动条在 Linux / Windows 上是**占位**的：容器一滚起来，内容就被挤窄一截，
+   行里的东西跟着左右晃。`.osb` 把原生那条藏掉，由 ui/scroll.ts 的
+   `useOverlayScrollbar()` 在容器里画一根 4px 的 —— 位置贴着**内容盒**右边，
+   和原生那条一模一样，只是浮在上面、不占地方。
+   `z-index: 2`：要压过普通内容，但不能压过周视图那两个吸头条（5 / 6）。 */
+.osb { scrollbar-width: none; }
+.osb::-webkit-scrollbar { width: 0; height: 0; }
+.osb-track {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 4px; z-index: 2;
+  opacity: 0; pointer-events: none;
+}
+.osb-thumb {
+  width: 100%; border-radius: var(--r-pill);
+  background: var(--text-3); opacity: .55;
+  pointer-events: auto; cursor: pointer; touch-action: none;
+}
+.osb-thumb:hover { background: var(--text-2); opacity: .85; }
+
 /* ================= 布局 ================= */
 

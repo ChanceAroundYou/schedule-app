@@ -463,6 +463,27 @@ try {
   ok(cals0.length === 1 && cals0[0].name === '我的日程',
     '下拉里列出默认日程集，实际 ' + JSON.stringify(cals0));
   ok(cals0.filter((c) => c.on).length === 1, '进界面时正好勾着一个（当前集）');
+  /* 打勾的勾要**正落在圆心**（用户 2026-10-09：「打勾的图标的勾并不居中」）。
+     原来写 `left:5px; top:2px` + `rotate(45deg)`：`left/top` 摆的是盒子的左上角，
+     盒子中心就落在 (7,6)，而圆心在 (9,9) —— 勾整体偏左上 2×3px。
+     改成 `left:50%; top:50%; translate(-50%,-50%) rotate(45deg)` 之后，盒子中心
+     正好是圆心（旋转以盒子中心为原点，不动中心）。
+     量的就是**勾盒中心减圆心**：`left:50%` 相对 padding 盒算，要加回边框宽度。 */
+  const tick18 = await withCals(() => evalJs(page, `
+    const b = document.querySelector('.cal-menu-pop [data-cal-row] .check-btn');
+    const cs = getComputedStyle(b, '::after'), cb = getComputedStyle(b);
+    const r = b.getBoundingClientRect();
+    const w = parseFloat(cs.width), h = parseFloat(cs.height);
+    const t = cs.transform;
+    let e = 0, f = 0;
+    if (t && t.startsWith('matrix')) { const p = t.slice(7, -1).split(',').map(Number); e = p[4]; f = p[5]; }
+    return { 圈直径: r.width,
+             勾中心偏移: [+(parseFloat(cb.borderLeftWidth) + parseFloat(cs.left) + w / 2 + e - r.width / 2).toFixed(2),
+                       +(parseFloat(cb.borderTopWidth) + parseFloat(cs.top) + h / 2 + f - r.height / 2).toFixed(2)] };
+  `));
+  ok(Math.abs(tick18.勾中心偏移[0]) <= 0.6 && Math.abs(tick18.勾中心偏移[1]) <= 0.6,
+    '桌面 ' + tick18.圈直径 + 'px 勾选圈里，勾盒中心正落在圆心（原来偏左上 2×3px），实际 '
+    + JSON.stringify(tick18.勾中心偏移));
   // 改名 / 成员 / 邀请 / 退出 / 删除全在设置页了，下拉里只留勾选
   ok(await withCals(() => evalJs(page, `
     return document.querySelectorAll('.cal-menu-pop [data-cal-manage], .cal-menu-pop [data-cal-invites], .cal-menu-pop [data-cal-new]').length === 0;`)),
@@ -502,6 +523,12 @@ try {
   // 只是入口换了，顺带证明「删掉重复入口之后功能没跟着没」。
   await evalJs(page, `document.querySelector('[data-nav="settings"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('[data-settings-tab]')`, '设置页打开', 8000);
+  /* 设置页自己的 header 左上角要写页名（用户 2026-10-09：「设置页的 header 的左上角
+     没有设置字样」）。**写在页面里、不写在顶栏** —— 顶栏那一栏再写一遍「设置」，
+     两行同一个词看着像两个 header。所以这里查的是 `#content` 里那个 h1。 */
+  ok(await evalJs(page, `return (document.querySelector('#content h1') || {}).textContent;`) === '设置',
+    '设置页内容区左上角写着页名「设置」，实际 '
+    + JSON.stringify(await evalJs(page, `return (document.querySelector('#content h1') || {}).textContent;`)));
   await evalJs(page, `document.querySelector('[data-settings-tab="cals"]').click(); return true;`);
   // 当前集默认就是展开的（CalsTab 的 openId 初始值就是 ui.cal）。
   // **名字框此刻不在** —— 改名搬进标题行之后，平时是「一段字 + 铅笔」，
@@ -3023,6 +3050,30 @@ try {
   ok(await clickEl(page, `document.querySelector('.topbar .search-toggle')`) !== 'missing',
     '窄屏顶栏有搜索图标');
   await waitFor(page, `!!document.querySelector('.search-pop input')`, '搜索浮条弹出来了');
+  /* 浮条要**长在顶栏那一行里**（用户 2026-10-09：「移动端的搜索请在原地向左伸出去
+     一个搜索框，现在变成了在 header 下面，需要在 header 内部」）。判据三条：
+     ① 上下边都落在顶栏的上下边之内 —— 它曾经是 `top: calc(100% + 8px)`，等于
+        另起一行挂在 header 底下，把内容往下挤；现在是 `top:50%` + 居中平移；
+     ② 在搜索图标**左边**（「原地向左伸出去」）；
+     ③ 竖直跟图标对齐。
+     浮条总高刻意做成 48 = 顶栏高（30 的框 + 上下 8 padding + 上下 1 描边）——
+     多 1px 就会上下各探出去一点。容差给 2px：它挂在搜索图标上居中，而图标中心
+     未必正好是顶栏的几何中心（实测差 1px）。 */
+  const spBox = await evalJs(page, `
+    const p = document.querySelector('.search-pop').getBoundingClientRect();
+    const t = document.querySelector('.topbar').getBoundingClientRect();
+    const g = document.querySelector('.search-toggle').getBoundingClientRect();
+    return { top: +p.top.toFixed(1), bottom: +p.bottom.toFixed(1),
+             tTop: +t.top.toFixed(1), tBottom: +t.bottom.toFixed(1),
+             在图标左边: p.right <= g.left,
+             垂直中心差: +(((p.top + p.bottom) / 2) - ((g.top + g.bottom) / 2)).toFixed(1) };
+  `);
+  ok(spBox.top >= spBox.tTop - 2 && spBox.bottom <= spBox.tBottom + 2,
+    '窄屏搜索浮条整个落在顶栏那一行里（不再另起一行挂在 header 下面），实际 浮条 '
+    + spBox.top + '–' + spBox.bottom + ' / 顶栏 ' + spBox.tTop + '–' + spBox.tBottom);
+  ok(spBox.在图标左边, '浮条从搜索图标原地往左伸出去，实际 ' + JSON.stringify(spBox));
+  ok(Math.abs(spBox.垂直中心差) <= 1,
+    '浮条跟搜索图标竖直居中对齐，实际差 ' + spBox.垂直中心差 + 'px');
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await waitFor(page, `document.querySelector('.search-pop') ? null : 1`, 'Esc 关掉了搜索浮条');
@@ -3099,6 +3150,39 @@ try {
   ok(sheetTitle === '显示的日程集', '面板标题是「显示的日程集」，实际 ' + JSON.stringify(sheetTitle));
   const sheetRows = await evalJs(page, `return document.querySelectorAll('[role="dialog"] [data-cal-row]').length;`);
   ok(sheetRows >= 1, '面板里列出日程集，实际 ' + sheetRows + ' 行');
+  /* 面板最后一行到面板底要留出空白（用户 2026-10-09：「移动端请给顶多的空白，
+     现在太挤了，都快贴死底部了」）。原来 Sheet 的 body 是 `py-2`，最后一行离底
+     只有 7px；现在下边距 = 16px + `env(safe-area-inset-bottom)`。 */
+  const sheetPad = await evalJs(page, `
+    const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('[role="dialog"] [data-cal-row]')];
+    const last = rows[rows.length - 1].getBoundingClientRect();
+    return { 最后一行距面板底: +(d.bottom - last.bottom).toFixed(1) };
+  `);
+  ok(sheetPad.最后一行距面板底 >= 12,
+    '日程集面板最后一行离面板底有 12px 以上的空白（原来只有 7px，贴着底），实际 '
+    + sheetPad.最后一行距面板底 + 'px');
+  /* 打勾的勾要**正落在圆心**（用户 2026-10-09：「打勾的图标的勾并不居中」）。
+     原来写的是 `left:5px; top:2px` + `rotate(45deg)`：`left/top` 摆的是盒子左上角，
+     盒子中心就落在 (7,6)，圆心在 (9,9) —— 整体偏左上 2×3px。改成
+     `left:50%; top:50%; translate(-50%,-50%) rotate(45deg)` 之后盒子中心正好是圆心。
+     这里量的就是**勾盒中心减圆心**：`left:50%` 是相对 padding 盒算的，所以要加回
+     边框宽度；旋转的原点是盒子中心、不动中心，只有 transform 里的平移会挪它。 */
+  const tickBox = await evalJs(page, `
+    const b = document.querySelector('[role="dialog"] [data-cal-row] .check-btn');
+    const cs = getComputedStyle(b, '::after'), cb = getComputedStyle(b);
+    const r = b.getBoundingClientRect();
+    const w = parseFloat(cs.width), h = parseFloat(cs.height);
+    const t = cs.transform;
+    let e = 0, f = 0;
+    if (t && t.startsWith('matrix')) { const p = t.slice(7, -1).split(',').map(Number); e = p[4]; f = p[5]; }
+    return { 圈直径: r.width,
+             勾中心偏移: [+(parseFloat(cb.borderLeftWidth) + parseFloat(cs.left) + w / 2 + e - r.width / 2).toFixed(2),
+                       +(parseFloat(cb.borderTopWidth) + parseFloat(cs.top) + h / 2 + f - r.height / 2).toFixed(2)] };
+  `);
+  ok(Math.abs(tickBox.勾中心偏移[0]) <= 0.6 && Math.abs(tickBox.勾中心偏移[1]) <= 0.6,
+    '窄屏 ' + tickBox.圈直径 + 'px 勾选圈里，勾盒中心正落在圆心（原来偏左上 2×3px），实际 '
+    + JSON.stringify(tickBox.勾中心偏移));
   /* 勾一个 → 面板**不收**（多选该让人连着勾），但勾选态要变。
      找**没勾**的那个勾上 —— 勾唯一那个会被「至少留一个」挡住（见 store.toggleCal）。
      用**原生 .click()**，跟探针里点 CalRow 那条路一致 —— clickEl 补的那记
@@ -3180,6 +3264,56 @@ try {
   await reloadAs(false, '宽屏侧栏渲染出来了');
   ok(await evalJs(page, `return !!document.querySelector('.topbar .search-box input');`),
     '宽屏顶栏仍是常驻搜索框（只有窄屏才收成图标）');
+  /* 桌面顶栏三件事（用户 2026-10-09）：
+     ① 搜索框曾经比旁边那排控件高一大截（47.5px vs 30px）—— 它只有 `padding: 6px 11px`
+        没有 `height`，`<input>` 的默认行高把它撑开了。现在跟日程集下拉**同高 30px**。
+     ② 日程集下拉的文字曾经是「全部 1 个」（`calSummary()` 拼的），跟移动端抽屉里
+        那格「日程集 1/1」是两套说法 —— 现在两边同一套文字、同一个 Layers 图标。 */
+  const topbarH = await evalJs(page, `
+    const h = (sel) => { const el = document.querySelector(sel); return el ? +el.getBoundingClientRect().height.toFixed(1) : null; };
+    const t = document.querySelector('.cal-menu-btn');
+    return { 搜索框: h('.topbar .search-box'), 日程集键: h('.cal-menu-btn'),
+             日程集键文字: t ? t.textContent.replace(/\\s+/g, ' ').trim() : null,
+             日程集键有图标: t ? !!t.querySelector('svg') : null };
+  `);
+  ok(topbarH.搜索框 === topbarH.日程集键,
+    '桌面搜索框跟旁边的日程集下拉同高（原来 47.5 vs 30），实际 '
+    + topbarH.搜索框 + ' vs ' + topbarH.日程集键);
+  ok(topbarH.搜索框 === 30, '桌面搜索框是正常单行输入框的 30px，实际 ' + topbarH.搜索框);
+  ok(/^日程集 \d+\/\d+$/.test(topbarH.日程集键文字 || ''),
+    '桌面日程集下拉跟移动端同一套文字「日程集 x/y」，实际 ' + JSON.stringify(topbarH.日程集键文字));
+  ok(topbarH.日程集键有图标, '桌面日程集下拉也有图标（跟移动端那格同一个）');
+  /* 滚动条不许占位置（用户 2026-10-09：「全局的无论桌面还是移动，滚动条都不要占位置，
+     不要挤现有元素」）。判据是**把 overflow-y 临时藏起来，clientWidth 不变** ——
+     占位的滚动条会让 clientWidth 少掉十几 px。滚动容器一律挂 `.osb`（隐藏原生条）
+     + `useOverlayScrollbar`（画一条浮在上面的 `.osb-track`）。 */
+  const osb = await evalJs(page, `
+    const g = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      /* 先把它**逼成能滚**的（临时压到 80px 高）—— 不能滚的容器量不出挤不挤：
+         占位的滚动条只在真的出现时才吃掉宽度。 */
+      const h0 = el.style.height;
+      el.style.height = '80px';
+      const before = el.clientWidth;
+      const ov = getComputedStyle(el).overflowY;
+      el.style.overflowY = 'hidden';
+      const noBar = el.clientWidth;
+      el.style.overflowY = ov;
+      el.style.height = h0;
+      return { 能滚: el.scrollHeight > el.clientHeight, 占位: before - noBar,
+               原生条: getComputedStyle(el).scrollbarWidth,
+               挂载了浮条: !!el.querySelector(':scope > .osb-track'),
+               类: el.classList.contains('osb') };
+    };
+    return { 侧栏: g('.sidebar'), 内容: g('.content') };
+  `);
+  ok(osb.侧栏 && osb.侧栏.占位 === 0 && osb.侧栏.原生条 === 'none'
+    && osb.侧栏.类 && osb.侧栏.挂载了浮条,
+    '侧栏滚动条不占位（逼成能滚也不吃宽度）且挂上了浮层滚动条，实际 ' + JSON.stringify(osb.侧栏));
+  ok(osb.内容 && osb.内容.占位 === 0 && osb.内容.原生条 === 'none'
+    && osb.内容.类 && osb.内容.挂载了浮条,
+    '内容区滚动条不占位且挂上了浮层滚动条，实际 ' + JSON.stringify(osb.内容));
   // 日程页的日期长文本只该出现一次 —— 在顶栏标题里。副header 原来也写一遍，
   // 于是「10月7日」在相邻两行各出现一次；现在副header 只放控件。
   await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
@@ -3412,6 +3546,17 @@ try {
   `);
   ok(popBox.dxLeft >= -0.5 && popBox.dxRight <= 0.5,
     '浮层没有横向溢出侧栏（`.sidebar` 是 overflow-y: auto，横向跟着裁），实际 ' + JSON.stringify(popBox));
+  /* 而且**跟侧栏几乎等宽**，只留侧栏自己那点 padding（用户 2026-10-09：「桌面端的
+     更多可以改成向上弹出和侧栏几乎等宽的，只要留几个 px 的 padding 即可」）。
+     原来包含块是 `.side-more`（底栏那行两个 flex:1 里右边那个），浮层只有 99.5px、
+     缩在右下角。现在包含块是 `.sidebar-footer`（正好横跨侧栏内容宽），`left:0;
+     right:0` 就横跨整行 —— 左右各留 14px，且**两边一样多**。
+     别把 `.side-more` 改回 `position: relative`：它一变成定位元素，包含块就缩回
+     半个底栏宽，这条会当场变红。 */
+  const padL = popBox.dxLeft, padR = -popBox.dxRight;
+  ok(padL >= 8 && padR >= 8 && Math.abs(padL - padR) <= 2,
+    '浮层跟侧栏几乎等宽（左右各留十来个 px 的 padding，不再缩成半个底栏），实际 左 '
+    + padL + ' / 右 ' + padR);
   ok(popBox.dy <= 0.5, '浮层开在触发键**上方**，实际 ' + JSON.stringify(popBox));
   const tuckedKeys = () => evalJs(page,
     `return [...document.querySelectorAll('.side-more-pop .nav-item')].map((x) => x.dataset.nav);`);

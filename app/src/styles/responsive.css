@@ -213,8 +213,9 @@ body.sheet-open .tab:active { background: none; }
 
   /* 任务行：手机上加大点击面 */
   .task-row { padding: 13px 30px 13px 14px; }
+  /* 勾按**中心**对（见 lists.css 那段注释）—— 22px 的圈配 5×9 的勾 */
   .check-btn { width: 22px; height: 22px; flex: 0 0 22px; }
-  .check-btn.on::after { left: 7px; top: 3px; width: 5px; height: 9px; }
+  .check-btn.on::after { width: 5px; height: 9px; }
   .row-title { font-size: 14.5px; }
   .task-pill { padding: 8px 10px; font-size: 13px; }
   .allday-items .task-pill { padding: 9px 10px; }

@@ -28,6 +28,7 @@ import { REPEAT_UNITS, repeatLabel, repeatNext, toRepeat } from '../domain/repea
 import { liveProjects } from '../domain/model.ts';
 import { Chips, IconBtn, Input, Sheet, SheetPicker, Textarea, useConfirm } from './kit.tsx';
 import { useFocusTrap } from './hooks.ts';
+import { useOverlayScrollbar } from './scroll.ts';
 
 /** 没设结束时间时的默认时长。`duration` 是 `number`、不是可空的，
  *  所以「没有结束时间」只能表达成「一小时」—— 建任务那一版就是这个行为。 */
@@ -118,6 +119,8 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [repOpen, setRepOpen] = useState(false);
+  /* 浮条：抽屉正文会滚 —— 见 ui/scroll.ts */
+  const osbBody = useOverlayScrollbar<HTMLDivElement>();
   const lastId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -241,7 +244,7 @@ export function Drawer({ state, id, onClose, onPatch, onToggle, onDelete, onDism
           </IconBtn>
         </div>
 
-        <div className="drawer-body">
+        <div className="drawer-body osb" ref={osbBody}>
           <ConflictBox
             list={state.conflicts.filter((c) => c.entityId === task.id)}
             onDismiss={(field) => onDismissConflict(task.id, field)}

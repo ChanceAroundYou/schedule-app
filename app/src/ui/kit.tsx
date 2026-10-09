@@ -225,7 +225,11 @@ export function Sheet({ open, onClose, title, children, footer, dismissable = tr
             </Btn>
           </div>
         )}
-        <div className="overflow-y-auto px-5 py-2 text-sm leading-relaxed">{children}</div>
+        {/* 底下留 16px + 安全区：原来只有 8px，最后一行贴死在面板底边上
+            （用户 2026-10-09：「日程集的选择部分移动端请给顶多的空白，现在太挤了，
+            都快贴死底部了」）。`env(safe-area-inset-bottom)` 在 iPhone 的
+            圆角屏上再把 home 指示条那 34px 让出来。 */}
+        <div className="osb overflow-y-auto px-5 pt-2 pb-[calc(16px+env(safe-area-inset-bottom))] text-sm leading-relaxed">{children}</div>
         {footer && <div className="flex justify-end gap-2 px-5 py-4">{footer}</div>}
       </div>
     </div>,

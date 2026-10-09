@@ -34,6 +34,7 @@ import { CalMenu, CalSheet } from './Calendars.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
 import { WhenPop } from './WhenPop.tsx';
 import { Input, Textarea, Btn, IconBtn } from './kit.tsx';
+import { useOverlayScrollbar } from './scroll.ts';
 
 /* ============================== 导航表 ============================== */
 
@@ -143,6 +144,9 @@ function Sidebar({ state, onNav }: {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRoot = useRef<HTMLDivElement>(null);
   const moreBtn = useRef<HTMLButtonElement>(null);
+  /* 浮条：侧栏自己会滚（导航 + 进度 + 底部两键），原生那条一滚就把整列
+     挤窄一截 —— 见 ui/scroll.ts。 */
+  const osbSide = useOverlayScrollbar<HTMLElement>();
   useOutsideClose(moreRoot, moreOpen, () => setMoreOpen(false));
   /* Esc 关掉并把焦点还给触发键 —— 同 CalMenu（不还的话焦点掉到 body 上，
      键盘用户得从页首重新 Tab 一遍）。 */
@@ -179,7 +183,7 @@ function Sidebar({ state, onNav }: {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar osb" ref={osbSide}>
       <div className="brand">
         <div className="brand-logo"><CalendarCheck size={24} /></div>
         <div className="brand-name">日程清单</div>
@@ -329,7 +333,10 @@ function SearchInput({ kw, setKw, autoFocus }: {
   );
 }
 
-/** 移动端搜索浮条：点击搜索图标后弹出 */
+/** 移动端搜索浮条：点击搜索图标后弹出。
+ *  **必须包在调用方那个 `position: relative` 的锚里**：`.search-pop` 是
+ *  `right: 100%`，相对锚（就包着放大镜那一个钮）向左伸出去 —— 见 shell.css。
+ *  锚不 relative 的话，浮条会跑到最近的定位祖先那里去，跑到顶栏外头。 */
 function SearchPop({ open, kw, setKw, onClose, triggerRef }: {
   open: boolean; kw: string; setKw: (v: string) => void; onClose: () => void;
   triggerRef?: React.RefObject<HTMLElement | null>;
@@ -473,15 +480,21 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
         {!narrow && <CalMenu state={state} />}
         {narrow ? (
           <>
-            <IconBtn
-              ref={searchBtn}
-              label="搜索任务"
-              className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
-              aria-expanded={searchOpen}
-              onClick={() => setSearchOpen(!searchOpen)}
-            >
-              <Search size={16} />
-            </IconBtn>
+            {/* 这个 span 是 `.search-pop` 的**定位锚**：`position: relative` +
+                宽度就一个钮（44px）。浮条 `right: 100%` 从这里向左伸出去，
+                所以框长在顶栏里、不往下掉 —— 见 shell.css 的 `.search-pop` 注释。
+                **别把它合并进 `.topbar-right`**（那会变成相对整行定位）。 */}
+            <span className="search-anchor">
+              <IconBtn
+                ref={searchBtn}
+                label="搜索任务"
+                className={'icon-btn search-toggle' + (searchOpen || kw ? ' on' : '')}
+                aria-expanded={searchOpen}
+                onClick={() => setSearchOpen(!searchOpen)}
+              >
+                <Search size={16} />
+              </IconBtn>
+            </span>
             <SearchPop
               open={searchOpen}
               kw={kw}
@@ -686,6 +699,7 @@ export function QuickAdd({ state, onSubmit }: {
   const justClosed = useRef(false);
   const clockBtn = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const osbFast = useOverlayScrollbar<HTMLTextAreaElement>(inputRef);
   const barRef = useRef<HTMLDivElement>(null);
 
   // 需求 3：关闭横条时先播放收缩动画，动画结束后才真正 setExpanded(false)。
@@ -866,7 +880,7 @@ export function QuickAdd({ state, onSubmit }: {
                 要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
                 这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
             <Textarea
-              ref={inputRef}
+              ref={osbFast}
               rows={2}
               value={text}
               placeholder={QUICK_PLACEHOLDER}
@@ -977,9 +991,11 @@ export function Shell({
   more: boolean; setMore: (v: boolean) => void;
   topbar: ReactNode;
   quickAdd: ReactNode;
-  children: ReactNode;
-}) {
+  children: ReactNode;}) {
   const narrow = useIsNarrow();
+  /* 主区会滚（长列表 / 周视图），原生那条一滚就把内容挤窄 —— 换浮条。
+     `contentRef` 是从 App 传下来的，两个 ref 得一起写。 */
+  const osbContent = useOverlayScrollbar<HTMLDivElement>(contentRef);
 
   /** 日程集多选弹窗（移动端「更多」里那格点出来的）。开关留在这一层：
    *  它和「更多」抽屉**互斥**（开它就关抽屉，见 MoreSheet 里那格），
@@ -1004,8 +1020,9 @@ export function Shell({
         {/* 日视图锁单屏：内容区不跟着滚（见 styles/calendar.css 的 .content-day）。
             判据是「日程页 + 日视图」—— 其它页面（列表 / 周 / 月）照常滚。 */}
         <div
-          className={'content' + (state.ui.nav === 'calendar' && state.ui.view === 'day' ? ' content-day' : '')}
-          id="content" ref={contentRef}
+          className={'content osb' + (state.ui.nav === 'calendar' && state.ui.view === 'day' ? ' content-day' : '')}
+          id="content"
+          ref={osbContent}
         >{children}</div>
         {quickAdd}
       </main>

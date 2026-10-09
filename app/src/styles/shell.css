@@ -74,7 +74,9 @@
 .sp-foot { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
 .sp-over { color: var(--danger); }
 
-.sidebar-footer { padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+/* `position: relative` 是给 `.side-more-pop` 当包含块用的（浮层要横跨整行，
+   包含块必须是这一行，不能是「更多」那个钮）—— 见 `.side-more-pop` 的注释。 */
+.sidebar-footer { position: relative; padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .ghost-btn {
   flex: 1; padding: 7px; border: var(--border-w) solid var(--input); background: none;
   color: var(--text-2); border-radius: var(--r-md); font-size: 12px;
@@ -92,10 +94,19 @@
    往**上**开（`bottom: calc(100% + 8px)`）—— 它挂在侧栏最底下，往下开会顶出视口。
    视觉与定位跟顶栏那个 `.cal-menu-pop` 同一套（同一档 z-index、同一个动画、
    同一份描边与影子），免得两个下拉长得不像一家人。 */
-.side-more { position: relative; flex: 1; display: flex; }
+/* **不要加 `position`** —— 它一变成定位元素，`.side-more-pop` 的包含块就缩成
+   它自己（只有半个底栏宽），浮层跟着变窄。包含块是 `.sidebar-footer`。 */
+.side-more { flex: 1; display: flex; }
+/* 「更多」向上弹，宽度跟侧栏几乎等宽 —— 只留 14px 的左右 padding
+   （用户 2026-10-09：「桌面端的更多可以改成向上弹出和侧栏几乎等宽的，只要留几个 px 的 padding 即可」）。
+   包含块是 `.sidebar-footer`（底栏那一行，宽 = 侧栏内容宽 240-14×2 = 211），
+   所以 `left:0; right:0` 正好横跨整行、左右各留 14px。
+   **别写 `width: 211px` 这类死值**：侧栏宽度一改就歪。
+   前提是 `.side-more` **不是**定位元素（它一 relative，包含块就缩成它自己、
+   浮层跟着变窄）—— 那条规则里千万别再加回 position。 */
 .side-more-pop {
-  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
-  width: max-content; min-width: 100%; max-width: min(280px, calc(100vw - 44px));
+  position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; z-index: 60;
+  width: auto;
   padding: 6px; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
@@ -224,7 +235,11 @@
 
 .search-box {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border: var(--border-w) solid var(--input);
+  /* 高度 30px —— 和旁边的日程集键、视图切换键**一模一样**
+     （用户 2026-10-09：「桌面端的搜索框太高了，请变成正常单行输入框大小，
+     且和旁边的日程集下拉栏一致」）。原来 padding 6px 上下 + 13px 字
+     = 47.5px，比旁边那根高出一截。 */
+  height: 30px; padding: 0 11px; border: var(--border-w) solid var(--input);
   border-radius: var(--r-md); background: var(--panel-2);
   transition: border-color .14s, background .14s;
 }
@@ -246,6 +261,11 @@
 .view-switch button:hover { background: var(--panel-3); }
 .view-switch button.on { background: var(--primary); color: var(--on-primary); }
 
+/* 移动端搜索的**定位锚**：只包着放大镜那一个钮。`.search-pop` 是 `right: 100%`，
+   相对它向左伸出去（见 Shell.tsx 里那段注释）。宽度必须就一个钮 —— 所以是
+   `inline-flex` 而不是 `flex`（后者会撑满整行）。 */
+.search-anchor { position: relative; display: inline-flex; }
+
 /* ================= 日程副header ================= */
 
 .cal-subhead {
@@ -258,12 +278,24 @@
 
 /* ================= 搜索浮条（移动端） ================= */
 
+/* 移动端搜索：**在顶栏里原地向左伸出去**，不是掉到顶栏下面
+   （用户 2026-10-09：「移动端的搜索请在原地向左伸出去一个搜索框，现在变成了在 header 下面，
+   需要在 header 内部」）。
+   包含块是 Shell.tsx 里那个 `position: relative` 的锚（就包着放大镜那一个钮），
+   所以 `right: 100%` 把浮条右沿钉在锚的左沿上 —— 放大镜原地不动，框从它左边长出来。
+   `top: 50% + translateY(-50%)` 让它和放大镜**同高**，看着就是「钮变成了框」。
+   宽度按视口收：`100vw - 116px` = 左边距 22 + 钮 44 + 间距 12 + 右边距 22 + 余量。 */
 .search-toggle.on { color: var(--primary); border-color: var(--primary); }
 .search-pop {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-  width: min(300px, calc(100vw - 20px));
+  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+  margin-right: 12px; z-index: 60;
+  width: min(260px, calc(100vw - 116px));
+  /* 上下 8px：浮条总高 = 30（搜索框）+ 16（padding）+ 2（上下各 1px 描边）= 48，
+     **正好等于顶栏的高度**，于是它垂直居中时上下都不出顶栏。
+     写 9px 就是 50px，比顶栏高 2px，上下各探出去 1px。 */
+  padding: 8px 10px;
   background: var(--panel); border: var(--border-w) solid var(--border);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 10px;
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
 }
 .search-pop .search-box { width: 100%; }
 .search-pop .search-box input { width: 100%; }

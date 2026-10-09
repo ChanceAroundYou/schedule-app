@@ -25,6 +25,7 @@ import { AiHistory } from './AiHistory.tsx';
 import { AiMemory } from './AiMemory.tsx';
 import { Btn, IconBtn, Input, Textarea, toast } from './kit.tsx';
 import { useIsNarrow } from './hooks.ts';
+import { useOverlayScrollbar } from './scroll.ts';
 import {
   applyEvent, actionText, buildContext, newLiveAssistant, proposalText,
 } from '../domain/ai.ts';
@@ -99,6 +100,10 @@ export function AiPanel({ state, onConfirmed }: {
 
   const ctl = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  /* 浮条：消息列表会越聊越长 —— 见 ui/scroll.ts */
+  const osbChat = useOverlayScrollbar<HTMLDivElement>(scroller);
+  const sessionsList = useRef<HTMLDivElement>(null);
+  const osbSessions = useOverlayScrollbar<HTMLDivElement>(sessionsList);
   const seq = useRef(0);
   const narrow = useIsNarrow();
 
@@ -250,7 +255,7 @@ export function AiPanel({ state, onConfirmed }: {
                 对话 ({sessions.length})
               </Btn>
               {showSessions && (
-                <div className="ai-sessions-list">
+                <div className="ai-sessions-list osb" ref={osbSessions}>
                   {sessions.map((s) => (
                     <button
                       key={s.id}
@@ -310,7 +315,7 @@ export function AiPanel({ state, onConfirmed }: {
         </div>
       )}
 
-      <div className="ai-scroll" ref={scroller}>
+      <div className="ai-scroll osb" ref={osbChat}>
         {loading && (
           <div className="ai-hint"><Loader2 size={14} className="animate-spin" /> 正在读取对话…</div>
         )}

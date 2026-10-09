@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Layers } from 'lucide-react';
 import type { Cal, Invite, LocalState } from '../domain/types.ts';
 import { ROLE_HINT, ROLE_LABEL } from '../domain/types.ts';
 import { api, ApiError } from '../data/api.ts';
@@ -76,15 +76,6 @@ function CalRow({ c, on }: { c: Cal; on: boolean }) {
   );
 }
 
-/** 触发按钮上那行字。只写「全家」看不出还有别的集也勾着 —— 「勾了哪几个」
- *  就是这个按钮唯一要传达的事，所以全勾时报总数、部分勾时报头一个加「等 N 个」。 */
-function calSummary(visible: Cal[], shown: string[]): string {
-  const on = visible.filter((c) => shown.includes(c.id));
-  if (on.length === visible.length) return `全部 ${visible.length} 个`;
-  if (on.length === 1) return on[0].name;
-  return `${on[0].name} 等 ${on.length} 个`;
-}
-
 /**
  * 桌面端：顶栏里的**下拉多选框**。
  *
@@ -93,6 +84,10 @@ function calSummary(visible: Cal[], shown: string[]): string {
  * 逾期 / 待办箱本来就跨集，放在顶栏哪儿都看得见。
  *
  * 移动端没有这个按钮：那边走「更多」抽屉里的入口 + 弹窗面板（CalSheet）。
+ *
+ * 触发键和移动端那格**长得一样**（用户 2026-10-09：「桌面端的显示也很古怪，
+ * 请使用相同的图标和"日程集 x/y"文本」）：都是 Layers 图标 + 「日程集 x/y」。
+ * x = 勾着的，y = 全部。箭头像个下拉留着 —— 它确实是下拉。
  */
 export function CalMenu({ state }: { state: LocalState }) {
   const [open, setOpen] = useState(false);
@@ -125,7 +120,8 @@ export function CalMenu({ state }: { state: LocalState }) {
         aria-label="显示的日程集"
         onClick={() => setOpen(!open)}
       >
-        <span className="min-w-0 max-w-[10rem] truncate">{calSummary(visible, shown)}</span>
+        <Layers size={13} className="shrink-0 opacity-70" />
+        <span className="min-w-0 max-w-[10rem] truncate">日程集 {shown.length}/{visible.length}</span>
         <ChevronDown size={13} className="shrink-0 opacity-60" />
       </button>
       {open && (

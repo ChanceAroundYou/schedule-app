@@ -711,8 +711,15 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
 
   return (
     <div className="mx-auto w-full max-w-[620px] pb-6">
-      {/* tab 栏作为唯一 header */}
-      <header className="mb-4">
+      {/* 左上角写「设置」当页名（用户 2026-10-09：「设置页的 header 的左上角没有设置字样」）。
+          **写在页面里、不写在顶栏** —— 顶栏那一栏不写「设置」，是因为两行都写
+          「设置」看着像两个 header（用户报过）。所以页名归页名，顶栏留空。 */}
+      <header className="mb-3">
+        <h1 className="text-[19px] font-semibold leading-none tracking-[-.2px]">设置</h1>
+      </header>
+
+      {/* tab 栏在页名下面 —— 它不是这一页的 header，是页内的分段开关 */}
+      <div className="mb-4">
         <div className="flex gap-1 rounded-[var(--r-lg)] border-[length:var(--border-w)] border-[var(--border)] bg-[var(--panel-3)] p-1">
           {TABS.map((t) => (
             <button
@@ -732,7 +739,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
             </button>
           ))}
         </div>
-      </header>
+      </div>
 
       {tab === 'appearance' && (
         <>
