@@ -3230,8 +3230,14 @@ try {
     return true;
   `);
   await new Promise((r) => setTimeout(r, 60));
-  ok(await evalJs(page, `return ${navRow('trash')}.className.includes('nav-chip-drag');`),
-    '拖起来了（被拖的那一格留在原位当出处锚点）');
+  /* 占位虚影画在**落点**，不是原点：判据是 dnd-kit 的 `isOver`（指针正压着的
+     那一格 = 松手时会被占掉的槽位），所以 trash 自己身上**没有**虚线类，
+     today 那一格才有。判的是类名在谁身上，不是「有没有虚线」——
+     原先反了（虚线钉在被拖项身上、锁在原位），用户报「不会跟着走」。 */
+  ok(await evalJs(page, `return !${navRow('trash')}.className.includes('drag-land');`),
+    '被拖的那一格自己不是占位虚影（虚影跟着落点走，不锁在原位）');
+  ok(await evalJs(page, `return ${navRow('today')}.className.includes('drag-land');`),
+    '落点那一格是占位虚影（isOver = today）');
   /* 让位动画：被拖的那一格**不给** transition（它跟手指走，迟滞半拍就是
      「不跟手」），让位的那几格**要给**（不给就是闪现）。读的是内联样式的
      计算结果 —— `useSortable` 没在拖的时候返回 undefined，压根没有这个属性。 */
@@ -3240,10 +3246,11 @@ try {
   ok(await evalJs(page, `return !!${navRow('today')}.style.transition;`),
     '让位的那几格有 transition（滑过去，不是闪现），实际 '
       + JSON.stringify(await evalJs(page, `return ${navRow('today')}.style.transition;`)));
-  /* 占位虚影：原位那一格虚线化、压暗，跟手指走的是浮层里那份。判据看
-     **算出来的样式**，不是看类名 —— 类名改了样式没跟上，探针照样绿。 */
+  /* 占位虚影：**落点**那一格虚线化、压暗（内容透明，只剩一个空框），
+     跟手指走的是浮层里那份实体卡。判据看**算出来的样式**，不是看类名 ——
+     类名改了样式没跟上，探针照样绿。 */
   const navGhost = await evalJs(page, `
-    const li = ${navRow('trash')};
+    const li = ${navRow('today')};
     const cs = getComputedStyle(li);
     const ov = document.querySelector('.drag-overlay .nav-chip');
     return {
@@ -3254,9 +3261,12 @@ try {
     };
   `);
   ok(/dashed/.test(navGhost.outline) && navGhost.opacity < 0.6,
-    '原位那一格是虚线占位虚影（压暗 + 虚线描边），实际 ' + JSON.stringify(navGhost));
+    '落点那一格是虚线占位虚影（虚线描边 + 内容透明），实际 ' + JSON.stringify(navGhost));
   ok(!!navGhost.shadow && navGhost.overlayText,
-    '跟着手指走的是浮层里那一份，实际 ' + JSON.stringify(navGhost.overlayText));
+    '跟着手指走的是浮层里那份实体卡，实际 ' + JSON.stringify(navGhost.overlayText));
+  ok(/rgba\(38, 32, 24, 0\.16\)|rgba\(38,32,24,0\.16\)/.test(navGhost.shadow),
+    '浮层那份的影子是统一的中性淡影 --drag-shadow（不再是主色绿光），实际 '
+      + JSON.stringify(navGhost.shadow));
   await evalJs(page, `
     const el = document.elementFromPoint(${navDst.x}, ${navDst.y});
     el.dispatchEvent(new MouseEvent('mousemove', {

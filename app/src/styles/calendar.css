@@ -106,8 +106,10 @@
   padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md); transform: translateY(3px);
 }
-/* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点 */
-.tl-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
+/* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点。
+   影子走全站统一的 `--drag-shadow`（中性淡影），不再是主色的绿光 ——
+   原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。 */
+.tl-event.dragging, .wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
 /* ================= 周视图（时间网格） ================= */
 
@@ -225,7 +227,7 @@
 }
 .wk-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
 .wk-event.done { opacity: .5; }
-.wk-event.dragging { opacity: 1; box-shadow: 0 10px 24px rgb(from var(--primary) r g b / .32); z-index: 9; }
+.wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 .wk-time { font-size: 9.5px; color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.2; }
 .wk-title { font-size: 11px; font-weight: 550; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

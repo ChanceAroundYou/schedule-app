@@ -73,6 +73,12 @@
   --shadow-up: 0 -8px 30px rgba(16, 24, 40, .18);
   --shadow-up-sm: 0 -2px 12px rgba(16, 24, 40, .06);
   --shadow-sticky: 0 4px 10px -8px rgba(0, 0, 0, .35);
+
+  /* 拖拽抬起的那一道影子，**全站只有这一条**。
+     刻意用中性暖黑而不是主色：原先三处各写一遍 `rgb(from var(--primary) r g b / .26~.32)`,
+     浅色主题下就是一片绿光，用户报「日视图拖动的光影过分吓人」。
+     中性色在六个风格轴上都不用改，深浅色两档也自动跟着走。 */
+  --drag-shadow: 0 8px 20px rgba(38, 32, 24, .16);
   --wide: 920px;
 }
 
@@ -100,6 +106,8 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .35);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, .4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, .55);
+  /* 深色档跟着压暗，但仍然看得见「抬起来」—— 纯黑影子在深色背景上会消失 */
+  --drag-shadow: 0 8px 20px rgba(0, 0, 0, .42);
   --on-primary: #14120f;
 }
 

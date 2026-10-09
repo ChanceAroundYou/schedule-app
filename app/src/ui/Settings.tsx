@@ -178,8 +178,10 @@ function NavChipBody({ id, on }: { id: string; on: boolean }) {
  * 「只取位移不要缩放」「被拖项不给 transition、其余让位项给 transition」
  * 这两条规则都在那个 hook 里，这里再抄一遍就一定会和它漂。
  *
- * **拖起来时这一格留在原位**，由 `.nav-chip-drag` 画成虚线虚影当出处锚点，
- * 跟着手指走的是 `SortableZone` 浮层里那份 —— 和任务列表那套一样。
+ * **占位虚影画在落点**（`.drag-land`，判据是 dnd-kit 的 `isOver` = 指针正压着的
+ * 那一格），跟着手指走的是 `SortableZone` 浮层里那份实体卡。原先反过来了 ——
+ * 虚线画在**被拖项**身上、钉在它出发的那一格（`.nav-chip-drag`），于是手指走了、
+ * 虚影远远锁在角落不动，用户报「虚影锁定在原位，不会跟着走」。
  *
  * `data-nav-row` / `data-tab` 是探针认的锚点，别改。`attributes`（带
  * `role="button"`）也照旧挂着 —— 键盘那条路靠它。
@@ -190,7 +192,7 @@ function SortableNavChip({ id, on, narrow, onToggle }: {
   narrow: boolean;
   onToggle: (k: string) => void;
 }) {
-  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id);
+  const { ref, style, isDragging, isOver, attributes, listeners } = useSortableItem(id);
 
   return (
     <li
@@ -202,7 +204,10 @@ function SortableNavChip({ id, on, narrow, onToggle }: {
       data-tab={narrow ? id : undefined}
       onClick={() => onToggle(id)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(id); } }}
-      className={cx('nav-chip cursor-grab', CHIP_CX, chipTone(on), isDragging && 'nav-chip-drag')}
+      /* 被拖的那一格**整个藏起来**（浮层里那份实体卡跟着手指走），原位不留
+         淡影 —— 留了就是「虚影锁定在原位」。占位虚影由 `isOver` 那一格画。 */
+      className={cx('nav-chip cursor-grab', CHIP_CX, chipTone(on),
+        isDragging && 'opacity-0', isOver && 'drag-land')}
     >
       <NavChipBody id={id} on={on} />
     </li>

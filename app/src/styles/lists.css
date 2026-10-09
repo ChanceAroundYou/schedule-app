@@ -257,48 +257,49 @@
 .task-row, .habit-row, .task-pill {
   transition: transform .18s cubic-bezier(.22, .61, .36, 1);
 }
-/* 正在被拖的那条：压暗 + 轻微缩放，像被「拿起来了」。
-   .drag-muted 是让位开始后追加的 —— 它马上要让位，别再抢注意力。
-   **这两条现在由 DragOverlay 里的那份副本承担**（见 dndkit.tsx 的
-   SortableList）：原位的元素保持不动当「出处」锚点，跟着指针走的是浮层，
-   所以浮层里那份才需要「拿起来了」的观感。 */
+/* 正在被拖的那条（浮层里跟着指针走的一份）：抬起感 —— 统一的淡影 + 抓手型。
+   影子全站只有一条 `--drag-shadow`（见 tokens.css），不再是主色的绿光。 */
+.task-row.dragging, .task-row.drag-land, .task-pill.dragging, .habit-row.dragging,
+.drag-overlay .task-row, .drag-overlay .task-pill, .drag-overlay .habit-row {
+  cursor: grabbing;
+  box-shadow: var(--drag-shadow);
+  z-index: 8;
+}
+/* 被拖的那份是不透明实体卡（`opacity: .96` 会让底下的刻度线透出来，
+   看着像没对齐）；占位虚影才压暗。 */
 .task-row.dragging, .task-pill.dragging, .habit-row.dragging,
 .drag-overlay .task-row, .drag-overlay .task-pill, .drag-overlay .habit-row {
-  opacity: .96;
-  cursor: grabbing;
-  box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
-  z-index: 8;
+  opacity: 1;
   position: relative;
 }
-/* 正在被拖的那条：留在原位当「出处」锚点，压暗 + 虚线化。
-   它不参与让位位移 —— 位置不动，用户才看得出「我从这里出发」。
-   之前让它也滑到目标格，结果它和洞叠在同一处：两份占位重叠、
-   原位又空出来，比不做让位更乱。 */
-.task-row.drag-muted, .task-pill.drag-muted, .habit-row.drag-muted {
-  opacity: .4;
+/* **占位虚影画在落点，不是原点。** 判据是 dnd-kit 的 `isOver`（这一格正是
+   指针当前压着的那格，也就是松手时会被占掉的槽位），不是「被拖项自己」。
+   所以它**不位移**（`transform: none`），其余项滑开让位，空出来的就是它。
+   原先反过来 —— 虚线画在被拖项身上、钉在它出发的那一格 —— 于是用户拖着
+   卡片走，虚影远远锁在角落不动，报「虚影锁定在原位，不会跟着走」。 */
+.task-row.drag-land, .task-pill.drag-land, .habit-row.drag-land {
   transform: none !important;
-  box-shadow: none;
+  opacity: 0;
   outline: 1.5px dashed var(--input);
   outline-offset: -2px;
   border-radius: var(--r-lg);
+  pointer-events: none;
 }
-/* 设置页「功能区」那一格，同一套做法（同上）。
-   跟着手指走的是 SortableZone 浮层里那份，这一条管的是**留在原位**的那一格：
-   压暗 + 虚线描边当出处锚点。`transform: none !important` 是必须的 ——
-   SortableContext 照样会给被拖项算 transform，原位锚点跟着挪的话就变成
-   「虚影跟着走、原来的位置空出来」，比不做让位更乱。 */
-.nav-chip.nav-chip-drag {
-  opacity: .4;
+/* 设置页「功能区」那一格，同一套做法（同上）：占位虚影画在**落点**那一格。
+   跟着手指走的是 SortableZone 浮层里那份实体卡。 */
+.nav-chip.drag-land {
   transform: none !important;
+  opacity: 0;
   outline: 1.5px dashed var(--input);
   outline-offset: -2px;
-  cursor: grabbing;
+  pointer-events: none;
 }
-/* 浮层里跟着手指走的那一份：抬起感（投影 + 抓手型）。 */
+/* 浮层里跟着手指走的那一份：实体卡 + 统一的淡影。 */
 .drag-overlay .nav-chip {
   cursor: grabbing;
-  box-shadow: 0 10px 22px rgb(from var(--primary) r g b / .26);
+  box-shadow: var(--drag-shadow);
   z-index: 8;
+  position: relative;
 }
 /* 拖动中禁止文字选中，否则拖过的地方会留下一片选区高亮 */
 body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }

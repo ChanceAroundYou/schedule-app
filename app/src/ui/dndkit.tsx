@@ -47,12 +47,13 @@ import {
   SortableContext, useSortable, rectSortingStrategy,
   sortableKeyboardCoordinates, arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
 import { setDragging } from './dragState.ts';
 import * as D from '../domain/date.ts';
 import * as store from '../data/store.ts';
 import { DAY_H, FULL_DAY, spanOf, yToMin, type DayWindow } from '../domain/layout.ts';
 import { toast } from './kit.tsx';
+import { cx } from './cx.ts';
 import { LONG_PRESS_MS } from './hooks.ts';
 
 /* ============================ 传感器 ============================ */
@@ -156,16 +157,19 @@ export function DndProvider({ children, onDragOver, onDragEnd, onDragCancel }: D
  * 时间轴方块用 useDraggableEvent（不是排序，是改时间）。
  */
 export function useSortableItem(id: string) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id });
 
   const style: React.CSSProperties = {
     /* **只取位移，丢掉缩放。** `rectSortingStrategy` 会返回
        `scaleX/scaleY = 新位置尺寸 / 旧位置尺寸`，`CSS.Transform.toString`
        把它们一起烤进 transform —— 卡片落到高度不同的行上就被压扁 / 拉长。
        卡片必须保持刚提起时的形状，所以走 `CSS.Translate`。 */
-    transform: CSS.Translate.toString(transform),
+    /* 被拖的那一项**位移整个丢掉**：跟着手指走的是 DragOverlay 里那份实体卡，
+       这一项再按 dnd-kit 的 transform 挪到落点，就会和浮层里那份**叠在同一处**
+       （两张卡重叠）。它自己留在原位、由调用方藏起来（`opacity-0`）。 */
+    transform: isDragging ? 'none' : CSS.Translate.toString(transform),
     /* **被拖的那一项永远不给 transition。** 它在跟手指走，transition 会让它
-       迟滞半拍，用户看到的就是「完全不跟手」。其余项（让位的那几项）不在跟
+       迟滞半拍，用户看到的就是「完全不跟手」。其余项（让位的那几格）不在跟
        手指走，动画正是要的效果 —— 这是「丝滑」的来源，缺了就变成闪现。
        判据是 `isDragging` 而不是让调用方传参：每一项自己就知道自己是不是被
        拖的那个，让调用点猜就等于给回归留个口子（设置页原来是「全不给」，让位
@@ -173,7 +177,7 @@ export function useSortableItem(id: string) {
     transition: isDragging ? undefined : transition,
   };
 
-  return { ref: setNodeRef, style, isDragging, attributes, listeners };
+  return { ref: setNodeRef, style, isDragging, isOver, attributes, listeners };
 }
 
 /* ============================ 排序区外壳 ============================ */
@@ -271,7 +275,7 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
 
 /** SortableList 内部的单个可排序项 */
 function SortableItem({ id, children }: { id: string; children: ReactNode }) {
-  const { ref, style, isDragging, attributes, listeners } = useSortableItem(id);
+  const { ref, style, isDragging, isOver, attributes, listeners } = useSortableItem(id);
 
   return (
     <div
@@ -279,7 +283,10 @@ function SortableItem({ id, children }: { id: string; children: ReactNode }) {
       style={style}
       {...attributes}
       {...listeners}
-      className={'sortable-item' + (isDragging ? ' opacity-40' : '')}
+      /* 被拖的那一项**整个藏起来** —— 跟着手指走的是 DragOverlay 里那份实体卡，
+         原位再留一个淡的就是「虚影锁定在原位」。占位虚影改由 `isOver` 那一格
+         （`.drag-land`）画在落点上。 */
+      className={cx('sortable-item', isDragging && 'opacity-0', isOver && 'drag-land')}
     >
       {children}
     </div>
@@ -389,6 +396,30 @@ function clearTimeGuide(): void {
   if (guideLine) { guideLine.remove(); guideLine = null; }
 }
 
+/* ============================ 指针坐标 ============================ */
+
+/**
+ * 指针当前的横 / 纵坐标（视口坐标系）。
+ *
+ * **不能直接读 `activatorEvent.clientY`**：触摸拖拽的 activator 是 `TouchEvent`，
+ * 它**没有** `clientX` / `clientY` —— 那两个在 `touches[0]` 上。读出来是 `undefined`，
+ * 加上 `delta` 就是 `NaN`，一路传到 `minToTime()` 落库成字面量 `"NaN:NaN"`
+ * （症状：日视图里拖一次任务，时间就废一次，**只有触摸会中招**，鼠标看不出来）。
+ *
+ * dnd-kit 自己的 `getEventCoordinates()` 已经把触屏 / 鼠标 / 键盘三种 activator
+ * 归一了，直接用它，别再自己判类型。取不到就返回 `null`（键盘拖拽没有指针），
+ * 调用方据此放弃本次落点，而不是拿 `NaN` 去写库。
+ */
+function eventX(event: DragOverEvent | DragEndEvent): number | null {
+  const c = getEventCoordinates(event.activatorEvent);
+  return c ? c.x + event.delta.x : null;
+}
+
+function eventY(event: DragOverEvent | DragEndEvent): number | null {
+  const c = getEventCoordinates(event.activatorEvent);
+  return c ? c.y + event.delta.y : null;
+}
+
 /* ============================ 时间计算 ============================ */
 
 /** 纵坐标 → 分钟。`boxH` 由调用方量（见 zoneWindow 的注释） */
@@ -429,8 +460,8 @@ export function useTimelineDrag() {
     const zone = document.querySelector<HTMLElement>(`[data-zone-id="${overId}"]`);
     if (!zone) return;
 
-    const activatorEvent = event.activatorEvent as PointerEvent;
-    const currentY = activatorEvent.clientY + event.delta.y;
+    const currentY = eventY(event);
+    if (currentY === null) return;
 
     if (overId.startsWith('timeline:')) {
       const min = minFromY(zone, currentY);
@@ -448,9 +479,10 @@ export function useTimelineDrag() {
     clearTimeGuide();
 
     const activeId = String(event.active.id);
-    const activatorEvent = event.activatorEvent as PointerEvent;
-    const currentY = activatorEvent.clientY + event.delta.y;
-    const currentX = activatorEvent.clientX + event.delta.x;
+    const currentY = eventY(event);
+    const currentX = eventX(event);
+    /* 键盘拖拽没有指针坐标 —— 没有落点可算，保持原样，别拿 NaN 去写库 */
+    if (currentY === null || currentX === null) return;
 
     /* 拖出外框（over 为 null）时**不去原位**：只要指针还横在时间轴上方，
        就按纵向最近的位置落 —— 拖到下方之外就落到最下方，拖到上方之外就落到最上方。
