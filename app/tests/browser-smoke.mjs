@@ -335,14 +335,94 @@ try {
     return true;
   `);
 
-  console.log('\n三、进入主界面，侧栏有日程集');
+  /* -------- 日程集多选：顶栏那个下拉多选框 --------
+     桌面端日程集不在侧栏（侧栏顺序是用户自己排的），在顶栏右边那个下拉多选框里，
+     行是 `[data-cal-row]`。移动端走「更多」抽屉，探针跑的是桌面视口，用不到。
+
+     **每个助手都先确认菜单开着** —— 关着的时候 `.cal-menu-pop` 里一行都没有，
+     断言会假红在「找不到行」上，看着像多选坏了，其实是菜单没打开。 */
+  const openCalMenu = () => evalJs(page, `
+    const t = document.querySelector('[data-cal-menu]');
+    if (t.getAttribute('aria-expanded') !== 'true') t.click();
+    return true;
+  `);
+  const waitCalMenu = () => waitFor(page,
+    `!!document.querySelector('.cal-menu-pop [data-cal-row]')`, '日程集下拉打开', 4000);
+  const closeCalMenu = () => evalJs(page, `
+    const t = document.querySelector('[data-cal-menu]');
+    if (t.getAttribute('aria-expanded') === 'true') t.click();
+    return true;
+  `);
+  /** 在「菜单开着」的前提下做 fn。所有日程集助手都从这儿走。 */
+  const withCals = async (fn) => {
+    await openCalMenu();
+    await waitCalMenu();
+    return fn();
+  };
+  const shown = () => withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .filter((b) => b.getAttribute('aria-pressed') === 'true')
+      .map((b) => b.textContent.trim());
+  `));
+  const clickCal = (name) => withCals(() => evalJs(page, `
+    [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .find((b) => b.textContent.trim() === ${JSON.stringify(name)}).click();
+    return true;
+  `));
+  const waitShownCount = (n, label) => withCals(() => waitFor(page, `
+    [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .filter((b) => b.getAttribute('aria-pressed') === 'true').length === ${n} ? 1 : null
+  `, label, 5000));
+
+  /* 把某个集变成**归属**并保证它勾着。多选没有「单击切过去」这个手势了，
+     得点两步：先取消勾别的，再勾它（勾上顺带成为归属，见 store.toggleCal）。
+
+     **每次点击后重新查 DOM** —— 点完 React 就重渲染，同一批 NodeList 里的
+     下一个节点已经脱离文档，再点不会冒泡到容器根，事件委托收不到，
+     看起来就像「点了没反应」。
+
+     用完**把菜单关上**：开着的话它会盖住日程副header 右边那排控件
+     （日 / 周 / 月），后面某一节点到那儿就会点在下拉上。 */
+  const focusCal = async (id) => {
+    await withCals(() => evalJs(page, `
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const rows = () => [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')];
+      for (const other of rows()) {
+        if (other.dataset.calRow !== ${JSON.stringify(id)} && other.getAttribute('aria-pressed') === 'true') {
+          other.click();
+          await sleep(60);
+        }
+      }
+      const b = rows().find((x) => x.dataset.calRow === ${JSON.stringify(id)});
+      if (b && b.getAttribute('aria-pressed') !== 'true') { b.click(); await sleep(60); }
+      return true;
+    `));
+    await closeCalMenu();
+  };
+
+  console.log('\n三、进入主界面，顶栏有日程集多选');
   await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 12000);
   ok(await evalJs(page, `return !!document.querySelector('[data-nav="today"]');`), '侧栏有导航项');
-  // 默认日程集「我的日程」不再出现在侧栏列表里（见 Calendars.tsx 的 visible 过滤）
-  const calName = await evalJs(page, `return document.querySelector('[data-cal]')?.textContent.trim() || null;`);
-  ok(calName === null || calName !== '我的日程', '默认日程集不在侧栏列表里，实际是 ' + JSON.stringify(calName));
-  ok(await evalJs(page, `return !!document.querySelector('[data-cal-manage]');`), '有「管理当前日程集」入口');
-  ok(await evalJs(page, `return document.querySelectorAll('[data-cal-invites]').length === 0;`), '没有邀请时不显示邀请入口');
+  // 桌面端日程集是**顶栏那个下拉多选框**（侧栏那一列已经收掉了 —— 侧栏顺序
+  // 是用户自己排的，塞常驻控件进去会跟「底栏挑哪几项」抢位置）。默认日程集
+  // 「我的日程」也在列表里，老数据迁移过来时 ui.cals 从 ui.cal 起步，
+  // 所以进界面就该勾着一个。
+  const cals0 = await withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')].map((b) => ({
+      name: b.textContent.trim(), on: b.getAttribute('aria-pressed') === 'true' }));`));
+  ok(cals0.length === 1 && cals0[0].name === '我的日程',
+    '下拉里列出默认日程集，实际 ' + JSON.stringify(cals0));
+  ok(cals0.filter((c) => c.on).length === 1, '进界面时正好勾着一个（当前集）');
+  // 改名 / 成员 / 邀请 / 退出 / 删除全在设置页了，下拉里只留勾选
+  ok(await withCals(() => evalJs(page, `
+    return document.querySelectorAll('.cal-menu-pop [data-cal-manage], .cal-menu-pop [data-cal-invites], .cal-menu-pop [data-cal-new]').length === 0;`)),
+    '下拉里没有管理 / 邀请 / 新建入口（都在设置页）');
+  /* 下拉是**新的一层**（role="group" 里一排 aria-pressed 按钮），a11y() 要单独
+     缩范围扫它一遍 —— 扫全文档时它多半关着，里面一行都没有，等于没扫。 */
+  const menuA11y = await evalJs(page, `return { bad: ${a11y('.cal-menu-pop')} };`);
+  ok(menuA11y.bad.length === 0, '下拉里每个控件都有名字、勾选圈也是真按钮'
+    + (menuA11y.bad.length ? '：\n      ' + fmt(menuA11y.bad) : ''));
+  await closeCalMenu();
 
   console.log('\n四、三个视图都能切，不白屏');
   // 日视图没有外层包装类，靠 .timeline 认；周视图是 .week-view
@@ -366,42 +446,251 @@ try {
   ok(hab.bad.length === 0, '打卡页每个控件都有名字'
     + (hab.bad.length ? '：\n      ' + hab.bad.join('\n      ') : ''));
 
-  console.log('\n五、管理浮层：改名能落库');
-  await evalJs(page, `document.querySelector('[data-cal-manage]').click(); return true;`);
-  await waitFor(page, `!!document.querySelector('[data-cal-name]')`, '管理浮层打开');
+  console.log('\n五、设置页的日程集管理：改名能落库');
+  // 侧栏那个「管理当前日程集」浮层删了 —— 设置页本来就是同一套（MembersSection
+  // 都是抽出来共用的一份），所以这一段改走设置页。名字框 / 成员 / 危险区都还在，
+  // 只是入口换了，顺带证明「删掉重复入口之后功能没跟着没」。
+  await evalJs(page, `document.querySelector('[data-nav="settings"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-settings-tab]')`, '设置页打开', 8000);
+  await evalJs(page, `document.querySelector('[data-settings-tab="cals"]').click(); return true;`);
+  // 当前集默认就是展开的（CalsTab 的 openId 初始值就是 ui.cal）。
+  // **名字框此刻不在** —— 改名搬进标题行之后，平时是「一段字 + 铅笔」，
+  // 点铅笔才变出输入框（`InlineRename`）。所以这里等的是那一行，不是输入框。
+  await waitFor(page, `!!document.querySelector('[data-cal-item]')`, '日程集管理打开', 8000);
   // 成员是异步拉的，别在读之前就断言。
-  // **不能等「创建者」**：那是 ROLE_LABEL，发邀请那个 <select> 的 <option>
-  // 里就有一个，浮层一开就存在 —— 等它等于没等，成员还没到就开始读，
+  // **不能等「创建者」**：那是 ROLE_LABEL，发邀请那个角色选择器的 <option>
+  // 里就有一个，面板一开就存在 —— 等它等于没等，成员还没到就开始读，
   // 断言会随机失败（而且失败信息看着像「自己的名字没显示」，指向完全错的地方）。
   // 等成员**条数**变成非零才是真的加载完了。
   await waitFor(page,
-    `[...document.querySelectorAll('[role="dialog"]')].some((d) => /成员（[1-9]\\d*）/.test(d.innerText)) ? 1 : null`,
+    `/成员（[1-9]\\d*）/.test(document.getElementById('content').innerText) ? 1 : null`,
     '成员列表加载完');
-  const sheetText = await evalJs(page, `
-    return [...document.querySelectorAll('[role="dialog"]')].map((d) => d.innerText).join('\\n');
-  `);
-  ok(sheetText.includes('成员'), '浮层里有成员区');
+  const sheetText = await evalJs(page, `return document.getElementById('content').innerText;`);
+  ok(sheetText.includes('成员'), '面板里有成员区');
   ok(sheetText.includes('爸爸'), '成员列表里有自己');
   ok(sheetText.includes('创建者'), '自己的角色显示为「创建者」');
-  ok(sheetText.includes('邀请成员'), '创建者能看到发邀请的入口');
+  // 「邀请成员」不再是单独一个小节了 —— 邀请行就是成员列表的最后一行，
+  // 靠输入框的 placeholder 认（innerText 读不到 placeholder，要查 DOM）。
+  // placeholder 从「输入邀请的成员的用户名」缩到「输入用户名」，2026-10-09 又按
+  // 用户要求加回「邀请」三个字 → 「输入要邀请的用户名」：这一行是成员列表的
+  // 最后一行，前面几行都是「谁有权看」，孤零零一个「输入用户名」读不出是在
+  // 邀请谁，而 aria-label 眼睛看不见。9 个字，474px 的框放得下。
+  // 30px 高、右边还并着两个控件的框里根本显示不完（2026-10-08）。
+  ok(await evalJs(page, `return !!document.querySelector('#content input[placeholder="输入要邀请的用户名"]');`),
+    '创建者能看到发邀请的入口（列表最后一行）');
 
-  // 浮层里的控件也要有名字。**这一段是补漏**：「每个输入框都有名字」原来只扫了
-  // 抽屉（第十三节），管理浮层的名字框和角色选择器一个都没有可访问名字 ——
+  // 面板里的控件也要有名字。**这一段是补漏**：「每个输入框都有名字」原来只扫了
+  // 抽屉（第十三节），这个名字框和角色选择器一个都没有可访问名字 ——
   // 它们从来就没被任何断言看过。
   //
   // 放在这里而不是第十三节：成员是**联网拉的**，第十三节跑在断网之后，
   // 那时成员列表是空的、角色选择器根本不渲染，扫过去等于空过（候选数为 0）。
   //
-  // 数的是「这个浮层里真的有控件可查」，所以要把**选择器的触发按钮**也算进来：
+  // 数的是「这里真的有控件可查」，所以要把**选择器的触发按钮**也算进来：
   // 角色选择器是 `Dropdown`（`button[aria-haspopup="listbox"]`），不是原生
   // `<select>`、也不是 `aria-pressed` 的胶囊 —— 只认 `input/select/aria-pressed`
   // 的话，成员那几行换过组件之后就只剩名字框 + 邀请框两个，这条断言会假红
   // （控件的可访问名字其实都好好的，见下面那条）。
-  const sheetA11y = await evalJs(page, `return { bad: ${a11y('[role="dialog"]')},
-    cands: document.querySelectorAll('[role="dialog"] input, [role="dialog"] select, [role="dialog"] textarea, [role="dialog"] button[aria-haspopup]').length };`);
-  ok(sheetA11y.cands >= 3, '管理浮层里有 ' + sheetA11y.cands + ' 个表单控件可查（名字框 / 角色选择器）');
-  ok(sheetA11y.bad.length === 0, '管理浮层里每个控件都有名字'
+  const sheetA11y = await evalJs(page, `return { bad: ${a11y('#content')},
+    cands: document.querySelectorAll('#content input, #content select, #content textarea, #content button[aria-haspopup]').length };`);
+  ok(sheetA11y.cands >= 3, '日程集管理里有 ' + sheetA11y.cands + ' 个表单控件可查（成员权限 / 邀请用户名 / 邀请权限）');
+  ok(sheetA11y.bad.length === 0, '日程集管理里每个控件都有名字'
     + (sheetA11y.bad.length ? '：\n      ' + sheetA11y.bad.join('\n      ') : ''));
+
+  /* 行内改名：**点铅笔才出输入框**，而「切进编辑态时下面不许动」是这套组件
+     存在的全部理由 —— 固定行高 + 右侧固定宽的动作槽。这里把编辑态前后的
+     「成员区顶边」量一遍：差多少都算坏（哪怕只差 1px，用户看得见那一跳）。 */
+  /* 写成**表达式**（IIFE）而不是语句块 —— 它要能塞进 `return ${GEOM};` 这种
+     evalJs 的用法里。踩坑 29：evalJs 自己不补 return。 */
+  const GEOM = `(() => {
+    const body = document.querySelector('[data-cal-body]');
+    const bar = body.previousElementSibling;          // 标题行（固定 h-[40px]）
+    const first = body.firstElementChild;             // 成员区那一块
+    return { head: bar.getBoundingClientRect().height, first: first.getBoundingClientRect().top };
+  })()`;
+  const beforeEdit = await evalJs(page, `return ${GEOM}`);
+
+  /* 标题行的**三区**（用户 2026-10-08 定）：从左到右 名称区 · 操作区 · 箭头区。
+     这里量的是**几何**，不是类名 —— 类名写对不代表摆对，而「谁在最右」正是
+     这次要改的东西。顺带把字号也读回来：输入框该和显示态同一号字。 */
+  const zones = await evalJs(page, `return (() => {
+    const chev = document.querySelector('[data-cal-item]');
+    const row = chev.parentElement;                   // 标题行
+    const r = row.getBoundingClientRect();
+    const box = (el) => { const b = el.getBoundingClientRect(); return { l: b.left, r: b.right }; };
+    const nameEl = row.querySelector('span.truncate');
+    const star = row.querySelector('[aria-label*="默认日程集"]');
+    const del = row.querySelector('[aria-label="删除日程集"]');
+    /* 把 var(--primary) 解析成 rgb() 再比 —— 直接比字符串的话，浏览器给的是
+       rgb 形式，而令牌是 #27795a，永远不相等。 */
+    const rgb = (v) => { const d = document.createElement('div');
+      d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    return {
+      /* 标题行有 pr-2 这个类，所以「最右」要比**内容盒**的右边，不是边框盒 ——
+         不然箭头永远差着那 7px 内边距，断言会一直红。
+         （注释里不能写反引号：这一段住在模板字面量里，反引号会把模板当场截断） */
+      rowInnerL: r.left + parseFloat(getComputedStyle(row).paddingLeft),
+      rowInnerR: r.right - parseFloat(getComputedStyle(row).paddingRight),
+      /* 标题条**外沿**（圆角条的两端）—— 正文那几行现在对齐的是这个，
+         不是上面的内容盒。两个都留着：内容盒那条还压着「箭头在最右」。 */
+      rowOuterL: r.left,
+      rowOuterR: r.right,
+      nameR: nameEl ? box(nameEl).r : null,
+      nameFont: nameEl ? getComputedStyle(nameEl).fontSize : null,
+      /* 正文那一块。**不占横向留白**（2026-10-09 用户：「宽度再宽一点点，
+         让邀请输入框、新建按钮、header 对齐」）—— 成员行 / 邀请行的两条边与
+         标题条那个圆角条的**外沿**齐平。上一轮是对齐到标题条的**内容盒**
+         （pl-3 pr-2 = 10.5 / 7），结果每行都比标题条窄一截，看着就是没对齐。 */
+      body: (() => {
+        const b = document.querySelector('[data-cal-body]');
+        if (!b) return null;
+        const br = b.getBoundingClientRect();
+        const cs = getComputedStyle(b);
+        return {
+          l: br.left + parseFloat(cs.paddingLeft),
+          r: br.right - parseFloat(cs.paddingRight),
+          padL: cs.paddingLeft, padR: cs.paddingRight,
+        };
+      })(),
+      /* 成员行自己那一条（借角色下拉往上找到行容器）—— 用户报的是
+         「成员列比标题条微微宽出来一点」，所以量**这一条**的两条边。
+         必须从 parentElement 往上找：closest 会先看自己，而那个按钮自己
+         就带着 h-[30px]（Dropdown 的 sm 档），量出来是按钮不是行。 */
+      memberRow: (() => {
+        const el = document.querySelector('[aria-label$="的权限"]');
+        const row = el && el.parentElement
+          ? el.parentElement.closest('[class*="h-[30px]"]') : null;
+        return row ? box(row) : null;
+      })(),
+      star: star ? box(star) : null,
+      starColor: star ? getComputedStyle(star).color : null,
+      wantPrimary: rgb('var(--primary)'),
+      del: del ? box(del) : null,
+      delOff: del ? del.disabled : null,
+      delColor: del ? getComputedStyle(del).color : null,
+      /* 邀请行与纸飞机（用户 2026-10-09 点名的那两个）。行容器从输入框的
+         parentElement 往上找 —— closest 会先匹配自己，而输入框自己就带着
+         h-[30px]，直接 closest 量到的是输入框不是行（见踩坑 46）。 */
+      inviteRow: (() => {
+        const el = document.querySelector('[data-cal-body] input');
+        const row = el && el.parentElement
+          ? el.parentElement.closest('[class*="h-[30px]"]') : null;
+        return row ? box(row) : null;
+      })(),
+      inviteSend: box(document.querySelector('[aria-label="发出邀请"]')),
+      chev: box(chev),
+      chevTag: chev.tagName,
+      chevExp: chev.getAttribute('aria-expanded'),
+    };
+  })()`);
+  ok(Math.abs(zones.rowInnerR - zones.chev.r) < 1,
+    '箭头在标题行最右（行内容右 ' + zones.rowInnerR + ' / 箭头右 ' + zones.chev.r + '）');
+  ok(zones.chevTag === 'BUTTON' && zones.chevExp === 'true',
+    '最右那一格才是折叠开关（button + aria-expanded=true），实际 '
+    + zones.chevTag + '/' + zones.chevExp);
+  ok(!!zones.star && zones.nameR !== null && zones.star.l >= zones.nameR - 1,
+    '星标紧跟着名字（名字右 ' + zones.nameR + ' / 星标 ' + JSON.stringify(zones.star) + '）');
+  ok(!!zones.star && !!zones.del
+    && zones.del.l >= zones.star.r - 0.5 && zones.del.r <= zones.chev.l + 0.5,
+    '删除按钮在操作区里（星标右边、箭头左边），实际 ' + JSON.stringify(zones.del));
+  ok(zones.delOff === true,
+    '默认日程集的删除按钮是禁用的（删了它，下次新建的东西就没地方落）');
+  /* 星标是主色、删除钮是灰的。这条不是「好不好看」，是钉住**tone 走 prop 不走
+     叠 className**：叠 `text-[var(--primary)]` 会被基类的 `text-[var(--text-3)]`
+     按生成顺序压掉，两个都会变成灰的（实测过，见踩坑 17）。 */
+  ok(zones.starColor === zones.wantPrimary && zones.delColor !== zones.wantPrimary,
+    '默认集的星标是主色、删除钮是灰的（星 ' + zones.starColor + ' / 删 '
+    + zones.delColor + ' / 主色 ' + zones.wantPrimary + '）');
+  /* 成员行与标题条**外沿**齐平（左、右各一条）。上一轮是对齐到内容盒，
+     这一轮用户要「再宽一点点」—— 贴齐圆角条的外沿。两条边都得量：
+     只量右边会漏掉左边那个角色图标。 */
+  ok(!!zones.memberRow && !!zones.body
+    && Math.abs(zones.memberRow.l - zones.rowOuterL) < 0.6,
+    '成员行左边和标题条外沿齐平（成员行 ' + (zones.memberRow ? zones.memberRow.l : 'null')
+    + ' / 标题条 ' + zones.rowOuterL + ' / 正文留白 ' + (zones.body ? zones.body.padL : 'null') + '）');
+  ok(!!zones.memberRow && !!zones.body
+    && Math.abs(zones.memberRow.r - zones.rowOuterR) < 0.6,
+    '成员行右边和标题条外沿齐平、不超出（成员行 ' + (zones.memberRow ? zones.memberRow.r : 'null')
+    + ' / 标题条 ' + zones.rowOuterR + ' / 正文留白 ' + (zones.body ? zones.body.padR : 'null') + '）');
+  /* 邀请行（用户 2026-10-09 点名的就是这一条）：输入框左缘、纸飞机右缘
+     都要和标题条外沿齐平。量法同成员行 —— 从 parentElement 往上找行容器。 */
+  ok(!!zones.inviteRow && Math.abs(zones.inviteRow.l - zones.rowOuterL) < 0.6,
+    '邀请输入框左边和标题条外沿齐平（邀请行 ' + (zones.inviteRow ? zones.inviteRow.l : 'null')
+    + ' / 标题条 ' + zones.rowOuterL + '）');
+  ok(!!zones.inviteRow && Math.abs(zones.inviteRow.r - zones.rowOuterR) < 0.6,
+    '邀请行右边和标题条外沿齐平（邀请行 ' + (zones.inviteRow ? zones.inviteRow.r : 'null')
+    + ' / 标题条 ' + zones.rowOuterR + '）');
+  ok(!!zones.inviteSend && Math.abs(zones.inviteSend.r - zones.rowOuterR) < 0.6,
+    '纸飞机右缘和标题条外沿齐平（钮右 ' + (zones.inviteSend ? zones.inviteSend.r : 'null')
+    + ' / 标题条 ' + zones.rowOuterR + '）');
+
+  await evalJs(page, `document.querySelector('[aria-label="改名"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-cal-name]')`, '点铅笔后出现名字输入框', 4000);
+  const afterEdit = await evalJs(page, `return { ...${GEOM},
+    hasSave: !!document.querySelector('[data-cal-save]') };`);
+  ok(afterEdit.hasSave, '编辑态右边是确认按钮（不是「保存」文字按钮）');
+  /* ✓ 必须是主色、✕ 是灰的 —— 「两个灰按钮并排看不出哪个是哪个」。
+     两条踩过的坑都在这一条断言里：
+     ① 颜色不能靠外面叠 `className`（同特异度看生成顺序，实测 ✓ 拿到的是
+        和 ✕ 一样的 `--text-3`）。所以要**读计算值**，读类名是读不出来的。
+     ② React 复用了同一个 `<button>`（铅笔 → ✓），`transition` 150ms 会把颜色
+        从灰动画到主色，**立刻读会读到动画中途**。先等它落定再读。 */
+  const saveColor = await evalJs(page, `
+    return (async () => {
+      const rgb = (v) => { const d = document.createElement('div');
+        d.style.color = v; document.body.appendChild(d);
+        const c = getComputedStyle(d).color; d.remove(); return c; };
+      const want = rgb('var(--primary)');
+      const t0 = Date.now();
+      for (;;) {
+        const cf = document.querySelector('[data-cal-save]');
+        const cx = document.querySelector('#content [aria-label="取消"]');
+        const got = cf && getComputedStyle(cf).color;
+        const gotX = cx && getComputedStyle(cx).color;
+        if (got === want && gotX !== want) return { want, got, gotX, ms: Date.now() - t0 };
+        if (Date.now() - t0 > 2000) return { want, got, gotX, ms: -1 };
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    })()`);
+  ok(saveColor.got === saveColor.want && saveColor.gotX !== saveColor.want,
+    '编辑态「确认」是主色、「取消」是灰的（确认 ' + saveColor.got + ' / 取消 '
+    + saveColor.gotX + ' / 主色 ' + saveColor.want + '，等了 ' + saveColor.ms + 'ms）');
+  ok(Math.abs(afterEdit.head - beforeEdit.head) <= 0.6,
+    '切到编辑态时标题行高度不变（' + beforeEdit.head + ' → ' + afterEdit.head + '）');
+  ok(Math.abs(afterEdit.first - beforeEdit.first) <= 0.6,
+    '切到编辑态时下面的成员区一像素没动（' + beforeEdit.first + ' → ' + afterEdit.first + '）');
+
+  /* 星标与删除按钮都住在**会被换掉的那两格里**（星标在 `display` 里、删除在
+     InlineRename 的动作槽里）—— 编辑态整个换掉，所以它们**自己就消失了**，
+     外面不用再判一次 `editing`，也就不会出现「名字已经变成输入框了，星标还
+     杵在旁边」的错位。这两条钉住那个效果：谁把星标挪到 InlineRename 外面，
+     这里立刻红。 */
+  ok(await evalJs(page, `return !document.querySelector('#content [aria-label*="默认日程集"]');`),
+    '编辑态里星标隐藏（它跟着名字走，名字变成输入框它就让位）');
+  ok(await evalJs(page, `return !document.querySelector('#content [aria-label="删除日程集"]');`),
+    '编辑态里删除按钮隐藏（操作区那两格换成了 √ / ✕）');
+
+  /* 字号：输入框里的字必须和**非编辑态那一行字**一模一样。
+     原先 `styles/tokens.css` 里有一条**没有层**的 `input { font-size: 14px }`，
+     它把 `Input` / `Textarea` 上每一个 Tailwind `text-*` 都吃掉了 —— 输入框
+     永远比它旁边那行字大一号，改类名毫无反应（踩坑 17 的延伸）。这两条就是
+     那个坑的看门人：把 `font-size` 再挪回没有层的位置，它们当场变红。 */
+  const fonts = await evalJs(page, `return (() => {
+    const inp = document.querySelector('[data-cal-name]');
+    const inv = document.querySelector('#content input[placeholder="输入要邀请的用户名"]');
+    return {
+      input: inp ? getComputedStyle(inp).fontSize : null,
+      invite: inv ? getComputedStyle(inv).fontSize : null,
+      invitePh: inv ? inv.placeholder : null,
+    };
+  })()`);
+  ok(fonts.input === zones.nameFont,
+    '输入框的字号和非编辑态那一行字一样（' + zones.nameFont + ' vs ' + fonts.input + '）');
+  ok(fonts.invite === zones.nameFont,
+    '邀请框也同一号字（' + zones.nameFont + ' vs ' + fonts.invite + '）');
+  ok(!!fonts.invitePh && fonts.invitePh.length <= 9 && fonts.invitePh.includes('邀请'),
+    '邀请框的 placeholder 短到放得下、且必须带「邀请」三个字，实际 ' + JSON.stringify(fonts.invitePh));
 
   await evalJs(page, `
     const inp = document.querySelector('[data-cal-name]');
@@ -410,10 +699,12 @@ try {
     return true;
   `);
   await evalJs(page, `document.querySelector('[data-cal-save]').click(); return true;`);
-  const renamed = await waitFor(page,
-    `document.querySelector('[data-cal]')?.textContent.trim() === '全家' ? '全家' : null`,
-    '侧栏名字变成「全家」');
-  ok(renamed === '全家', '改名同步到了侧栏');
+  const renamed = await withCals(() => waitFor(page, `
+    [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .some((b) => b.textContent.trim() === '全家') ? '全家' : null`,
+    '下拉里名字变成「全家」'));
+  ok(renamed === '全家', '改名同步到了顶栏那个下拉多选框');
+  await closeCalMenu();
 
   const reloaded = await evalJs(page, `
     const r = await fetch('./api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } });
@@ -422,12 +713,45 @@ try {
   `);
   ok(reloaded === '全家', '服务器上也是「全家」（不是只改了界面）');
 
+  /* 星标 = 默认日程集。以前「哪个是默认」是 `name === '我的日程'` 判的，
+     改名那一刻就失效；上面刚把这个集改成了「全家」，按老口径它已经不是默认了。
+     这一段钉的是新口径：改名不影响默认，星标还能换到别的集上。 */
+  const stars = await evalJs(page, `return [...document.querySelectorAll('#content [aria-label*="默认日程集"]')]
+    .map((b) => ({ pressed: b.getAttribute('aria-pressed'), label: b.getAttribute('aria-label') }));`);
+  ok(stars.length === 1, '每个日程集标题行上有一个星标，实际 ' + stars.length);
+  ok(stars[0].pressed === 'true',
+    '改名之后默认身份没丢（老口径下这里会是 false）');
+
+  /* 创建者那一行：权限下拉与移出按钮都禁用。下拉里也**不该有「创建者」**——
+     那是集必须有的主人，不是能分下去的权限（见 ASSIGNABLE_ROLES）。 */
+  const ownerRow = await evalJs(page, `return {
+    dropdowns: [...document.querySelectorAll('#content button[aria-haspopup="listbox"]')]
+      .map((b) => ({ off: b.disabled, name: b.getAttribute('aria-label') })),
+  };`);
+  const mineRow = ownerRow.dropdowns.find((d) => d.name && d.name.includes('爸爸'));
+  ok(!!mineRow && mineRow.off, '创建者的权限下拉是禁用的');
+  ok(await evalJs(page, `return !!document.querySelector('#content [aria-label="移出日程集"][disabled]');`),
+    '创建者的移出按钮是禁用的（不变量 2：每个集至少留一个 owner）');
+  /* 创建者的下拉是**禁用的**（`disabled={m.role === 'owner'}`，上面那条断言过了），
+     所以「下拉里没有『创建者』」这件事的正确读法是：**点开它不会出现选项列表**。
+     原先这里去读 `body [role="option"]` 的文本跟 '可编辑,只读' 比 —— 禁用的
+     下拉根本不开列表，读到的是上一次别的下拉留下的残影，断言永远为假。
+     真正要守的不变量是「创建者不是可以分下去的权限」，它体现在禁用上。 */
+  ok(await evalJs(page, `
+    const dd = [...document.querySelectorAll('#content button[aria-haspopup="listbox"]')]
+      .find((b) => b.getAttribute('aria-label') && b.getAttribute('aria-label').includes('爸爸'));
+    dd.click();
+    return document.querySelectorAll('body [role="option"]').length;
+  `) === 0, '创建者的权限下拉是禁用的，点不开选项列表（所以没有「创建者」这项）');
+
   console.log('\n六、刷新之后还在，且没有 console 报错');
-  await evalJs(page, `document.querySelector('[role="dialog"] button[aria-label="关闭"]')?.click(); return true;`);
   await page.send('Page.reload');
   await waitFor(page, `!!document.querySelector('.sidebar')`, '刷新后回到主界面', 12000);
-  ok(await evalJs(page, `return document.querySelector('[data-cal]')?.textContent.trim() === '全家';`),
+  ok(await withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .some((b) => b.textContent.trim() === '全家');`)),
     '刷新后仍是「全家」');
+  await closeCalMenu();
   ok(await evalJs(page, `return !!localStorage.getItem('schedule-app-token');`), 'token 还在');
 
   collect();
@@ -454,9 +778,14 @@ try {
 
   // 引擎平时 15 秒轮询一次、或窗口重新获得焦点时同步。这里催它一下，别干等
   await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
-  await waitFor(page, `!!document.querySelector('[data-cal-invites]')`, '侧栏出现邀请入口', 12000);
+  // 邀请收件箱在设置页的「日程集管理」卡头上（侧栏那个入口删了，跟着改名 /
+  // 成员一起收进设置页 —— 它们本来就是同一类低频动作）
+  await evalJs(page, `document.querySelector('[data-nav="settings"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-settings-tab="cals"]')`, '设置页打开', 8000);
+  await evalJs(page, `document.querySelector('[data-settings-tab="cals"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-cal-invites]')`, '设置页出现邀请收件箱', 12000);
   const badge = await evalJs(page, `return document.querySelector('[data-cal-invites]').innerText.trim();`);
-  ok(badge.includes('1'), '邀请入口上写着 1 条，实际 ' + JSON.stringify(badge));
+  ok(badge.includes('1'), '邀请收件箱上写着 1，实际 ' + JSON.stringify(badge));
 
   await evalJs(page, `document.querySelector('[data-cal-invites]').click(); return true;`);
   await waitFor(page, `document.body.innerText.includes('邀请你加入')`, '邀请浮层打开');
@@ -471,18 +800,74 @@ try {
     [...d.querySelectorAll('button')].find((b) => b.textContent.includes('接受')).click();
     return true;
   `);
-  await waitFor(page, `document.querySelectorAll('[data-cal]').length === 2`, '接受后侧栏有两个集', 12000);
-  // 高亮项的判定不看名字：**只有不是自己创建的集才带角色小标**，
-  // 所以「高亮项带可编辑」就等价于「自动切到了刚加入的那个」
-  const nowActive = await evalJs(page, `
-    const on = [...document.querySelectorAll('[data-cal]')].find((b) => b.className.includes('--primary'));
-    return on ? on.textContent.trim() : null;
-  `);
-  ok(nowActive && nowActive.includes('可编辑'), '接受完自动切到刚加入的那个集，实际 ' + JSON.stringify(nowActive));
+  /* 菜单这会儿是关着的（上一节末尾 focusCal 顺手关了），先打开再数 */
+  await withCals(() => waitFor(page,
+    `document.querySelectorAll('.cal-menu-pop [data-cal-row]').length === 2`, '接受后下拉里有两个集', 12000));
+  /* 多选下判「切过去了」不能看高亮：**两个可能都勾着**（全家本来就勾着，
+     接受完自动把新集也勾上并设成归属）。所以认「被勾上」+「归属是它」两件事。 */
+  const afterAccept = await withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .map((b) => ({ name: b.textContent.trim(), on: b.getAttribute('aria-pressed') === 'true' }));
+  `));
+  ok(afterAccept.filter((r) => r.on).length === 2, '两个集都勾上了（原来那个不该被取消勾选）'
+    + '　实际 ' + JSON.stringify(afterAccept));
+  /* **先等落盘再读 ui.cal**：persist 有 250ms 防抖，接受完立刻读 localStorage
+     拿到的是上一版（归属还是「全家」），断言会假红 —— 而且红在「归属没切过去」，
+     看着像 toggleCal 的锅，其实是读早了。 */
+  await waitFor(page, `
+    (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cals?.length === 2 ? 1 : null`,
+    '落盘了（persist 有防抖，读早了是上一版）', 5000);
+  ok(await withCals(() => evalJs(page, `
+    const rows = [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')];
+    const mine = rows.find((b) => b.textContent.includes('可编辑'));
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    return !!(mine && st.ui.cal === mine.dataset.calRow);
+  `)), '接受完自动把归属切到刚加入的那个集');
+  await closeCalMenu();
   ok(await evalJs(page, `return document.querySelector('[data-cal-invites]') === null;`),
-    '处理完之后邀请入口消失');
-  ok(await evalJs(page, `return !!document.querySelector('[data-cal-manage]');`), '仍然能管理日程集');
+    '处理完之后邀请收件箱消失');
+  ok(await evalJs(page, `return document.querySelectorAll('[data-cal-item]').length === 2;`),
+    '设置页的日程集管理里也是两个集');
   ok(await evalJs(page, `return !!localStorage.getItem('schedule-app-v4');`), '本地状态有落盘');
+
+  console.log('\n七之二、日程集多选：勾选只管显示，归属不许掉进看不见的集');
+  /* 锁的是 store.toggleCal 那两条（domain.test.ts 里锁的是老数据迁移，这里证的是接线）：
+       1. 取消勾掉一个集 → 显示范围变小，但**归属还看得见**（让给还勾着的那个）
+       2. 想把最后一个也取消掉 → 不生效。日程页全空看着像坏了，而且新建的
+          东西会落进没勾的集里，用户看到的是「凭空消失」。
+
+     **全部只读 aria-pressed，不读 localStorage**：persist 有防抖，点完立刻读
+     落盘的那份拿到的是上一版（探针自己在第十一节被这个坑绊过）。 */
+  /* shown / clickCal / waitShownCount / focusCal 四个助手在第三节就定义了
+     （日程集下拉在顶栏，第三节是第一个要用到的地方），这里直接用。 */
+
+  await clickCal('全家');
+  ok(await waitShownCount(1, '只剩一个集勾着') === 1,
+    '取消勾掉「全家」之后只剩一个集勾着，实际 ' + JSON.stringify(await shown()));
+  ok(await evalJs(page, `
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    return st.ui.cals.includes(st.ui.cal);
+  `), '归属（新建落哪儿）仍然是被勾着的那个');
+
+  await clickCal('全家');
+  ok(await waitShownCount(2, '重新勾上「全家」') === 1, '勾回去能恢复');
+
+  /* 最后一个不许取消掉。**必须一次只点一个** —— 点完 React 就重渲染了，
+     同一批 NodeList 里的另一个节点已经脱离文档，点击不会再冒泡到容器根，
+     事件委托（挂在 #content 上）收不到，看起来就像「点了没反应」。 */
+  await clickCal('全家');
+  ok(await waitShownCount(1, '只剩一个集勾着') === 1, '再取消掉「全家」');
+  await clickCal((await shown())[0]);
+  ok(await withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .filter((b) => b.getAttribute('aria-pressed') === 'true').length === 1;
+  `)), '想「一个都不勾」不生效（至少留一个，避免新建的东西凭空消失）');
+  await closeCalMenu();
+
+  // 上面那两步把归属甩到了只读的共享集上 —— 后面几节要在「全家」里改东西，
+  // 这里明确勾回去（勾上就顺带成为归属，见 toggleCal）
+  await clickCal('全家');
+  ok(await waitShownCount(2, '两个集都勾回来了') === 1, '恢复成两个都勾着、归属在「全家」');
 
   collect();
   ok(errors.length === 0, '邀请这一段也没有 console 报错'
@@ -658,7 +1043,10 @@ try {
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('.fast-add textarea')`, '待办箱能快速添加');
   // 现在还写得进去（是 editor），先在**共享的那个集**里留下一条，
-  // 后面降成只读才有一条现成的可以点
+  // 后面降成只读才有一条现成的可以点。
+  // **必须显式切过去**：第七节末尾归属在「全家」，不切的话这条会落进自己那个
+  // 集里，降级对它不生效，下面「改动被挡下来」整段都会假红。
+  await focusCal(momCal);
   await quickAdd(page, '共享的事');
   await waitFor(page,
     `JSON.parse(localStorage.getItem('schedule-app-v4')).outbox.length === 0`,
@@ -681,10 +1069,12 @@ try {
   await waitFor(page, `
     (JSON.parse(localStorage.getItem('schedule-app-v4')).cals.find((c) => c.id === ${JSON.stringify(momCal)}) || {}).role === 'viewer' ? 1 : null`,
     '本地拉到新角色（还停在 editor 说明这一轮同步没跑）', 15000);
-  await waitFor(page, `
-    [...document.querySelectorAll('[data-cal]')].some((b) => b.textContent.includes('只读')) ? 1 : null`,
-    '侧栏显示「只读」', 8000);
-  ok(true, '降级后侧栏把那个集标成「只读」');
+  await withCals(() => waitFor(page, `
+    [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .some((b) => b.textContent.includes('只读')) ? 1 : null`,
+    '下拉显示「只读」', 8000));
+  ok(true, '降级后下拉里把那个集标成「只读」');
+  await closeCalMenu();
 
   // 点掉一条：这是用户在跨集页面上最常做的动作
   const hit = await clickEl(page, `
@@ -713,12 +1103,19 @@ try {
        3. 「知道了」真的落盘（不落盘的话下次刷新又冒出来，用户会以为没生效）。
 
      先切回自己的集：上一节把爸爸在那个共享集里降成了只读，在那儿改不出东西。 */
-  await clickEl(page, `
-    [...document.querySelectorAll('[data-cal]')].find((b) => b.textContent.trim() === '全家')
-  `);
-  await waitFor(page, `
-    [...document.querySelectorAll('[data-cal]')].find((b) => b.className.includes('--primary'))?.textContent.trim() === '全家' ? 1 : null
-  `, '切回自己的日程集（共享那个现在改不动）', 8000);
+  /* 下拉里现在是**多选**，点一下是「勾上 / 取消勾」，不是单选时代的「切过去」。
+     所以要点**没勾着的那个**（已经勾着就别点 —— 那等于取消勾选）。勾上就顺带
+     成为归属，见 store.toggleCal。 */
+  await withCals(() => evalJs(page, `
+    const b = [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')].find((x) => x.textContent.trim() === '全家');
+    if (b.getAttribute('aria-pressed') !== 'true') b.click();
+    return true;
+  `));
+  await withCals(() => waitFor(page, `
+    [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')].find((b) => b.textContent.trim() === '全家'
+      && b.getAttribute('aria-pressed') === 'true') ? 1 : null
+  `, '勾上自己的日程集（共享那个现在改不动）', 8000));
+  await closeCalMenu();
 
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
   await waitFor(page, `!!document.querySelector('.fast-add textarea')`, '待办箱能快速添加');
@@ -970,8 +1367,11 @@ try {
   await new Promise((r) => web.close(r));
   await page.send('Page.reload');
   await waitFor(page, `!!document.querySelector('.sidebar')`, '断网后仍能打开应用', 12000);
-  ok(await evalJs(page, `return document.querySelector('[data-cal]')?.textContent.trim() === '全家';`),
+  ok(await withCals(() => evalJs(page, `
+    return [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .some((b) => b.textContent.trim() === '全家');`)),
     '断网打开的是同一份数据（日程集名字还在）');
+  await closeCalMenu();
   ok(await evalJs(page, `return document.querySelectorAll('[data-nav]').length > 0;`),
     '断网时导航也在，不是白屏');
 
@@ -1050,7 +1450,18 @@ try {
       const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
       return own + ' in .' + pc;
     };
-    for (const el of box.querySelectorAll('span.check-btn')) bad.push('勾选圈是 span 不是 button');
+    /* 勾选圈必须是真 button（见 CLAUDE.md 三、无障碍 2）。
+
+       **例外：aria-hidden 的圈，且它在一个真 button 里面** —— 那种圈是那个
+       按钮的**状态指示**，不是独立控件。侧栏日程集那一行就是这种：整行是一个
+       aria-pressed 的 toggle button，圈只是「勾没勾上」的视觉说法，读屏不该
+       把它当第二个控件念（所以 aria-hidden）。把它算成「假按钮」是误报 ——
+       真按钮的内容里本来就可以有 span。 */
+    for (const el of box.querySelectorAll('span.check-btn')) {
+      if (el.getAttribute('aria-hidden') === 'true'
+        && el.closest('button:not([disabled])')) continue;
+      bad.push('勾选圈是 span 不是 button');
+    }
     for (const el of box.querySelectorAll('button,input,select,textarea')) {
       if (el.type === 'hidden' || el.disabled) continue;
       // 没渲染出来的不算 —— 导入备份那个 <input type=file> 就是藏起来的，
@@ -1097,16 +1508,21 @@ try {
   // 报错却指向快速添加，看着像输入框坏了。按 role 挑就没有这个问题。
   //
   // 挑哪个集也**不按名字**：第六节把集改过名，照着名字找会静默找不到。
-  const switched = await evalJs(page, `
+  const pickId = await evalJs(page, `
     const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
     const canWrite = (r) => r === 'owner' || r === 'editor';
     const mine = (st.cals || []).filter((c) => canWrite(c.role));
     const pick = mine.find((c) => c.id !== st.ui.cal) || mine[0];
-    const el = pick && [...document.querySelectorAll('[data-cal]')].find((x) => x.dataset.cal === pick.id);
-    if (el) el.click();
-    return pick ? pick.name + ' / ' + pick.role : 'none';
+    return pick ? pick.id : '';
   `);
-  ok(switched !== 'none', '切到了有写权限的日程集（' + switched + '）');
+  ok(pickId !== '', '有一个有写权限的日程集可切');
+  await focusCal(pickId);
+  ok(await withCals(() => evalJs(page, `
+    const on = [...document.querySelectorAll('.cal-menu-pop [data-cal-row]')]
+      .filter((x) => x.getAttribute('aria-pressed') === 'true');
+    return on.length === 1 && on[0].dataset.calRow === ${JSON.stringify(pickId)};
+  `)), '切到了有写权限的日程集，且只有它勾着');
+  await closeCalMenu();
 
   await quickAdd(page, '无障碍检查');
   const list = await scan();
@@ -1122,7 +1538,8 @@ try {
   `) !== 'missing', '点开刚建的那条任务');
   await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
   const draw = await evalJs(page, `return { bad: ${a11y()},
-    cands: document.querySelectorAll('.drawer.open input, .drawer.open select, .drawer.open textarea').length };`);
+    cands: document.querySelectorAll('.drawer.open input, .drawer.open select, .drawer.open textarea').length
+      + document.querySelectorAll('.drawer.open .dp-q, .drawer.open .dp-btn, .drawer.open .tp-q').length };`);
   ok(draw.cands >= 5, '抽屉里有 ' + draw.cands + ' 个表单控件可查（日期 / 时间 / 时长 / 重复 / 备注）');
   ok(draw.bad.length === 0, '详情抽屉里每个输入框都有名字、每个 label 都配上了控件'
     + (draw.bad.length ? '：\n      ' + draw.bad.join('\n      ') : ''));
@@ -1141,29 +1558,28 @@ try {
 
   // 顺手把这条任务填上日期 —— 下面月视图要用的那条**有日期的**任务就是它。
   //
-  // 走抽屉的日期框，不走快速添加的自然语言：本探针的 store 里本来一条有日期
+  // 走抽屉的日期控件，不走快速添加的自然语言：本探针的 store 里本来一条有日期
   // 的任务都没有，而「快速添加 → 解析出日期」那条路别处已经单独覆盖过，
   // 这里再依赖一次只会多一个可能失败的地方。
-  const todayIso = await evalJs(page, `
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-  `);
+  // 日期现在是自定义 DatePicker（快捷按钮 + 月视图面板），不是原生 input ——
+  // 点「今天」这个快捷按钮就够，不用打开月视图。
   const dated = await evalJs(page, `
-    const inp = document.querySelector('.drawer.open .field input[type="date"]');
-    if (!inp) return 'missing';
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    set.call(inp, ${JSON.stringify(todayIso)});
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    const btn = document.querySelector('.drawer.open .dp-q');
+    if (!btn) return 'missing';
+    btn.click();
     return 'ok';
   `);
-  ok(dated === 'ok', '在抽屉里给它填上今天（' + todayIso + '），实际 ' + dated);
+  ok(dated === 'ok', '在抽屉里给它填上今天（' + new Date().toISOString().slice(0, 10) + '），实际 ' + dated);
   // waitFor 前面会被补一个 return，所以这里只能写一个**表达式**，不能带 const
   //（见 CLAUDE.md 四、39 —— 已经踩过一次）
   await waitFor(page, `
-    Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks || {})
-      .some((t) => t.title === '无障碍检查' && t.date === ${JSON.stringify(todayIso)}) ? 1 : null
+    (() => {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const today = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+      return Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks || {})
+        .some((t) => t.title === '无障碍检查' && t.date === today) ? 1 : null;
+    })()
   `, '日期落盘了', 8000);
 
   await clickEl(page, `document.querySelector('.drawer.open .drawer-head .icon-btn')`);
@@ -1180,7 +1596,8 @@ try {
   // 失败时把「为什么没有胶囊」直接打出来 —— 否则只能看到「0 个」，
   // 而 0 个有一堆可能：选中的集没切成、月份不对、格子被折叠成「还有 N 项」
   const diag = await evalJs(page, `return {
-    cals: [...document.querySelectorAll('[data-cal]')].map((x) => x.textContent.trim()),
+    // 勾了哪几个集从 localStorage 的 ui.cals 读（那是真相），不用打开下拉
+    cals: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cals,
     activeCal: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cal,
     uiCursor: (JSON.parse(localStorage.getItem('schedule-app-v4')).ui || {}).cursor,
     monthCells: document.querySelectorAll('.month-cell').length,
@@ -1317,6 +1734,299 @@ try {
     return true;
   `);
   await key(page, 'ArrowDown', 'ArrowDown', 40);
+
+  console.log('\n十四之二、日视图锁单屏 + 拖动不放大 + 时间窗收窄');
+  /* 这一节锁三件事，都是同一处改动的连带结果（见 domain/layout.ts 的 DayWindow）：
+       ① 日视图整天摊在一屏里，**内容区不滚**；
+       ② 拖动时间轴方块**不缩放** —— core 的 adjustScale 会把 transform 的
+          scaleX/scaleY 定成「落点 ÷ 自己」，日视图的落点是整天高的 .timeline，
+          比值能到 25 以上，一拖就铺满整屏（CSS.Translate 才是干净的出口）；
+       ③ 设置里收窄时间窗之后，窗外那条任务整条不画。
+     前两条必须在真浏览器里量 —— 单位测试看不见 CSS 与 dnd-kit 的合成效果。 */
+
+  const lock = await evalJs(page, `
+    return (() => {
+      const c = document.getElementById('content');
+      const tl = document.querySelector('.timeline');
+      const wrap = tl && tl.closest('.tl-wrap');
+      return {
+        overflow: getComputedStyle(c).overflowY,
+        contentH: c.clientHeight,
+        scrollH: c.scrollHeight,
+        tlH: tl ? tl.getBoundingClientRect().height : 0,
+        wrapBottom: wrap ? wrap.getBoundingClientRect().bottom : 0,
+        cBottom: c.getBoundingClientRect().bottom,
+      };
+    })();
+  `);
+  ok(lock.overflow === 'hidden',
+    '日视图的内容区不滚（overflow-y: hidden），实际 ' + lock.overflow);
+  ok(lock.scrollH <= lock.contentH + 1,
+    '内容没有溢出到需要滚动：scrollHeight ' + lock.scrollH + ' ≤ clientHeight ' + lock.contentH);
+  ok(lock.tlH > 200 && lock.tlH <= lock.contentH,
+    '时间轴占满一屏且不越界，实际高 ' + Math.round(lock.tlH) + 'px / 内容区 ' + lock.contentH + 'px');
+  ok(lock.wrapBottom <= lock.cBottom + 1,
+    '时间轴底边没有捅出内容区（实际差 ' + Math.round(lock.wrapBottom - lock.cBottom) + 'px）');
+
+  // 后面几小节都要改时间窗。**走真的设置页**，不直接改 localStorage ——
+  // store 的 persist() 是防抖 250ms 的（见 data/store.ts），我们写进去的
+  // ui 会被应用自己那次 flush 覆盖掉，改完读回来还是默认值。
+  // 走界面顺带把这一档设置本身也验了（探针十三之二要锁的就是它）。
+  const evId = block.id;
+  // 属性值必须带引号 —— id 是 UUID，`[data-id=0f979196-…]` 不是合法选择器
+  const evSel = `.tl-event[data-id=${JSON.stringify(evId)}]`;
+
+  const openSettings = async () => {
+    await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
+    await waitFor(page, `!!document.querySelector('[data-settings-tab]')`, '设置页', 8000);
+    await clickEl(page, `document.querySelector('[data-settings-tab="appearance"]')`);
+    /* 时间窗现在是 `Dropdown`（自己的控件，不是原生 select）—— 所以没有
+       `[data-day-win]` 了，抓手换成按钮的 `aria-label`。选项是
+       `[role="option"]`，在 `[role="listbox"]` 里；菜单 `max-h-64` 会滚动，
+       但 25 个整点在 DOM 里一个不少，所以按文字点就是。 */
+    await waitFor(page, `!!document.querySelector('[aria-label="时间窗从几点开始"]')`, '设置 › 外观', 8000);
+  };
+
+  /** 点一下某个时间窗下拉的选项。`label` 是按钮的 aria-label，hour 是 0–24 */
+  const pickHour = async (label, hour) => {
+    await evalJs(page, `document.querySelector(${JSON.stringify('[aria-label="' + label + '"]')}).click(); return true;`);
+    await waitFor(page, `!!document.querySelector('[role="listbox"]')`, '时间窗选项菜单', 4000);
+    await evalJs(page, `
+      [...document.querySelectorAll('[role="option"]')]
+        .find((o) => o.textContent.trim() === '${hour}:00').click();
+      return true;`);
+  };
+
+  /** 把时间窗设成 from–to，并回到今天的日视图 */
+  const setWindow = async (from, to) => {
+    await openSettings();
+    await pickHour('时间窗从几点开始', from);
+    await pickHour('时间窗到几点结束', to);
+    await evalJs(page, `document.querySelector('.sidebar [data-nav="calendar"]').click(); return true;`);
+    await waitFor(page, `!!document.querySelector('.timeline')`, '回到日视图', 8000);
+  };
+
+  /** 时间轴上那条方块 + 窗 + 小时线，一起读回来 */
+  const readTl = () => evalJs(page, `
+    return (() => {
+      const tl = document.querySelector('.timeline');
+      const labels = [...tl.querySelectorAll('.tl-label')].map((s) => s.textContent);
+      const el = document.querySelector('${evSel}');
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(evId)});
+      return {
+        from: tl.dataset.from, to: tl.dataset.to,
+        first: labels[0], last: labels[labels.length - 1], n: labels.length,
+        evH: el ? el.getBoundingClientRect().height : null,
+        top: el ? el.style.top : null,
+        time: t ? t.time : null, dur: t ? t.duration : null,
+      };
+    })();
+  `);
+
+  const h2m = (hhmm) => {
+    const [h, m] = String(hhmm).split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  // ② 时间窗：先收到 08:00–11:00（3 小时）。
+  //    收这么窄是有原因的：整天铺满一屏时每小时只有十几 px，方块比上下两个
+  //    把手（各 11px）还矮，正中点到的其实是把手 —— 那样测的就不是拖拽了。
+  await setWindow(8, 11);
+  const w1 = await readTl();
+  ok(w1.from === '480' && w1.to === '660',
+    '设置里改的时间窗生效了（08:00–11:00 → data-from/to = ' + w1.from + '/' + w1.to + '）');
+  ok(w1.n === 3 && w1.first === '08:00' && w1.last === '10:00',
+    '小时线只画窗内的 3 条（' + w1.first + ' … ' + w1.last + '，共 ' + w1.n + ' 条）');
+  // 方块位置按**新窗**算，而不是整天口径：(t - from) / (to - from)
+  const wantTop = (h2m(w1.time) - 480) / 180 * 100;
+  ok(Math.abs(parseFloat(w1.top) - wantTop) < 0.2,
+    '窗内那条按新窗重排到 ' + wantTop.toFixed(2) + '%（整天口径下只有 '
+    + (h2m(w1.time) / 1440 * 100).toFixed(2) + '%），实际 ' + w1.top);
+  ok(w1.evH > 30, '方块高过两个把手，抓得到中间那条，实际高 '
+    + (w1.evH ? w1.evH.toFixed(1) : 'n/a') + 'px');
+
+  // ③ 拖动不放大：core 的 adjustScale 会把 transform 的 scaleX/scaleY 定成
+  //    「落点 ÷ 自己」，日视图的落点是整天高的 .timeline —— 比值能到 25 以上，
+  //    一拖就铺满整屏。CSS.Translate 才是干净的出口。
+  const from = await evalJs(page, `
+    return (() => {
+      const r = document.querySelector('${evSel}').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  // 移过 8px 才开拖（MouseSensor 的 activationConstraint），再往下拖一段
+  for (const dy of [14, 40, 90, 150]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: from.x, y: from.y + dy, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  const mid = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('${evSel}');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, transform: el.style.transform };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: from.x, y: from.y + 150, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+
+  ok(!!mid && /translate3d/.test(mid.transform || ''),
+    '拖动真的起来了（transform 里有位移），实际 ' + JSON.stringify(mid && mid.transform));
+  ok(!!mid && Math.abs(mid.h - from.h) <= 2,
+    '拖动途中高度不变（' + from.h.toFixed(1) + ' → ' + (mid ? mid.h.toFixed(1) : '?') + 'px）—— '
+    + '变大就是 adjustScale 的 scaleY 漏进来了');
+  ok(!!mid && Math.abs(mid.w - from.w) <= 2,
+    '拖动途中宽度不变（' + from.w.toFixed(1) + ' → ' + (mid ? mid.w.toFixed(1) : '?') + 'px）');
+  ok(!!mid && !/scale/i.test(mid.transform || ''),
+    'transform 里只有位移、没有 scale，实际 ' + JSON.stringify(mid && mid.transform));
+
+  // ③之二 拖动态三件套：虚影让位、出界去最近位置、水平锁在容器内
+  //     这三条都是「拖起来那一瞬间」的行为，必须在拖拽途中量，松手之后就看不见了。
+  //     所以这里重新拖一次，在拖拽途中读状态。
+  const evRect0 = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('${evSel}');
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: evRect0.x, y: evRect0.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  for (const dy of [14, 40, 90]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: evRect0.x, y: evRect0.y + dy, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  const ghost = await evalJs(page, `
+    return (() => {
+      const busy = document.querySelector('.tl-busy[data-busy="${evId}"]');
+      const el = document.querySelector('${evSel}');
+      return {
+        busyHidden: busy ? busy.classList.contains('drag-src') : null,
+        evDragging: el ? el.classList.contains('dragging') : null,
+      };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: evRect0.x, y: evRect0.y + 90, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  ok(ghost.evDragging === true,
+    '被拖的方块带 .dragging（颜色保持原样、不加透明度），实际 ' + JSON.stringify(ghost.evDragging));
+  ok(ghost.busyHidden === true,
+    '原位置的占用底纹 .tl-busy 带 .drag-src 让位（不留虚影），实际 ' + JSON.stringify(ghost.busyHidden));
+
+  // 出界去最近位置：把方块拖到时间轴**下方之外**松手，应该落到最下方而不是弹回原位。
+  // 先读出拖之前的时间，再拖到下方之外。
+  const beforeTime = (await readTl()).time;
+  const tlRect = await evalJs(page, `
+    return (() => {
+      const tl = document.querySelector('.timeline');
+      const r = tl.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    })();
+  `);
+  const evRect = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('${evSel}');
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })();
+  `);
+  // 按下 → 往下拖到时间轴底边之外 → 松手
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: evRect.x, y: evRect.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  for (const dy of [14, 40, 90, 150, 220, 300]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: evRect.x, y: evRect.y + dy, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: evRect.x, y: evRect.y + 300, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const afterTime = (await readTl()).time;
+  ok(afterTime !== beforeTime,
+    '拖到时间轴下方之外松手，任务落到了新位置（' + beforeTime + ' → ' + afterTime + '），没有弹回原位');
+  // 落点应该在时间轴下半部分（yToMin 把出界的 Y 钳到窗底）
+  const afterMin = h2m(afterTime);
+  ok(afterMin >= 1380,
+    '出界拖到下方 → 落到最下方（' + afterTime + ' = ' + afterMin + ' 分钟，应 ≥ 1380）');
+
+  // 水平锁在容器内：往右拖出 .tl-events 范围，方块的右缘不该越过容器右缘。
+  const evRect2 = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('${evSel}');
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })();
+  `);
+  const containerRect = await evalJs(page, `
+    return (() => {
+      const c = document.querySelector('.tl-events');
+      const r = c.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: evRect2.x, y: evRect2.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  for (const dx of [14, 40, 90, 150, 220, 300, 400]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: evRect2.x + dx, y: evRect2.y, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  const clamped = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('${evSel}');
+      const r = el.getBoundingClientRect();
+      return { right: r.right, w: r.width };
+    })();
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: evRect2.x + 400, y: evRect2.y, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  ok(clamped.right <= containerRect.right + 2,
+    '水平拖出容器右缘时被钳住（右缘 ' + clamped.right.toFixed(1) + ' ≤ 容器右缘 '
+    + containerRect.right.toFixed(1) + '），实际差 ' + (clamped.right - containerRect.right).toFixed(1) + 'px');
+
+  // ④ 收窄到 10 点起 —— 拖完之后那条已经不在 10 点之前了，所以这里只看
+  //    小时线随窗收窄（拖动把它的位置改了，位置断言不该跟着漂）。
+  await setWindow(10, 14);
+  const w2 = await readTl();
+  ok(w2.from === '600' && w2.to === '840',
+    '时间窗收成 10:00–14:00（' + w2.from + '/' + w2.to + '）');
+  ok(w2.n === 4 && w2.first === '10:00',
+    '小时线跟着收窄成 4 条（' + w2.n + ' 条，起 ' + w2.first + '）');
+
+  // ⑤ 窗外的不画：那条被拖到了 09:00 之后…… 直接回整天、把它拖回 09:00 前太绕，
+  //    这里换成验「窗外的东西不画」这条本身 —— 把窗设到 23 点起。
+  await setWindow(23, 24);
+  const w3 = await readTl();
+  ok(w3.n === 1 && w3.first === '23:00',
+    '23:00–24:00 的窗里只有 1 条小时线，实际 ' + w3.n + ' 条');
+  ok(w3.top === null || w3.evH === null,
+    '上午那条落在窗外，整条不画（不是画在顶上冒充 23:00），实际 top=' + w3.top);
+
+  // 收尾：把时间窗放回整天，别给后面的断言留一个收窄的时间轴
+  await setWindow(0, 24);
+  const w4 = await readTl();
+  ok(w4.from === '0' && w4.to === '1440' && w4.n === 24,
+    '恢复整天（24 条小时线），实际 ' + w4.n + ' 条');
 
   console.log('\n十五、软键盘避让：--kb 有人写、固定的浮层有人读');
   //
@@ -1782,8 +2492,8 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.when-pop .cp-num')].find((b) => b.textContent.trim() === '30')`);
   // 分钟一落定 = 这次选择走完了 → 面板**自己收起**（需求 5），不用再点任何按钮
   await waitFor(page, `document.querySelector('.when-pop') ? null : 1`, '选完分钟面板自动收起', 8000);
-  const shown = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
-  ok(shown === '03:30', '上午 3 点选出来是 24 小时制的 03:30（面板已自己收起，值写在按钮上），实际 ' + JSON.stringify(shown));
+  const shown1 = await evalJs(page, `const t = document.querySelector('.fast-clock .fc-t'); return t ? t.textContent.trim() : null;`);
+  ok(shown1 === '03:30', '上午 3 点选出来是 24 小时制的 03:30（面板已自己收起，值写在按钮上），实际 ' + JSON.stringify(shown1));
 
   // 上午 12 点 = 0 点：这是 12 小时制最容易错的一格。
   // 面板刚自己收起了，先重新打开（openLayer 会连时间层一起打开）。
@@ -2063,60 +2773,58 @@ try {
   await clickEl(page, `document.querySelector('#content .task-row[data-id="' + ${JSON.stringify(rowId)} + '"]')`);
   await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
 
-  await clickEl(page, `document.querySelector('.drawer .fast-clock')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '抽屉里弹出转盘', 8000);
-  const dface = await evalJs(page, `
-    const f = document.querySelector('.clock-pop .cp-face').getBoundingClientRect();
-    const p = document.querySelector('.clock-pop').getBoundingClientRect();
-    return {
-      size: Math.round(f.width),
-      left: +(f.left - p.left).toFixed(1),
-      right: +(p.right - f.right).toFixed(1),
-      foot: [...document.querySelectorAll('.clock-pop .cp-foot button')].map((b) => b.textContent.trim()).join('/'),
-      quick: [...document.querySelectorAll('.clock-pop .cp-now')].map((b) => b.textContent.trim()).join('/'),
-    };
+  /* 抽屉里的时间选择器（TimePicker）：快捷按钮 + 表盘面板。
+     不是原生 input + 时钟按钮浮层了（2026-10-09 重构）。 */
+  // 先点一个快捷时间
+  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-q')].find((b) => b.textContent.includes('9:00'))`);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t ? t.time : null;
+    })()
+  `, '快捷时间落盘', 8000);
+  const quickTime = await evalJs(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t ? t.time : null;
+    })()
   `);
-  // 抽屉里那只**不缩小**：`.clock-pop` 的 278px 宽度是按 246 的表盘配出来的
-  // （见 styles/quick-add.css 那段注释），给它套上 `.wp-clock` 那套小字会顶到边
-  ok(dface.size === 246, '抽屉里那只表盘仍是 246px（没被面板那套小字带跑），实际 ' + dface.size);
-  ok(Math.abs(dface.left - dface.right) < 1,
-    '表盘在弹层里居中，实际 左 ' + dface.left + ' / 右 ' + dface.right);
-  ok(dface.foot === '清除/取消/确定', '出口是「清除 / 取消 / 确定」，实际 ' + JSON.stringify(dface.foot));
-  ok(dface.quick === '现在', '「现在」跟着表盘走（它拨的是针），实际 ' + JSON.stringify(dface.quick));
+  ok(quickTime === '09:00', '点快捷时间「上午 9:00」落盘，实际 ' + JSON.stringify(quickTime));
+  ok(await evalJs(page, `return document.querySelector('.drawer .tp-q.on')?.textContent?.includes('9:00');`),
+    '快捷时间按钮亮起来了');
 
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '15')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '确定')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '点「确定」收起转盘', 8000);
-  const committed = await waitFor(page, `
+  // 打开表盘选一个非快捷时间
+  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-q')].find((b) => b.textContent.trim() === '其他')`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '表盘打开了', 8000);
+  const dialSize = await evalJs(page, `
+    const f = document.querySelector('.drawer .tp-dial .cp-face').getBoundingClientRect();
+    return Math.round(f.width);
+  `);
+  ok(dialSize === 198, '抽屉里表盘 198px（比快速添加那个 246 小），实际 ' + dialSize);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-ap')].find((b) => b.textContent.trim() === '下午')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '15')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '60')`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
+  const dialTime = await evalJs(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(rowId)});
       return t ? t.time : null;
     })()
-  `, '抽屉里选的时间落盘', 8000);
-  ok(committed === '15:00', '点「确定」之后时间真的写进任务，实际 ' + JSON.stringify(committed));
-  ok(await evalJs(page, `return document.querySelector('.drawer .fast-clock').classList.contains('on');`),
-    '抽屉那个时钟按钮亮起来了（它表示「这条已经定了时间」）');
+  `);
+  ok(dialTime === '15:00', '表盘选 15:00 落盘，实际 ' + JSON.stringify(dialTime));
 
-  // 「取消 = 反悔」：拨一个**不一样**的时间再取消，任务上的时间不能变
-  await clickEl(page, `document.querySelector('.drawer .fast-clock')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? 1 : null`, '转盘再打开', 8000);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-ap')].find((b) => b.textContent.trim() === '上午')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '9')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-num')].find((b) => b.textContent.trim() === '60')`);
-  await clickEl(page, `[...document.querySelectorAll('.clock-pop .cp-foot button')].find((b) => b.textContent.trim() === '取消')`);
-  await waitFor(page, `document.querySelector('.clock-pop') ? null : 1`, '点「取消」收起转盘', 8000);
-  const afterCancel = await waitFor(page, `
+  // 清除时间
+  await clickEl(page, `document.querySelector('.drawer .tp-clear')`);
+  await waitFor(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(rowId)});
-      return t ? t.time : null;
-    })()
-  `, '取消之后读回时间', 8000);
-  ok(afterCancel === '15:00',
-    '「取消」是反悔：拨到 09:00 又取消，任务上仍是 15:00，实际 ' + JSON.stringify(afterCancel));
+      return t && t.time === null;
+    })() ? 1 : null
+  `, '清除时间落盘', 8000);
 
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '把抽屉关掉', 8000);
@@ -2192,6 +2900,66 @@ try {
   // 进设置页：窄屏下侧栏是收起的，入口在「更多」抽屉里
   await clickEl(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'))`);
   await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+
+  /* ---- 日程集多选在窄屏走「更多」里那格（需求 C 的移动端那一半）----
+     侧栏收起，桌面那个下拉多选框根本不存在 —— 没有这一格，手机上就**没有
+     任何地方**能改「显示哪几个集」。所以这里锁三件事：那一格在、点得开、
+     面板里能勾。 */
+  const calTile = await evalJs(page, `
+    return (() => {
+      const t = document.querySelector('[data-cal-sheet-open]');
+      if (!t) return null;
+      const badge = t.querySelector('.mc');
+      return { text: t.textContent.replace(/\s+/g, ' ').trim(), badge: badge ? badge.textContent : null };
+    })()
+  `);
+  ok(!!calTile, '「更多」抽屉里有「日程集」这一格');
+  ok(!!calTile && /日程集/.test(calTile.text), '那一格写的是「日程集」，实际 ' + JSON.stringify(calTile));
+  ok(!!calTile && /^\d+\/\d+$/.test(calTile.badge || ''),
+    '徽标写「勾了几个 / 共几个」，实际 ' + JSON.stringify(calTile && calTile.badge));
+
+  await clickEl(page, `document.querySelector('[data-cal-sheet-open]')`);
+  await waitFor(page, `!!document.querySelector('[role="dialog"]')`, '日程集多选面板弹出来了');
+  // 「更多」抽屉与这个面板**互斥**（开它就关抽屉，见 Shell.tsx 里那格的 onClick）
+  ok(await evalJs(page, `return !document.querySelector('.more-sheet');`),
+    '开日程集面板时「更多」抽屉收掉了（两者互斥）');
+  const sheetTitle = await evalJs(page, `
+    return document.querySelector('[role="dialog"] .font-semibold')?.textContent;`);
+  ok(sheetTitle === '显示的日程集', '面板标题是「显示的日程集」，实际 ' + JSON.stringify(sheetTitle));
+  const sheetRows = await evalJs(page, `return document.querySelectorAll('[role="dialog"] [data-cal-row]').length;`);
+  ok(sheetRows >= 1, '面板里列出日程集，实际 ' + sheetRows + ' 行');
+  /* 勾一个 → 面板**不收**（多选该让人连着勾），但勾选态要变。
+     找**没勾**的那个勾上 —— 勾唯一那个会被「至少留一个」挡住（见 store.toggleCal）。
+     用**原生 .click()**，跟探针里点 CalRow 那条路一致 —— clickEl 补的那记
+     pointerdown 会撞上应用的长按状态机，把随后的 click 吃掉。 */
+  const offId = await evalJs(page, `
+    return (() => {
+      const rows = [...document.querySelectorAll('[role="dialog"] [data-cal-row]')];
+      const off = rows.find((r) => r.getAttribute('aria-pressed') !== 'true');
+      return off ? off.dataset.calRow : null;
+    })()
+  `);
+  await evalJs(page, `document.querySelector('[role="dialog"] [data-cal-row="${offId}"]').click(); return true;`);
+  await new Promise((r) => setTimeout(r, 300));
+  const offNow = await evalJs(page, `return document.querySelector('[role="dialog"] [data-cal-row="${offId}"]').getAttribute('aria-pressed');`);
+  ok(offNow === 'true', '点一下能勾上（aria-pressed → ' + offNow + '）');
+  ok(await evalJs(page, `return !!document.querySelector('[role="dialog"]');`),
+    '勾完面板还开着（多选该让人连着勾，不是一选就关）');
+  // 关掉面板、回到「更多」抽屉 —— 下一节要进设置页
+  await evalJs(page, `
+    const d = document.querySelector('[role="dialog"]');
+    const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+    if (btn) btn.click();
+    return true;
+  `);
+  await waitFor(page, `!document.querySelector('[role="dialog"]')`, '面板关掉了');
+  await evalJs(page, `
+    const t = [...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多'));
+    if (t) t.click();
+    return true;
+  `);
+  await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉重新打开');
+
   await clickEl(page, `document.querySelector('.more-sheet [data-nav="settings"]')`);
   await waitFor(page, `!!document.querySelector('[data-tab]')`, '设置页的底栏胶囊');
   // 移动端也显示拖拽列表（2026-10-07 起移动端和桌面端都能拖拽排序）
@@ -2357,6 +3125,49 @@ try {
   await waitFor(page, `!!document.querySelector('.pj-wrap')`, '项目页挂上');
   ok(await evalJs(page, `return document.querySelector('#content').textContent.includes('还没有项目');`),
     '空态说话，不是一片白');
+
+  /* ---- 先切到一个**有写权限**的集，再建项目 ----
+     第十节把「爸爸」在别的集里降成了只读，此刻 `ui.cal` 正指着那个只读集。
+     项目是挂在 `ui.cal` 上的（`store.addProject` → `makeProject(name, ui.cal)`），
+     只读集上 `commitMany` 会被 `canWrite(roleOf(...))` 挡下、**静默丢弃**
+     （只有一条 deny 提示），症状是「点完创建浮层关了、项目没出现」，看着像
+     泳道坏了。第十四节踩过同一个坑（quickAdd 被挡），按 role 挑集即可。
+     挑哪个集也**不按名字**：第六节把集改过名，照着名字找会静默找不到。
+     窄屏没有桌面那个日程集下拉框，走「更多」抽屉里那块多选面板。 */
+  const pjCal = await evalJs(page, `
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    const canWrite = (r) => r === 'owner' || r === 'editor';
+    const mine = (st.cals || []).filter((c) => canWrite(c.role));
+    const pick = mine.find((c) => c.id !== st.ui.cal) || mine[0];
+    return pick ? pick.id : '';`);
+  ok(pjCal !== '', '有一个有写权限的日程集可切');
+  const curCal = await evalJs(page, `return JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cal;`);
+  if (pjCal !== curCal) {
+    await evalJs(page, `[...document.querySelectorAll('.tabbar .tab')].find((x) => x.textContent.includes('更多')).click(); return true;`);
+    await waitFor(page, `!!document.querySelector('.more-sheet')`, '「更多」抽屉打开');
+    await evalJs(page, `document.querySelector('[data-cal-sheet-open]').click(); return true;`);
+    await waitFor(page, `!!document.querySelector('[role="dialog"] [data-cal-row]')`, '日程集多选面板');
+    /* 先勾上有写权限的那个（勾上顺带成为归属），再取消勾别的 ——
+       反过来的话「至少留一个」会把取消挡掉，归属又滑回只读那个。 */
+    await evalJs(page, `
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const rows = () => [...document.querySelectorAll('[role="dialog"] [data-cal-row]')];
+      const want = ${JSON.stringify(pjCal)};
+      const hit = rows().find((r) => r.dataset.calRow === want);
+      if (hit && hit.getAttribute('aria-pressed') !== 'true') { hit.click(); await sleep(80); }
+      for (const r of rows()) {
+        if (r.dataset.calRow !== want && r.getAttribute('aria-pressed') === 'true') { r.click(); await sleep(80); }
+      }
+      return true;`);
+    await evalJs(page, `
+      const d = document.querySelector('[role="dialog"]');
+      const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+      if (btn) btn.click();
+      return true;`);
+    await waitFor(page, `!document.querySelector('[role="dialog"]')`, '面板关掉了');
+    await waitForUi('切集落盘',
+      `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cal === ${JSON.stringify(pjCal)} ? 1 : null`);
+  }
 
   await clickEl(page, `document.querySelector('.pj-top .btn')`);
   await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
