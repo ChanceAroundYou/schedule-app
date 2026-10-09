@@ -9,9 +9,10 @@
  * 填了就是手改覆盖 —— 空 vs 0 是两回事，所以用 `''` 而不是 0 表达「自动」。
  */
 import { useId, useState } from 'react';
-import { Btn, Chips, Input, Sheet, Textarea, useConfirm } from './kit.tsx';
+import { Btn, Chips, Input, Sheet, SheetPicker, Textarea, useConfirm } from './kit.tsx';
 import * as store from '../data/store.ts';
-import { STATUS_LABEL } from '../domain/model.ts';
+import { STATUS_LABEL, roleOf } from '../domain/model.ts';
+import { canWrite } from '../domain/types.ts';
 import type { LocalState, ProjectStatus } from '../domain/types.ts';
 
 const STATUSES: ProjectStatus[] = ['active', 'waiting', 'paused', 'done'];
@@ -32,13 +33,33 @@ export function ProjectSheet({ state, id, onClose }: {
   // '' = 自动（按关联任务算）；数字串 = 手改覆盖
   const [prog, setProg] = useState(cur && cur.progress !== null ? String(cur.progress) : '');
 
+  /*
+   * 项目落在哪个集 —— **不绑当前集**。
+   *
+   * 原先是 `makeProject(name, ui.cal)`：当前集是只读的时候，commitMany 会被
+   * canWrite 挡下、**静默丢弃**，用户看到的是「点完创建浮层关了、项目没出现」。
+   * 所以这里给一个选择器，让用户自己挑一个**能写**的集。
+   *
+   * 只列「能写 ∩ 正勾着」的：项目按集可见（useScopedState 按 p.calId 过滤），
+   * 落在一个没勾的集里等于凭空消失 —— 跟 store.toggleCal 那条「归属不能没有
+   * 显示的地方」是同一件事。
+   */
+  const writableShown = state.cals.filter(
+    (c) => canWrite(c.role) && state.ui.cals.includes(c.id),
+  );
+  // 只有新建用得上它（编辑时选择器不渲染），默认当前集 —— 当前集能写就用当前集
+  const [calId, setCalId] = useState<string>(
+    () => (canWrite(roleOf(state, state.ui.cal)) ? state.ui.cal || ''
+      : writableShown[0]?.id || ''),
+  );
+
   /** 权限被挡时 store 那边已经计了数、App 会弹提示 —— 这里只管关掉浮层 */
   const save = () => {
     const trimmed = name.trim();
     if (!trimmed) return;   // 名字是唯一的必填项，空着就不提交，别造一个「未命名项目」
     const progress = prog.trim() === '' ? null : Math.max(0, Math.min(100, Number(prog) || 0));
     if (cur) store.patchProject(cur.id, { name: trimmed, status, note, progress });
-    else store.addProject(trimmed);
+    else if (calId) store.addProject(trimmed, calId);
     onClose();
   };
 
@@ -70,6 +91,23 @@ export function ProjectSheet({ state, id, onClose }: {
           />
         </div>
 
+        {/* 只在新建时出现。编辑项目时藏掉 —— 不是忘了给，是**故意不给**：
+            挪集在数据模型里是「目标集新建一条 + 源集留墓碑」（不变量 2），
+            改不了 calId 这个字段；而一个「选中看着变了、存下去没变」的死控件
+            比没有更坏（用户会以为挪成功了）。挪集是另一条专门的操作。 */}
+        {!cur && (
+          <div className="field">
+            <label id={fid + '-c-l'}>日程集</label>
+            <SheetPicker
+              value={calId}
+              options={writableShown.map((c) => ({ value: c.id, label: c.name }))}
+              onPick={setCalId}
+              label="日程集"
+              labelledBy={fid + '-c-l'}
+            />
+          </div>
+        )}
+
         <div className="field">
           <label id={fid + '-s-l'}>状态</label>
           <Chips<ProjectStatus>
@@ -99,7 +137,7 @@ export function ProjectSheet({ state, id, onClose }: {
 
         <div className="drawer-foot">
           {cur && <Btn variant="danger" onClick={() => void remove()}>删除项目</Btn>}
-          <Btn variant="primary" onClick={save} disabled={!name.trim()}>
+          <Btn variant="primary" onClick={save} disabled={!name.trim() || (!cur && !calId)}>
             {cur ? '保存' : '创建'}
           </Btn>
         </div>

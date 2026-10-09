@@ -717,8 +717,9 @@ export function restoreHabit(id: string): void {
  * 发件箱、冲突记录**自动全都有** —— 这里一个都不重复。这也是为什么它们
  * 长得都只有两三行：多写一行就是多一处会漏的地方。
  */
-export function addProject(name: string): string {
-  const p = makeProject(name.trim() || '未命名项目', state.ui.cal || '');
+export function addProject(name: string, calId?: string): string {
+  // 不传就落在当前集 —— 传了就用传的那个（浮层里那个集选择器，见 ProjectSheet）
+  const p = makeProject(name.trim() || '未命名项目', calId || state.ui.cal || '');
   commit('project', p.id, dataOf(p));
   return p.id;
 }

@@ -3171,6 +3171,68 @@ try {
 
   await clickEl(page, `document.querySelector('.pj-top .btn')`);
   await waitFor(page, `!!document.querySelector('.field input')`, '项目浮层打开');
+
+  /* ---- 集选择器：项目**不绑当前集**（`addProject(name, calId)`）----
+     原来固定落 `ui.cal`：当前集只读时 commitMany 被 canWrite 挡下、**静默丢弃**，
+     症状是「点完创建浮层关了、项目没出现」，看着像泳道坏了。现在浮层里挑一个
+     能写的集，且**只列「能写 ∩ 正勾着」的** —— 没勾的集落进去会凭空消失
+     （useScopedState 按 p.calId 过滤），跟 toggleCal 那条「归属不能没有显示的
+     地方」是同一件事。
+
+     ⚠️ 这一段**不复用 clickEl**：clickEl 只派发 pointerdown / pointerup / click，
+     **不派发 mousedown**（见本文件 clickEl 的定义），而外面那个 Sheet 收不收起
+     听的正是 capture 阶段的 mousedown（useOutsideClose）。里面的选项又是 portal
+     到 body 的 —— DOM 上不是外面面板的后代，不修 useOutsideClose 的话，真手点一下
+     选项就先把**外层**关掉、连带把选项那层卸载，这一次点击白丢，而 clickEl 照样绿。
+     hooks.ts 那条注释记着同一个坑（「只在真机上出现，合成 click 测不出来」）。
+     所以走 tapEl：完整的 mousedown → mouseup → click。 */
+  const tapEl = (findExpr) => evalJs(page, `
+    const el = ${findExpr};
+    if (!el) return 'missing';
+    const r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    el.dispatchEvent(new MouseEvent('mousedown', at));
+    el.dispatchEvent(new MouseEvent('mouseup', at));
+    el.dispatchEvent(new MouseEvent('click', at));
+    return 'ok';
+  `);
+
+  ok(await evalJs(page, `return !!document.querySelector('[aria-label="日程集"]');`),
+    '新建浮层里有「日程集」选择器，项目不绑当前集');
+
+  /* 默认值：当前集能写就用当前集，否则第一个能写的 —— 但**必须**是勾着的那个 */
+  const calPick = await evalJs(page, `
+    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
+    const canWrite = (r) => r === 'owner' || r === 'editor';
+    const mine = (st.cals || []).filter((c) => canWrite(c.role) && st.ui.cals.includes(c.id));
+    const btn = document.querySelector('[aria-label="日程集"]');
+    const txt = btn ? btn.textContent.trim() : '';
+    const hit = (st.cals || []).find((c) => c.name === txt);
+    return { listed: mine.map((c) => c.name).sort().join('|'), picked: txt,
+             good: !!hit && canWrite(hit.role) && st.ui.cals.includes(hit.id) };`);
+  ok(calPick.good, '默认落在「能写 ∩ 正勾着」的集：' + calPick.picked);
+
+  /* 打开那层看选项：应该**只有**能写且勾着的（只读的、没勾的都不该出现）。
+     `=== 2` 是嵌套没被误关的判据 —— 外层要是先被 mousedown 关了，这里只剩 1 个。 */
+  ok(await tapEl(`document.querySelector('[aria-label="日程集"]')`) === 'ok', '打开「日程集」选择层');
+  await waitFor(page, `document.querySelectorAll('[role="dialog"]').length === 2`,
+    '选择层弹开、项目浮层还在（嵌套没被 useOutsideClose 误伤）', 8000);
+  const calListed = await evalJs(page, `
+    const ds = [...document.querySelectorAll('body > div [role="dialog"]')];
+    const d = ds[ds.length - 1];
+    return [...d.querySelectorAll('button')].map((b) => b.textContent.trim()).filter(Boolean).sort().join('|');`);
+  ok(calListed === calPick.listed,
+    '只列能写且勾着的集，实际 ' + JSON.stringify(calListed) + '，期望 ' + JSON.stringify(calPick.listed));
+
+  /* 挑当前那个（选回自己，仍要真手那一下 —— 这条同时验了选中能落回、浮层收得干净） */
+  ok(await tapEl(`(() => {
+    const ds = [...document.querySelectorAll('body > div [role="dialog"]')];
+    const d = ds[ds.length - 1];
+    const btns = [...d.querySelectorAll('button')];
+    return btns.find((b) => b.textContent.trim() === ${JSON.stringify(calPick.picked)});
+  })()`) === 'ok', '在选择层里挑中一个集');
+  await waitFor(page, `document.querySelectorAll('[role="dialog"]').length === 1`,
+    '选完收起，只剩项目浮层', 8000);
   const setField = (sel, val) => evalJs(page, `
     return (() => {
       const el = document.querySelector(${JSON.stringify(sel)});

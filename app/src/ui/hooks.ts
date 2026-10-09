@@ -193,8 +193,20 @@ export function useOutsideClose(
     if (!open) return;
     const on = (e: MouseEvent) => {
       const el = ref.current;
-      if (el && el.contains(e.target as Node)) return;
-      if (trigger?.current?.contains(e.target as Node)) return;
+      const t = e.target as Element | null;
+      if (el && el.contains(t as Node)) return;
+      if (trigger?.current?.contains(t as Node)) return;
+      /* 嵌套浮层：「浮层里再弹一层」（SheetPicker、更多→日程集多选）。
+         里面那层是 portal 到 body 的 —— DOM 上不是本面板的后代，于是 `contains`
+         判不出来，这一下会被当成「点到外面」。capture 阶段的 mousedown 会**先一步**
+         把本层关掉、连带把里层一起卸载，用户这一次点击就丢了：症状是「点选项没反应，
+         浮层倒是没了」。而且只在真机上出现 —— 合成 click 不派发 mousedown，
+         `clickEl` 那套测试永远测不出来（同上面 trigger 那条）。
+         判据不是「在本面板外」，是「在**别的**浮层里」：拿落点自己那一棵
+         `[data-sheet-root]` 跟本面板的比。落在本面板自己的遮罩上照旧要关。 */
+      const own = (el?.closest('[data-sheet-root]') as Element | null) || null;
+      const hit = (t?.closest?.('[data-sheet-root]') as Element | null) || null;
+      if (hit && hit !== own) return;
       cb.current();
     };
     document.addEventListener('mousedown', on, true);
