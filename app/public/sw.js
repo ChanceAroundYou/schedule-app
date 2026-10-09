@@ -24,7 +24,7 @@
  * 否则 activate 里删旧缓存那一步不会触发。
  */
 
-const CACHE = 'sched-shell-v1';
+const CACHE = 'sched-shell-v2';
 
 /** 这些都要按 sw.js 自己的位置算 —— 应用挂在 /schedule/ 下，不是根 */
 const INDEX = new URL('./index.html', self.location.href).href;

@@ -15,7 +15,7 @@
  *     scrollHeight === clientHeight，滚轮彻底失效。
  */
 
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { LocalState, Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { DAY_H, HOUR_H, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, type DayWindow, type Slot } from '../domain/layout.ts';
@@ -102,9 +102,23 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const { activeId } = useDragSession();
 
   /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。
-     **自适应疏密**：时间窗太长时标签会挤在一起，按总小时数动态调整间隔。 */
+     **按「每小时多少像素」定疏密**：同样 24 小时，大屏每小时 27px、
+     手机每小时 12px，按小时数分档（>22 → 3）会让默认的整天视图永远停在
+     最疏那一档。判据换成像素后，只有真的挤在一起才跳档。 */
   const totalHours = (win.to - win.from) / 60;
-  const step = totalHours > 22 ? 3 : totalHours > 16 ? 2 : 1;
+  const [tlH, setTlH] = useState(0);
+  const tlRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = tlRef.current;
+    if (!el) return;
+    const measure = () => setTlH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const pxPerHour = tlH > 0 ? tlH / totalHours : 40;
+  const step = pxPerHour < 16 ? 3 : pxPerHour < 26 ? 2 : 1;
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 < win.to && h % step === 0);
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
@@ -121,7 +135,7 @@ function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
         <div className="tl-wrap">
           <div
-            className="timeline" ref={timelineZone.ref} data-zone-id={`timeline:${iso}`}
+            className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }} data-zone-id={`timeline:${iso}`}
             data-date={iso} data-from={win.from} data-to={win.to}
           >
           {hours.map((h) => (

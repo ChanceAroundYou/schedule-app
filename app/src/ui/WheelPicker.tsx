@@ -63,17 +63,25 @@ export function WheelPicker({
   useEffect(() => { scrollTo(leftRef, leftIdx); }, [leftIdx]);
   useEffect(() => { scrollTo(rightRef, rightIdx); }, [rightIdx]);
 
-  const handleScroll = (ref: { current: HTMLDivElement | null }, setIdx: (i: number) => void, options: WheelOption[], onChange: (v: string) => void) => {
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* 滚动停了（80ms 没再滚）才读最终位置。点一个项会触发平滑滚动，滚动途中
+     连续 onScroll —— 那些中间值会把选择往回带，所以必须等停。取第一个 item
+     的高度（children[1]，不是 children[0] 那个 spacer），scrollTop 是 item
+     顶相对容器顶的距离，居中后正好是 idx × itemH。 */
+  const handleScroll = (ref: { current: HTMLDivElement | null }, idx: number, setIdx: (i: number) => void, options: WheelOption[], onChange: (v: string) => void) => {
     const el = ref.current;
     if (!el) return;
-    const scrollTop = el.scrollTop;
-    const itemH = (el.children[0] as HTMLElement)?.offsetHeight || 32;
-    const idx = Math.round(scrollTop / itemH);
-    const clamped = Math.max(0, Math.min(options.length - 1, idx));
-    if (clamped !== idx) {
-      setIdx(clamped);
-      onChange(options[clamped].value);
-    }
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => {
+      const itemH = (el.children[1] as HTMLElement)?.offsetHeight || 32;
+      const i = Math.round(el.scrollTop / itemH);
+      const clamped = Math.max(0, Math.min(options.length - 1, i));
+      if (clamped !== idx) {
+        setIdx(clamped);
+        onChange(options[clamped].value);
+      }
+    }, 80);
   };
 
   const renderWheel = (
@@ -89,7 +97,7 @@ export function WheelPicker({
       <div
         className="wp-wheel"
         ref={ref}
-        onScroll={() => handleScroll(ref, setIdx, options, onChange)}
+        onScroll={() => handleScroll(ref, idx, setIdx, options, onChange)}
       >
         <div className="wp-wheel-spacer" />
         {options.map((o, i) => (

@@ -2953,45 +2953,31 @@ try {
   ok(nativeInputs.length === 0,
     '抽屉里没有原生日期 / 时间输入框（日期和时间都用自带的 .dp / .tp），实际 ' + JSON.stringify(nativeInputs));
 
+  const btnWidths = await evalJs(page, `
+    const pick = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    };
+    return JSON.stringify({
+      dp: pick('.drawer .dp-btn'),
+      tp: pick('.drawer .tp-btn'),
+      rep: pick('.drawer .rep-open'),
+    });
+  `);
+  console.log('  DIAG btn widths:', btnWidths);
+
   /* 重复设置收在一个 Sheet 里（2026-10-09）。外面那一行只留一个按钮，
      点开是一个 Sheet，里面有频率 / 间隔 / 周几 / 结束方式。 */
   await clickEl(page, `document.querySelector('.drawer .rep-open')`);
   await waitFor(page, `document.querySelector('.repeat-pop') ? 1 : null`, '重复下拉弹窗打开了', 8000);
-  const openState = await evalJs(page, `
-    const rep = JSON.parse(localStorage.getItem('schedule-app-v4'));
-    const t = rep && rep.tasks ? Object.values(rep.tasks).find((x) => x.id === ${JSON.stringify(rowId)}) : null;
-    return JSON.stringify({
-      repUnit: t && t.repeat ? t.repeat.unit : null,
-      wpPicker: !!document.querySelector('.repeat-pop .wp-picker'),
-      noneBtn: !!document.querySelector('.repeat-pop .repeat-none-btn'),
-      popHTML: document.querySelector('.repeat-pop') ? document.querySelector('.repeat-pop').innerHTML.slice(0, 200) : null,
-    });
-  `);
-  console.log('  DIAG popup opened:', openState);
-  // 如果当前是"不重复"，先点按钮切换到每天
-  const noneBtn = await evalJs(page, `document.querySelector('.repeat-pop .repeat-none-btn') ? 1 : null`);
-  console.log('  DIAG noneBtn value:', JSON.stringify(noneBtn));
-  if (noneBtn) {
-    const clickRet = await clickEl(page, `document.querySelector('.repeat-pop .repeat-none-btn')`);
-    console.log('  DIAG none-btn clickEl returned:', JSON.stringify(clickRet));
-  } else {
-    console.log('  DIAG noneBtn falsy, skipping click');
+  // 如果当前是"不重复"，先点那个按钮切到「每天」。clickEl 返回 'missing'
+  // 就是已经是有重复了（弹的是滚轮，不是「不重复」按钮），那就跳过。
+  const noneClick = await clickEl(page, `document.querySelector('.repeat-pop .repeat-none-btn')`);
+  if (noneClick !== 'missing') {
+    await waitFor(page, `document.querySelector('.repeat-pop .wp-picker') ? 1 : null`, '从「不重复」切换到有重复', 8000);
   }
-  // 轮询 1.5s，看 repUnit / wpPicker / noneBtn 的变化
-  for (let i = 0; i < 15; i++) {
-    const d = await evalJs(page, `
-      const rep = JSON.parse(localStorage.getItem('schedule-app-v4'));
-      const t = rep && rep.tasks ? Object.values(rep.tasks).find((x) => x.id === ${JSON.stringify(rowId)}) : null;
-      return JSON.stringify({
-        repUnit: t && t.repeat ? t.repeat.unit : null,
-        wpPicker: !!document.querySelector('.repeat-pop .wp-picker'),
-        noneBtn: !!document.querySelector('.repeat-pop .repeat-none-btn'),
-        wheelItems: document.querySelectorAll('.repeat-pop .wp-wheel-item').length,
-      });
-    `);
-    console.log('  DIAG poll ' + i + ':', d);
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  // 点右侧单位轮里的「每周」——滚轮和选择器是独立的，单位轮右边那个
+  await clickEl(page, `document.querySelector('.repeat-pop .wp-wheel-item[value="week"]')`);
   await waitFor(page, `document.querySelector('.repeat-pop .rp-day') ? 1 : null`, '每周的星期选择出来', 8000);
   // 点击"到某天" Chips
   await clickEl(page, `document.querySelector('.repeat-pop [data-pick="date"]')`);
