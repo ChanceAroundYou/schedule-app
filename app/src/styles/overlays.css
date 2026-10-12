@@ -94,7 +94,7 @@
    （2026-10-09）—— 重复是大多数人根本不碰的字段，不该在抽屉里占一整屏。
    样式跟 `.dp-btn` / `.tp-btn` 同源：同一个抽屉里三种「选一下」的按钮。 */
 .rep-open {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 72px;
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 72px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
@@ -117,7 +117,7 @@
    收缩到内容宽。月初那个月历浮层是 position:fixed，不受这条影响。 */
 .dp { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .dp-btn {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 72px;
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 72px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
@@ -165,7 +165,7 @@
 
 .tp { display: flex; flex-direction: column; gap: 8px; }
 .tp-btn {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; min-width: 96px;
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 96px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); color: var(--text-2); font-size: 13px;
   transition: border-color .14s, background .14s, color .14s;
@@ -203,26 +203,51 @@
 
 /* 「每」字：最左侧，垂直居中（rp-row 是 flex + align-items:center） */
 .rp-every { flex: 0 0 auto; color: var(--text-2); font-size: 13px; }
-/* 间隔数字输入框：只要整数，宽度固定 64px 免得被下拉挤没 */
-.rp-n {
-  width: 64px; flex: 0 0 auto;
-  padding: 6px 9px;
+/* ---- 重复面板里两个数字框（间隔 `.rp-n` / 次数 `.rp-count`）**共用这一条** ----
+
+   它们是同一个东西的两个实例，只有宽度不同，所以**从组件到样式都只留一条路**：
+   两个都是裸 `<input>`（不走 `Input` 组件）+ 下面这条共享规则。
+
+   用户 2026-10-12：「两个数字输入框……一个选中以后有明显的 PX 的光晕，另一个
+   是没有光晕的，请把它们进行更加彻底的统一」。根因是 `.rp-count` 走 `Input`
+   组件 —— 它自带 Tailwind 的 `py-2` / `px-3` / `focus:shadow-[…]` 一整套，
+   而 `.rp-n` 是裸 `<input>`：高度差一截、focus 一个有光晕一个没有。给两边
+   各打补丁永远对不齐（上一轮钉了 `height` 又冒出 `!important`），砍掉第二条
+   路径才治本。
+
+   **高度 30px** —— 同一排里 Chips（`Btn size="sm"` → `h-[30px]`）和单位下拉
+   （已改成 `size="sm"`）的高度。输入框靠「padding + 行高」自己算出来的是
+   27px（`line-height: 1`）或 33.5px（`1.5`），两种都跟 30 对不上 —— 只能钉死。
+
+   ⚠️ **别拿 Tailwind 的 `h-9` 当「36px」**（第一版就栽在这儿）：`tokens.css`
+   给 `html` 钉了 `font-size: 14px`，于是 **1rem = 14px**，Tailwind 那批 rem
+   尺寸整体缩到 0.875× —— `h-9` 实测是 **31.5px**、`h-11` 是 38.5px，只有
+   `h-[30px]` 这类写死 px 的才是字面值。所以「旁边」本来就不齐（下拉 31.5、
+   胶囊 30），曾经「输入框比旁边高」的真相是 36 > 31.5 > 30。字面 30px 是
+   这三者里唯一能严格对齐的档，也是 `Btn sm` 的档。
+
+   选择器带 `.repeat-pop` 前缀（特异度 0,2,1）：quick-add.css 里那条
+   `.rp-row input[type="number"]`（0,2,1）会盖掉裸 `.rp-n`（0,1,0）的 padding
+   与 border-radius —— 同特异度下 overlays.css 后加载，这里才赢。 */
+.repeat-pop input.rp-n,
+.repeat-pop input.rp-count {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); outline: none;
-  color: var(--text); font-size: 13px; line-height: 1;
-  transition: border-color .14s, background .14s;
+  color: var(--text); font-size: 13px; line-height: 1.5;
+  transition: border-color .14s, background .14s, box-shadow .14s;
 }
-.rp-n:focus { border-color: var(--primary); background: var(--panel); }
-/* 次数输入框：比间隔框更短（用户 2026-10-12：「次数的输入框短一点」）。
-   **高度必须和 `.rp-n` / `.dp-btn` 完全一致**（用户 2026-10-12 报「输入框
-   高度和其他的按钮明显不一致」）：Input 组件自带 `py-2`（8px）比
-   `.dp-btn` / `.rp-n` 的 6px 多 2px —— 四个控件并排放着差 4px 一眼看得出。
-   padding / font-size 钉死，line-height 跟全局的 1.5 对齐（按钮里的文字
-   也是这个行高）。 */
-.rp-count {
-  width: 56px; flex: 0 0 auto;
-  padding-top: 6px !important; padding-bottom: 6px !important;
-  font-size: 13px !important; line-height: 1.5;
+/* 宽度是唯一的区别：间隔框够放三位数，次数框再窄一点。 */
+.repeat-pop input.rp-n { width: 64px; }
+.repeat-pop input.rp-count { width: 56px; }
+/* focus：**两个框同一套** —— 主色描边 + `--primary-soft` 光晕，和 `Input`
+   组件的 focus 完全一致，这样「选中时的样子」在面板里和别处也对得上。 */
+.repeat-pop input.rp-n:focus,
+.repeat-pop input.rp-count:focus {
+  border-color: var(--primary); background: var(--panel);
+  box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md);
 }
 /* 单位下拉：吃掉「每 + n」右边剩下的全部宽度。原来它收缩到内容宽（一个「月」字），
    菜单落下时正好压在下面那排星期按钮上，看起来像被顶掉一格。

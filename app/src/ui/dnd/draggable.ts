@@ -2,7 +2,7 @@
  * draggable.ts —— 时间轴方块拖拽项 + 放置区
  */
 
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { } from '@dnd-kit/utilities';
 
@@ -39,57 +39,21 @@ export function useDraggableEvent(id: string) {
 }
 
 /**
- * 纵向拖拽项（横向锁死 + 纵向钳在容器内）。
+ * 纵向拖拽项（横向锁死）。
  *
- * 日视图专用：定时与未定时卡片**都只能纵向上下拖**，横向完全不能动。
- * `x` 直接置 0，不随指针走。
+ * 日视图专用：定时与未定时卡片**都只能纵向上下拖**，横向完全不能动 ——
+ * `x` 在下面的 `translate3d(0px, …)` 里直接置 0。
  *
- * **纵向也钳住**：卡片顶部不能越过容器顶，底部不能越过容器底。
- * 在拖拽开始时量一次原始位置（那次 render 卡片还没挪走），之后按
- * `min/max` 算术 clamp `y` —— 不在每帧读 DOM，省掉一次强制布局。
- *
- * **不读 DOM 也安全**：node 可能在拖拽中被 dnd-kit 替换，所以用 `useRef`
- * 记住 node，在 effect 里延迟测量。但更简单的是：直接让 `DayView` 把
- * 容器高度传进来，按百分比算 bounds。这样完全避免读 DOM。
+ * **纵向钳位不在这个 hook 里**（2026-10-12 重构）：统一交给 provider 级的
+ * `clampTimelineDrag`（timeline.ts）—— dnd-kit 的 `useDraggable` **不接受**
+ * 从这个 hook 返回的 `modifiers`，留在这儿只有 DayView 的 `drag.style` 会读，
+ * 钳位那半是死代码，两处各写一份还容易只有一份对。这里只保留「横向锁死」。
  */
 export function useClampedDraggableEvent(id: string) {
-  const { x: _x, y, node, isDragging, ...rest } = useDraggableEvent(id);
-  const bounds = useRef<{ min: number; max: number } | null>(null);
-
-  /* 用 useRef + useEffect 在拖拽开始后测量（避免 render 中读 DOM） */
-  useEffect(() => {
-    if (!isDragging || bounds.current) return;
-    const el = node as unknown as HTMLElement | null;
-    const container = el?.closest('.timeline') as HTMLElement | null;
-    if (!el || !container) {
-      bounds.current = { min: -Infinity, max: Infinity };
-    } else {
-      const cardH = el.getBoundingClientRect().height;
-      const wrapEl = el.closest('.tl-events') as HTMLElement | null;
-      const originalTop = (wrapEl?.offsetTop ?? 0) + el.offsetTop;
-      bounds.current = {
-        min: -originalTop,
-        max: container.clientHeight - originalTop - cardH,
-      };
-    }
-  }, [isDragging, node]);
-
-  /* 松手后清掉，下次拖拽重新量 */
-  useEffect(() => {
-    if (isDragging) return;
-    return () => { bounds.current = null; };
-  }, [isDragging]);
-
-  const clamped = bounds.current
-    ? Math.max(bounds.current.min, Math.min(bounds.current.max, y))
-    : y;
-
+  const { x: _x, y, node: _node, ...drag } = useDraggableEvent(id);
   return {
-    ...rest, isDragging, x: 0, y: clamped,
-    /* **展开 `drag.style` 再覆盖 transform，别重新拼一个对象** —— 重新拼会把
-       useDraggableEvent 里那句 `transition: 'none'` 弄丢，被拖的那一项又变回
-       140ms 迟滞（日视图用的就是这个 hook）。 */
-    style: { ...rest.style, transform: `translate3d(0px, ${clamped}px, 0px)` },
+    ...drag,
+    style: { ...drag.style, transform: `translate3d(0px, ${y}px, 0px)` },
   };
 }
 

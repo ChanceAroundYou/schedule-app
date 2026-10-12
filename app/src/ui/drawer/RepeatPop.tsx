@@ -16,18 +16,25 @@ import * as D from '../../domain/date.ts';
 import { REPEAT_UNITS, toRepeat } from '../../domain/repeat.ts';
 import { DatePicker } from '../DatePicker.tsx';
 import { DayGrid } from '../DayGrid.tsx';
-import { Chips, Dropdown, Input } from '../kit.tsx';
+import { Chips, Dropdown } from '../kit.tsx';
 
 /**
  * 次数输入框。**允许清空重输**（用户 2026-10-12）：受控输入框把空值当场
  * clamp 回 1，用户连「删掉改成 1」都做不到 —— 默认的 1 像锁死了一样。
  * 这里用本地草稿，清空时展示空、不写库，失焦才落回真实值。
+ *
+ * **用裸 `<input>` 而不是 `Input` 组件**（用户 2026-10-12：「两个数字输入框
+ * ……一个选中以后有明显的 PX 的光晕，另一个是没有光晕的，请把它们进行更加
+ * 彻底的统一」）。`Input` 组件自带 Tailwind 的 `py-2` / `px-3` / `focus:shadow`
+ * 一整套，和上面那个裸 `<input>` 的间隔框是**两套样式**，高度和 focus 光晕
+ * 必然对不齐。两个框只差宽度，样式统一交给 `.repeat-pop input.rp-n/.rp-count`。
  */
 function CountInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
-    <Input
+    <input
       type="number" min={1} max={999} className="rp-count"
+      aria-label="重复次数"
       value={draft ?? String(value)}
       onChange={(e) => {
         const v = e.target.value;
@@ -87,6 +94,10 @@ export function RepeatPop({ rep, patch, next, last }: {
           }}
           label="重复单位"
           className="rp-unit"
+          /* `size="sm"` → `h-[30px]`：跟这一排的数字框、下面那排 Chips 严格同高。
+             默认的 `md` 走 Tailwind `h-9`，而本项目 `html { font-size: 14px }`
+             让 1rem = 14px，`h-9` 实际是 31.5px —— 比 neighbor 高 1.5px。 */
+          size="sm"
           /* 需求2：单位下拉的菜单要能浮在面板之上、超出面板边界。
              面板是 overflow-y:auto，默认会把绝对定位的菜单裁掉 ——
              菜单 z-[60] 也低于面板自身的 z-70。 */

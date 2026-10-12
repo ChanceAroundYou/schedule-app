@@ -1937,19 +1937,17 @@ try {
   const mid = await evalJs(page, `
     return (() => {
       const el = document.querySelector('${evSel}');
-      if (!el) {
-        const all = [...document.querySelectorAll('.task-el--timed')].map(e => e.dataset.id);
-        return { dbg: 'not found', all, want: ${JSON.stringify(evId)} };
-      }
+      const all = [...document.querySelectorAll('.task-el--timed')].map(e => e.dataset.id);
+      if (!el) return { missing: true, all, active: document.querySelector('.task-el.dragging')?.dataset.id || null,
+                         body: document.body.innerText.slice(-300) };
       const r = el.getBoundingClientRect();
-      // time 一起读回来：日视图拖动途中**卡片本身被实时改 time**（落点跟着
-      // 指针走，见 useTimelineDrag），卡片高是百分比定位的，顶部跨过时间窗
-      // 末端时 pctRange 会把高度夹到窗沿 —— 所以高度**会变**，而且原因不是
-      // scale。断言据此改成「transform 里没有 scale」+「宽度不变」。
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(evId)});
-      return { w: r.width, h: r.height, transform: el.style.transform,
-               time: t ? t.time : null, dur: t ? t.duration : null };
+      return { w: r.width, h: r.height, left: r.left, top: r.top, bottom: r.bottom,
+               tlTop: document.querySelector('.day-panel').getBoundingClientRect().top,
+               tlBottom: document.querySelector('.day-panel').getBoundingClientRect().bottom,
+               transform: el.style.transform,
+               time: t ? t.time : null, dur: t ? t.duration : null, all };
     })();
   `);
   await page.send('Input.dispatchMouseEvent', {
@@ -1966,13 +1964,18 @@ try {
   /* 高度会变，但**不是 scale 撑大的**：卡片跟着指针走，top 跨过时间窗末端时
      `pctRange` 把高度夹到窗沿（夹小，不是放大）。transform 里没有 scale 已经
      证了这一点（`CSS.Transform` 会把 adjustScale 的 scaleY 一起烤进去）。 */
-  ok(!!mid && (!mid.time || mid.time <= '11:00'),
-    '拖动途中卡片没有被 scale 拉高（时间 ' + (mid ? mid.time : '?') + ' 仍落在时间窗内），实际 '
-      + JSON.stringify(mid && { h: mid.h, time: mid.time, transform: mid.transform }));
+  /* 钳位**以 `.day-panel` 为界，不是 `.timeline`**（代码见 timeline.ts 的
+     `clampTimelineDrag`，用户 2026-10-12 明确要求能把定时卡片拖进无时间区）：
+     夹 `.timeline` 会把卡片挡在无时间区外，正是用户报的那个症状。日面板
+     含无时间区 + 时间轴，夹它才对。 */
+  ok(!!mid && mid.top >= mid.tlTop - 1 && mid.bottom <= mid.tlBottom + 1,
+    '拖拽中卡片上下沿限制在日面板内（卡片 ' + mid.top + '–' + mid.bottom
+      + '，面板 ' + mid.tlTop + '–' + mid.tlBottom + '）');
+  ok(!!mid && mid.left >= 0 && mid.w > 0,
+    '拖拽中卡片横向位置有效（left ' + (mid ? mid.left.toFixed(1) : '?')
+      + '，宽 ' + (mid ? mid.w.toFixed(1) : '?') + '）');
 
-  // ③之二 拖动态三件套：虚影让位、出界去最近位置、水平锁在容器内
-  //     这三条都是「拖起来那一瞬间」的行为，必须在拖拽途中量，松手之后就看不见了。
-  //     所以这里重新拖一次，在拖拽途中读状态。
+  // ③之二 拖动态让位 + 真实出界落点；横向锁死在上一条单独验证。
   const evRect0 = await evalJs(page, `
     return (() => {
       const el = document.querySelector('${evSel}');
@@ -2919,6 +2922,18 @@ try {
   await clickEl(page, `document.querySelector('.drawer .rep-open')`);
   await waitFor(page, `document.querySelector('.repeat-pop') ? 1 : null`, '重复下拉弹窗打开了', 8000);
   ok(true, '重复弹窗打开');
+  /* **数字框和旁边的下拉同高**（用户 2026-10-12：「两个输入框的高度还是比旁边
+     高」）。量几何不量类名。⚠️ 高度是 **30px**，不是 36：本项目 `html` 钉了
+     `font-size: 14px`，1rem = 14px，Tailwind 的 `h-9` 实际只有 31.5px ——
+     所以这一排下拉 / 胶囊 / 数字框统一钉字面 30px（`Btn sm` 的档）。 */
+  const numBox = await evalJs(page, `return (() => {
+    const h = (el) => el ? Math.round(el.getBoundingClientRect().height) : null;
+    return {
+      n: h(document.querySelector('.repeat-pop input.rp-n')),
+      dd: h(document.querySelector('.repeat-pop [aria-haspopup="listbox"]')),
+    };
+  })()`);
+  ok(numBox.n === numBox.dd, `重复面板：间隔框与单位下拉同高（${numBox.n} / ${numBox.dd}）`);
   // **弹窗直接进重复面板**（2026-10-10）：不再单独弹一个按钮让人多点一下。
   // 单位下拉选「周」
   await clickEl(page, `document.querySelector('.repeat-pop [aria-haspopup="listbox"]')`);
@@ -2999,6 +3014,34 @@ try {
     })()
   `, '每年的月份切换点得动', 8000);
   ok(true, '每年的月份切换点得动');
+  /* 「按次数」→ 次数输入框出现。它和间隔框**必须是同一套样式**（用户
+     2026-10-12：「它们两个之间的样式也不统一，一个选中以后有明显的 PX 的光晕，
+     另一个是没有光晕的」）。这里把两个框依次 focus，直接比计算出来的
+     `box-shadow` —— 光晕是这一处最容易各长各的。 */
+  await clickEl(page, `document.querySelector('.repeat-pop [data-pick="count"]')`);
+  await waitFor(page, `document.querySelector('.repeat-pop input.rp-count') ? 1 : null`, '次数输入框出来', 8000);
+  const numPair = await evalJs(page, `return (() => {
+    const h = (el) => el ? Math.round(el.getBoundingClientRect().height) : null;
+    const read = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { h: null, shadow: null };
+      /* **先关掉 transition 再 focus**：box-shadow 有 .14s 过渡，聚焦后立刻读
+         拿到的是过渡起点（透明 0 尺寸），会把「有光晕」误判成「没光晕」。 */
+      el.style.transition = 'none';
+      el.focus();
+      const shadow = getComputedStyle(el).boxShadow;
+      el.style.transition = '';
+      return { h: h(el), shadow };
+    };
+    const n = read('.repeat-pop input.rp-n');
+    const c = read('.repeat-pop input.rp-count');
+    const chip = h(document.querySelector('.repeat-pop [data-pick="count"]'));
+    return { n: n.h, c: c.h, chip, sn: n.shadow, sc: c.shadow };
+  })()`);
+  ok(numPair.n === numPair.c && numPair.c === numPair.chip,
+     `重复面板：间隔框 / 次数框 / 胶囊三者同高（${numPair.n} / ${numPair.c} / ${numPair.chip}）`);
+  ok(numPair.sn === numPair.sc && numPair.sn !== 'none',
+     `两个数字框的 focus 光晕一致（${numPair.sn} / ${numPair.sc}）`);
   // 点击"到某天" Chips
   await clickEl(page, `document.querySelector('.repeat-pop [data-pick="date"]')`);
   await waitFor(page, `document.querySelector('.repeat-pop .rp-row .dp-btn') ? 1 : null`, '「到某天」的日期按钮出来了', 8000);

@@ -5,7 +5,7 @@
 import { useState, useCallback, type ReactNode } from 'react';
 import {
   DndContext,
-  type DragStartEvent, type DragOverEvent, type DragMoveEvent, type DragEndEvent,
+  type DragStartEvent, type DragOverEvent, type DragMoveEvent, type DragEndEvent, type Modifier,
 } from '@dnd-kit/core';
 import { setDragging } from '../dragState.ts';
 import { DragCtx } from './context.ts';
@@ -13,6 +13,7 @@ import { useDragSensors } from './sensors.ts';
 
 export interface DndProviderProps {
   children: ReactNode;
+  modifiers?: Modifier[];
   onDragOver?: (event: DragOverEvent) => void;
   /** 每次 pointer 移动都触发 —— 引导线要连续跟指针，只能靠它（见 useTimelineDrag） */
   onDragMove?: (event: DragMoveEvent) => void;
@@ -20,7 +21,7 @@ export interface DndProviderProps {
   onDragCancel?: () => void;
 }
 
-export function DndProvider({ children, onDragOver, onDragMove, onDragEnd, onDragCancel }: DndProviderProps) {
+export function DndProvider({ children, modifiers, onDragOver, onDragMove, onDragEnd, onDragCancel }: DndProviderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useDragSensors();
@@ -45,6 +46,7 @@ export function DndProvider({ children, onDragOver, onDragMove, onDragEnd, onDra
   return (
     <DndContext
       sensors={sensors}
+      modifiers={modifiers}
       onDragStart={handleDragStart}
       onDragOver={onDragOver}
       onDragMove={onDragMove}

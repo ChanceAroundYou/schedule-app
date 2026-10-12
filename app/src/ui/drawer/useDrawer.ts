@@ -57,7 +57,6 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   // 标题是本地草稿：每敲一个字都写库会让输入框在重渲染里跳光标（旧版踩过）
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
-  const [endTime, setEndTime] = useState<string | null>(null);
   const [repOpen, setRepOpen] = useState(false);
   const repAnchor = useRef<HTMLButtonElement>(null);
   const repPanel = useRef<HTMLDivElement>(null);
@@ -66,17 +65,34 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   const osbRep = useOverlayScrollbar<HTMLDivElement>(repPanel);
   const lastId = useRef<string | null>(null);
 
+  /**
+   * 结束时间**直接从 task 派生**，不是本地 state。
+   *
+   * 原先它是本地 state：用户改 TimePicker 时 setEnd 顺手 set 一下。但拖卡片
+   * 上下沿（resizeTimeline.ts）会直接 patch `duration` 到 store，那条路**不经过**
+   * setEnd —— 于是抽屉里的结束时间停在旧值，用户报「调整了结束时间，再进编辑
+   * 弹窗又消失了」（2026-10-12）。改成派生之后，三条写 duration 的路
+   * （TimePicker / 拖上沿下沿 / QuickAdd 带时长）都指向同一份真相，
+   * 没有「哪条路忘了同步」这一说了。
+   */
+  const endTime = (() => {
+    if (!task || !task.time || task.duration == null) return null;
+    const start = D.timeToMin(task.time);
+    if (start == null) return null;
+    const end = start + task.duration;
+    return end > 1440 ? D.minToTime(end % 1440) : D.minToTime(end);
+  })();
+
   useEffect(() => {
     if (!task) return;
     if (lastId.current === task.id) return;   // 同一任务的重渲染不要覆盖正在输入的内容
     lastId.current = task.id;
     setTitle(task.title);
     setNote(task.note || '');
-    setEndTime(null);
   }, [task]);
 
   useEffect(() => {
-    if (!id) { lastId.current = null; return; }
+    if (!id) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -131,20 +147,12 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
     : null;
 
   const startMin = task ? D.timeToMin(task.time) : null;
+  /** 改结束时间 = 改 duration。endTime 是派生的，这里只写 store。 */
   const setEnd = (v: string | null) => {
     const s = startMin;
-    if (v == null || s == null) {
-      setEndTime(null);
-      patch({ duration: DEFAULT_DURATION });
-      return;
-    }
+    if (v == null || s == null) { patch({ duration: DEFAULT_DURATION }); return; }
     const e = D.timeToMin(v);
-    if (e == null) {
-      setEndTime(null);
-      patch({ duration: DEFAULT_DURATION });
-      return;
-    }
-    setEndTime(v);
+    if (e == null) { patch({ duration: DEFAULT_DURATION }); return; }
     patch({ duration: e > s ? e - s : e - s + 1440 });
   };
 

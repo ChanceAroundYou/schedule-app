@@ -152,29 +152,43 @@
 }
 .task-el.done .ev-time { text-decoration: none; }
 /* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
-   **短卡片上给把手封顶**：`min-height: 12px` 的一小时卡片，两个 11px 的把手
-   上下各贴一边，合起来盖住整张卡片 —— 抓到的全是 resize，卡片再也拖不动
-   （用户 2026-10-11 报「时间卡片向上拖不动」的真因，跟遮挡无关）。
-   上限取卡片高的 60%：一小时卡片上每个把手 6.7px，中间至少留 4px 给拖动；
-   高卡片照旧 11px，抓捏手感不变。`min-height: 6px` 守住命中区下限。 */
+  /* **把手只占一小条，其余全是拖动区**（2026-10-12 再定）
+     —— 用户报「卡片高度比较窄的时候，上下两端覆盖整体拖拽」，又要求
+     「调整长度的区域只在小把手附近，其他位置不能触发调整时间」。
+     **分三层，各管一件事**：
+       ① **横向只占 24px 居中**（`left: 50%; width: 24px; transform: translateX(-50%)`）。
+         原先 `left: 0; right: 0` 是全宽，整张卡片上下沿各一条横向带都是 resize，
+         稍矮的卡片只剩中间一线能拖。现在只有中间 24px 是 resize，
+         四个角与两侧边都归拖动。
+       ② `height: min(9px, 30%)` —— 纵向封顶，矮卡片兜底 4px。
+       ③ 视觉指示 `.ev-resize::after` 也相应缩窄：24px → 12px，
+          用户看得到「哪里能拉」和「哪里只能拖」的边界。 */
 .ev-resize {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  height: min(11px, 60%); min-height: 6px;
+  position: absolute; left: 50%; width: 24px; transform: translateX(-50%); bottom: 0;
+  height: min(9px, 30%); min-height: 4px;
   cursor: ns-resize; display: flex; align-items: center; justify-content: center;
   opacity: 0; transition: opacity .12s;
+  touch-action: none;
 }
 .ev-resize-top { top: 0; bottom: auto; }
 .task-el:hover .ev-resize { opacity: .85; }
 .ev-resize::after {
-  content: ''; width: 24px; height: 3px; border-radius: var(--r-xs);
+  content: ''; width: 12px; height: 3px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .55);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
 .task-el.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
+/* 拖上沿 / 下沿拉伸时的浮标。**样式与拖拽的 `.tl-dur-tag` 一致**（2026-10-12）：
+   用户报「两个小浮窗黑绿不一，三个要统一」。配色统一走黑底白字 ——
+   黑底在任何主题下都压得住，白字永远对。
+   **文案仍然是两种**（用户 2026-10-12 明确要求保持区分）：
+     拉伸 → 「几点几分 · 持续时间」（两个信息都要：拖到几点了、变成多长）
+     整体拖拽 → 只「持续时间」（拖拽只回答「多长」，「几点」由绿线直接读） */
 .tl-resize-tip {
   position: fixed; z-index: 80; pointer-events: none;
-  background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
-  padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
+  background: rgb(0 0 0 / .55); color: var(--toast-fg);
+  font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: var(--r-xs); font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-md); transform: translateY(-3px);
 }
 /* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点。

@@ -220,13 +220,16 @@ body.sheet-open .tab:active { background: none; }
     --ev-time-size: 10px;
     --ev-gap: 0px;
   }
-  /* 触屏没有 hover，拖拽抓手常显会误触，改为整体隐藏 */
-  .ev-resize { display: none; }
+  /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
+  .ev-resize { opacity: .5; }
 
-  /* 任务抽屉：从底部整块弹出 */
+  /* 任务抽屉：从底部整块弹出。**高度按内容走**（2026-10-12）——
+     用户报「移动端下有大量空白」：写死 88dvh，四行字段只占三百来像素，
+     剩下两百多像素是空的。改 height:auto，max-height 兜底防长备注撑爆。 */
   .drawer {
     top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
-    height: 88dvh; border-left: none; border-top: 1px solid var(--border);
+    height: auto; max-height: 88dvh;
+    border-left: none; border-top: 1px solid var(--border);
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     transform: translateY(100%);
     transition: transform .24s cubic-bezier(.3, .8, .3, 1);

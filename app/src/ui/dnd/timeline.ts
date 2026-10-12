@@ -3,7 +3,7 @@
  */
 
 import { useRef, useCallback } from 'react';
-import type { DragOverEvent, DragMoveEvent, DragEndEvent } from '@dnd-kit/core';
+import type { DragOverEvent, DragMoveEvent, DragEndEvent, Modifier } from '@dnd-kit/core';
 import * as D from '../../domain/date.ts';
 import * as store from '../../data/store.ts';
 import { FULL_DAY } from '../../domain/layout.ts';
@@ -35,6 +35,23 @@ export function useTimelineDrag() {
      `over`**，所以引导线要连续跟指针，就得在这儿记下 `onDragOver` 找到的
      那个 zone（元素 + id —— id 用来区分 timeline / week 两种算法）。 */
   const zoneRef = useRef<{ el: HTMLElement; id: string } | null>(null);
+
+  /* 日视图纵向钳位：卡片不能拖出 `.day-panel`（整个面板，含无时间区）。
+     **夹的必须是 `.day-panel`**，不是 `.timeline` —— 后者只覆盖时间轴，
+     夹它会把卡片挡在无时间区外（用户 2026-10-12：「没有办法把它拖到
+     无时间的那片区域里了」）。`.day-panel` 是含 `.allday-zone` + `.tl-wrap`
+     的整个面板，夹它才能在整个范围内拖动。 */
+  const clampTimelineDrag: Modifier = ({ active, activeNodeRect, transform }) => {
+    if (!active || !activeNodeRect) return transform;
+    const el = document.querySelector<HTMLElement>(`.task-el--timed[data-id="${String(active.id)}"]`);
+    const frame = el?.closest<HTMLElement>('.day-panel');
+    if (!el || !frame) return transform;
+
+    const rect = frame.getBoundingClientRect();
+    const minY = rect.top - activeNodeRect.top;
+    const maxY = rect.bottom - activeNodeRect.bottom;
+    return { ...transform, y: Math.max(minY, Math.min(maxY, transform.y)) };
+  };
 
   const onDragOver = useCallback((event: DragOverEvent) => {
     const over = event.over;
@@ -194,5 +211,5 @@ export function useTimelineDrag() {
     clearDurationTags();
   }, []);
 
-  return { onDragOver, onDragMove, onDragEnd, onDragCancel };
+  return { modifiers: [clampTimelineDrag], onDragOver, onDragMove, onDragEnd, onDragCancel };
 }
