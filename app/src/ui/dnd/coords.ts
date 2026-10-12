@@ -4,7 +4,7 @@
 
 import type { DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
-import { DAY_H, FULL_DAY, spanOf, yToMin, type DayWindow } from '../../domain/layout.ts';
+import { DAY_H, FULL_DAY, yToMin, type DayWindow } from '../../domain/layout.ts';
 
 /* ============================ 指针坐标 ============================ */
 
@@ -36,16 +36,6 @@ export function eventY(event: DragOverEvent | DragEndEvent): number | null {
 export function minFromY(zone: HTMLElement, clientY: number): number {
   const rect = zone.getBoundingClientRect();
   return yToMin(clientY - rect.top, rect.height, zoneWindow(zone));
-}
-
-/** 纵坐标 → 分钟（**不对齐 15 分钟**）。拖拽落点用 —— 对齐会让卡片从指针位置跳到网格，产生跳变。 */
-export function minFromYNoSnap(zone: HTMLElement, clientY: number): number {
-  const rect = zone.getBoundingClientRect();
-  const win = zoneWindow(zone);
-  const y = clientY - rect.top;
-  if (rect.height <= 0) return win.from;
-  const raw = win.from + (y / rect.height) * spanOf(win);
-  return Math.max(win.from, Math.min(win.to - 1, raw));
 }
 
 /** 周视图整列都是 24 小时、像素高度固定 —— 那一套还成立 */

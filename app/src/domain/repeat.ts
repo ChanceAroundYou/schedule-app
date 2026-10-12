@@ -166,6 +166,42 @@ export function seriesRootOf(task: Pick<Task, 'id' | 'seriesId' | 'repeat'>): st
   return null;
 }
 
+/**
+ * 最后一次发生日期。
+ *
+ * `end.type === 'never'`（不结束）→ null，永远没有最后一次。
+ * `end.type === 'date'` → ≤ end.date 的最后一次发生。
+ * `end.type === 'count'` → 第 N 次发生。
+ *
+ * `base` 是任务日期（系列第一条的日期），不是今天。
+ * 返回 null 表示算不出（没有结束条件 / 数据不对）。
+ */
+export function repeatLast(task: Task, base: string): string | null {
+  const r = task.repeat;
+  if (!r || r.unit === 'none') return null;
+  if (!r.end) return null;
+
+  if (r.end.type === 'date' && r.end.date) {
+    let cursor = base;
+    let next = repeatAdvance(r, cursor);
+    while (next && next <= r.end.date) {
+      cursor = next;
+      next = repeatAdvance(r, cursor);
+    }
+    return cursor;
+  }
+
+  if (r.end.type === 'count' && r.end.count) {
+    let cursor = base;
+    for (let i = 1; i < r.end.count; i++) {
+      cursor = repeatAdvance(r, cursor) || cursor;
+    }
+    return cursor;
+  }
+
+  return null;
+}
+
 /** 这个 id 是不是派生出来的重复实例（调试和迁移用） */
 export function parseInstanceId(id: string): { seriesId: string; date: string } | null {
   const i = id.indexOf('#');

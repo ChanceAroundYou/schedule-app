@@ -9,7 +9,7 @@ import * as store from '../../data/store.ts';
 import { FULL_DAY } from '../../domain/layout.ts';
 import { toast } from '../kit.tsx';
 import {
-  eventX, eventY, minFromY, minFromYNoSnap, weekGuideMin, zoneWindow,
+  eventX, eventY, minFromY, weekGuideMin, zoneWindow,
 } from './coords.ts';
 import {
   drawTimeGuide, drawTimeCursor, clearTimeCursor,
@@ -44,21 +44,20 @@ export function useTimelineDrag() {
     const zone = document.querySelector<HTMLElement>(`[data-zone-id="${overId}"]`);
     if (!zone) return;
 
-    /* **绿线跟卡片顶部，不跟手指。** 手指在卡片中间时，绿线画在手指位置，
-       用户看到的落点和卡片顶部对不上。改成读卡片实际顶部坐标。
-       **一个选择器就够**：定时与未定时卡片共用 `.task-el`
-       （见 views/calendar/DayView.tsx），原先要 `.tl-event, .task-pill`
-       两个名字分别找同一份东西。 */
+    /* **绿线按 15 分钟档走，不跟卡片连续位置。** 用户要的是「绿线离散到
+       0/15/30/45，松手后吸附到 15 分钟刻度」——绿线是落点预告，不是手指
+       跟随器。卡片本身连续跟手（dnd-kit transform），绿线只告诉你松手后
+       会落到哪个刻度。 */
     const activeId = String(event.active.id);
     const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
     let min: number;
     if (card) {
-      min = minFromYNoSnap(zone, card.getBoundingClientRect().top);
+      min = minFromY(zone, card.getBoundingClientRect().top);
       showDurationTag(card, activeId);
     } else {
       const currentY = eventY(event);
       if (currentY === null) return;
-      min = minFromYNoSnap(zone, currentY);
+      min = minFromY(zone, currentY);
     }
 
     if (overId.startsWith('timeline:')) {
@@ -85,17 +84,17 @@ export function useTimelineDrag() {
     const z = zoneRef.current;
     if (!z) return;
 
-    /* 绿线跟卡片顶部，不跟手指 */
+    /* 绿线按 15 分钟档走 */
     const activeId = String(event.active.id);
     const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
     let min: number;
     if (card) {
-      min = minFromYNoSnap(z.el, card.getBoundingClientRect().top);
+      min = minFromY(z.el, card.getBoundingClientRect().top);
       showDurationTag(card, activeId);
     } else {
       const currentY = eventY(event);
       if (currentY === null) return;
-      min = minFromYNoSnap(z.el, currentY);
+      min = minFromY(z.el, currentY);
     }
 
     if (z.id.startsWith('timeline:')) {
@@ -146,13 +145,13 @@ export function useTimelineDrag() {
 
     if (overId.startsWith('timeline:')) {
       /* 落点跟绿线一致：用卡片顶部坐标，不用手指坐标。
-         **不对齐 15 分钟**：拖拽时卡片跟指针走，松手时如果对齐到 15 分钟，
-         卡片会从指针位置跳到对齐位置，产生跳变。直接用当前卡片位置。
+         **吸附到 15 分钟档**（用户 2026-10-12：「松手后吸附到 15 分支刻度上」）——
+         拖拽途中卡片连续跟手不跳，松手时才吸到档位，绿线预告的就是这个落点。
          未定时卡片拖到时间区也走这个分支。 */
       const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
       const min = card
-        ? minFromYNoSnap(zone, card.getBoundingClientRect().top)
-        : minFromYNoSnap(zone, currentY);
+        ? minFromY(zone, card.getBoundingClientRect().top)
+        : minFromY(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.minToTime(min)}`);
       return;

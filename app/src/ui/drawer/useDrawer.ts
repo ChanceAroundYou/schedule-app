@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { LocalState, RepeatRule, Task } from '../../domain/types.ts';
 import { canWrite } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { repeatNext } from '../../domain/repeat.ts';
+import { repeatLast, repeatNext } from '../../domain/repeat.ts';
 import { liveProjects } from '../../domain/model.ts';
 import { useConfirm } from '../kit.tsx';
 import { useAnchoredPosition, useEscape, useFocusTrap, useModalFocus, useOutsideClose } from '../hooks.ts';
@@ -119,11 +119,15 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   const toggleDone = () => { if (task) onToggle(task.id); };
 
   /**
-   * 下一次落在哪天。**实时算给用户看** —— 重复规则是「每周三 + 隔 2 周 +
-   * 到某天为止」这种组合，光看几个下拉框想象不出结果。
+   * 下一次 / 最后一次落在哪天。**实时算给用户看** —— 重复规则是「每周三 +
+   * 隔 2 周 + 到某天为止」这种组合，光看几个下拉框想象不出结果。
+   * `lastOcc` 在「不结束」时为 null（没有最后一次）。
    */
   const nextOcc = task && task.repeat.unit !== 'none'
     ? repeatNext(task, task.date || D.today())
+    : null;
+  const lastOcc = task && task.repeat.unit !== 'none'
+    ? repeatLast(task, task.date || D.today())
     : null;
 
   const startMin = task ? D.timeToMin(task.time) : null;
@@ -147,7 +151,7 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   return {
     task, title, setTitle, note, setNote, endTime, setEnd,
     repOpen, setRepOpen, repAnchor, repPanel, osbBody, osbRep, repPos, fid,
-    panel, nextOcc, patch, repPatch, remove, toggleDone,
+    panel, nextOcc, lastOcc, patch, repPatch, remove, toggleDone,
     /* 归属跨集选不了：项目是**按集**的（跟日程 / 打卡 / 已完成一样）——
        挂到别的集的项目上，那条泳道在那边会凭空多出一张卡。 */
     projs: task ? liveProjects(state) : [],

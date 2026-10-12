@@ -22,16 +22,15 @@ let guideLine: HTMLDivElement | null = null;
  */
 
 /**
- * 画引导线。**位置按像素算，不按百分比**。
+ * 画引导线。**位置按像素算，不对齐 15 分钟档**。
  *
  * 按百分比的问题是：`top: %` 会被浏览器按**整数像素**栅格对齐（布局像素），
  * 于是 1 分钟在 64px/h 下只值 1px，线在相邻分钟内看着不动，跨过某一像素
  * 边界才「跳」一格 —— 用户报「绿线是离散的，只能停在 0/15/30/45」。
- * 改成直接写像素：`min → px` 用同一份实测高度换算，和卡片、光标、
- * 落点四者共用同一个浮点分钟值，视觉上就是连续跟手的。
  *
- * 线的位置仍然**不对齐 15 分钟**（和落点保持同一套算法），否则线和松手点
- * 会对不上。
+ * **线本身离散，档位由调用方给**：拖拽时 `timeline.ts` 传给这儿的是
+ * 已经吸附到 15 分钟的分钟值（`minFromY`），所以线一档一档走，
+ * 不跟卡片连续位置。卡片连续跟手，落点离散吸附 —— 两件事分开。
  */
 function drawTimeGuide(zone: HTMLElement, min: number, win: DayWindow): void {
   if (!guideLine) {
@@ -43,13 +42,7 @@ function drawTimeGuide(zone: HTMLElement, min: number, win: DayWindow): void {
   guideLine.style.top = ((min - win.from) / spanOf(win) * boxH) + 'px';
 }
 
-/** 左侧时间轴上的时间标签（显示绿线对应几点）。
- *  **挂在 `.timeline` 上，不是 `.tl-wrap`**：红线 `.tl-now span` 的基准是
- *  `.timeline`（`left: -56px` 相对 `.tl-now`，而 `.tl-now` 是 `.timeline` 的子元素）。
- *  挂在 `.tl-wrap` 上会差一个 padding-left（60px），时间标签和红线对不齐。
- *  **用 `transform: translateY(-8px)` 而不是 `top: -8px`**：JS 设置 `top` 为百分比，
- *  CSS 的 `top: -8px` 会被内联样式覆盖，导致文字掉到线下面。
- *  **位置同样按像素算**（理由同 drawTimeGuide），并且**线在哪个像素上字就在哪**。 */
+/** 左侧时间轴上的时间标签（显示绿线对应几点）。分钟值已由调用方吸附。 */
 function drawTimeCursor(zone: HTMLElement, min: number, win: DayWindow): void {
   let cursor = zone.querySelector<HTMLElement>('.tl-cursor');
   if (!cursor) {

@@ -34,7 +34,6 @@ export {
   eventX,
   eventY,
   minFromY,
-  minFromYNoSnap,
   weekGuideMin,
   zoneWindow,
   drawTimeGuide,

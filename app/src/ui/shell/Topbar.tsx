@@ -44,10 +44,10 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
   return (
     <div className="cal-subhead">
       <div className="date-nav">
-        <Btn variant="normal" size="sm" className="w-[30px]" title="上一个" onClick={() => onShift(-1)}>
+        <Btn variant="normal" size="sm" title="上一个" onClick={() => onShift(-1)}>
           <ChevronLeft size={15} />
         </Btn>
-        <Btn variant="normal" size="sm" className="w-[30px]" title="下一个" onClick={() => onShift(1)}>
+        <Btn variant="normal" size="sm" title="下一个" onClick={() => onShift(1)}>
           <ChevronRight size={15} />
         </Btn>
         {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `aria-pressed` 那一档配色

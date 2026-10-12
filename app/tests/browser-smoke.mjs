@@ -1937,7 +1937,10 @@ try {
   const mid = await evalJs(page, `
     return (() => {
       const el = document.querySelector('${evSel}');
-      if (!el) return null;
+      if (!el) {
+        const all = [...document.querySelectorAll('.task-el--timed')].map(e => e.dataset.id);
+        return { dbg: 'not found', all, want: ${JSON.stringify(evId)} };
+      }
       const r = el.getBoundingClientRect();
       // time 一起读回来：日视图拖动途中**卡片本身被实时改 time**（落点跟着
       // 指针走，见 useTimelineDrag），卡片高是百分比定位的，顶部跨过时间窗
@@ -2048,7 +2051,9 @@ try {
     '出界拖到下方 → 落在窗底（' + afterTime + ' = ' + afterMin + ' 分钟，窗 '
       + win.from + '–' + win.to + '）');
 
-  // 水平锁在容器内：往右拖出 .tl-events 范围，方块的右缘不该越过容器右缘。
+  // 横向锁死：往右拖 400px，卡片的 left / width 一像素都不该动。
+  // （用户 2026-10-12 裁决：定时与未定时卡片都只能纵向上下拖，横向完全不能动。
+  //   旧断言是「钳在容器右缘」——那允许卡片一直贴到边缘，不是锁死。）
   const evRect2 = await evalJs(page, `
     return (() => {
       const el = document.querySelector('${evSel}');
@@ -2056,11 +2061,11 @@ try {
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     })();
   `);
-  const containerRect = await evalJs(page, `
+  const beforeH = await evalJs(page, `
     return (() => {
-      const c = document.querySelector('.tl-events');
-      const r = c.getBoundingClientRect();
-      return { left: r.left, right: r.right };
+      const el = document.querySelector('${evSel}');
+      const r = el.getBoundingClientRect();
+      return { left: r.left, width: r.width };
     })();
   `);
   await page.send('Input.dispatchMouseEvent', {
@@ -2072,20 +2077,21 @@ try {
     });
     await new Promise((r) => setTimeout(r, 40));
   }
-  const clamped = await evalJs(page, `
+  const afterH = await evalJs(page, `
     return (() => {
       const el = document.querySelector('${evSel}');
       const r = el.getBoundingClientRect();
-      return { right: r.right, w: r.width };
+      return { left: r.left, width: r.width };
     })();
   `);
   await page.send('Input.dispatchMouseEvent', {
     type: 'mouseReleased', x: evRect2.x + 400, y: evRect2.y, button: 'left', buttons: 0,
   });
   await new Promise((r) => setTimeout(r, 300));
-  ok(clamped.right <= containerRect.right + 2,
-    '水平拖出容器右缘时被钳住（右缘 ' + clamped.right.toFixed(1) + ' ≤ 容器右缘 '
-    + containerRect.right.toFixed(1) + '），实际差 ' + (clamped.right - containerRect.right).toFixed(1) + 'px');
+  ok(Math.abs(afterH.left - beforeH.left) < 1 && Math.abs(afterH.width - beforeH.width) < 1,
+    '向右拖 400px 时横向一像素不动（left ' + beforeH.left.toFixed(1) + ' → ' + afterH.left.toFixed(1)
+    + '，width ' + beforeH.width.toFixed(1) + ' → ' + afterH.width.toFixed(1) + '），实际差 '
+    + (afterH.left - beforeH.left).toFixed(1) + 'px');
 
   // ④ 收窄到 10 点起 —— 拖完之后那条已经不在 10 点之前了，所以这里只看
   //    小时线随窗收窄（拖动把它的位置改了，位置断言不该跟着漂）。

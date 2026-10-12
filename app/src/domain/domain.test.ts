@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import * as D from './date.ts';
 import { parse } from './parse.ts';
 import {
-  toRepeat, repeatAdvance, repeatNext, emptyRepeat,
+  toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
 import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel } from './layout.ts';
@@ -926,4 +926,44 @@ test('placePanel：上下都塞不下（比视口还高）→ 上方钳到 8px�
       size: { w: 200, h: 700 }, viewport: { w: 1200, h: 800 },
     }),
     { top: 8, left: 40 });
+});
+
+test('repeatLast：不结束 → null', () => {
+  const task = makeTask({ id: 'a', title: 'x', date: T, repeat: repeat({ unit: 'day' }) });
+  assert.equal(repeatLast(task, T), null);
+});
+
+test('repeatLast（2026-10-12）：按日期结束 → 最后一天不晚于结束日期', () => {
+  const task = makeTask({
+    id: 'a', title: 'x', date: T,
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'date', date: '2027-03-15' } },
+  });
+  const last = repeatLast(task, T);
+  assert.ok(last !== null, '设了结束日期就该有最后一次');
+  assert.ok(last <= '2027-03-15', `最后一次不能晚于结束日期，实际 ${last}`);
+  assert.equal(D.addDays(last!, 1) > '2027-03-15', true, '再往后走一步就该超出结束日期');
+});
+
+test('repeatLast（2026-10-12）：按次数结束 → 第 N 次发生', () => {
+  const task = makeTask({
+    id: 'a', title: 'x', date: T,
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'count', count: 3 } },
+  });
+  assert.equal(repeatLast(task, T), '2026-10-08');
+});
+
+test('repeatLast（2026-10-12）：count=1 → 就是第一次', () => {
+  const task = makeTask({
+    id: 'a', title: 'x', date: T,
+    repeat: { ...repeat({ unit: 'day' }), end: { type: 'count', count: 1 } },
+  });
+  assert.equal(repeatLast(task, T), T);
+});
+
+test('fmtSmart（2026-10-12）：今年不写年份，跨年写年份', () => {
+  const y = new Date().getFullYear();
+  const thisYear = `${y}-07-15`;
+  const nextYear = `${y + 1}-07-15`;
+  assert.equal(D.fmtSmart(thisYear), '7月15日', '今年不该出现年份');
+  assert.equal(D.fmtSmart(nextYear), `${y + 1}年7月15日`, '跨年必须带年份');
 });

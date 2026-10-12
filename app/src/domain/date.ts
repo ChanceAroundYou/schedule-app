@@ -101,6 +101,15 @@ export function fmtFull(isoStr: string): string {
   return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + wd;
 }
 
+/** 年份感知的日期格式化：今年只写「10月7日」，跨年写「2027年10月7日」。
+ *  重复面板底部「下一次 / 最后一次」用 —— 用户 2026-10-12 要求
+ *  「如果不是今年则不能隐藏年份」。 */
+export function fmtSmart(isoStr: string): string {
+  const d = parseISO(isoStr);
+  const md = (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  return d.getFullYear() === new Date().getFullYear() ? md : d.getFullYear() + '年' + md;
+}
+
 export function weekdayShort(isoStr: string): string {
   const d = parseISO(isoStr);
   return ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];

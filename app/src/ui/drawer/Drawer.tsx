@@ -30,7 +30,7 @@ import { IconBtn, Input } from '../kit.tsx';
 import { ConflictBox } from './ConflictBox.tsx';
 import { useDrawer } from './useDrawer.ts';
 import { CalProjRow, DateTimeRow, NoteRow, MetaRow } from './DrawerFields.tsx';
-import { RepeatPop, RepeatPopCloseBtn } from './RepeatPop.tsx';
+import { RepeatPop } from './RepeatPop.tsx';
 
 export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onDelete, onDismissConflict }: {
   state: LocalState;
@@ -161,8 +161,7 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
           aria-label="重复"
           style={{ top: repPos ? repPos.top : 0, left: repPos ? repPos.left : 0, visibility: repPos ? 'visible' : 'hidden' }}
         >
-          <RepeatPopCloseBtn onClose={() => setRepOpen(false)} />
-          <RepeatPop rep={rep} patch={repPatch} next={s.nextOcc} />
+          <RepeatPop rep={rep} patch={repPatch} next={s.nextOcc} last={s.lastOcc} />
         </div>
       )}
     </>

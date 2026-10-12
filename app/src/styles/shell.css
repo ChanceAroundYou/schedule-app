@@ -145,6 +145,14 @@
 }
 .date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
 
+/* 四个控件（上一/下一个 · 今 · 找日期）**同宽 30px、同间距 4px**
+   （用户 2026-10-11：「四个项的宽度和间距都不一样 需要统一」）。
+   原先是 30 / 30 / ~28 / ~33 四种宽度，找日期前还多一道 margin-left:4px。
+   宽度写在这里而不是各按钮的 className 上 —— 四个按钮由同一个 Btn 渲染，
+   一处管完，漏一个就又不齐了。padding 归零：30px 的格子里图标居中即可，
+   Btn 自带的 px-2.5 反而把「今」字推偏。 */
+.date-nav .btn { width: 30px; padding: 0; }
+
 /* ================= 顶栏「日程集」下拉多选 ================= */
 
 /* 高度 / 字号 / 圆角 / 描边与 .search-box、.view-switch 同一档 —— 它们并排
@@ -172,7 +180,9 @@
 
 /* ================= 顶栏「找日期」跳转面板 ================= */
 
-.jump-wrap { position: relative; display: flex; margin-left: 4px; }
+/* margin-left 为零：找日期和前面三个控件同一档间距（.date-nav 的 gap 4px）。
+   原来多这 4px，四个控件之间就是 4/4/8 三种间距。 */
+.jump-wrap { position: relative; display: flex; }
 .jb-ico { font-size: 12px; line-height: 1; }
 
 .jump-pop {

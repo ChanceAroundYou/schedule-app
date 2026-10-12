@@ -4,25 +4,50 @@
  * 分两半：**单位那一行**（每 n + 单位）和**单位各自的补充**（周 → 选星期几，
  * 月 → 选几号，年 → 选几月几号）+ **结束方式**。
  *
- * **左上角不写「重复」**（2026-10-11）：它是从抽屉里那个「重复」按钮弹出来的，
- * 按钮上的字就是它的名字，面板里再写一遍只是占一行高度。
- * 关掉走点外面 / Escape（都记在 useDrawer 里）。
+ * **左上角不写「重复」、也没有标题行和关闭钮**（2026-10-11）：它是从抽屉
+ * 里那个「重复」按钮弹出来的，按钮上的字就是它的名字。关掉走点外面 /
+ * Escape（都记在 useDrawer 里）。
  */
 
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { RepeatRule } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { REPEAT_UNITS, toRepeat } from '../../domain/repeat.ts';
 import { DatePicker } from '../DatePicker.tsx';
 import { DayGrid } from '../DayGrid.tsx';
-import { Chips, Dropdown, IconBtn, Input } from '../kit.tsx';
+import { Chips, Dropdown, Input } from '../kit.tsx';
 
-export function RepeatPop({ rep, patch, next }: {
+/**
+ * 次数输入框。**允许清空重输**（用户 2026-10-12）：受控输入框把空值当场
+ * clamp 回 1，用户连「删掉改成 1」都做不到 —— 默认的 1 像锁死了一样。
+ * 这里用本地草稿，清空时展示空、不写库，失焦才落回真实值。
+ */
+function CountInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      type="number" min={1} max={999} className="rp-count"
+      value={draft ?? String(value)}
+      onChange={(e) => {
+        const v = e.target.value;
+        setDraft(v);
+        const n = Math.floor(Number(v));
+        if (n >= 1) onChange(Math.min(n, 999));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+export function RepeatPop({ rep, patch, next, last }: {
   rep: RepeatRule;
   /** 合并写当前这份规则：`patch({n})` = `{...rep, n}` */
   patch: (fields: Partial<RepeatRule>) => void;
   /** 下一次落在哪天，只在设了重复之后有 */
   next: string | null;
+  /** 最后一次落在哪天，「不结束」时为 null */
+  last: string | null;
 }) {
   const unit = rep.unit;
   return (
@@ -124,7 +149,7 @@ export function RepeatPop({ rep, patch, next }: {
                     : null,
               });
             }}
-            labelOf={(v) => ({ never: '不限', date: '到某天', count: '重复几次' } as Record<string, string>)[v] || v}
+            labelOf={(v) => ({ never: '不结束', date: '按日期', count: '按次数' } as Record<string, string>)[v] || v}
             label="重复结束方式"
           />
           {rep.end?.type === 'date' && (
@@ -136,24 +161,21 @@ export function RepeatPop({ rep, patch, next }: {
             />
           )}
           {rep.end?.type === 'count' && (
-            <Input
-              type="number" min={1} max={999} value={rep.end.count}
-              onChange={(e) => patch({ end: { type: 'count', count: Math.max(1, +e.target.value || 1) } })}
+            <CountInput
+              value={rep.end.count}
+              onChange={(v) => patch({ end: { type: 'count', count: v } })}
             />
           )}
         </div>
       )}
 
-      {unit !== 'none' && next && <div className="rp-preview">下一次：{D.fmtMD(next)}</div>}
+      {unit !== 'none' && (
+        <div className="rp-preview">
+          {next && <div>下一次：{D.fmtSmart(next)}</div>}
+          {last && <div>最后一次：{D.fmtSmart(last)}</div>}
+          {rep.end && !last && <div>已无后续</div>}
+        </div>
+      )}
     </>
-  );
-}
-
-/** 面板外壳：**右上角那个关闭钮**（点字外面也能关，那两个监听在 useDrawer 里）。 */
-export function RepeatPopCloseBtn({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="repeat-pop-head">
-      <IconBtn label="关闭" onClick={onClose}><X size={15} /></IconBtn>
-    </div>
   );
 }

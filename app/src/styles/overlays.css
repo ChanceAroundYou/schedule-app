@@ -33,8 +33,16 @@
 .icon-btn:hover { color: var(--text); background: var(--panel-3); }
 
 .drawer-body { flex: 1; overflow-y: auto; padding: 14px; }
-.field-row { display: flex; gap: 12px; margin-bottom: 12px; }
-.field { flex: 1; min-width: 0; margin-bottom: 12px; }
+/* 2026-10-12：margin-bottom 从 12px 增到 20px —— 行之间要看得清是两行 */
+.field-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+/* 字段**贴内容宽**，不等分（用户 2026-10-11：「时间和项目栏不应该等分，
+   而应该往那边贴，让移动端的时间即使有两格，也能放得下」）。原先
+   `.field { flex: 1 }` 把行对半切：日期那半空着，时间塞了开始–结束两个
+   按钮的那半不够用。现在每列只占自己内容的宽度；实在放不下时整行换行
+   （`flex-wrap`），两个时间按钮一起去占整行。
+   **日程集 / 项目那两个 `w-full` 下拉照样按内容收缩** —— 和抽屉里那个
+   「重复」按钮同一档，不再硬撑成半行宽。 */
+.field { flex: 0 0 auto; min-width: 0; margin-bottom: 12px; }
 .field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px; letter-spacing: .2px; }
 .field .sub { color: var(--text-3); }
 /* Field 组件的提示 / 错误行。hint 是格式示例那类常驻说明，
@@ -60,32 +68,27 @@
 .time-row { display: flex; align-items: center; gap: 6px; }
 .time-row .tp { min-width: 0; }
 .time-sep { color: var(--text-3); font-size: 13px; }
-/* 时间那一行**右对齐**（用户 2026-10-10：「时间和项目都向左多一点，不要让
-   时间被签掉了」）。日期和时间共用一个 field-row 时，`.field` 是 flex:1 ——
-   时间按钮收缩到内容宽后会孤在左侧，而右边空着一大片。justify-content:
-   flex-end 把它推到和右边对齐，日期那半边自然有了余量。 */
-.field-row .field:last-child .dp,
-.field-row .field:last-child .time-row { align-items: flex-end; }
-.field-row .field:last-child .time-row { justify-content: flex-end; width: 100%; }
 /* 重复设置浮层。**宽度和内边距都放大了**（2026-10-11）：原先 300px/14px
    一屏塞下「每 n 单位」+ 一排星期，选项菜单叠上来就把下面顶出去了，
    天/月/年的字看着像被裁了一刀。面板宽一点、单位下拉占满剩下那一半，
    菜单落下时下面有地方。
 
-   **min-height 按「最满的那种单位」撑住**（用户 2026-10-10：「重复栏刚打开的
-   时候太矮了」）—— 从「每 1 天」打开时只有一行，切到「年」会长出月份切换
-   条 + 一整张日期格，高度跳一下、面板里的东西跟着抖。给 260px 后四种单位
-   打开都是这个高，切换不再改变高度。 */
+   **高度跟内容走**（用户 2026-10-11）：min-height 撑到 260px 后从「每 1 天」
+   打开空着一大截，比原来「太矮」更扎眼。单位下拉的菜单照样能浮到面板
+   外面 —— 靠 `menuClassName="!z-[9999]"`，跟高度无关。
+
+   **overflow-y: auto 去掉了**（用户 2026-10-12：「重复里的选择框还是不能
+   弹到外面去，导致被遮挡」）：overflow 裁剪和 z-index 无关 —— 菜单是
+   absolute 定位在 Dropdown 根元素里的，面板的 overflow-y: auto 会把它裁掉，
+   不管菜单的 z-index 多高。去掉 overflow 后菜单能浮到面板外面。面板内容
+   在 max-height 内不会溢出；真溢出了也只是视觉上伸出去，不会被裁掉。 */
 .repeat-pop {
   position: fixed; z-index: 70; width: min(340px, calc(100vw - 16px));
-  min-height: 260px; max-height: calc(100vh - 16px); overflow-y: auto;
+  max-height: calc(100vh - 16px);
   padding: 10px 14px 12px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
 }
-/* 面板里**不再写「重复」两个字**（2026-10-11）—— 它从抽屉那个「重复」按钮
-   弹出来，按钮上的字就是它的名字。这里只留一个关掉的 ✕，靠右。 */
-.repeat-pop-head { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 4px; }
 
 /* 「重复」那一行的一个按钮，点开一个 Sheet。**没有 chips 也没有内联面板**
    （2026-10-09）—— 重复是大多数人根本不碰的字段，不该在抽屉里占一整屏。
@@ -210,6 +213,9 @@
   transition: border-color .14s, background .14s;
 }
 .rp-n:focus { border-color: var(--primary); background: var(--panel); }
+/* 次数输入框：比间隔框更短（用户 2026-10-12：「次数的输入框短一点」）。
+   用 `dense` 档（Input 组件自带），宽度由内容决定。 */
+.rp-count { width: 56px; flex: 0 0 auto; }
 /* 单位下拉：吃掉「每 + n」右边剩下的全部宽度。原来它收缩到内容宽（一个「月」字），
    菜单落下时正好压在下面那排星期按钮上，看起来像被顶掉一格。
    **flex:1 是给 Dropdown 的外层 div 的** —— 它是 `.rp-row` 的直接 flex 子元素，
@@ -227,8 +233,8 @@
    在这个没有「今天」概念的格子里纯属多余）。 */
 .repeat-pop .jp-cell.cur { background: var(--primary); color: var(--on-primary); font-weight: 550; }
 .repeat-pop .jp-cell.cur::after { display: none; }
-/* 年份那一排的月份切换：**居中一行**，两个箭头夹着月份名。
-   原先它跟着 `.rp-row` 的 flex-start 贴在左边，下面那张日期格却是满宽的，
-   两行对不齐。 */
-.rp-row.rp-month { justify-content: center; gap: 10px; }
+/* 年份那一排的月份切换：**两个箭头贴面板两侧、月份名留在中间**
+   （用户 2026-10-11）。箭头夹在名字两边还是居中一小簇 —— 两侧留白的
+   排法对齐下面那张满宽日期格的左右边缘，和月历的翻月键同一种站位。 */
+.rp-row.rp-month { justify-content: space-between; }
 
