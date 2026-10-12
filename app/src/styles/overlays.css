@@ -209,13 +209,21 @@
   padding: 6px 9px;
   border: var(--border-w) solid var(--input); border-radius: var(--r-md);
   background: var(--panel-2); outline: none;
-  color: var(--text); font-size: 13px;
+  color: var(--text); font-size: 13px; line-height: 1;
   transition: border-color .14s, background .14s;
 }
 .rp-n:focus { border-color: var(--primary); background: var(--panel); }
 /* 次数输入框：比间隔框更短（用户 2026-10-12：「次数的输入框短一点」）。
-   用 `dense` 档（Input 组件自带），宽度由内容决定。 */
-.rp-count { width: 56px; flex: 0 0 auto; }
+   **高度必须和 `.rp-n` / `.dp-btn` 完全一致**（用户 2026-10-12 报「输入框
+   高度和其他的按钮明显不一致」）：Input 组件自带 `py-2`（8px）比
+   `.dp-btn` / `.rp-n` 的 6px 多 2px —— 四个控件并排放着差 4px 一眼看得出。
+   padding / font-size 钉死，line-height 跟全局的 1.5 对齐（按钮里的文字
+   也是这个行高）。 */
+.rp-count {
+  width: 56px; flex: 0 0 auto;
+  padding-top: 6px !important; padding-bottom: 6px !important;
+  font-size: 13px !important; line-height: 1.5;
+}
 /* 单位下拉：吃掉「每 + n」右边剩下的全部宽度。原来它收缩到内容宽（一个「月」字），
    菜单落下时正好压在下面那排星期按钮上，看起来像被顶掉一格。
    **flex:1 是给 Dropdown 的外层 div 的** —— 它是 `.rp-row` 的直接 flex 子元素，

@@ -9,8 +9,6 @@
  */
 
 import type { Project, Task } from '../../domain/types.ts';
-import * as D from '../../domain/date.ts';
-import { repeatLabel } from '../../domain/repeat.ts';
 import { DatePicker } from '../DatePicker.tsx';
 import { TimePicker } from '../TimePicker.tsx';
 import { Dropdown, Input } from '../kit.tsx';
@@ -135,15 +133,4 @@ function NoteRow({ fid, note, onPatch }: { fid: string; note: string; onPatch: (
   );
 }
 
-/** 抽屉底部的元信息：重复摘要 / 系列第几次 / 创建日期 */
-function MetaRow({ rep, task }: { rep: Task['repeat']; task: Task }) {
-  return (
-    <div className="drawer-meta">
-      <span>{rep.unit === 'none' ? '不重复' : repeatLabel(rep)}</span>
-      {task.seriesId && <span>· 重复系列第 {(task.repeatSeq || 0) + 1} 次</span>}
-      {task.createdAt > 0 && <span>· 创建于 {D.fmtMD(D.isoOfTs(task.createdAt))}</span>}
-    </div>
-  );
-}
-
-export { CalProjRow, DateTimeRow, RepeatRow, NoteRow, MetaRow };
+export { CalProjRow, DateTimeRow, RepeatRow, NoteRow };

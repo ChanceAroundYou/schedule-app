@@ -144,7 +144,11 @@ export function RepeatPop({ rep, patch, next, last }: {
             options={['never', 'date', 'count']}
             onPick={(v) => {
               patch({
-                end: v === 'date' ? { type: 'date', date: D.addMonths(D.today(), 3) }
+                /* 默认按日期结束 = **下一次发生日**（用户 2026-10-12）：
+                   原先写死 today+3 个月，用户看到的第一个日期和自己设的
+                   重复规则毫无关系。用 next —— 就是上面那行「下一次」
+                   显示的同一个值，用户能直接对上。 */
+                end: v === 'date' ? { type: 'date', date: next || D.addMonths(D.today(), 3) }
                   : v === 'count' ? { type: 'count', count: 10 }
                     : null,
               });

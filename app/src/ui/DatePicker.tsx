@@ -42,7 +42,7 @@ export function DatePicker({ value, onChange }: {
         className={'dp-btn' + (value ? ' on' : '')}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="dp-label">{value ? D.fmtMD(value) : '选日期'}</span>
+        <span className="dp-label">{value ? D.fmtSmart(value) : '选日期'}</span>
         {value && <span className="dp-x" aria-label="清除日期" onClick={(e) => { e.stopPropagation(); onChange(null); }}>✕</span>}
       </button>
       {open && (
