@@ -21,11 +21,10 @@ import * as D from './date.ts';
 import type { RepeatRule, Task } from './types.ts';
 
 export const REPEAT_UNITS: { value: RepeatRule['unit']; label: string }[] = [
-  { value: 'none', label: '不重复' },
-  { value: 'day', label: '每天' },
-  { value: 'week', label: '每周' },
-  { value: 'month', label: '每月' },
-  { value: 'year', label: '每年' },
+  { value: 'day', label: '天' },
+  { value: 'week', label: '周' },
+  { value: 'month', label: '月' },
+  { value: 'year', label: '年' },
 ];
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];

@@ -1,0 +1,71 @@
+/**
+ * provider.tsx —— 顶层 DndProvider
+ */
+
+import { useState, useCallback, type ReactNode } from 'react';
+import {
+  DndContext,
+  type DragStartEvent, type DragOverEvent, type DragMoveEvent, type DragEndEvent,
+} from '@dnd-kit/core';
+import { setDragging } from '../dragState.ts';
+import { DragCtx } from './context.ts';
+import { useDragSensors } from './sensors.ts';
+
+export interface DndProviderProps {
+  children: ReactNode;
+  onDragOver?: (event: DragOverEvent) => void;
+  /** 每次 pointer 移动都触发 —— 引导线要连续跟指针，只能靠它（见 useTimelineDrag） */
+  onDragMove?: (event: DragMoveEvent) => void;
+  onDragEnd?: (event: DragEndEvent) => void;
+  onDragCancel?: () => void;
+}
+
+export function DndProvider({ children, onDragOver, onDragMove, onDragEnd, onDragCancel }: DndProviderProps) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useDragSensors();
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+    setDragging(true);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveId(null);
+    setDragging(false);
+    onDragEnd?.(event);
+  }, [onDragEnd]);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+    setDragging(false);
+    onDragCancel?.();
+  }, [onDragCancel]);
+
+  return (
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragOver={onDragOver}
+      onDragMove={onDragMove}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      {/*
+      **不挂 DragOverlay。** dnd-kit 的碰撞检测用的是 `dragOverlay.rect`
+      （浮层自己量到的矩形），不是被拖节点那个 —— 见 core.esm.js 里
+      `draggingNodeRect = dragOverlay.rect ?? activeNodeRect`。浮层里放个空 div，
+      量出来是 0×0，`rectIntersection` 的交集比全是 0，`over` 永远是 null，
+      症状是「拖得动但永远放不到目标上」。
+
+      不挂浮层时 dnd-kit 改用 `activeNodeRect`（它自己会量），碰撞检测就对了
+      —— `SortableList` 那条 DndContext 一直没挂，所以列表排序从来是好的，
+      只有时间轴 / 泳道这条坏。代价是没有「替身」跟着指针走，被拖的那块自己
+      跟着走（和迁移前 `.touch-drag` 的行为一致）。
+      */}
+      <DragCtx.Provider value={{ activeId, activeKind: null }}>
+        {children}
+      </DragCtx.Provider>
+    </DndContext>
+  );
+}

@@ -219,17 +219,15 @@
 
 /* flat / notion 的阴影都归零，下面这几个「只靠阴影浮在内容之上」的面就没界了。
    卡片 / 任务行 / 时间轴方块**本来就有 1px 边框**（.task-row / .habit-row /
-   .tl-event / .checkin-strip…，三档都带），不用管；缺界的只有这几个整页浮层。
+   .task-el / .checkin-strip…，三档都带），不用管；缺界的只有这几个整页浮层。
    补一条真边框，soft 档有阴影、本来就没这个问题，不动它（保持零回归）。
 
    特异度 (0,2,0) 压过 `.drawer { border-left: … }` 那种 (0,1,0)，所以不必
    担心它定义在本节之后 —— 覆盖靠的是特异度，不是源码顺序。 */
 [data-style="flat"] .drawer,
 [data-style="flat"] .more-sheet,
-[data-style="flat"] .act-sheet,
 [data-style="notion"] .drawer,
-[data-style="notion"] .more-sheet,
-[data-style="notion"] .act-sheet {
+[data-style="notion"] .more-sheet {
   border: var(--border-w) solid var(--border);
 }
 

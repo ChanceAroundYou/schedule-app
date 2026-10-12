@@ -35,11 +35,13 @@
  * 抽屉里的 `ui/TimePicker.tsx` 嵌的也是同一只。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import * as D from '../domain/date.ts';
 import { ClockBody } from './Clock.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
+import { useAnchoredPositionFrom, useEscape } from './hooks.ts';
+
 
 /** 面板里那只表盘比抽屉里的小一号：这个面板宽 268，扣掉内边距只剩 234，
  *  塞 246 的表盘会顶到边 */
@@ -73,7 +75,8 @@ export function WhenPop({
   const box = useRef<HTMLDivElement>(null);
   const [layer, setLayer] = useState<'date' | 'time' | null>(null);
   const [month, setMonth] = useState(() => D.monthStart(date || todayIso));
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  // 高度跟着开哪层 / 哪个月变，所以这两样要在定位的依赖里
+  const pos = useAnchoredPositionFrom(anchor, box, open, [layer, month]);
   // 清掉时间之后要把表盘一起复位，但表盘的状态在它自己肚子里 ——
   // 换 key 让它重新挂载是唯一的办法（不能拿 time 当 key：每拨一下都会重挂，
   // 用户刚切到的分钟档会被弹回小时档）
@@ -91,21 +94,6 @@ export function WhenPop({
     wasOpen.current = open;
   }, [open, date, todayIso]);
 
-  /* 定位要在 useLayoutEffect 里量：放到 useEffect 会先画在左上角再跳过来。
-     高度跟着开哪层 / 哪个月变，所以这几样都在依赖里 */
-  useLayoutEffect(() => {
-    if (!open || !anchor || !box.current) { setPos(null); return; }
-    const r = anchor.getBoundingClientRect();
-    const w = box.current.offsetWidth;
-    const h = box.current.offsetHeight;
-    let top = r.bottom + 6;
-    let left = r.left;
-    // 下方放不下就翻到上面；右边超出就往左收。都留 8px 边距
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-    if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
-    setPos({ top, left });
-  }, [open, anchor, layer, month]);
-
   /* Esc 关掉面板。要 stopImmediatePropagation —— 否则 App 那层的 Esc
      会跟着再关一次抽屉。
 
@@ -114,17 +102,7 @@ export function WhenPop({
      两处各挂一个 document 上的 capture 监听必然打架 —— 谁先跑取决于注册
      顺序，而两边都以为对方该让路。所以整件事收在 `Shell.tsx` 的 QuickAdd
      里，一个 handler 同时看得见「面板开没开」和「横条开没开」。 */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      onClose();
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [open, onClose]);
+  useEscape(open, onClose);
 
   if (!open) return null;
 

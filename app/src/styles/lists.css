@@ -324,20 +324,26 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 
 /* 左侧时间轴上的时间标签（显示绿线对应几点）。
-   挂在 `.timeline` 上，`left: -56px` 与红线 `.tl-now span` 完全一致。
+   挂在 `.timeline` 上，用 --tl-label-left / --tl-label-width 变量，
+   与 .tl-label / .tl-now span 完全一致的位置和宽度。
    字体字号字重与 .tl-label 严格一致，只有颜色不同。 */
 .tl-cursor {
-  position: absolute; left: -56px; top: -8px;
-  width: 44px; text-align: right;
+  position: absolute; left: var(--tl-label-left); top: 0;
+  width: var(--tl-label-width); text-align: right;
   font-size: 11px; font-variant-numeric: tabular-nums;
   color: var(--primary); pointer-events: none; z-index: 11;
+  /* 用 transform 而不是 top: -8px：JS 设置 top 为百分比时，
+     CSS 的 top: -8px 会被内联样式覆盖，导致文字掉到线下面。 */
+  transform: translateY(-8px);
 }
 
 /* 卡片外侧下方持续时间标签 */
 .tl-dur-tag {
   position: fixed; z-index: 70;
   padding: 1px 5px; border-radius: var(--r-xs);
-  background: rgb(0 0 0 / .55); color: #fff;
+  /* 底是**纯黑半透明**（不是主色底），白字永远对 —— 换 --toast-fg 只是把
+     「深色小条上的前景」这层语义归到同一族令牌上，值同为 #fff。 */
+  background: rgb(0 0 0 / .55); color: var(--toast-fg);
   font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
   pointer-events: none; line-height: 1.4;
 }

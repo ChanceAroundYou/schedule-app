@@ -24,7 +24,7 @@ button, .nav-item, .tab, .ms-item, .jp-cell {
    否则手机上永远看不到。宽度用媒体查询而不是 hover 判定，
    因为桌面窄窗口也不该受影响 */
 @media (hover: none) {
-  .tl-event:hover .ev-resize { opacity: .8; }
+  .task-el:hover .ev-resize { opacity: .8; }
   .task-row::after { opacity: .4; }
   .task-pill:hover, .task-row:hover { transform: none; box-shadow: var(--shadow); }
   .view-switch button:hover, .jp-cell:hover, .jp-nav:hover { background: none; }
@@ -119,41 +119,6 @@ body.sheet-open .tab:active { background: none; }
 .ms-pulse { margin-top: 14px; }
 .ms-pulse .side-pulse { margin: 0; }
 
-/* ---- 长按操作弹层 ---- */
-.act-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 47;
-  padding: 6px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
-  box-shadow: var(--shadow-up);
-  animation: slideUp .2s cubic-bezier(.3, .8, .3, 1);
-}
-.act-sheet[hidden] { display: none; }
-.as-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 10px; }
-.as-title {
-  font-size: 13.5px; font-weight: 600; padding: 0 2px 12px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.as-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.as-grid:empty + .as-cancel { margin-top: 0; }
-.as-btn {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-  padding: 12px 4px; border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
-  background: var(--panel-2); color: var(--text); font-size: 12px;
-  /* 覆盖 Btn 的 h-[30px]：ActSheet 的按钮是 icon + 文字两行，30px 装不下 */
-  height: auto;
-}
-.as-btn:active { background: var(--panel-3); }
-.as-btn.on { border-color: var(--primary); background: var(--primary-pale); color: var(--primary); font-weight: 600; }
-.as-btn .ai:empty { display: none; }
-.as-btn .ai { font-size: 18px; line-height: 1; }
-.as-btn.danger { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
-.as-cancel {
-  width: 100%; margin-top: 10px; padding: 12px;
-  border: none; border-radius: var(--r-lg); background: var(--panel-3);
-  color: var(--text-2); font-size: 13.5px;
-}
-.as-cancel:active { background: var(--border); }
-
 /* ================= 窄屏适配 ================= */
 
 /* 900px 以下：侧栏收进「更多」，改用底部标签栏 */
@@ -243,17 +208,17 @@ body.sheet-open .tab:active { background: none; }
 
   /* 日程时间轴：移动端只改变量值，规则本身在 calendar.css 里用 var() 引用。 */
   :root {
-    --allday-zone-pad: 6px 8px 6px 48px;
-    --allday-items-gap: 3px 4px;
-    --allday-pill-pad: 4px 6px;
-    --tl-wrap-pad: 14px 8px 14px 48px;
+    --allday-zone-pad: 3px 8px 3px 48px;
+    --allday-items-gap: 1px 4px;
+    --allday-pill-pad: 3px 6px;
+    --allday-min-h: 13px;
+    --tl-wrap-pad: 10px 8px 10px 48px;
     --tl-label-left: -44px;
     --tl-label-width: 38px;
-    --tl-event-pad: 5px 8px;
-    --ev-title-size: 13px;
-    --ev-time-size: 11px;
-    --tl-wrap-z: 1;
-    --allday-zone-z: 2;
+    --tl-event-pad: 3px 7px;
+    --ev-title-size: 12px;
+    --ev-time-size: 10px;
+    --ev-gap: 0px;
   }
   /* 触屏没有 hover，拖拽抓手常显会误触，改为整体隐藏 */
   .ev-resize { display: none; }
@@ -304,9 +269,8 @@ body.sheet-open .tab:active { background: none; }
   .group-title { padding-bottom: 7px; }
   .row-meta { font-size: 11.5px; }
   .od-strip { padding: 9px 11px; }
-  .ms-grid, .as-grid { gap: 7px; }
+  .ms-grid { gap: 7px; }
   .ms-item { padding: 11px 4px; }
-  .as-btn { padding: 11px 2px; font-size: 11.5px; }
   /* 打卡条：手机上换行排布 */
   .ci-list { gap: 7px; }
   .ci-item { padding: 8px 11px; }

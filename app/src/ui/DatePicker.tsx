@@ -8,9 +8,10 @@
  * 变成三行、把真正的月历挤到第二屏。要「明天」的人翻一页月历就是一下。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import * as D from '../domain/date.ts';
 import { MiniCalendar } from './MiniCalendar.tsx';
+import { useAnchoredPosition, useOutsideClose, useEscape } from './hooks.ts';
 
 export function DatePicker({ value, onChange }: {
   /** 当前日期 'YYYY-MM-DD'，null = 待定 */
@@ -20,48 +21,17 @@ export function DatePicker({ value, onChange }: {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const pos = useAnchoredPosition(anchor, panel, open);
   const [view, setView] = useState(() => {
     const iso = value || D.today();
     const [y, m] = iso.split('-').map(Number);
     return { y, m };
   });
 
-  /* 面板定位 */
-  useLayoutEffect(() => {
-    if (!open || !anchor.current || !panel.current) { setPos(null); return; }
-    const r = anchor.current.getBoundingClientRect();
-    const w = panel.current.offsetWidth;
-    const h = panel.current.offsetHeight;
-    let top = r.bottom + 6;
-    let left = r.left;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-    if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
-    setPos({ top, left });
-  }, [open]);
-
-  /* 点外面关掉 */
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (panel.current?.contains(t)) return;
-      if (anchor.current?.contains(t)) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown, true);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
+  /* 点外面 / Esc 关掉。anchor 就是开关按钮本身，必须当 trigger 传 ——
+     不传的话 mousedown 先关、click 又翻回来，按钮就再也关不掉了。 */
+  useOutsideClose(panel, open, () => setOpen(false), anchor);
+  useEscape(open, () => setOpen(false));
 
   const today = D.today();
 

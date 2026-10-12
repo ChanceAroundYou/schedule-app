@@ -7,8 +7,8 @@
    `flex:1 + min-height:0` 就能刚好填满剩下的空间，窗口怎么缩放都不用重算。
    只有 `.allday-zone` 允许自己滚：未定时任务多起来不该把时间轴顶出屏幕。
 
-   **用后代选择器，不能用 `>`**：`#content` 和 `.tl-wrap` 之间隔着 App.tsx
-   那个 `display:contents` 的长按包装层（它的盒子不生成，但**DOM 树上还在**，
+   **用后代选择器，不能用 `>`**：`#content` 和 `.tl-wrap` 之间隔着
+   `display:contents` 的包装层（它的盒子不生成，但**DOM 树上还在**，
    子选择器照样断链）。它 display:contents 意味着这两个块确实是 #content 的
    flex 子项，所以后代选择器命中的就是对的元素。 */
 .content-day { overflow: hidden; display: flex; flex-direction: column; }
@@ -28,17 +28,20 @@
 /* 日视图布局变量 —— 桌面端默认值。移动端在 responsive.css 的
    @media (max-width: 900px) 里只改变量值，规则本身不重复写。 */
 :root {
-  --allday-zone-pad: 4px 12px 4px 60px;
-  --allday-items-gap: 2px 6px;
-  --allday-pill-pad: 4px 7px;
-  --tl-wrap-pad: 10px 12px 12px 60px;
+  --allday-zone-pad: 3px 12px 3px 60px;
+  --allday-items-gap: 1px 6px;
+  --allday-pill-pad: 3px 7px;
+  --allday-min-h: 14px;
+  /* **两个 z 变量已删**（原先 --tl-wrap-z / --allday-zone-z）：两个区现在同处
+     `.day-panel` 这一个堆叠上下文，区自己不再建上下文，这两档没有意义了。
+     堆叠只在卡片之间发生，用的写死的 `.task-el.dragging { z-index: 9 }`。 */
+  --tl-wrap-pad: 8px 12px 10px 60px;
   --tl-label-left: -56px;
   --tl-label-width: 44px;
-  --tl-event-pad: 4px 7px;
-  --ev-title-size: 12.5px;
-  --ev-time-size: 10.5px;
-  --tl-wrap-z: auto;
-  --allday-zone-z: auto;
+  --tl-event-pad: 3px 7px;
+  --ev-title-size: 12px;
+  --ev-time-size: 10px;
+  --ev-gap: 0px;
 }
 
 /* 日视图整体面板（未定时任务区 + 时间轴融合为同一个面板） */
@@ -48,35 +51,37 @@
   display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
 }
 
+/* ================= 日视图：唯一一个堆叠上下文 =================
+   **未定时区与时间轴处在同一个堆叠上下文里，谁都不 clip。**
+   原先两个区各自 `position: relative; z-index: N` + `.allday-zone` 上
+   `overflow-y: clip` —— 那等于给它们各建一个堆叠上下文，于是：
+     · 上拖的卡片被下面的区（更高 z-index / 更靠后）挡回来；
+     · 下拖的卡片在区的边界上被 clip 切掉半截；
+     · 未定时卡片横向没人管，能飘到面板外。
+   砍掉之后 `z-index` 只在 `.day-panel` 这一个上下文里有意义：拖起来的
+   卡片 `z-index: 9` 无条件下胜于任何静态内容，也不会被谁裁掉。
+   `isolation: isolate` 就是「在这里建一个堆叠上下文」的显式写法，
+   比靠 `z-index: 0` 的副作用可靠（后者在某些浏览器下会被优化掉）。 */
+.day-panel { isolation: isolate; }
+
 .allday-zone {
-  flex: 0 0 auto; overflow-y: auto; max-height: 100px;
-  padding: var(--allday-zone-pad); position: relative; z-index: var(--allday-zone-z);
+  flex: 0 0 auto;
+  padding: var(--allday-zone-pad);
   border-bottom: var(--border-w) solid var(--border);
 }
-/* 未定时任务区。任务名短、数量可能很多，排成两列（--cols 由渲染时按数量给），
-   不至于把下面的时间轴挤出屏幕。行内按「先上后下、先左后右」的顺序读。 */
+/* 未定时任务区。两行，第 3 个起三列（--cols 由渲染时按数量给）。
+   **高度固定、不滚**：卡片高度等于时间轴上一小时，多了就截断并提示
+   「还有 N 个」——多出来的渲染了只会溢出盖住时间轴。 */
 .allday-items {
   display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  gap: var(--allday-items-gap); min-height: 18px; align-content: start;
+  gap: var(--allday-items-gap); min-height: var(--allday-min-h); align-content: start;
 }
-.allday-items .task-pill {
-  width: 100%; padding: var(--allday-pill-pad); min-width: 0;
-  background: var(--primary-soft);
-  /* 与有时间卡片 `.tl-event .ev-title` 逐项对齐（12.5px / 550）：
-     少了 font-weight 会退成 400，两张卡片并排时一粗一细。 */
-  font-size: 12.5px; font-weight: 550;
-  /* 过渡只留 background / box-shadow。**去掉 transform .14s** ——
-     拖拽松手时 transform 归零，有过渡就是弹跳。 */
-  transition: background .14s, box-shadow .14s;
-}
-.allday-items .task-pill:hover { transform: none; }
-/* 拖中的未定时卡片：与有时间卡片 .tl-event.dragging 同一套样式 */
-.allday-items .task-pill.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 .zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
+.zone-more { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
 .tl-wrap {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
-  padding: var(--tl-wrap-pad); position: relative; z-index: var(--tl-wrap-z);
+  padding: var(--tl-wrap-pad);
 }
 /* 兜底高度。真正的高度是 `.content-day .tl-wrap > .timeline` 那条 flex 给的
    （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。
@@ -96,24 +101,47 @@
 .tl-now i { position: absolute; left: 0; top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgb(from var(--danger) r g b / .16); }
 .tl-now span { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: right; font-size: 11px; color: var(--danger); font-variant-numeric: tabular-nums; }
 
-/* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让有时间卡片
-   比无时间卡片短一截。卡片宽度由 .tl-event 的 width 控制。 */
+/* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让定时卡片
+   比未定时卡片短一截。卡片宽度由 .task-el--timed 的 width 控制。 */
 .tl-events { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
 
-.tl-event {
-  position: absolute; border-radius: var(--r-sm); padding: var(--tl-event-pad);
-  background: var(--primary-soft); border: var(--border-w) solid var(--border);
+/* ================= 日视图卡片：定时与未定时共用这一份 =================
+   两种卡片是**同一段 DOM、同一条规则**（见 views/calendar/DayView.tsx 的
+   TaskCard）。差别只在两处，都由父级给：
+     · `.task-el--timed`  —— 按时间轴百分比定位（top/height/left/width）
+     · `.task-el--untimed` —— 走未定时网格流（只控自身高度）
+   底下这段是共用的视觉：底色、左边框、勾选圈那一行、第二行时间。
+   任何一种模式单独改样式都要问一句「另一种要不要跟着改」。 */
+.task-el {
+  border-radius: var(--r-sm); background: var(--primary-soft);
+  border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
-  overflow: hidden; cursor: pointer; min-height: 12px;
+  cursor: pointer; box-sizing: border-box;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
      **过渡只有 box-shadow，没有 transform**：松手时 transform 从
      translate3d(x,y,0) 归零，有过渡就会看到弹跳（用户报「松开时跳一下」）。 */
-  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
-.tl-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
-.tl-event.done { opacity: .5; }
-.tl-event.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+.task-el:hover { box-shadow: var(--shadow-md); z-index: 4; }
+.task-el.done { opacity: .5; }
+.task-el.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
+
+/* 定时卡片：绝对定位到时间轴上。**不许 overflow: hidden** ——
+   一裁，跨过容器边界的拖动就被切掉半截（用户 2026-10-11 报「向上拖被分割线挡」）。 */
+.task-el--timed {
+  position: absolute; padding: var(--tl-event-pad);
+  min-height: 12px; min-width: 0;
+}
+/* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px */
+.task-el--untimed {
+  width: 100%; padding: var(--allday-pill-pad); min-width: 0;
+  font-size: 12.5px; font-weight: 550; overflow: hidden;
+  transition: background .14s, box-shadow .14s;
+}
+.task-el--untimed:hover { transform: none; }
+
 .ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev-time {
@@ -122,31 +150,39 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
 }
-.tl-event.done .ev-time { text-decoration: none; }
-/* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突 */
+.task-el.done .ev-time { text-decoration: none; }
+/* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
+   **短卡片上给把手封顶**：`min-height: 12px` 的一小时卡片，两个 11px 的把手
+   上下各贴一边，合起来盖住整张卡片 —— 抓到的全是 resize，卡片再也拖不动
+   （用户 2026-10-11 报「时间卡片向上拖不动」的真因，跟遮挡无关）。
+   上限取卡片高的 60%：一小时卡片上每个把手 6.7px，中间至少留 4px 给拖动；
+   高卡片照旧 11px，抓捏手感不变。`min-height: 6px` 守住命中区下限。 */
 .ev-resize {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 11px;
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: min(11px, 60%); min-height: 6px;
   cursor: ns-resize; display: flex; align-items: center; justify-content: center;
   opacity: 0; transition: opacity .12s;
 }
 .ev-resize-top { top: 0; bottom: auto; }
-.tl-event:hover .ev-resize { opacity: .85; }
+.task-el:hover .ev-resize { opacity: .85; }
 .ev-resize::after {
   content: ''; width: 24px; height: 3px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .55);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
-.tl-event.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
+.task-el.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
 .tl-resize-tip {
   position: fixed; z-index: 80; pointer-events: none;
   background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 600;
   padding: 2px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums;
-  box-shadow: var(--shadow-md); transform: translateY(3px);
+  box-shadow: var(--shadow-md); transform: translateY(-3px);
 }
 /* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点。
    影子走全站统一的 `--drag-shadow`（中性淡影），不再是主色的绿光 ——
-   原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。 */
-.tl-event.dragging, .wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
+   原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。
+   **日视图两种卡片 + 周视图共用这一条**：它们都带 `.task-el`，所以只有这一处，
+   原先 `.tl-event.dragging` 和 `.allday-items .task-pill.dragging` 各写一遍、各自漂移。 */
+.task-el.dragging, .wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
 /* ================= 周视图（时间网格） ================= */
 

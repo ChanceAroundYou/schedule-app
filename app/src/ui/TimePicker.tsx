@@ -8,46 +8,20 @@
  * 变成三行。拨表盘本来就是点两下的事。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ClockBody } from './Clock.tsx';
+import { useAnchoredPosition, useOutsideClose, useEscape } from './hooks.ts';
 
 export function TimePicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const pos = useAnchoredPosition(anchor, panel, open);
 
-  useLayoutEffect(() => {
-    if (!open || !anchor.current || !panel.current) { setPos(null); return; }
-    const r = anchor.current.getBoundingClientRect();
-    const w = panel.current.offsetWidth;
-    const h = panel.current.offsetHeight;
-    let top = r.bottom + 6;
-    let left = r.left;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-    if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
-    setPos({ top, left });
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!panel.current?.contains(t) && !anchor.current?.contains(t)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown, true);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
+  /* 同 DatePicker：anchor 既是开关又是定位基准，必须当 trigger 传，
+     否则 mousedown 先关、click 又翻回来。 */
+  useOutsideClose(panel, open, () => setOpen(false), anchor);
+  useEscape(open, () => setOpen(false));
 
   return (
     <div className="tp">

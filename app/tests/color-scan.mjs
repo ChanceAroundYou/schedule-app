@@ -207,6 +207,41 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('  → 改用 Dropdown<K>（少量固定选项）/ Chips<K>（选项要一直看得见）/ SheetPicker<K>（动态或大量选项）');
   }
 
+  // 扫描 .tsx 文件里 Tailwind **自带**的写死圆角类。
+  // 项目约定（CLAUDE.md 三、令牌三条）：圆角一律走 var(--r-xs/sm/md/lg/xl/pill)，
+  // 写死的像素在切 flat / notion 时原地不动、不报错——正是这个脚本要防的静默漂移。
+  // 豁免 `rounded-[var(--r-…)]`（那是走令牌的写法）；`rounded-[2px]` 这类写死值照抓。
+  let roundCount = 0;
+  console.log('\n.tsx 文件里的 Tailwind 自带圆角类（断言为零）');
+  for (const file of tsxFiles) {
+    let content = readFileSync(file, 'utf8');
+    content = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      .replace(/`[^`]*`/g, '');
+    const hits = [...content.matchAll(/\brounded\b/g)].filter((m) => {
+      let after = content.slice(m.index + m[0].length);
+      // 吃掉方向前缀：-t- / -b- / -l- / -r- / -tl- / -tr- / -bl- / -br-
+      const dir = after.match(/^-(?:t|b|l|r|tl|tr|bl|br)-/);
+      if (dir) after = after.slice(dir[0].length);
+      else if (after.startsWith('-[')) after = after.slice(1);   // rounded-[…]
+      if (after.startsWith('[')) {
+        const end = after.indexOf(']');
+        const inner = end >= 0 ? after.slice(1, end) : '';
+        return !inner.includes('var(--r-');   // 走令牌 → 豁免
+      }
+      return true;   // rounded / rounded-full / rounded-lg …：Tailwind 自带类
+    });
+    if (hits.length) {
+      roundCount += hits.length;
+      console.log('  FAIL ' + file.replace(SRC, 'src') + '  ' + hits.length + ' 处');
+    }
+  }
+  if (roundCount === 0) {
+    console.log('  ok    0 处');
+  } else {
+    failed++;
+    console.log('  → 改 rounded-[var(--r-pill)] 等令牌写法');
+  }
+
   console.log('\n不达标 ' + failed + ' 条');
   process.exit(failed ? 1 : 0);
 }

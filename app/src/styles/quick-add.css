@@ -298,17 +298,26 @@
 .repeat-panel {
   margin-top: 12px;
 }
-.rp-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
+/* 行距从 7/9 放宽到 10/12（2026-10-11）：面板本身变大了，行还挤着，
+   「每 n 单位」和下面的星期格看着像同一块。 */
+.rp-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .rp-row input[type="number"] {
   padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
   background: var(--panel-2); outline: none; font-size: 13px; color: var(--text);
   transition: border-color .14s;
 }
 .rp-row input:focus { border-color: var(--primary); }
-.rp-row input[type="number"] { width: 66px; }
+/* 宽度**不在这里写**：抽屉里那个间隔框是 `.rp-n`（overlays.css），
+   两条规则同特异度下后写的赢，留着两处各写一个 64/66 就永远对不上。 */
 /* 「到某天」那个日期框也已经换成 `ui/DatePicker.tsx` 了（`plain` 一档），
    原来的 `.rp-row input[type="date"]` 跟着一起删 */
 .rp-preview { font-size: 12px; color: var(--primary); }
+
+/* 装着 `.jp-grid` 的那一行（每月几号 / 每年几月几号）：
+   **必须自己占满整宽**。`.rp-row` 是 flex + `align-items: center`，
+   日历格作为唯一子元素会按内容宽度排（`1fr` 没有确定宽度就不铺开），
+   于是 31 个格子挤成一小块浮在中间。 */
+.rp-row:has(> .jp-grid) { display: block; }
 
 /* 「每周」那七个星期按钮。**命中区 ≥24×24（WCAG 2.5.8）** —— 32px 的圆，
    视觉尺寸紧凑但点起来不费劲。选中态用 primary 底色 + 白字。 */
@@ -319,4 +328,7 @@
 }
 .rp-day:hover { border-color: var(--primary); color: var(--primary); }
 .rp-day.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+
+/* 「每年」月份切换中间那个月份名 */
+.rp-month-label { font-size: 13px; color: var(--text); min-width: 40px; text-align: center; }
 

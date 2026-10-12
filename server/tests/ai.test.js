@@ -560,3 +560,36 @@ test('多条一起确认，同一毫秒里时间戳也要严格递增', async ()
   assert.ok(tasks[a.proposal.entityId], '第一条没落库');
   assert.ok(tasks[b.proposal.entityId], '第二条没落库 —— 时间戳撞了，被 LWW 判掉了');
 });
+
+test('晚间汇报存得进库 —— 汇报会话与那条消息都得能查回来', () => {
+  // 这三条调用曾经是按位置参数写的，而 db 那边收的是**对象**：
+  // 插进去几行 id 为字符串 'undefined' 的垃圾，随后 touchAiSession 拿到
+  // when === undefined（Number(undefined) 是 NaN）直接抛错，整段被 catch 掉 ——
+  // 于是晚间汇报一次也没真正出现过。锁住「按 report.mjs 的形状调，返回的行查得回来」。
+  const sid = 'sess-report';
+  const now = 1700000000000;
+  db.insertAiSession({ id: sid, userId: USER, title: '每日汇报', createdAt: now, updatedAt: now });
+
+  db.appendAiMessage({
+    id: 'msg-report',
+    sessionId: sid,
+    userId: USER,
+    seq: db.nextAiMessageSeq(sid),
+    role: 'assistant',
+    payload: JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: '今天完成了…' }] }),
+    proposals: null,
+    createdAt: now + 1,
+  });
+  db.touchAiSession(sid, USER, null, now + 2);
+
+  // background.js 每分钟就是靠这条判断「今天是不是已经报过了」
+  const found = db.listAiSessions(USER, 50).find((s) => s.title === '每日汇报');
+  assert.ok(found, '汇报会话没在列表里 —— 定时器会每小时重复生成一份');
+  assert.strictEqual(found.id, sid);
+  assert.strictEqual(Number(found.updated_at), now + 2, 'updated_at 没推上去，会话列表顺序会乱');
+
+  const msgs = db.listAiMessages(sid, USER);
+  assert.strictEqual(msgs.length, 1);
+  assert.strictEqual(msgs[0].id, 'msg-report');
+  assert.ok(JSON.parse(msgs[0].payload).content[0].text, '正文没存下来');
+});

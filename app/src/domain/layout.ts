@@ -150,3 +150,30 @@ export function pctRange(start: number, end: number, w: DayWindow): { top: numbe
   return { top: (a - w.from) / span * 100, height: (b - a) / span * 100 };
 }
 
+/**
+ * 浮层锚定定位：贴着 anchor 下沿弹出；下方放不下翻到 anchor 上方，
+ * 右侧超出往左收。
+ *
+ * 同一段算式原本逐字抄在 DatePicker / TimePicker / WhenPop / useDrawer
+ * 四处（各自只有依赖数组不同），改一处漏三处。收到这里之后**只测一次**：
+ * 它是纯函数，不需要 DOM。
+ */
+export interface PlacePanelInput {
+  anchor: { top: number; bottom: number; left: number };
+  size: { w: number; h: number };
+  viewport: { w: number; h: number };
+  /** 与 anchor 的间距，默认 6 */
+  gap?: number;
+  /** 与视口边缘的最小留白，默认 8 */
+  pad?: number;
+}
+
+export function placePanel(i: PlacePanelInput): { top: number; left: number } {
+  const { anchor, size, viewport, gap = 6, pad = 8 } = i;
+  let top = anchor.bottom + gap;
+  let left = anchor.left;
+  if (top + size.h > viewport.h - pad) top = Math.max(pad, anchor.top - size.h - gap);
+  if (left + size.w > viewport.w - pad) left = Math.max(pad, viewport.w - size.w - pad);
+  return { top, left };
+}
+

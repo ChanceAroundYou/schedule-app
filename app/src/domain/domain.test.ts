@@ -17,7 +17,7 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin } from './layout.ts';
+import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
@@ -886,4 +886,44 @@ test('setDefaultCal：空串与 null 同义，不会写出「有个默认是空�
   setDefaultCal(ui, null);
   assert.equal(ui.defaultCal, null);
   assert.equal(defaultUi().defaultCal, null, 'defaultUi() 返回的是新对象，不会被上一个改脏');
+});
+
+/* =============== 浮层锚定定位（placePanel）===============
+   四份逐字相同的算式（DatePicker / TimePicker / WhenPop / useDrawer 的
+   「重复」浮层）收敛到这里，先锁住行为再接回去。 */
+
+test('placePanel：下方放得下就贴下沿（+6），左对齐 anchor', () => {
+  assert.deepEqual(
+    placePanel({
+      anchor: { top: 100, bottom: 130, left: 40 },
+      size: { w: 200, h: 150 }, viewport: { w: 1200, h: 800 },
+    }),
+    { top: 136, left: 40 });
+});
+
+test('placePanel：下方放不下 → 翻到 anchor 上方（top-高度-6）', () => {
+  assert.deepEqual(
+    placePanel({
+      anchor: { top: 700, bottom: 730, left: 40 },
+      size: { w: 200, h: 150 }, viewport: { w: 1200, h: 800 },
+    }),
+    { top: 544, left: 40 });
+});
+
+test('placePanel：右缘超出 → 往左收，贴到视口右边留 8px', () => {
+  assert.deepEqual(
+    placePanel({
+      anchor: { top: 100, bottom: 130, left: 1100 },
+      size: { w: 200, h: 150 }, viewport: { w: 1200, h: 800 },
+    }),
+    { top: 136, left: 992 });
+});
+
+test('placePanel：上下都塞不下（比视口还高）→ 上方钳到 8px，不飞出视口', () => {
+  assert.deepEqual(
+    placePanel({
+      anchor: { top: 20, bottom: 780, left: 40 },
+      size: { w: 200, h: 700 }, viewport: { w: 1200, h: 800 },
+    }),
+    { top: 8, left: 40 });
 });

@@ -215,8 +215,8 @@ async function clickEl(page, findExpr) {
 
 /* ---------------------------------------------------- 触屏合成 */
 
-/** 和 ui/hooks.ts 的 LONG_PRESS_MS 对齐。浏览器里是 480 */
-const LONG_PRESS_MS = 480;
+/** 和 ui/dnd/sensors.ts 的 TOUCH_DRAG_DELAY 对齐。浏览器里是 480 */
+const TOUCH_DRAG_DELAY = 480;
 
 /**
  * 合成一次触摸。走 CDP 的 Input.dispatchTouchEvent —— 它派生出来的
@@ -354,7 +354,7 @@ try {
   // 而「第一次打开后断网能进」正是这个功能唯一要保证的事。
   await waitFor(page, `!!navigator.serviceWorker.controller`, 'Service Worker 接管页面', 15000);
   const cached = await evalJs(page, `
-    const c = await caches.open('sched-shell-v1');
+    const c = await caches.open('sched-shell-v2');
     return (await c.keys()).map((r) => new URL(r.url).pathname);
   `);
   ok(cached.some((p) => p.endsWith('/index.html')), '外壳 HTML 已预缓存，实际 ' + JSON.stringify(cached));
@@ -955,9 +955,9 @@ try {
   ok(errors.length === 0, '邀请这一段也没有 console 报错'
     + (errors.length ? '：\n      ' + fmt(errors) : ''));
 
-  console.log('\n八、触屏：长按 → 拖动排序 → 没动就弹操作层');
-  // 桌面视口 + 触屏事件。**不需要窄屏**：长按 / 拖拽只认 pointerType，
-  // 不认宽度（while 窄屏的标签栏那套是另一回事，那个本机测不了，见 CLAUDE.md 四、34）。
+  console.log('\n八、触屏拖拽排序：TouchSensor 那一路（长按操作层已删）');
+  // 桌面视口 + 触屏事件。**不需要窄屏**：拖拽只认 pointerType，
+  // 不认宽度（窄屏的标签栏那套是另一回事，那个本机测不了，见 CLAUDE.md 四、34）。
   // 用 CDP 合成触摸，Chrome 会照常派生出 pointerType:'touch' 的 pointer 事件。
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);
@@ -981,68 +981,16 @@ try {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   `);
 
-  // —— 先验长按：不动手，松手应该弹操作层 ——
-  // 先证「合成的触摸确实进得来」。这一步单独断言，是为了失败时能分清
-  // 「触摸事件被 Chrome 吞了」和「拖拽逻辑本身不对」—— 后者会伪装成前者。
-  await evalJs(page, `
-    window.__pt = [];
-    document.addEventListener('pointerdown', (e) => window.__pt.push(e.pointerType), true);
-    return true;
-  `);
-  await evalJs(page, `
-    window.__pt = [];
-    for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerleave',
-      'mousedown', 'mouseup', 'click', 'contextmenu']) {
-      document.addEventListener(t, (e) => window.__pt.push(
-        t + ':' + e.pointerType + ':'
-        + (e.target?.closest?.('.task-el') ? '任务行' : String(e.target?.className || e.target?.tagName))), true);
-    }
-    return true;
-  `);
-  const p = await rectOf('甲');
-  await touch(page, 'touchStart', p);
-  await waitFor(page, `window.__pt.length ? window.__pt : null`, '合成触摸被派发');
-  await new Promise((r) => setTimeout(r, LONG_PRESS_MS + 250));
-  const pt = await evalJs(page, `return window.__pt;`);
-  // 只断言「收到过 pointerdown」是不够的 —— 之前就吃过一次教训：
-  // 事件是到了，但 target 是个盖住的浮层，落点根本不在那一行上，
-  // 后面的断言全跟着假失败。所以这里连 target 一起查。
-  ok(pt.some((x) => x.startsWith('pointerdown:touch:任务行')),
-    '合成的触摸打在任务行上，事件序列 = ' + JSON.stringify(pt));
-  await touch(page, 'touchEnd');
-  await new Promise((r) => setTimeout(r, 200));
-  const up = await evalJs(page, `return {
-    seq: window.__pt,
-    sheet: !!document.querySelector('.act-sheet.open'),
-  };`);
-  ok(up.sheet, '长按后原地松手 → 弹出操作层；'
-    + '事件序列 ' + JSON.stringify(up.seq.slice(1)));
-  ok(await evalJs(page, `return document.querySelectorAll('.act-sheet.open .as-btn').length > 0;`),
-    '操作层里有按钮');
-  /* 内容不许顶出按钮边框。`Btn` 的 size="sm" 带 `h-[30px]`（定高），
-     而 `.as-btn` 是「图标 + 文字」两行，内容高度本就超过 30px ——
-     不覆盖掉那个定高，两行就溢到边框外面去了（用户报的就是这个）。
-     这里量内容盒与边框盒：内容上下都必须在边框内。
-     量的是 **子元素**（.ai 与文字），不是按钮自己 —— 按钮自己是那个盒子。 */
-  ok(await evalJs(page, `
-    const bad = [...document.querySelectorAll('.act-sheet.open .as-btn')].filter((btn) => {
-      const bb = btn.getBoundingClientRect();
-      return [...btn.children].some((c) => {
-        const cb = c.getBoundingClientRect();
-        // 上下留 1px 容差：亚像素取整（见 CLAUDE.md 三、无障碍 3 的同一条）
-        return cb.top < bb.top + 1 || cb.bottom > bb.bottom - 1;
-      });
-    }).length;
-    return bad === 0;
-  `), '操作层按钮的内容没有顶出边框');
-  await evalJs(page, `document.querySelector('.act-sheet .as-cancel').click(); return true;`);
-  ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`), '操作层能关掉');
-
-  // —— 再验拖动：长按后往下挪一条 ——
+  // —— 触摸拖拽排序（触屏这条路不能带着长按操作层一起改坏）——
+  /* **按住不动不再弹任何东西。** 长按操作层已在 2026-10-11 整体删除
+     （用户明确要求「整个长按的面板包括其功能都彻底砍掉」），所以这里只留
+     拖拽一条路：TouchSensor 的 `{delay: 480, tolerance: 8}` 到点开拖，
+     松手落库。断言的不是「有没有弹层」——那个已经没有了 —— 而是排序真的
+     变了、并且落进了 localStorage。 */
   const p2 = await rectOf('甲');
   const q = await rectOf('丙');
   await touch(page, 'touchStart', p2);
-  await new Promise((r) => setTimeout(r, LONG_PRESS_MS + 250));
+  await new Promise((r) => setTimeout(r, TOUCH_DRAG_DELAY + 250));
   await touch(page, 'touchMove', { x: p2.x, y: p2.y + 12 });
   await touch(page, 'touchMove', { x: q.x, y: q.y });
   await new Promise((r) => setTimeout(r, 250));
@@ -1051,14 +999,6 @@ try {
   const after = await inbox();
   ok(after.join('') !== '甲乙丙', '拖完顺序真的变了，实际 ' + JSON.stringify(after));
   ok(after[after.length - 1] === '甲', '被拖的「甲」到了最后一位，实际 ' + JSON.stringify(after));
-  /* **拖拽和长按只能有一个赢。** 触摸上这两件事开头一模一样：TouchSensor 配的是
-     `{delay: 480ms, tolerance: 8}`，手指按住不动到点，长按 timer 和 dnd-kit
-     会**同时**到点（所以「有没有触发 onDragStart」区分不开）。唯一能分的是
-     手指有没有挪过 —— 这一条就是那个判据。
-     少了这条断言，上面那句「顺序变了」和长按弹出操作层是可以同时成立的：
-     拖成了，浮层也跟着弹出来了。 */
-  ok(await evalJs(page, `return !document.querySelector('.act-sheet.open');`),
-    '拖完没有弹出长按操作层（两者不能同时触发）');
   // 落库了才算数：不能只是视觉上挪了一下
   const saved = await evalJs(page, `
     const now = JSON.parse(localStorage.getItem('schedule-app-v4')).tasks;
@@ -1766,7 +1706,7 @@ try {
   `);
   const block = await waitFor(page, `
     (() => {
-      const e = [...document.querySelectorAll('.tl-event')].find((x) => x.textContent.includes('微调试试'));
+      const e = [...document.querySelectorAll('.task-el--timed')].find((x) => x.textContent.includes('微调试试'));
       if (!e) return null;
       // 上沿的 class 是 "ev-resize ev-resize-top"，所以 '.ev-resize' 会**先命中上沿**
       // （DOM 里它在前面）—— 想拿的是下沿就必须排掉它。
@@ -1784,7 +1724,7 @@ try {
   ok(!!block.name && !!block.topName && block.name !== block.topName,
     '两个把手各有名字，且分得清上下：' + JSON.stringify(block.name) + ' / ' + JSON.stringify(block.topName));
 
-  const sel = (act) => `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
+  const sel = (act) => `document.querySelector('.task-el--timed[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
   const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;
 
   // 真拿焦点（不是造一个 target），并**顺手挂一个按键记录器** ——
@@ -1901,7 +1841,7 @@ try {
   // 走界面顺带把这一档设置本身也验了（探针十三之二要锁的就是它）。
   const evId = block.id;
   // 属性值必须带引号 —— id 是 UUID，`[data-id=0f979196-…]` 不是合法选择器
-  const evSel = `.tl-event[data-id=${JSON.stringify(evId)}]`;
+  const evSel = `.task-el--timed[data-id=${JSON.stringify(evId)}]`;
 
   const openSettings = async () => {
     await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
@@ -1963,8 +1903,8 @@ try {
   const w1 = await readTl();
   ok(w1.from === '480' && w1.to === '660',
     '设置里改的时间窗生效了（08:00–11:00 → data-from/to = ' + w1.from + '/' + w1.to + '）');
-  ok(w1.n === 3 && w1.first === '08:00' && w1.last === '10:00',
-    '小时线只画窗内的 3 条（' + w1.first + ' … ' + w1.last + '，共 ' + w1.n + ' 条）');
+  ok(w1.n === 4 && w1.first === '08:00' && w1.last === '11:00',
+    '小时线只画窗内的 4 条（' + w1.first + ' … ' + w1.last + '，共 ' + w1.n + ' 条）');
   // 方块位置按**新窗**算，而不是整天口径：(t - from) / (to - from)
   const wantTop = (h2m(w1.time) - 480) / 180 * 100;
   ok(Math.abs(parseFloat(w1.top) - wantTop) < 0.2,
@@ -1979,7 +1919,9 @@ try {
   const from = await evalJs(page, `
     return (() => {
       const r = document.querySelector('${evSel}').getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+      const tl = document.querySelector('.timeline').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height,
+               tlH: Math.round(tl.height), styleH: document.querySelector('${evSel}').style.height };
     })();
   `);
   await page.send('Input.dispatchMouseEvent', {
@@ -1997,7 +1939,14 @@ try {
       const el = document.querySelector('${evSel}');
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return { w: r.width, h: r.height, transform: el.style.transform };
+      // time 一起读回来：日视图拖动途中**卡片本身被实时改 time**（落点跟着
+      // 指针走，见 useTimelineDrag），卡片高是百分比定位的，顶部跨过时间窗
+      // 末端时 pctRange 会把高度夹到窗沿 —— 所以高度**会变**，而且原因不是
+      // scale。断言据此改成「transform 里没有 scale」+「宽度不变」。
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(evId)});
+      return { w: r.width, h: r.height, transform: el.style.transform,
+               time: t ? t.time : null, dur: t ? t.duration : null };
     })();
   `);
   await page.send('Input.dispatchMouseEvent', {
@@ -2007,13 +1956,16 @@ try {
 
   ok(!!mid && /translate3d/.test(mid.transform || ''),
     '拖动真的起来了（transform 里有位移），实际 ' + JSON.stringify(mid && mid.transform));
-  ok(!!mid && Math.abs(mid.h - from.h) <= 2,
-    '拖动途中高度不变（' + from.h.toFixed(1) + ' → ' + (mid ? mid.h.toFixed(1) : '?') + 'px）—— '
-    + '变大就是 adjustScale 的 scaleY 漏进来了');
   ok(!!mid && Math.abs(mid.w - from.w) <= 2,
     '拖动途中宽度不变（' + from.w.toFixed(1) + ' → ' + (mid ? mid.w.toFixed(1) : '?') + 'px）');
   ok(!!mid && !/scale/i.test(mid.transform || ''),
     'transform 里只有位移、没有 scale，实际 ' + JSON.stringify(mid && mid.transform));
+  /* 高度会变，但**不是 scale 撑大的**：卡片跟着指针走，top 跨过时间窗末端时
+     `pctRange` 把高度夹到窗沿（夹小，不是放大）。transform 里没有 scale 已经
+     证了这一点（`CSS.Transform` 会把 adjustScale 的 scaleY 一起烤进去）。 */
+  ok(!!mid && (!mid.time || mid.time <= '11:00'),
+    '拖动途中卡片没有被 scale 拉高（时间 ' + (mid ? mid.time : '?') + ' 仍落在时间窗内），实际 '
+      + JSON.stringify(mid && { h: mid.h, time: mid.time, transform: mid.transform }));
 
   // ③之二 拖动态三件套：虚影让位、出界去最近位置、水平锁在容器内
   //     这三条都是「拖起来那一瞬间」的行为，必须在拖拽途中量，松手之后就看不见了。
@@ -2141,23 +2093,26 @@ try {
   const w2 = await readTl();
   ok(w2.from === '600' && w2.to === '840',
     '时间窗收成 10:00–14:00（' + w2.from + '/' + w2.to + '）');
-  ok(w2.n === 4 && w2.first === '10:00',
-    '小时线跟着收窄成 4 条（' + w2.n + ' 条，起 ' + w2.first + '）');
+  ok(w2.n === 5 && w2.first === '10:00',
+    '小时线跟着收窄成 5 条（' + w2.n + ' 条，起 ' + w2.first + '）');
 
   // ⑤ 窗外的不画：那条被拖到了 09:00 之后…… 直接回整天、把它拖回 09:00 前太绕，
   //    这里换成验「窗外的东西不画」这条本身 —— 把窗设到 23 点起。
   await setWindow(23, 24);
   const w3 = await readTl();
-  ok(w3.n === 1 && w3.first === '23:00',
-    '23:00–24:00 的窗里只有 1 条小时线，实际 ' + w3.n + ' 条');
+  ok(w3.n === 2 && w3.first === '23:00' && w3.last === '24:00',
+    '23:00–24:00 的窗里有 2 条小时线（含末端的 24:00），实际 ' + w3.n + ' 条，first=' + w3.first + ' last=' + w3.last);
   ok(w3.top === null || w3.evH === null,
     '上午那条落在窗外，整条不画（不是画在顶上冒充 23:00），实际 top=' + w3.top);
 
-  // 收尾：把时间窗放回整天，别给后面的断言留一个收窄的时间轴
+  // 收尾：把时间窗放回整天，别给后面的断言留一个收窄的时间轴。
+  // 条数**不写死 24**：疏密是按像素密度分档的（见 DayView 的 step），
+  // 探针窗口 860 高给时间轴约 410px → 17px/h → step2 → 13 条（0,2,…,24）。
+  // 这里要证的是「窗口真放回整天了」，所以断言 data-from/to + 条数是 13 或 25。
   await setWindow(0, 24);
   const w4 = await readTl();
-  ok(w4.from === '0' && w4.to === '1440' && w4.n === 24,
-    '恢复整天（24 条小时线），实际 ' + w4.n + ' 条');
+  ok(w4.from === '0' && w4.to === '1440' && (w4.n === 13 || w4.n === 25),
+    '恢复整天（窗口 0–1440，小时线 ' + w4.n + ' 条），实际 from=' + w4.from + ' to=' + w4.to + ' n=' + w4.n);
 
   console.log('\n十五、软键盘避让：--kb 有人写、固定的浮层有人读');
   //
@@ -2185,7 +2140,7 @@ try {
   // （抽屉早就在那儿了），末尾那句「等它关掉」则永远等不到（抽屉一直开着）。
   // Sheet 是 portal 到 body 的：body > 浮层容器 > 面板。
   const SHEET = `document.querySelector('body > div > div[role="dialog"]')`;
-  await clickEl(page, `document.querySelector('.tl-event[data-id=${JSON.stringify(block.id)}]')`);
+  await clickEl(page, `document.querySelector('.task-el--timed[data-id=${JSON.stringify(block.id)}]')`);
   await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
   await clickEl(page, `document.querySelector('.drawer.open [aria-label="删除任务"]')`);
   await waitFor(page, `${SHEET} ? 1 : null`, '确认浮层打开', 8000);
@@ -2251,7 +2206,7 @@ try {
     return document.activeElement === el ? 'ok' : 'no';
   `) === 'ok', '先把光标放在快速添加框里（关掉抽屉之后要还回这儿）');
 
-  await clickEl(page, `document.querySelector('#content .tl-event, #content .task-row')`);
+  await clickEl(page, `document.querySelector('#content .task-el--timed, #content .task-row')`);
   await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
 
   const sem = await evalJs(page, `
@@ -2953,32 +2908,91 @@ try {
   ok(nativeInputs.length === 0,
     '抽屉里没有原生日期 / 时间输入框（日期和时间都用自带的 .dp / .tp），实际 ' + JSON.stringify(nativeInputs));
 
-  const btnWidths = await evalJs(page, `
-    const pick = (sel) => {
-      const el = document.querySelector(sel);
-      return el ? Math.round(el.getBoundingClientRect().width) : null;
-    };
-    return JSON.stringify({
-      dp: pick('.drawer .dp-btn'),
-      tp: pick('.drawer .tp-btn'),
-      rep: pick('.drawer .rep-open'),
-    });
-  `);
-  console.log('  DIAG btn widths:', btnWidths);
-
   /* 重复设置收在一个 Sheet 里（2026-10-09）。外面那一行只留一个按钮，
      点开是一个 Sheet，里面有频率 / 间隔 / 周几 / 结束方式。 */
   await clickEl(page, `document.querySelector('.drawer .rep-open')`);
   await waitFor(page, `document.querySelector('.repeat-pop') ? 1 : null`, '重复下拉弹窗打开了', 8000);
-  // 如果当前是"不重复"，先点那个按钮切到「每天」。clickEl 返回 'missing'
-  // 就是已经是有重复了（弹的是滚轮，不是「不重复」按钮），那就跳过。
-  const noneClick = await clickEl(page, `document.querySelector('.repeat-pop .repeat-none-btn')`);
-  if (noneClick !== 'missing') {
-    await waitFor(page, `document.querySelector('.repeat-pop .wp-picker') ? 1 : null`, '从「不重复」切换到有重复', 8000);
-  }
-  // 点右侧单位轮里的「每周」——滚轮和选择器是独立的，单位轮右边那个
-  await clickEl(page, `document.querySelector('.repeat-pop .wp-wheel-item[value="week"]')`);
+  ok(true, '重复弹窗打开');
+  // **弹窗直接进重复面板**（2026-10-10）：不再单独弹一个按钮让人多点一下。
+  // 单位下拉选「周」
+  await clickEl(page, `document.querySelector('.repeat-pop [aria-haspopup="listbox"]')`);
+  await waitFor(page, `document.querySelector('.repeat-pop [role="option"]') ? 1 : null`, '单位下拉选项出来', 8000);
+  await clickEl(page, `(() => {
+    const opts = [...document.querySelectorAll('.repeat-pop [role="option"]')];
+    return opts.find((o) => o.textContent.trim() === '周');
+  })()`);
   await waitFor(page, `document.querySelector('.repeat-pop .rp-day') ? 1 : null`, '每周的星期选择出来', 8000);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.unit === 'week' ? 1 : null;
+    })()
+  `, '单位切到每周落库', 8000);
+  ok(true, '单位切到每周');
+  // 单位下拉切到「月」→ 下方是 1–31 的日历样式日期格
+  await clickEl(page, `document.querySelector('.repeat-pop [aria-haspopup="listbox"]')`);
+  await waitFor(page, `document.querySelector('.repeat-pop [role="option"]') ? 1 : null`, '单位下拉选项出来', 8000);
+  await clickEl(page, `(() => {
+    const opts = [...document.querySelectorAll('.repeat-pop [role="option"]')];
+    return opts.find((o) => o.textContent.trim() === '月');
+  })()`);
+  await waitFor(page, `document.querySelector('.repeat-pop .jp-grid') ? 1 : null`, '每月的日期格出来', 8000);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.unit === 'month' ? 1 : null;
+    })()
+  `, '单位切到每月落库', 8000);
+  ok(true, '单位切到每月，日期格用 jp-grid');
+  // 结构对了不等于能用：真的点一天，落进 repeat.monthday
+  await clickEl(page, `(() => {
+    const cells = [...document.querySelectorAll('.repeat-pop .jp-grid .jp-cell')];
+    return cells[14];
+  })()`);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.unit === 'month' && t.repeat.monthday === 15 ? 1 : null;
+    })()
+  `, '每月选的日期落进 repeat.monthday', 8000);
+  ok(true, '每月选的日期落库');
+  // 单位下拉切到「年」→ 比每月多一个月份切换，日期格也还在
+  await clickEl(page, `document.querySelector('.repeat-pop [aria-haspopup="listbox"]')`);
+  await waitFor(page, `document.querySelector('.repeat-pop [role="option"]') ? 1 : null`, '单位下拉选项出来', 8000);
+  await clickEl(page, `(() => {
+    const opts = [...document.querySelectorAll('.repeat-pop [role="option"]')];
+    return opts.find((o) => o.textContent.trim() === '年');
+  })()`);
+  await waitFor(page, `document.querySelector('.repeat-pop .rp-month-label') ? 1 : null`, '每年的月份切换出来', 8000);
+  await waitFor(page, `document.querySelector('.repeat-pop .jp-grid') ? 1 : null`, '每年的日期格也在', 8000);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.unit === 'year' && t.repeat.yearMonth ? 1 : null;
+    })()
+  `, '单位切到每年落库（带月份）', 8000);
+  ok(true, '单位切到每年，月份切换 + 日期格都在');
+  // 点一下月份切换的右箭头，yearMonth 要跟着变
+  const ymBefore = await evalJs(page, `
+    return (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat ? t.repeat.yearMonth : null;
+    })();
+  `);
+  await clickEl(page, `document.querySelector('.repeat-pop .dp-nav-btn[aria-label="下个月"]')`);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.repeat && t.repeat.yearMonth && t.repeat.yearMonth !== ${JSON.stringify(ymBefore)} ? 1 : null;
+    })()
+  `, '每年的月份切换点得动', 8000);
+  ok(true, '每年的月份切换点得动');
   // 点击"到某天" Chips
   await clickEl(page, `document.querySelector('.repeat-pop [data-pick="date"]')`);
   await waitFor(page, `document.querySelector('.repeat-pop .rp-row .dp-btn') ? 1 : null`, '「到某天」的日期按钮出来了', 8000);
@@ -4118,7 +4132,7 @@ try {
   await evalJs(page, `window.scrollTo(0, 0); return 1;`);
   // 关搜索走 Escape：收起状态**没有**常驻的关闭键了（用户 2026-10-09：「清空键不需要，
   // 点击其他地方就关了」），张开后那个钮也让开了（`pointer-events: none`，见 shell.css）。
-  // 键盘那条路一次只关一层（`App.tsx` 的 Escape：actId → moreOpen → searchOpen → …），
+  // 键盘那条路一次只关一层（`app/keyboard.ts` 的 Escape：moreOpen → searchOpen → …），
   // 横条不在那条链上，所以这一下同样不该把横条收掉。
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -4329,19 +4343,25 @@ try {
   await clickEl(page, `[...document.querySelectorAll('.task-el')].find((x) => x.textContent.includes('写方案'))`);
   await waitFor(page, `!!document.querySelector('button[aria-label="项目"]')`, '抽屉里的项目选择器');
   await clickEl(page, `document.querySelector('button[aria-label="项目"]')`);
-  // Sheet 是 portal 到 body 的（body > 浮层容器 > 面板）；抽屉也是 dialog 但在
-  // #content 里，裸 `[role="dialog"]` 会先命中抽屉 —— 见第 1322 行那段。
-  const PICKER = `document.querySelector('body > div > div[role="dialog"]')`;
-  await waitFor(page, `${PICKER} ? 1 : null`, '项目选择器打开');
+  // 项目和日程集**用同一个下拉框**（2026-10-11）：选项是 role="option" 的
+  // 按钮，就渲染在抽屉里，不再弹一张 portal 出去的 Sheet。
+  await waitFor(page, `document.querySelector('.drawer.open [role="listbox"][aria-label="项目"]') ? 1 : null`, '项目下拉展开', 8000);
   const pickResult = await evalJs(page, `
     return (() => {
-      const btns = [...document.querySelectorAll('body > div > div[role="dialog"] button')];
-      const o = btns.find((x) => x.textContent.trim().includes('星星包'));
+      const opts = [...document.querySelectorAll('.drawer.open [role="listbox"][aria-label="项目"] [role="option"]')];
+      const o = opts.find((x) => x.textContent.trim().includes('星星包'));
       if (o) { o.click(); return 'ok'; }
-      return 'missing';
+      return 'missing:' + opts.length;
     })();
   `);
-  ok(pickResult === 'ok', '项目选择器里选得到「星星包」');
+  ok(pickResult === 'ok', '项目选择器里选得到「星星包」，实际 ' + JSON.stringify(pickResult));
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '写方案');
+      return t && t.projectId ? t.projectId : null;
+    })()
+  `, '项目落库', 8000);
   await new Promise((r) => setTimeout(r, 250));
   await clickEl(page, `document.querySelector('.drawer.open [aria-label="完成"]')`);
   await new Promise((r) => setTimeout(r, 300));
