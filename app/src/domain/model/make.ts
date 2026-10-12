@@ -15,7 +15,7 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
     note: partial.note || '',
     date,
     time: partial.time ?? null,
-    duration: partial.duration || 60,
+    duration: partial.duration ?? null,
     done: partial.done ?? false,
     doneAt: partial.doneAt ?? null,
     repeat: partial.repeat || toRepeat(null, date),

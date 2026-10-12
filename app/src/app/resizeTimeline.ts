@@ -27,23 +27,20 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       win: DayWindow; boxH: number;
     } | null = null;
 
-    /* 拉伸时的浮标：把「持续多久 · 现在到几点」写在手边。
-       没有它，用户只能盯着方块高度的变化去猜 —— 而 15 分钟在 64px/小时下
-       只有 16px，肉眼分不出 15 和 30 的差别。
-       **格式统一为「持续时长 · 开始时间」**（用户 2026-10-12）：上沿显示
-       实时新开始时间，下沿显示开始时间（不变）。 */
+    /* 拉伸时的浮标：只显示持续时长。
+       上沿拖动时 tag 在卡片**上方**，下沿拖动时在**下方**。 */
     let tip: HTMLDivElement | null = null;
-    const showTip = (el: HTMLElement | null, dur: number, timeText: string | null) => {
+    const showTip = (el: HTMLElement | null, dur: number, edge: 'top' | 'bottom') => {
       if (!el) return;
       if (!tip) {
         tip = document.createElement('div');
-        tip.className = 'tl-resize-tip';
+        tip.className = 'tl-dur-tag';
         document.body.appendChild(tip);
       }
       const r = el.getBoundingClientRect();
-      tip.style.top = r.bottom + 6 + 'px';
+      tip.style.top = (edge === 'top' ? r.top - 26 : r.bottom + 6) + 'px';
       tip.style.left = r.left + 'px';
-      tip.textContent = D.fmtDuration(dur) + (timeText ? ' · ' + timeText : '');
+      tip.textContent = D.fmtDuration(dur);
     };
     const hideTip = () => { tip?.remove(); tip = null; };
 
@@ -61,12 +58,12 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       rz = {
         id: t.id, y: getY(e),
         edge: h.dataset.act === 'resize-top' ? 'top' : 'bottom',
-        start, end: start + (t.duration || 60), dur: t.duration || 60, cur: t.duration || 60,
+        start, end: start + D.durOf(t.duration), dur: D.durOf(t.duration), cur: D.durOf(t.duration),
         el: el.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
         win: domWindow(tl), boxH,
       };
       rz.el?.classList.add('resizing');
-      showTip(rz.el, rz.dur, D.minToTime(start));
+      showTip(rz.el, rz.dur, rz.edge);
       e.preventDefault();
     };
 
@@ -90,7 +87,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         rz.cur = Math.max(15, rz.dur + addMin);
         if (rz.el) rz.el.style.height = (rz.cur / spanOf(rz.win) * 100) + '%';
       }
-      showTip(rz.el, rz.cur, rz.edge === 'top' && rz.curStart != null ? D.minToTime(rz.curStart) : D.minToTime(rz.start));
+      showTip(rz.el, rz.cur, rz.edge);
     };
 
     const up = () => {

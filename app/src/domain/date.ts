@@ -129,6 +129,26 @@ export function relLabel(isoStr: string): string {
   return fmtMD(isoStr);
 }
 
+/**
+ * 任务的结束时间。**唯一上游** —— 所有要显示结束时间的地方都调这个函数，
+ * 不自己拼 `timeToMin(time) + duration`。
+ *
+ * `duration` 为 null（没设结束时间）时返回 null。
+ * `time` 为 null（未定时）时返回 null。
+ */
+export function endOf(time: string | null, duration: number | null): string | null {
+  if (!time || duration == null) return null;
+  return minToTime(timeToMin(time)! + duration);
+}
+
+/**
+ * 任务的持续时间。`duration` 为 null 时返回默认 60 分钟。
+ * 用于渲染高度等需要数值的场景。
+ */
+export function durOf(duration: number | null): number {
+  return duration ?? 60;
+}
+
 export function timeToMin(t: string | null | undefined): number | null {
   if (!t) return null;
   const p = String(t).split(':');
@@ -151,12 +171,12 @@ export function minToTime(m: number): string {
  * 边界和拖拽一样：时长最少 15 分钟，上沿不早于 0:00。
  */
 export function nudgeEdge(
-  time: string | null | undefined, duration: number, edge: 'top' | 'bottom', dir: 1 | -1,
-): { time?: string; duration: number } {
+  time: string | null | undefined, duration: number | null, edge: 'top' | 'bottom', dir: 1 | -1,
+): { time?: string; duration: number | null } {
   const STEP = 15;
   const start = timeToMin(time) || 0;
-  const end = start + (duration || 60);
-  if (edge === 'bottom') return { duration: Math.max(STEP, (duration || 60) + dir * STEP) };
+  const end = start + durOf(duration);
+  if (edge === 'bottom') return { duration: Math.max(STEP, durOf(duration) + dir * STEP) };
   const ns = Math.max(0, Math.min(end - STEP, start + dir * STEP));
   return { time: minToTime(ns), duration: end - ns };
 }

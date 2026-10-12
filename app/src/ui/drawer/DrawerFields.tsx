@@ -12,7 +12,6 @@ import type { Project, Task } from '../../domain/types.ts';
 import { DatePicker } from '../DatePicker.tsx';
 import { TimePicker } from '../TimePicker.tsx';
 import { Dropdown, Input } from '../kit.tsx';
-import { DEFAULT_DURATION } from './useDrawer.ts';
 
 /** 日历集 / 项目那一行的两个下拉。**项目和日程集用同一个简单下拉框**
  *  （2026-10-11）：原先项目走 SheetPicker（弹一整张 Sheet），两个并排放着时
@@ -83,7 +82,7 @@ function DateTimeRow({ task, endTime, onPatch, setEnd }: {
             value={task.time}
             onChange={(v) => {
               setEnd(null);
-              onPatch(task.id, { time: v, ...(v === null ? { duration: DEFAULT_DURATION } : {}) });
+              onPatch(task.id, { time: v, ...(v === null ? { duration: null } : {}) });
             }}
           />
           {task.time && (

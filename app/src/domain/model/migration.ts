@@ -9,7 +9,7 @@ import { normalizeUi } from './ui.ts';
 
 interface V3Task {
   id?: string; title?: string; note?: string;
-  date?: string | null; time?: string | null; duration?: number;
+  date?: string | null; time?: string | null; duration?: number | null;
   done?: boolean; doneAt?: number | null;
   repeat?: unknown; repeatSeq?: number; order?: number; ord?: number | null;
   createdAt?: number; source?: string | null;
@@ -56,7 +56,7 @@ export function migrateV3(raw: V3State): MigrationResult {
       note: t.note || '',
       date: t.date ?? null,
       time: t.time ?? null,
-      duration: t.duration || 60,
+      duration: t.duration ?? null,
       done: !!t.done,
       doneAt: t.doneAt ?? null,
       repeat,
@@ -84,7 +84,7 @@ export function migrateV3(raw: V3State): MigrationResult {
       note: p.note || '',
       date: p.date ?? null,
       time: p.time ?? null,
-      duration: p.duration || 60,
+      duration: p.duration ?? null,
       done: !!p.done,
       doneAt: p.doneAt ?? null,
       repeat: toRepeat(p.repeat, p.date ?? null),

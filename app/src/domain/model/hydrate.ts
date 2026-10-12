@@ -35,7 +35,7 @@ export function hydrateTask<T extends Partial<Task> & MetaLike>(e: T): T & Task 
   if (t.note === undefined) t.note = '';
   if (t.date === undefined) t.date = null;
   if (t.time === undefined) t.time = null;
-  if (t.duration === undefined) t.duration = 60;
+  if (t.duration === undefined) t.duration = null;
   if (t.done === undefined) t.done = false;
   if (t.doneAt === undefined) t.doneAt = null;
   if (t.repeatSeq === undefined) t.repeatSeq = 0;

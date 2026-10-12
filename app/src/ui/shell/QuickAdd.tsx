@@ -21,7 +21,7 @@ const QUICK_PLACEHOLDER = '新建任务，回车保存';
 
 export function QuickAdd({ state, onSubmit }: {
   state: LocalState;
-  onSubmit: (draft: { title: string; date: string | null; time: string | null; duration?: number; repeat?: unknown }, openDetail: boolean) => void;
+  onSubmit: (draft: { title: string; date: string | null; time: string | null; duration?: number | null; repeat?: unknown }, openDetail: boolean) => void;
 }) {
   const narrow = useIsNarrow();
   const [text, setText] = useState('');

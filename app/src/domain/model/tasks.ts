@@ -89,7 +89,7 @@ export function dayLoad(s: LocalState, isoDate: string): { mins: number; count: 
   for (const x of Object.values(s.tasks)) {
     if (isGone(x) || x.done || x.date !== isoDate) continue;
     count++;
-    if (x.time) mins += x.duration || 60;
+    if (x.time) mins += D.durOf(x.duration);
   }
   return { mins, count };
 }

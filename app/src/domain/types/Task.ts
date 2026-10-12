@@ -12,7 +12,8 @@ export interface Task extends SyncMeta {
   date: string | null;
   /** null = 未定时，落在时间轴上方的全天区 */
   time: string | null;
-  duration: number;
+  /** 分钟数。null = 有开始时间但不设置结束时间（默认一小时卡高） */
+  duration: number | null;
   done: boolean;
   doneAt: number | null;
   repeat: RepeatRule;

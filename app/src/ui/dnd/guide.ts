@@ -59,10 +59,11 @@ function clearTimeCursor(): void {
   document.querySelectorAll('.tl-cursor').forEach((el) => el.remove());
 }
 
-/** 卡片外侧下方持续时间标签 */
+/** 卡片外侧下方持续时间标签。duration 为 null（没设结束时间）时不显示 */
 function showDurationTag(card: HTMLElement, taskId: string): void {
   const task = store.get().tasks[taskId];
   if (!task) return;
+  if (task.duration == null) { clearDurationTags(); return; }
   let tag = document.querySelector<HTMLElement>('.tl-dur-tag[data-task="' + taskId + '"]');
   if (!tag) {
     tag = document.createElement('div');
@@ -73,7 +74,7 @@ function showDurationTag(card: HTMLElement, taskId: string): void {
   const r = card.getBoundingClientRect();
   tag.style.left = r.left + 'px';
   tag.style.top = (r.bottom + 2) + 'px';
-  tag.textContent = D.fmtDuration(task.duration || 60);
+  tag.textContent = D.fmtDuration(task.duration);
 }
 
 function clearDurationTags(): void {

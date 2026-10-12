@@ -178,19 +178,9 @@
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
 .task-el.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
-/* 拖上沿 / 下沿拉伸时的浮标。**样式与拖拽的 `.tl-dur-tag` 一致**（2026-10-12）：
-   用户报「两个小浮窗黑绿不一，三个要统一」。配色统一走黑底白字 ——
-   黑底在任何主题下都压得住，白字永远对。
-   **文案仍然是两种**（用户 2026-10-12 明确要求保持区分）：
-     拉伸 → 「几点几分 · 持续时间」（两个信息都要：拖到几点了、变成多长）
-     整体拖拽 → 只「持续时间」（拖拽只回答「多长」，「几点」由绿线直接读） */
-.tl-resize-tip {
-  position: fixed; z-index: 80; pointer-events: none;
-  background: rgb(0 0 0 / .55); color: var(--toast-fg);
-  font-size: 11px; font-weight: 600;
-  padding: 2px 7px; border-radius: var(--r-xs); font-variant-numeric: tabular-nums;
-  box-shadow: var(--shadow-md); transform: translateY(-3px);
-}
+/* 拖上沿 / 下沿拉伸时的浮标。**复用 `.tl-dur-tag`**（lists.css 第 341 行）——
+   用户在 prompt-refine 要求「黑时间 tag 组件只有一个实例」。拖拽和拉伸共用
+   同一条 CSS，模板字符串里的 class 名也是同一个。 */
 /* 拖动改时间时颜色保持原样，不加透明度，方便看清要落到哪个时间点。
    影子走全站统一的 `--drag-shadow`（中性淡影），不再是主色的绿光 ——
    原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。

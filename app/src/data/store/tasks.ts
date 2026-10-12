@@ -18,7 +18,7 @@ export interface TaskDraft {
   note?: string;
   date?: string | null;
   time?: string | null;
-  duration?: number;
+  duration?: number | null;
   repeat?: unknown;
   source?: string | null;
 }
@@ -31,7 +31,7 @@ export function addTask(d: TaskDraft): string {
     note: d.note || '',
     date,
     time: d.time ?? null,
-    duration: d.duration || 60,
+    duration: d.duration ?? null,
     repeat: toRepeat(d.repeat, date),
     seriesId: null,
     order: d.time ? null : nextOrder(state, date),

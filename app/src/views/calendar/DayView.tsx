@@ -100,14 +100,15 @@ function TimedCard({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isT
   /* 时间段那行只有块够高才画。判据跟着窗口走（收窄时间窗 = 每小时更高），
      所以不能再拿写死的 px 比 —— 用百分比跟最小可读高度比。 */
   const roomy = box.height >= 3.4;
+  const hasEnd = t.duration != null;
   return (
     <TaskCard
       t={t}
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       style={{ top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `${w}%` }}
-      timeText={roomy ? timeRange(e.start, e.end - e.start) : null}
+      timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
       title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
-      resizable
+      resizable={hasEnd}
     />
   );
 }
@@ -123,7 +124,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
   const slots: Slot<Task>[] = timed.map((t) => {
     const start = D.timeToMin(t.time) || 0;
-    return { item: t, start, end: start + (t.duration || 60) };
+    return { item: t, start, end: start + D.durOf(t.duration) };
   });
   const events = layoutOverlap(slots);
 

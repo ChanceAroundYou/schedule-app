@@ -23,8 +23,9 @@ export function useAnchoredPosition(
   panel: RefObject<HTMLElement | null>,
   open: boolean,
   deps: readonly unknown[] = [],
+  forceUp = false,
 ): { top: number; left: number } | null {
-  return useAnchoredPositionFrom(anchor.current, panel, open, deps);
+  return useAnchoredPositionFrom(anchor.current, panel, open, deps, forceUp);
 }
 
 /**
@@ -44,17 +45,26 @@ export function useAnchoredPositionFrom(
   panel: RefObject<HTMLElement | null>,
   open: boolean,
   deps: readonly unknown[] = [],
+  forceUp = false,
 ): { top: number; left: number } | null {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useLayoutEffect(() => {
     if (!open || !anchor || !panel.current) { setPos(null); return; }
     const r = anchor.getBoundingClientRect();
+    if (forceUp) {
+      const panelW = panel.current.offsetWidth;
+      const panelH = panel.current.offsetHeight;
+      const top = Math.max(8, r.top - panelH - 6);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - panelW - 8));
+      setPos({ top, left });
+      return;
+    }
     setPos(placePanel({
       anchor: { top: r.top, bottom: r.bottom, left: r.left },
       size: { w: panel.current.offsetWidth, h: panel.current.offsetHeight },
       viewport: { w: window.innerWidth, h: window.innerHeight },
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps 由调用方给
-  }, [open, anchor, panel, ...deps]);
+  }, [open, anchor, panel, forceUp, ...deps]);
   return pos;
 }

@@ -17,7 +17,7 @@ export interface QuickAddDraft {
   title: string;
   date: string | null;
   time: string | null;
-  duration?: number;
+  duration?: number | null;
   repeat?: unknown;
 }
 

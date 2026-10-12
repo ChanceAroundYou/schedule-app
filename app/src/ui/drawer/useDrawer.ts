@@ -13,12 +13,8 @@ import * as D from '../../domain/date.ts';
 import { repeatLast, repeatNext } from '../../domain/repeat.ts';
 import { liveProjects } from '../../domain/model.ts';
 import { useConfirm } from '../kit.tsx';
-import { useAnchoredPosition, useEscape, useFocusTrap, useModalFocus, useOutsideClose } from '../hooks.ts';
+import { useAnchoredPosition, useEscape, useFocusTrap, useIsNarrow, useModalFocus, useOutsideClose } from '../hooks.ts';
 import { useOverlayScrollbar } from '../scroll.ts';
-
-/** 没设结束时间时的默认时长。`duration` 是 `number`、不是可空的，
- *  所以「没有结束时间」只能表达成「一小时」—— 建任务那一版就是这个行为。 */
-export const DEFAULT_DURATION = 60;
 
 /** 抽屉 props 里与状态有关的那一小半 —— 状态这一层只用它，不碰渲染。 */
 export type DrawerStateProps = {
@@ -105,7 +101,7 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   useOutsideClose(repPanel, repOpen, repClose, repAnchor);
   useEscape(repOpen, repClose);
   const repPos = useAnchoredPosition(repAnchor, repPanel, repOpen,
-    [task?.repeat.unit, task?.repeat.n, task?.repeat.end?.type]);
+    [task?.repeat.unit, task?.repeat.n, task?.repeat.end?.type], useIsNarrow());
 
   useEffect(() => {
     if (!id) return;
@@ -147,12 +143,13 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
     : null;
 
   const startMin = task ? D.timeToMin(task.time) : null;
-  /** 改结束时间 = 改 duration。endTime 是派生的，这里只写 store。 */
+  /** 改结束时间 = 改 duration。endTime 是派生的，这里只写 store。
+   *  `v == null` 表示清空结束时间 → duration 设为 null（不是默认 60）。 */
   const setEnd = (v: string | null) => {
     const s = startMin;
-    if (v == null || s == null) { patch({ duration: DEFAULT_DURATION }); return; }
+    if (v == null || s == null) { patch({ duration: null }); return; }
     const e = D.timeToMin(v);
-    if (e == null) { patch({ duration: DEFAULT_DURATION }); return; }
+    if (e == null) { patch({ duration: null }); return; }
     patch({ duration: e > s ? e - s : e - s + 1440 });
   };
 

@@ -14,7 +14,7 @@ import { pad2, hours24, type LayoutEvent } from './shared.ts';
 function weekEvents(state: LocalState, iso: string) {
   const slots: Slot<Task>[] = tasksOn(state, iso).filter((t) => t.time).map((t) => {
     const start = D.timeToMin(t.time) || 0;
-    return { item: t, start, end: start + (t.duration || 60) };
+    return { item: t, start, end: start + D.durOf(t.duration) };
   });
   return layoutOverlap(slots);
 }
@@ -31,7 +31,7 @@ function WeekEvent({ e }: { e: LayoutEvent }) {
       {...drag.attributes}
       {...drag.listeners}
       data-id={t.id}
-      title={`${t.title} ${t.time} · ${D.fmtDuration(t.duration || 60)}`}
+      title={`${t.title} ${t.time} · ${D.fmtDuration(D.durOf(t.duration))}`}
     >
       <span className="wk-time">{t.time}</span>
       <span className="wk-title">{t.title}</span>

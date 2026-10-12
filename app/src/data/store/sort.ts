@@ -71,7 +71,7 @@ export function moveUntimed(id: string, date: string | null, refId: string | nul
   const seq = sibs.map((x) => x.id);
   seq.splice(idx, 0, id);
 
-  const items: Change[] = [{ entity: 'task', id, fields: { date, time: null } }];
+  const items: Change[] = [{ entity: 'task', id, fields: { date, time: null, duration: null } }];
   seq.forEach((x, i) => {
     const cur = state.tasks[x];
     if (cur && cur.order !== i) items.push({ entity: 'task', id: x, fields: { order: i } });
