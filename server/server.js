@@ -53,6 +53,11 @@ function main() {
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+
+  // 兜底：没被任何 try/catch 接住的错误只记日志、不拖垮整个进程
+  // （路由层那个 catch 管不到定时器与事件回调里的意外）
+  process.on('uncaughtException', (e) => console.error('[uncaughtException]', e && e.message ? e.message : e));
+  process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e && e.message ? e.message : e));
 }
 
 if (require.main === module) main();

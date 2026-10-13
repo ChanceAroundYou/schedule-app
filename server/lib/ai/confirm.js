@@ -109,7 +109,8 @@ function confirm(userId, ids) {
     try {
       res = sync.applyOps(userId, [op]);
     } catch (e) {
-      console.error('[ai/confirm]', e && e.stack ? e.stack : e);
+      // 只记 message 不记堆栈：同 router.js，堆栈可能带着库文件路径
+      console.error('[ai/confirm]', e && e.message ? e.message : e);
       failed.push({ id, reason: '写入失败' });
       continue;
     }

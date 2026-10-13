@@ -8,7 +8,8 @@
  * **别在别处写 `role === 'owner'`。** 这里也只写 `canManage(role)`。
  *
  * 权限本身在 lib/calendars.js 里判断（含「最后一个 owner 不能被降级 / 移出 /
- * 退出」那两条不变量）；路由层只在**根本没有这个集**时返 404。
+ * 退出」那两条不变量）；路由层只在**根本没有这个集**时返 404，
+ * 并对 body 字段做类型 / 长度 / 控制字符校验（见下面 badName / badRole）。
  */
 'use strict';
 
@@ -17,6 +18,23 @@ const calendars = require('../lib/calendars');
 const invites = require('../lib/invites');
 const rl = require('../lib/ratelimit');
 const { tooMany } = require('../http');
+
+/**
+ * 路由层校验：类型 / 长度 / 控制字符，和 sync.js 的逐字段校验同一个模式。
+ * 业务层（nameProblem / isRole）自己还有兜底，这里只是不让明显坏的数据
+ * 走到那一步 —— 信任边界宁可严。
+ */
+function badName(name) {
+  if (name == null || name === '') return null;   // 留空是业务问题（建集给默认名）
+  if (typeof name !== 'string') return '名字必须是文字';
+  if (name.length > calendars.NAME_MAX) return `日程集名字最长 ${calendars.NAME_MAX} 字`;
+  if (/[\u0000-\u001f]/.test(name)) return '名字含控制字符';
+  return null;
+}
+
+function badRole(role) {
+  return typeof role === 'string' && calendars.isRole(role) ? null : '权限不对';
+}
 
 module.exports = {
 
@@ -27,10 +45,17 @@ module.exports = {
     body: { cals: calendars.listMine(me.user.id) },
   }),
 
-  'POST /api/cals': (ctx, me) => calendars.create(me.user.id, ctx.body.name),
+  'POST /api/cals': (ctx, me) => {
+    const bad = badName(ctx.body.name);
+    if (bad) return { status: 400, body: { error: bad } };
+    return calendars.create(me.user.id, ctx.body.name);
+  },
 
-  'PATCH /api/cals/:calId': (ctx, me) =>
-    calendars.rename(ctx.params.calId, me.user.id, ctx.body.name),
+  'PATCH /api/cals/:calId': (ctx, me) => {
+    const bad = badName(ctx.body.name);
+    if (bad) return { status: 400, body: { error: bad } };
+    return calendars.rename(ctx.params.calId, me.user.id, ctx.body.name);
+  },
 
   'DELETE /api/cals/:calId': (ctx, me) =>
     calendars.remove(ctx.params.calId, me.user.id),
@@ -48,8 +73,11 @@ module.exports = {
     return { status: 200, body: { members: calendars.members(calId), invites: pending, myRole: role } };
   },
 
-  'PATCH /api/cals/:calId/members/:userId': (ctx, me) =>
-    calendars.setRole(ctx.params.calId, me.user.id, ctx.params.userId, ctx.body.role),
+  'PATCH /api/cals/:calId/members/:userId': (ctx, me) => {
+    const bad = badRole(ctx.body.role);
+    if (bad) return { status: 400, body: { error: bad } };
+    return calendars.setRole(ctx.params.calId, me.user.id, ctx.params.userId, ctx.body.role);
+  },
 
   'DELETE /api/cals/:calId/members/:userId': (ctx, me) =>
     calendars.kick(ctx.params.calId, me.user.id, ctx.params.userId),
@@ -66,6 +94,11 @@ module.exports = {
     // 这个接口会回答「某个用户名存不存在」，所以要比别处更严
     const limited = rl.hitBoth([`invite:${rl.clientIp(ctx.req)}`], 30, 3600 * 1000);
     if (!limited.ok) return tooMany(limited);
+
+    const badName = ctx.body.name != null && typeof ctx.body.name !== 'string'
+      ? '用户名必须是文字' : null;
+    const bad = badName || badRole(ctx.body.role);
+    if (bad) return { status: 400, body: { error: bad } };
 
     return invites.create(calId, me.user.id, ctx.body.name, ctx.body.role);
   },
