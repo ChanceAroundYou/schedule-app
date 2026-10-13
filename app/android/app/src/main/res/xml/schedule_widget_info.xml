@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日程小组件的元信息。
+
+  minWidth/minHeight 用 4×4 格（约 250×250dp）—— 再小放不下月份行 + 日期条
+  + 至少 6 个小时行。**resizeMode 两个方向都放开**，用户能拖高，拖高了多显示
+  几小时。
+
+  updatePeriodMillis 给 30 分钟（Android 允许的最小值）。**别指望它**：
+  Android 12+ 起它是不精确闹钟，实际可能 ±1 小时，小米/OPPO 还会更懒。
+  真正的刷新靠 App 数据变化时主动发广播（见 WidgetBridge.java）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_schedule"
+    android:minWidth="250dp"
+    android:minHeight="250dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="180dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_schedule"
+    android:targetCellWidth="4"
+    android:targetCellHeight="4" />

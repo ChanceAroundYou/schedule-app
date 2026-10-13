@@ -22,6 +22,8 @@ import { liveTasks, liveHabits, habitStreak } from './model.ts';
 export const WIDGET_WEEKS = 4;
 
 export interface SnapshotTask {
+  /** 原生侧勾选 / 改期要用 —— 没有它小组件就只读不能写 */
+  id: string;
   date: string;
   /** null = 未定时 */
   time: string | null;
@@ -70,6 +72,7 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       return !!d && d >= from && d <= to;
     })
     .map((t) => ({
+      id: t.id,
       date: t.date as string,
       time: t.time,
       dur: t.duration,

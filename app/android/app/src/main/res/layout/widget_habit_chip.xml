@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 打卡条上的一格 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/habit_chip"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginRight="6dp"
+    android:background="@drawable/widget_habit_bg"
+    android:paddingLeft="8dp"
+    android:paddingTop="4dp"
+    android:paddingRight="8dp"
+    android:paddingBottom="4dp"
+    android:textColor="#1B3A2A"
+    android:textSize="11sp" />

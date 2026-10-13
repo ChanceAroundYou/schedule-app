@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 日期条上的一格。两层文字（星期 / 日子）用 LinearLayout 而不是一个
+     TextView 两行 —— RemoteViews 里没法给同一段文字的不同行设不同字号。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/chip_root"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:background="@drawable/widget_chip_bg"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
+
+    <TextView
+        android:id="@+id/chip_wd"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="一"
+        android:textColor="#6B8574"
+        android:textSize="10sp" />
+
+    <TextView
+        android:id="@+id/chip_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:text="12"
+        android:textColor="#1B3A2A"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

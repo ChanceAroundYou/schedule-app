@@ -24,6 +24,44 @@
 
         </activity>
 
+        <!-- ============ 桌面小组件 ============ -->
+
+        <!--
+          日程小组件。**exported 必须显式写**（Android 12+ 有 intent-filter 时强制）。
+          写 false：AppWidgetManager 走的是绑定而不是普通广播，别的 App 也不需要
+          直接给我们发 APPWIDGET_UPDATE。这是 AS 生成模板的默认值。
+        -->
+        <receiver
+            android:name=".ScheduleWidgetProvider"
+            android:label="日程"
+            android:icon="@drawable/ic_widget_logo"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/schedule_widget_info" />
+        </receiver>
+
+        <!--
+          两个弹框。**对话框主题**：观感是桌面上的小卡片，不是「打开 App」。
+          excludeFromRecents + noHistory 让它们不进最近任务、返回即消失。
+        -->
+        <activity
+            android:name=".TaskDetailActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.AppCompat.Dialog"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".CreateTaskActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.AppCompat.Dialog"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

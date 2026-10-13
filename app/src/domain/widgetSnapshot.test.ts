@@ -125,3 +125,12 @@ test('快照带版本号与生成时刻', () => {
   assert.equal(snap.from, '2026-09-07');
   assert.equal(snap.to, '2026-11-08');
 });
+
+test('每条任务都带 id —— 小组件要靠它勾选 / 改期', () => {
+  const t = makeTask({ title: '带 id', date: T, time: '09:00' });
+  const snap = buildWidgetSnapshot(state([t]), T);
+  assert.equal(snap.tasks[0].id, t.id);
+  assert.equal(snap.tasks[0].title, '带 id');
+  assert.equal(snap.tasks[0].time, '09:00');
+  assert.equal(snap.tasks[0].done, false);
+});

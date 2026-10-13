@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 时间轴上的一个任务块。配色取自 App 标识那组绿 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/task_block"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginLeft="4dp"
+    android:layout_marginTop="2dp"
+    android:layout_marginRight="2dp"
+    android:layout_marginBottom="2dp"
+    android:background="@drawable/widget_task_bg"
+    android:ellipsize="end"
+    android:maxLines="2"
+    android:paddingLeft="9dp"
+    android:paddingTop="5dp"
+    android:paddingRight="9dp"
+    android:paddingBottom="5dp"
+    android:textColor="#1B3A2A"
+    android:textSize="12sp" />

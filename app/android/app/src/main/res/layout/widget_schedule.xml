@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日程小组件布局
+
+  ⚠️ RemoteViews 的限制：**不能用** ConstraintLayout / 自定义 View / 任何
+  需要 inflate 后才知道宽高的东西。能用的只有 LinearLayout / FrameLayout /
+  RelativeLayout 和那几个官方控件。所以时间轴用「每小时一行」的 LinearLayout
+  堆出来，任务块塞进它开始的那一行 —— 不用绝对定位。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <!-- ============ 月份行 ============ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- 应用标识，复用 app/public/icon.svg（见 ic_widget_logo.xml 的说明） -->
+        <ImageView
+            android:id="@+id/iv_logo"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginRight="2dp"
+            android:contentDescription="日程清单"
+            android:src="@drawable/ic_widget_logo" />
+
+        <ImageView
+            android:id="@+id/btn_prev_month"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_chevron_left"
+            android:contentDescription="上一个月" />
+
+        <TextView
+            android:id="@+id/tv_month"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="十月"
+            android:textColor="#1B3A2A"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/btn_next_month"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_chevron_right"
+            android:contentDescription="下一个月" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="18dp"
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp"
+            android:background="#DDE5DD" />
+
+        <ImageView
+            android:id="@+id/btn_add"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="4dp"
+            android:src="@drawable/ic_plus"
+            android:contentDescription="新建任务" />
+    </LinearLayout>
+
+    <!-- ============ 日期条（选哪天就只看哪天）============ -->
+    <LinearLayout
+        android:id="@+id/date_strip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal" />
+
+    <!-- ============ 打卡条 ============ -->
+    <LinearLayout
+        android:id="@+id/habit_strip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="#E7F3EA"
+        android:orientation="horizontal"
+        android:padding="6dp"
+        android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="2dp"
+        android:background="#DCE9DF" />
+
+    <!-- ============ 时间轴（每小时一行，动态加）============ -->
+    <ScrollView
+        android:id="@+id/hour_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/hour_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <!-- 底部：更新时间 + 空状态 -->
+    <TextView
+        android:id="@+id/tv_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="#6B8574"
+        android:textSize="10sp"
+        android:visibility="gone" />
+</LinearLayout>

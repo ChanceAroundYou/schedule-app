@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 任务块底：浅绿 + 左侧一条主绿竖线（参考图里任务块就是这样） -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#DFF0E5" />
+            <corners android:radius="7dp" />
+        </shape>
+    </item>
+    <item android:left="0dp" android:width="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#27795A" />
+            <corners android:radius="1.5dp" />
+        </shape>
+    </item>
+</layer-list>
