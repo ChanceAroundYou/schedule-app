@@ -156,15 +156,15 @@
      —— 用户报「卡片高度比较窄的时候，上下两端覆盖整体拖拽」，又要求
      「调整长度的区域只在小把手附近，其他位置不能触发调整时间」。
      **分三层，各管一件事**：
-       ① **横向只占 24px 居中**（`left: 50%; width: 24px; transform: translateX(-50%)`）。
+       ① **横向只占 72px 居中**（`left: 50%; width: 72px; transform: translateX(-50%)`）。
          原先 `left: 0; right: 0` 是全宽，整张卡片上下沿各一条横向带都是 resize，
-         稍矮的卡片只剩中间一线能拖。现在只有中间 24px 是 resize，
+         稍矮的卡片只剩中间一线能拖。现在只有中间 72px 是 resize，
          四个角与两侧边都归拖动。
        ② `height: min(9px, 30%)` —— 纵向封顶，矮卡片兜底 4px。
-       ③ 视觉指示 `.ev-resize::after` 也相应缩窄：24px → 12px，
+       ③ 视觉指示 `.ev-resize::after` 也跟着放宽：12px → 36px，
           用户看得到「哪里能拉」和「哪里只能拖」的边界。 */
 .ev-resize {
-  position: absolute; left: 50%; width: 24px; transform: translateX(-50%); bottom: 0;
+  position: absolute; left: 50%; width: 72px; transform: translateX(-50%); bottom: 0;
   height: min(9px, 30%); min-height: 4px;
   cursor: ns-resize; display: flex; align-items: center; justify-content: center;
   opacity: 0; transition: opacity .12s;
@@ -173,7 +173,7 @@
 .ev-resize-top { top: 0; bottom: auto; }
 .task-el:hover .ev-resize { opacity: .85; }
 .ev-resize::after {
-  content: ''; width: 12px; height: 3px; border-radius: var(--r-xs);
+  content: ''; width: 36px; height: 3px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .55);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */

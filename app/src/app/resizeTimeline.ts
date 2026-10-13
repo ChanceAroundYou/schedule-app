@@ -7,6 +7,7 @@ import type { Task } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import * as store from '../data/store.ts';
 import { HOUR_H, spanOf, type DayWindow } from '../domain/layout.ts';
+import { drawTimeGuide, drawTimeCursor, clearTimeCursor, clearTimeGuide } from '../ui/dnd/guide.ts';
 import { domWindow } from './domWindow.ts';
 
 /**
@@ -25,6 +26,8 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       el: HTMLElement | null;
       /** 按下那一刻的时间窗与时间轴实测高度 —— 拉伸全程只用这一份，中途不重测 */
       win: DayWindow; boxH: number;
+      /** 时间轴元素 —— 绿线/绿时间的宿主，跟 win 一起按下时存住 */
+      tl: HTMLElement | null;
     } | null = null;
 
     /* 拉伸时的浮标：只显示持续时长。
@@ -60,10 +63,18 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         edge: h.dataset.act === 'resize-top' ? 'top' : 'bottom',
         start, end: start + D.durOf(t.duration), dur: D.durOf(t.duration), cur: D.durOf(t.duration),
         el: el.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
-        win: domWindow(tl), boxH,
+        win: domWindow(tl), boxH, tl,
       };
       rz.el?.classList.add('resizing');
       showTip(rz.el, rz.dur, rz.edge);
+      /* 按下那一刻就把绿线画出来 —— 它是「当前这条沿在哪」的指示，
+         不等第一次 move（手指在屏幕上按住不动一会儿才拖的情形）。
+         上沿画开始时间，下沿画结束时间。 */
+      if (rz.tl) {
+        const at = rz.edge === 'top' ? rz.start : rz.end;
+        drawTimeGuide(rz.tl, at, rz.win);
+        drawTimeCursor(rz.tl, at, rz.win);
+      }
       e.preventDefault();
     };
 
@@ -88,6 +99,14 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         if (rz.el) rz.el.style.height = (rz.cur / spanOf(rz.win) * 100) + '%';
       }
       showTip(rz.el, rz.cur, rz.edge);
+      /* 绿线跟到**正在拖的那条沿**：上沿 = 新开始时间，下沿 = 新结束时间。
+         和整体拖拽的绿线是同一个 DOM 操作（guide.ts），只是喂进去的分钟值
+         跟着当前沿走，所以拉伸时也有落点预览。 */
+      if (rz.tl) {
+        const at = rz.edge === 'top' ? (rz.curStart ?? rz.start) : rz.end - rz.dur + rz.cur;
+        drawTimeGuide(rz.tl, at, rz.win);
+        drawTimeCursor(rz.tl, at, rz.win);
+      }
     };
 
     const up = () => {
@@ -96,6 +115,8 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       if (rz.edge === 'top' && rz.curStart != null) patchFields.time = D.minToTime(rz.curStart);
       rz.el?.classList.remove('resizing');
       hideTip();
+      clearTimeGuide();
+      clearTimeCursor();
       const id = rz.id;
       rz = null;
       store.patchTask(id, patchFields);
