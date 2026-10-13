@@ -18,14 +18,72 @@ const db = require('./lib/db');
 const auth = require('./lib/auth');
 const { MAX_BODY, SECRET } = require('./config');
 
+/* ---------- CORS ----------
+ *
+ * 后端原本**一行 CORS 都没有** —— 网页版走 nginx 同源代理，用不上。
+ * 打包成 App 之后就不一样了：Capacitor 的 WebView 源是 `https://localhost`
+ * （不是 `/schedule/`），请求是跨域的。
+ *
+ * **按来源白名单放行，不放 `*`。** 理由是这里带的不是 cookie 而是
+ * `Authorization: Bearer`，一旦放开任意来源，任何网页都能拿用户自己填的票
+ * 去读他的日程。默认只认打包 App 那几个源，要加走 `SCHEDULE_CORS_ORIGINS`
+ * （逗号分隔）。
+ */
+const DEFAULT_CORS = ['https://localhost', 'capacitor://localhost', 'http://localhost'];
+const CORS_ORIGINS = new Set([
+  ...DEFAULT_CORS,
+  ...String(process.env.SCHEDULE_CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+]);
+
+const CORS_HEADERS = 'Content-Type, Authorization';
+const CORS_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+
+/**
+ * 认下这个来源。`send()` 会把结果拼进响应头 —— 不在这里直接 setHeader，
+ * 是因为 `send()` 用的是 `writeHead(obj)`，合并规则不好依赖。
+ */
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || !CORS_ORIGINS.has(origin)) return false;
+  res.__cors = origin;
+  return true;
+}
+
+/** OPTIONS 预检：带 Authorization 的请求浏览器一定会先发一次 */
+function preflight(req, res) {
+  if (req.method !== 'OPTIONS') return false;
+  if (applyCors(req, res)) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': req.headers.origin,
+      'Access-Control-Allow-Headers': CORS_HEADERS,
+      'Access-Control-Allow-Methods': CORS_METHODS,
+      Vary: 'Origin',
+    });
+  } else {
+    res.writeHead(204);
+  }
+  res.end();
+  return true;
+}
+
 function send(res, status, body) {
   const text = JSON.stringify(body);
-  res.writeHead(status, {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(text),
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-  });
+  };
+  if (res.__cors) {
+    headers['Access-Control-Allow-Origin'] = res.__cors;
+    headers['Access-Control-Allow-Headers'] = CORS_HEADERS;
+    headers['Access-Control-Allow-Methods'] = CORS_METHODS;
+    headers.Vary = 'Origin';
+  }
+  res.writeHead(status, headers);
   res.end(text);
 }
 
@@ -85,4 +143,4 @@ function tooMany(e) {
   return { status: 429, body: { error: `操作太频繁，请 ${e.retryAfter} 秒后再试` } };
 }
 
-module.exports = { send, readBody, currentUser, issueToken, publicUser, tooMany };
+module.exports = { send, readBody, currentUser, issueToken, publicUser, tooMany, applyCors, preflight };
