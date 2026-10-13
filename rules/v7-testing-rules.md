@@ -24,6 +24,11 @@
 - 端口自动让开（首选被占往后排，起手行写明实用的四个），但**避让只管本趟**——残留旧后端会静默劫持。
 - 收尾三件（踩坑 40）：`pkill -x chrome` 归零、`ss -ltnp` 杀残留服务、`rm -rf /tmp/sched-browser-*`。
 
+**verify（2026-10-14）**：§4 全套命令一遍绿 —— typecheck / 132 单测 / color-scan（0）/
+contrast（72 对 0）/ api-scan（domain 0 · views 0 · 调用方 73/73 · views 零 data/store）/
+build / browser-smoke（全通过）/ 后端 api·migration·ai·smoke-share（全过）；工作区干净、
+测试残留归零。判据 1–3 全绿，无开放违规。
+
 ---
 
 ## 2. 规矩

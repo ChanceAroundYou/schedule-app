@@ -207,7 +207,7 @@ function kick(calId, actorId, targetId) {
 function leave(calId, userId) {
   const role = db.roleOf(calId, userId);
   if (!role) return { status: 404, body: { error: '没有这个日程集' } };
-  if (role === 'owner' && db.countOwners(calId) <= 1) {
+  if (canManage(role) && db.countOwners(calId) <= 1) {
     return { status: 400, body: { error: '你是唯一的创建者，请先删掉日程集或把别人设成创建者' } };
   }
 
