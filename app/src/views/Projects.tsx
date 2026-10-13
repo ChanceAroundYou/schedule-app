@@ -10,12 +10,12 @@
  * 真正的痛点不是「错过截止」，而是**某个项目被忘掉两个月**，所以泳道头围绕
  * 「多久没动 + 下一步是什么」组织。
  *
- * `views/` 的规矩是「零回调、只出 data-*」（CLAUDE.md 四、28），那条**针对的是行** ——
- * 行会被拖拽重排 / 同步落地换掉节点，挂在行上的 handler 会跟着丢。这个文件里
- * 传到外面的三样（新建、编辑、改「下一步」）都是**页级 / 泳道级**的动作，
- * 节点不会在脚下被换掉；`TodayView` 收 `onNav`、`HabitsView` 收 `onAdd`
- * 是同一个先例。**卡片本身仍然零回调**：它们靠 `data-card` / `.task-el`
- * 走 dnd 那一套。
+ * 这个文件**零回调、只出 data-*** —— 和 `views/` 其它文件同一条规矩。本该
+ * 早就是这样：文件头原来写「页级动作是例外」替自己开脱，但那三条理由全不成立
+ * （「节点不会在脚下被换掉」只是**当前**没换，不是结构上不会换；`TodayView`
+ * 的 `onNav` 是跳转不是写 store）。真正必须留在本地的只有**折叠开关**：它是
+ * 纯 UI 状态，刷新复位是合理的，写进 store 反而是噪音。其余一律 `data-act`
+ * 走 App 的点击委托（见 `app/clickDispatch.ts`）。
  */
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
@@ -86,11 +86,7 @@ function ProjColumn({ state, p, c }: { state: LocalState; p: Project; c: { key: 
 
 /* ============================== 泳道 ============================== */
 
-function Lane({ state, p, onNext, onEdit }: {
-  state: LocalState; p: Project;
-  onNext: (id: string, value: string) => void;
-  onEdit: (id: string) => void;
-}) {
+function Lane({ state, p }: { state: LocalState; p: Project }) {
   const list = tasksOfProject(state, p.id);
   const done = list.filter((t) => t.done).length;
   const stale = projectStaleDays(state, p.id);
@@ -138,8 +134,11 @@ function Lane({ state, p, onNext, onEdit }: {
           <i style={{ width: pct + '%' }} />
         </span>
 
+        {/* 编辑 = 打开那个浮层。浮层的开关在 App 那一层（pjSheet），这里只发信号 */}
         <button className="pj-more" type="button"
-          aria-label={'编辑项目：' + p.name} onClick={() => onEdit(p.id)}>编辑</button>
+          data-act="edit-project"
+          data-id={p.id}
+          aria-label={'编辑项目：' + p.name}>编辑</button>
       </header>
 
       <div className="pj-next">
@@ -150,7 +149,11 @@ function Lane({ state, p, onNext, onEdit }: {
           value={next}
           placeholder="还没写"
           onChange={(e) => setNext(e.target.value)}
-          onBlur={() => { if (next !== p.next) onNext(p.id, next); }}
+          /* blur 才落库：每敲一个字就 commit 会刷一大串 op、还会让光标乱跳。
+             同样**不挂 onChange 写 store** —— 走原生 change 事件委托，
+             理由同 clickDispatch.ts（行会被换掉）。 */
+          data-act="next-project"
+          data-id={p.id}
           aria-label={'下一步（' + p.name + '）'}
         />
       </div>
@@ -168,24 +171,19 @@ function Lane({ state, p, onNext, onEdit }: {
 
 /* ================================ 页面 ================================ */
 
-export function ProjectsView({ state, onNew, onEdit, onNext }: {
-  state: LocalState;
-  onNew: () => void;
-  onEdit: (id: string) => void;
-  onNext: (id: string, value: string) => void;
-}) {
+export function ProjectsView({ state }: { state: LocalState }) {
   const list = sortProjects(state, liveProjects(state));
 
   return (
     <div className="pj-wrap">
       <div className="pj-top">
         <h2 className="pj-h">项目</h2>
-        <Btn variant="normal" size="sm" type="button" onClick={onNew}>＋ 新建项目</Btn>
+        <Btn variant="normal" size="sm" type="button" data-act="new-project">＋ 新建项目</Btn>
       </div>
 
       {!list.length && <Empty text="还没有项目" sub="长周期的事放这儿。" />}
 
-      {list.map((p) => <Lane key={p.id} state={state} p={p} onNext={onNext} onEdit={onEdit} />)}
+      {list.map((p) => <Lane key={p.id} state={state} p={p} />)}
     </div>
   );
 }

@@ -20,20 +20,14 @@ import { Empty } from '../views/parts.tsx';
  * 一个修不了东西的死角。传全量 state：cals / invites / outbox 都是跨集的。
  */
 function contentDispatch(state: LocalState, scoped: LocalState, user: PublicUser | null, theme: 'light' | 'dark', callbacks: {
-  nav: (k: string) => void;
   onExport: () => void;
   onImport: (f: File) => void;
   onLogout: () => void;
   onInvites: () => void;
-  onNewProject: () => void;
-  onEditProject: (id: string) => void;
-  onNextProject: (id: string, v: string) => void;
-  onAddHabit: (t: string) => void;
   onAiConfirmed: () => void;
 }): React.ReactNode {
   const {
-    nav, onExport, onImport, onLogout, onInvites,
-    onNewProject, onEditProject, onNextProject, onAddHabit, onAiConfirmed,
+    onExport, onImport, onLogout, onInvites, onAiConfirmed,
   } = callbacks;
 
   if (state.ui.nav === 'settings') {
@@ -60,23 +54,18 @@ function contentDispatch(state: LocalState, scoped: LocalState, user: PublicUser
   switch (state.ui.nav) {
     // 跨集：清单不按集分家
     case 'inbox': return <InboxView state={state} />;
-    case 'today': return <TodayView state={state} onNav={nav} />;
+    case 'today': return <TodayView state={state} />;
     case 'overdue': return <OverdueView state={state} />;
     case 'trash': return <TrashView state={state} />;
     // 按集：这几页只画当前选中的那个集
     case 'done': return <DoneView state={scoped} />;
-    // 按集：跟日程 / 打卡 / 已完成一样，看的是当前选中的那个集
+    // 按集：跟日程 / 打卡 / 已完成一样，看的是当前选中的那个集。
+    // 新建 / 编辑 / 改「下一步」都走 data-act 委托（见 clickDispatch.ts），
+    // 这里不再收回调 —— 行会被拖拽换掉，挂在行上的 handler 会跟着丢。
     case 'projects':
-      return (
-        <ProjectsView
-          state={scoped}
-          onNew={onNewProject}
-          onEdit={onEditProject}
-          onNext={onNextProject}
-        />
-      );
+      return <ProjectsView state={scoped} />;
     case 'habits':
-      return <HabitsView state={scoped} onAdd={onAddHabit} />;
+      return <HabitsView state={scoped} />;
     // AI 是跨集的，跟今天 / 逾期 / 待办箱一组：问的是「我这周排得怎么样」，
     // 按集切开的话它只看得见当前那个集，答出来的「空」是假的空。
     // 它自己按 `sync.snapshot(userId)` 读，权限仍然是服务器那一关说了算。

@@ -7,7 +7,7 @@ import type { LocalState } from '../../domain/types.ts';
 import { inboxTasks } from '../../domain/model.ts';
 import { Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
-import * as store from '../../data/store.ts';
+import { reorderList } from '../../data/store.ts';
 
 export function InboxView({ state }: { state: LocalState }) {
   const list = inboxTasks(state);
@@ -24,7 +24,7 @@ export function InboxView({ state }: { state: LocalState }) {
     <div className="list-view">
       <SortableList
         items={list.map((t) => t.id)}
-        onReorder={(newOrder) => store.reorder('task', newOrder)}
+        onReorder={reorderList}
         renderItem={(id) => <TaskRow task={state.tasks[id]} bare />}
         className="group-items mc"
         scope="inbox"

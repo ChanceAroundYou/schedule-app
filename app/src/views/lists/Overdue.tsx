@@ -9,7 +9,7 @@ import { liveHabits, overdueTasks } from '../../domain/model.ts';
 import { CheckBtn, CheckinStrip, Empty } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
 import { Btn } from '../../ui/kit.tsx';
-import * as store from '../../data/store.ts';
+import { reorderList } from '../../data/store.ts';
 
 /** 逾期行：比普通任务行多一组「重新安排」的快捷键，都走事件委托 */
 function OverdueRow({ task: t, days }: { task: Task; days: number }) {
@@ -71,7 +71,7 @@ export function OverdueView({ state }: { state: LocalState }) {
                 搬家会改变逾期天数，那是「改期」的语义，不该由拖动顺手做掉 */}
             <SortableList
               items={items.map((t) => t.id)}
-              onReorder={(newOrder) => store.reorder('task', newOrder)}
+              onReorder={reorderList}
               renderItem={(id) => <OverdueRow task={state.tasks[id]} days={days} />}
               className="mc"
               scope={'day:' + d}

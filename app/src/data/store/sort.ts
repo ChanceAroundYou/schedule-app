@@ -31,6 +31,16 @@ export function reorder(entity: Entity, orderedIds: string[]): void {
 }
 
 /**
+ * **任务列表**的 `onReorder` —— 直接递给 `SortableList` 的 prop，
+ * 不用在每处视图里包一层 `(newOrder) => store.reorder('task', newOrder)`。
+ *
+ * 任务列表有 5 处（待办箱 / 今天 / 今天已完成 / 逾期 / 已完成），那一行箭头
+ * 函数五处逐字相同 —— 每处都在重复「这里是任务」这个信息。留一个具名函数，
+ * 调用方能读、typecheck 也能替你盯着签名。
+ */
+export const reorderList = (newOrder: string[]): void => reorder('task', newOrder);
+
+/**
  * 拖放落地：把 id 插到 refId 之前 / 之后，整组重编号。
  *
  * `baseOrder` 是容器**当前的视觉顺序**（含 id 自己）。整组重排而不是只改

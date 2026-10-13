@@ -11,12 +11,7 @@ import { CheckBtn } from './CheckBtn.tsx';
 
 /* ============================== 打卡条 ============================== */
 
-export function CheckinStrip({ habits, onManage }: {
-  habits: Habit[];
-  /** 「管理」按钮跳去打卡页。其余交互（勾选）走事件委托 */
-  onJumpHabits?: () => void;
-  onManage?: () => void;
-}) {
+export function CheckinStrip({ habits }: { habits: Habit[] }) {
   if (!habits.length) return null;
   const t = D.today();
   const done = habits.filter((h) => h.log && h.log[t]).length;
@@ -24,9 +19,11 @@ export function CheckinStrip({ habits, onManage }: {
   return (
     <div className="checkin-strip">
       <div className="ci-head">
-        每日打卡
-        <span className="ci-sub">今天 {done}/{habits.length}</span>
-        <button className="ci-manage" data-jump-habits="1" onClick={onManage}>管理</button>
+         <span className="ci-sub">今天 {done}/{habits.length}</span>
+        {/* 「管理」跳去打卡页 —— **只靠 data-jump-habits**，不另给 onClick。
+            委托那条（clickDispatch.ts 第 2 步）会先命中它，再跑 React 合成事件
+            就是做两遍同一件事。 */}
+        <button className="ci-manage" data-jump-habits="1">管理</button>
       </div>
       <div className="ci-list">
         {habits.map((h) => {

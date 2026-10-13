@@ -39,6 +39,8 @@ export interface ClickDeps {
   confirm: ConfirmFn;
   nav: (k: string) => void;
   setOpenId: (id: string | null) => void;
+  /** 项目浮层：`'new'` = 新建，`{ id }` = 编辑那个。App 那一层的状态 */
+  onProject: (which: 'new' | { id: string }) => void;
 }
 
 /** 行内动作（`data-act`）。拆出来是因为它自己是最大的一块，且完全不需要事件 */
@@ -86,6 +88,24 @@ async function runAct(
       if (ok) { store.deleteHabit(id); toast('已删除'); }
       return;
     }
+    /* 项目 / 打卡这两组是**页级**动作（不被拖拽换掉节点），同样走委托，
+       和行内动作同一个入口 —— 命中 [data-act] 即到这儿，不用另设通道。 */
+    case 'new-project':
+      deps.onProject('new');
+      return;
+    case 'edit-project':
+      deps.onProject({ id });
+      return;
+    case 'add-habit': {
+      // 词在同一个 .habit-add 表单里的那个框上（views/Habits.tsx 放的标记）
+      const box = act.closest<HTMLElement>('.habit-add')
+        ?.querySelector<HTMLInputElement>('[data-add-habit]');
+      const v = box?.value.trim();
+      if (!v) return;   // 空着不建：别造一个没有名字的打卡项
+      store.addHabit(v);
+      toast('已添加打卡项：' + v);
+      return;
+    }
     case 'restore': {
       if (act.dataset.kind === 'habit') store.restoreHabit(id); else store.restoreTask(id);
       toast('已还原');
@@ -113,6 +133,42 @@ async function runAct(
     default:
       return;
   }
+}
+
+/**
+ * `change` 事件的委托 —— **只有输入框用得到它**（当前唯一一处：项目的
+ * 「下一步」）。
+ *
+ * 为什么单开一条：`onClick` 分派的是「按下去」
+ * ，而「输入完失焦」不是点击，
+ * 挂在 `data-act` 上的输入框等不到 click。`change` 在 input 上的语义正好是
+ * 「值改了、且失焦了才发一次」—— 比 keyup 适合落库（每敲一个字发一次会
+ * 刷一大串 op），也比 blur 准（值没变不发）。
+ *
+ * **不复用 React 的 onChange/onBlur**：那是同一个理由 —— 行会被拖拽重排、
+ * 同步落地换掉节点，挂在行上的 handler 会跟着丢（见上面那段）。
+ * `pickDate.ts` 也是用原生 change 收「改到…」那个离屏日期框。
+ */
+export function makeOnChange() {
+  return function onChange(e: Event): void {
+    const el = e.target as HTMLElement | null;
+    if (!el) return;
+    const act = el.closest<HTMLElement>('[data-act]');
+    if (!act) return;
+    switch (act.dataset.act) {
+      case 'next-project': {
+        // 「下一步」：失焦才落库。受控 input 的 DOM value 与 React state 同步，
+        // 委托这一头读它的 value 就够 —— 视图不再需要一个 onBlur prop。
+        const id = act.dataset.id || '';
+        const v = (act as HTMLInputElement).value.trim();
+        const cur = store.get().projects[id];
+        if (cur && v !== cur.next) store.patchProject(id, { next: v });
+        return;
+      }
+      default:
+        return;
+    }
+  };
 }
 
 /** 点日历空白 → 新建一条并直接打开抽屉。四种区域含义不同，不能统一处理 */

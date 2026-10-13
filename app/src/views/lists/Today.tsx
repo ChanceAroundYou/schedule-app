@@ -10,9 +10,9 @@ import {
 } from '../../domain/model.ts';
 import { Caret, CheckinStrip, Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
-import * as store from '../../data/store.ts';
+import { reorderList } from '../../data/store.ts';
 
-export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: string) => void }) {
+export function TodayView({ state }: { state: LocalState }) {
   const today = D.today();
   const list = todayTasks(state);
   const doneToday = todayDoneTasks(state);
@@ -34,7 +34,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
 
   return (
     <div className="list-view">
-      <CheckinStrip habits={habits} onManage={() => onNav('habits')} />
+      <CheckinStrip habits={habits} />
 
       {/* 顶部只给一条很轻的逾期提示，点进去就是「逾期」标签 */}
       {!!over && (
@@ -47,7 +47,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
 
       <SortableList
         items={list.map((t) => t.id)}
-        onReorder={(newOrder) => store.reorder('task', newOrder)}
+        onReorder={reorderList}
         renderItem={(id) => <TaskRow task={state.tasks[id]} />}
         className="mc"
         scope={'day:' + today}
@@ -71,7 +71,7 @@ export function TodayView({ state, onNav }: { state: LocalState; onNav: (nav: st
           </button>
           <SortableList
             items={doneToday.map((t) => t.id)}
-            onReorder={(newOrder) => store.reorder('task', newOrder)}
+            onReorder={reorderList}
             renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
             className="td-body mc"
             scope={'done:' + today}

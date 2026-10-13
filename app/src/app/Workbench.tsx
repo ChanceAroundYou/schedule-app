@@ -27,7 +27,7 @@ import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset } from '../ui/hooks.ts';
 import * as T from '../ui/theme.ts';
-import { useConfirm, toast } from '../ui/kit.tsx';
+import { useConfirm } from '../ui/kit.tsx';
 import { DndProvider, useTimelineDrag } from '../ui/dndkit.tsx';
 import { Shell, Topbar, CalSubheader, QuickAdd } from '../ui/Shell.tsx';
 import { InviteSheet } from '../ui/Calendars.tsx';
@@ -101,7 +101,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const { createTask, removeTask } = useTaskActions(setOpenId);
 
   /* -------- 点击委托（唯一那一个 onClick，挂 `#content` 上）-------- */
-  useContentEvents(contentRef, { confirm, nav, setOpenId });
+  useContentEvents(contentRef, { confirm, nav, setOpenId, onProject: setPjSheet });
 
   /* -------- 拉伸时间轴上下沿（鼠标）-------- */
   useResizeTimeline(contentRef);
@@ -117,15 +117,10 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
 
   /* -------- 内容分发 -------- */
   const body = contentDispatch(state, scoped, user, theme, {
-    nav,
     onExport,
     onImport,
     onLogout,
     onInvites: () => setInvOpen(true),
-    onNewProject: () => setPjSheet('new'),
-    onEditProject: (id) => setPjSheet({ id }),
-    onNextProject: (id, v) => store.patchProject(id, { next: v }),
-    onAddHabit: (t) => { store.addHabit(t); toast('已添加打卡项：' + t); },
     onAiConfirmed: () => void engine.syncNow(),
   });
 

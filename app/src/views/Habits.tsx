@@ -12,7 +12,7 @@
  * 所以这里只留一个 data-title 让确认框能写出「删的是哪一个」。
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Flame, Plus, X } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
@@ -20,19 +20,30 @@ import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
 import { SortableList } from '../ui/dndkit.tsx';
 import { Input, Btn } from '../ui/kit.tsx';
-import * as store from '../data/store.ts';
+import { reorder } from '../data/store.ts';
 
-export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title: string) => void }) {
+export function HabitsView({ state }: { state: LocalState }) {
   const [draft, setDraft] = useState('');
+  const addRef = useRef<HTMLButtonElement>(null);
   const habits = liveHabits(state).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const today = D.today();
 
-  const add = () => {
-    const v = draft.trim();
-    if (!v) return;
-    setDraft('');
-    onAdd(v);
-  };
+  /**
+   * **写完之后才清空草稿** —— 顺序反了会丢词。
+   *
+   * 不能靠按钮上那个 `onClick={() => setDraft('')}`：它是 React 合成事件，
+   * 而真正写库的是 `#content` 上那条原生监听，两者的先后**没有保证**
+   * （这条链路上 React 跑在 document 上、原生监听挂在容器上，理论上原生先，
+   * 但没人愿意把「添加一条打卡项」的正确性押在事件传播顺序上）。
+   * 所以清空改成「看见库里多了一条再清」：`onClick` 只发信号，
+   * 这里探测 `habits.length` 涨了才收。首次渲染用 ref 跳过一次，
+   * 免得一进页面就清。
+   */
+  const seen = useRef(habits.length);
+  useEffect(() => {
+    if (habits.length > seen.current) setDraft('');
+    seen.current = habits.length;
+  }, [habits.length]);
 
   const addBar = (
     <div className="habit-add">
@@ -45,9 +56,16 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
         spellCheck={false}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+        data-add-habit="1"
+        onKeyDown={(e) => { if (e.key === 'Enter') addRef.current?.click(); }}
       />
-      <Btn variant="primary" onClick={add}><Plus size={14} /> 添加</Btn>
+      {/* 添加走 App 的点击委托：处理器从 data-add-habit 那个框读词、写 store。
+          这个按钮**不自己清空**（清了处理器就读不到词）—— 上面的
+          useEffect 看见库里多了一条才收。Enter 只是替用户点一次按钮，
+          两条路径汇到同一个处理器，写入仍然只有一处。 */}
+      <Btn ref={addRef} variant="primary" data-act="add-habit">
+        <Plus size={14} /> 添加
+      </Btn>
     </div>
   );
 
@@ -65,7 +83,7 @@ export function HabitsView({ state, onAdd }: { state: LocalState; onAdd: (title:
       {addBar}
       <SortableList
         items={habits.map((h) => h.id)}
-        onReorder={(newOrder) => store.reorder('habit', newOrder)}
+        onReorder={(newOrder) => reorder('habit', newOrder)}
         scope="habits"
         renderItem={(id) => {
           const h = state.habits[id];
