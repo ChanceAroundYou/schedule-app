@@ -1699,7 +1699,10 @@ try {
   await evalJs(page, `
     const inp = document.querySelector('.fast-add textarea');
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    set.call(inp, '9:00 微调试试');
+    // **必须带时长**（「8小时」）：2026-10-13 起 duration 可空，新建任务
+    // 默认 duration: null = 没有结束时间 → 卡片不渲染上下把手，这一节
+    // 就没有对象可测。带一个时长进去，卡片才有 resizable。
+    set.call(inp, '9:00 微调试试 8小时');
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return true;
@@ -2896,15 +2899,17 @@ try {
     })()
   `, '结束时间落盘（duration=180）', 8000);
 
-  // 清除开始时间 → duration 回到默认 60
+  // 清除开始时间 → duration 也清掉（2026-10-13「duration 可为空」）：
+  // 旧行为是回到默认 60，但那意味着「没有结束时间」仍被表达成一小时。
+  // 新语义是 duration = null：没设结束时间就是不设，不是「设成一小时」。
   await clickEl(page, `[...document.querySelectorAll('.drawer .tp-x')][0]`);
   await waitFor(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
         .find((x) => x.id === ${JSON.stringify(rowId)});
-      return t && t.time === null && t.duration === 60 ? t.duration : null;
+      return t && t.time === null && t.duration === null ? 1 : null;
     })() ? 1 : null
-  `, '清除开始时间后 duration 回到默认', 8000);
+  `, '清除开始时间后 duration 也清空', 8000);
 
   /* 抽屉里**一个原生日期 / 时间输入框都不许有**（2026-10-09）。原生
      `<input type="date">` / `<input type="time">` 会在桌面端弹系统控件、
