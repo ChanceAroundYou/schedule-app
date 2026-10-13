@@ -19,3 +19,8 @@
 | `ui/kit/Dropdown.tsx:53` | `className/menuClassName` 对外透传 | 第 1 册 S4 修 |
 | `ui/settings/SettingsView.tsx:120` | `rounded-full` 写死圆角 | 第 1 册附录（`--r-pill` 替换） |
 | `--panel-2/--text-2` 类序号 | 同角色深浅档，**允许保留**，不算违规 | — |
+
+## 2. verify（2026-10-14）
+
+判据1 通过：`contrast.mjs` ③④段 0 未定义变量 / 0 多余 `var()` 兜底 / 0 Tailwind 自带圆角，72 对全过。
+本册无未修违规（上表 3 条都归第 1 册或允许保留）。

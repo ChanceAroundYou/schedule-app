@@ -18,7 +18,7 @@ import { Crown, Eye, Pencil, Send, UserMinus, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../data/api.ts';
 import {
-  ASSIGNABLE_ROLES, ROLE_LABEL, type Invite, type Member, type Role,
+  ASSIGNABLE_ROLES, ROLE_LABEL, canManage, type Invite, type Member, type Role,
 } from '../domain/types.ts';
 import { Dropdown, Field, Input, MiniIconBtn, toast, useConfirm } from './kit.tsx';
 import type { DropdownOption } from './kit.tsx';
@@ -74,7 +74,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
           {members.map((m) => (
             <div key={m.id} className="flex h-[30px] items-center gap-2">
               <span className="shrink-0">
-                {m.role === 'owner' ? <Crown size={14} className="text-[var(--primary)]" />
+                {canManage(m.role) ? <Crown size={14} className="text-[var(--primary)]" />
                   : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
                     : <Pencil size={14} className="text-[var(--text-3)]" />}
               </span>
@@ -87,7 +87,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                 <>
                   <Dropdown
                     value={m.role}
-                    disabled={busy || m.role === 'owner'}
+                    disabled={busy || canManage(m.role)}
                     label={`「${m.name}」的权限`}
                     size="sm"
                     options={ROLE_OPTIONS}
@@ -103,7 +103,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                   <MiniIconBtn
                     tone="danger"
                     label="移出日程集"
-                    disabled={busy || m.role === 'owner'}
+                    disabled={busy || canManage(m.role)}
                     onClick={() => void kick(m)}
                   >
                     <UserMinus size={13} />

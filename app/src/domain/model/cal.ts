@@ -2,7 +2,7 @@
  * cal.ts —— 日程集相关
  */
 
-import type { Cal } from '../types/types.ts';
+import { canManage, type Cal } from '../types/types.ts';
 
 /**
  * **谁是默认日程集** —— 界面与 `store` 都只问这一个函数，不各写一套判断。
@@ -21,7 +21,7 @@ import type { Cal } from '../types/types.ts';
  */
 export function resolveDefaultCal(ui: Pick<import('../types/types.ts').UiPrefs, 'defaultCal'>, cals: Cal[]): string | null {
   if (ui.defaultCal && cals.some((c) => c.id === ui.defaultCal)) return ui.defaultCal;
-  const own = cals.find((c) => c.role === 'owner');
+  const own = cals.find((c) => canManage(c.role));
   if (own) return own.id;
   return cals.length ? cals[0].id : null;
 }

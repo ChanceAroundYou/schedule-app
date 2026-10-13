@@ -18,3 +18,11 @@
 |---|---|---|
 | `hydrateTask` 50 行 | 12 个并列 if | 第 4 册 F1 特许形态，留 |
 | `SyncResponse.snapshot.projects?` 可选 | 老响应落新客户端不炸 | E2 先例，留（新实体照抄） |
+
+## 2. verify（2026-10-14）
+
+- 判据3 通过：`views/` `app/` 无手写 `Object.values(s.tasks).filter`（查询只走 `domain/model`）。
+- 判据4 **修掉一处泄漏**：`role === 'owner'` 散在 `ui/Members.tsx`×3（皇冠 + 两个禁用态）与
+  `domain/model/cal.ts`×1（`resolveDefaultCal` 找 owner）—— 全改用 `canManage(role)`
+  （定义即 `role === 'owner'`，逐字等价）。现在 `src/` 代码里 `role === 'owner'` 只剩
+  `canWrite`/`canManage` 两处定义 + 注释。132 单测 + 探针（「创建者的移出按钮禁用」）全绿。

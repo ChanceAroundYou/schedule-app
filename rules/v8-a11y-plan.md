@@ -17,3 +17,9 @@
 | 位置 | 现象 | 归属 |
 |---|---|---|
 | 整数探针读 23 | 取整细节 | 非 bug，不修（本册 A2 已注） |
+
+## 2. verify（2026-10-14）
+
+- 判据1 通过：`browser-smoke` 探针 `a11y()` 全文档 0 报错（`nameOf()` 不接受 placeholder）。
+- 判据3 通过：`prefers-reduced-motion` 段是 `responsive.css` 最后一个 `@media`（355 行，
+  通配 `*` + `!important`，唯一例外 `.animate-spin`）。
