@@ -139,7 +139,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
              删了它，下次新建的东西就没地方落。 */
           extraAction={manage ? (
             <MiniIconBtn
-              danger
+              tone="danger"
               label="删除日程集"
               disabled={busy || isDefault}
               onClick={() => void remove()}
@@ -157,12 +157,12 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
               </span>
               {/* 星标 = 默认日程集。传 `aria-pressed` 不传 `disabled`：它是显示状态
                   的标记，禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。
-                  「选中变主色」走 `primary` **prop** —— 叠 `className` 会被
+                  「选中变主色」走 `tone="primary"` **prop** —— 叠 `className` 会被
                   基类的 `text-[var(--text-3)]` 按生成顺序压掉（实测过）。 */}
               <MiniIconBtn
                 label={isDefault ? '默认日程集' : '设为默认日程集'}
                 aria-pressed={isDefault}
-                primary={isDefault}
+                tone={isDefault ? 'primary' : undefined}
                 onClick={() => {
                   if (isDefault) return;
                   store.setUi({ defaultCal: calId });

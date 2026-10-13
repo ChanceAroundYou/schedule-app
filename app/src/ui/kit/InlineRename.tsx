@@ -117,7 +117,7 @@ export function InlineRename({ value, onSave, disabled, display, label, placehol
           <>
             <MiniIconBtn
               {...confirmProps}
-              primary
+              tone="primary"
               label="确认"
               onClick={commit}
             >

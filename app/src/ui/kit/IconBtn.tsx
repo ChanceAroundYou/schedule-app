@@ -43,8 +43,8 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
  * 没有按下态。收成一处，改一次三处都跟着走。
  *
  * 24px 是 WCAG 2.5.8 的下限 —— **别再往小改**（18px 的点按不准）。
- * `danger` 给「移出 / 撤回」这类会改变关系的操作。
- * `primary` 给「这一格是当前那一组里唯一要突出的动作」—— 行内改名的 ✓
+ * `tone="danger"` 给「移出 / 撤回」这类会改变关系的操作。
+ * `tone="primary"` 给「这一格是当前那一组里唯一要突出的动作」—— 行内改名的 ✓
  * （编辑态里它是唯一的提交动作，跟旁边灰色的 ✕ 得区分开）、默认日程集的星标。
  *
  * ⚠️ **这两个 tone 必须是这里的 prop，不能靠外面叠 `className`。**
@@ -62,8 +62,15 @@ export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function Icon
  * 同一条也适用于别处写 `h-6` 当 24px 用的地方（本文件 `IconBtn` 的 `h-8`
  * 是 28px，达标，所以没暴露这个问题）。
  */
-export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger?: boolean; primary?: boolean }>(
-  function MiniIconBtn({ label, danger = false, primary = false, children, className, ...rest }, ref) {
+type MiniTone = 'danger' | 'primary';
+
+const MINI_TONE: Record<MiniTone, string> = {
+  danger: 'text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]',
+  primary: 'text-[var(--primary)] hover:bg-[var(--primary-soft)]',
+};
+
+export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { tone?: MiniTone }>(
+  function MiniIconBtn({ label, tone, children, className, ...rest }, ref) {
     return (
       <button
         ref={ref}
@@ -74,11 +81,7 @@ export const MiniIconBtn = forwardRef<HTMLButtonElement, IconBtnProps & { danger
         className={cx(
           'inline-flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-[var(--r-sm)] transition',
           'disabled:cursor-not-allowed disabled:opacity-40',
-          danger
-            ? 'text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]'
-            : primary
-              ? 'text-[var(--primary)] hover:bg-[var(--primary-soft)]'
-              : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
+          tone ? MINI_TONE[tone] : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
           className,
         )}
       >

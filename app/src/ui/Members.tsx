@@ -101,7 +101,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                     })}
                   />
                   <MiniIconBtn
-                    danger
+                    tone="danger"
                     label="移出日程集"
                     disabled={busy || m.role === 'owner'}
                     onClick={() => void kick(m)}
@@ -147,12 +147,12 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               />
               {/* 右侧一律图标钮，和上面那些行的移出钮同一套 MiniIconBtn ——
                   只有「发出去」用主色，点之前就分得清是「邀请」还是「移出」。
-                  主色走 `primary` **prop**：叠 `className` 会被基类的
+                  主色走 `tone="primary"` **prop**：叠 `className` 会被基类的
                   `text-[var(--text-3)]` 按生成顺序压掉（实测过，见 kit.tsx）。 */}
               <MiniIconBtn
                 label="发出邀请"
                 disabled={busy || !inviteName.trim()}
-                primary
+                tone="primary"
                 onClick={() => void invite()}
               >
                 <Send size={13} />
@@ -173,7 +173,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                 {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
               </span>
               <MiniIconBtn
-                danger
+                tone="danger"
                 label="撤回邀请"
                 disabled={busy}
                 onClick={() => void run(async () => {
