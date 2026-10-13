@@ -507,6 +507,82 @@ try {
     ok(await evalJs(page, `return !!document.querySelector('${marker}');`), nav + ' 有 ' + marker);
   }
 
+  /* ---- Btn 六档 variant 各钉一条颜色（第 1 册 R4：外观集中在 kit，variant 定色）----
+     S1 把 Btn 的 variant 收进 cva 后，这里钉住「每档渲染出来的颜色」：谁在 cva 里
+     把 primary 的底色 / danger 的描边 / chipOn 的选中色改错，这里立刻红。
+     选点全是稳定选择器（data-act / title / 类名 / data-pick），不靠坐标；
+     桌面视口下顶栏 + 侧栏都在。颜色用 rgb(var(--x)) 解析成 rgb() 再比，
+     不比字符串（浏览器给的是序列化后的 rgb）。 */
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[title="上一个"]')`, '日程页副header 出来', 8000);
+  const btnBase = await evalJs(page, `
+    const rgb = (v) => { const d = document.createElement('div');
+      d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    const g = (sel) => { const el = document.querySelector(sel);
+      return el ? getComputedStyle(el) : null; };
+    const n = g('[title="上一个"]'), gh = g('.ghost-btn');
+    return {
+      normalColor: n ? n.color : null,
+      ghostColor: gh ? gh.color : null, ghostBg: gh ? gh.backgroundColor : null,
+      wantText2: rgb('var(--text-2)'), transparent: 'rgba(0, 0, 0, 0)',
+    };
+  `);
+  ok(btnBase.normalColor === btnBase.wantText2,
+    'Btn normal 文字色 = --text-2，实际 ' + btnBase.normalColor + ' / 期望 ' + btnBase.wantText2);
+  ok(btnBase.ghostColor === btnBase.wantText2 && btnBase.ghostBg === btnBase.transparent,
+    'Btn ghost 文字色 = --text-2 且透明底，实际 ' + btnBase.ghostColor + ' / ' + btnBase.ghostBg);
+
+  // 设置页（默认外观 tab）：chip / chipOn —— 色板/风格/深浅的 Chips，data-pick 是 Chips 专属
+  await evalJs(page, `document.querySelector('[data-nav="settings"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-settings-tab]')`, '设置页打开', 8000);
+  const btnChips = await evalJs(page, `
+    const rgb = (v) => { const d = document.createElement('div');
+      d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    const cs = (el) => el ? getComputedStyle(el) : null;
+    const o = cs(document.querySelector('button[data-pick][aria-pressed="true"]'));
+    const f = cs(document.querySelector('button[data-pick][aria-pressed="false"]'));
+    return {
+      onColor: o ? o.color : null, onBorder: o ? o.borderColor : null,
+      offColor: f ? f.color : null, offBg: f ? f.backgroundColor : null,
+      wantPrimary: rgb('var(--primary)'), wantText2: rgb('var(--text-2)'), wantPanel: rgb('var(--panel)'),
+    };
+  `);
+  ok(btnChips.onColor === btnChips.wantPrimary && btnChips.onBorder === btnChips.wantPrimary,
+    'Btn chipOn 文字+描边 = --primary（选中档），实际 ' + btnChips.onColor + ' / ' + btnChips.onBorder);
+  ok(btnChips.offColor === btnChips.wantText2 && btnChips.offBg === btnChips.wantPanel,
+    'Btn chip 文字 = --text-2 且底 = --panel（未选档），实际 ' + btnChips.offColor + ' / ' + btnChips.offBg);
+
+  // 安全 tab：danger（退出登录）—— 只读样式，**不点它**（点了就登出了）
+  await evalJs(page, `document.querySelector('[data-settings-tab="security"]').click(); return true;`);
+  await waitFor(page, `[...document.querySelectorAll('button')].some((b) => b.textContent.includes('退出登录'))`, '安全 tab 打开', 8000);
+  const btnDanger = await evalJs(page, `
+    const rgb = (v) => { const d = document.createElement('div');
+      d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    const el = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('退出登录'));
+    const s = el ? getComputedStyle(el) : null;
+    return { color: s ? s.color : null, border: s ? s.borderColor : null, wantDanger: rgb('var(--danger)') };
+  `);
+  ok(btnDanger.color === btnDanger.wantDanger && btnDanger.border === btnDanger.wantDanger,
+    'Btn danger 文字+描边 = --danger，实际 ' + btnDanger.color + ' / ' + btnDanger.border);
+
+  // 打卡页：primary（新增打卡）
+  await evalJs(page, `document.querySelector('[data-nav="habits"]').click(); return true;`);
+  await waitFor(page, `!!document.querySelector('[data-act="add-habit"]')`, '打卡页打开', 8000);
+  const btnPrimary = await evalJs(page, `
+    const rgb = (v) => { const d = document.createElement('div');
+      d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    const s = document.querySelector('[data-act="add-habit"]');
+    const cs = s ? getComputedStyle(s) : null;
+    return { bg: cs ? cs.backgroundColor : null, color: cs ? cs.color : null,
+      wantPrimary: rgb('var(--primary)'), wantOnPrimary: rgb('var(--on-primary)') };
+  `);
+  ok(btnPrimary.bg === btnPrimary.wantPrimary && btnPrimary.color === btnPrimary.wantOnPrimary,
+    'Btn primary 底 = --primary 且文字 = --on-primary，实际 ' + btnPrimary.bg + ' / ' + btnPrimary.color);
+
   // 打卡页的输入框也要有名字 —— a11y() 原来只扫了待办箱 / 抽屉 / 浮层，
   // 打卡页从来没被扫过，habitInput 只有 placeholder 的漏洞就是这么漏掉的
   await evalJs(page, `document.querySelector('[data-nav="habits"]').click(); return true;`);
