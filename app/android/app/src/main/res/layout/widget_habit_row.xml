@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  打卡区的**一行**。代码按「每行最多几个」把打卡项分包，每包一个这个容器。
+  单独一个文件是必需的：RemoteViews 只能按布局文件加子视图，不能凭空造容器。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/habit_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal" />

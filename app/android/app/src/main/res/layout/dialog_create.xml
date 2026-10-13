@@ -26,15 +26,17 @@
         android:textColorHint="#8AA294"
         android:textSize="13sp" />
 
-    <EditText
+    <!-- 时间不是输入框，是个按钮 —— 点了弹表盘（TimePickerDialog）。
+         手打「09:30」要切键盘、要记格式，桌面上做快速记一笔时最烦这一步。 -->
+    <Button
         android:id="@+id/c_time"
+        style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="几点（可留空）如 09:30"
-        android:inputType="text"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/widget_chip_bg"
+        android:text="不设置时间"
         android:textColor="#1B3A2A"
-        android:textColorHint="#8AA294"
         android:textSize="13sp" />
 
     <LinearLayout

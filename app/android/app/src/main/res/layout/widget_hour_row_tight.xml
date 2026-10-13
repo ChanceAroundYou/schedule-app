@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  时间轴的一行 · 紧凑档（21dp）。时间轴范围设得大（如 6:00–23:00）时用它，
+  否则 18 行根本塞不进 4×4 的格子。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hour_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="21dp"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/hour_label"
+        android:layout_width="24dp"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="21dp"
+        android:text="07"
+        android:textColor="#8AA294"
+        android:textSize="9sp" />
+
+    <LinearLayout
+        android:id="@+id/hour_body"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical" />
+</LinearLayout>

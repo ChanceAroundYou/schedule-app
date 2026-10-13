@@ -1,14 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 打卡条上的一格 -->
+<!--
+  打卡区的一格。
+
+  **宽度用 weight 等分，不是 wrap_content。** 用 wrap_content 的话，勾选后
+  文字多一个「✓」就变宽，把同一行后面的顶出去 —— 用户看到的是「打卡项
+  不见了」。等分宽度后每格位置固定，勾选只影响内容不影响排布。
+
+  maxLines=1 + ellipsize=end：长名字宁可截断也不能撑破这一格。
+-->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/habit_chip"
-    android:layout_width="wrap_content"
+    android:layout_width="0dp"
     android:layout_height="wrap_content"
-    android:layout_marginRight="6dp"
+    android:layout_weight="1"
+    android:layout_marginLeft="2dp"
+    android:layout_marginRight="2dp"
     android:background="@drawable/widget_habit_bg"
-    android:paddingLeft="8dp"
+    android:ellipsize="end"
+    android:gravity="center"
+    android:maxLines="1"
+    android:paddingLeft="4dp"
     android:paddingTop="4dp"
-    android:paddingRight="8dp"
+    android:paddingRight="4dp"
     android:paddingBottom="4dp"
     android:textColor="#1B3A2A"
     android:textSize="11sp" />

@@ -38,6 +38,12 @@ class WidgetPrefs {
     /** 小组件自己的设备号，发 op 时要带（applyOps 校验 deviceId 非空且 <64 字符） */
     static final String KEY_DEVICE_ID = "schedule_widget_device_id";
 
+    /** 时间轴显示范围（小时）。用户在「⋮ → 设置」里改 */
+    static final String KEY_START_HOUR = "schedule_widget_start_hour";
+    static final String KEY_END_HOUR = "schedule_widget_end_hour";
+    static final int DEFAULT_START_HOUR = 8;
+    static final int DEFAULT_END_HOUR = 20;
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -60,6 +66,14 @@ class WidgetPrefs {
 
     static void setSelectedDay(Context c, String iso) {
         sp(c).edit().putString(KEY_DAY, iso).apply();
+    }
+
+    /**
+     * 回到今天。**清掉选中值**而不是写死今天 —— 写进去之后跨天了那个值就是
+     * 昨天，用户第二天点「回到今天」会跳回昨天。没值时 selectedDay() 自然用今天。
+     */
+    static void clearSelectedDay(Context c) {
+        sp(c).edit().remove(KEY_DAY).apply();
     }
 
     static String today(Context c) {
@@ -180,5 +194,38 @@ class WidgetPrefs {
     static boolean canDirect(Context c) {
         String t = token(c);
         return t != null && !t.isEmpty();
+    }
+
+    // ── 时间轴范围 ───────────────────────────────────────────────────────
+
+    static int startHour(Context c) {
+        return clampHour(sp(c).getInt(KEY_START_HOUR, DEFAULT_START_HOUR));
+    }
+
+    static int endHour(Context c) {
+        return clampHour(sp(c).getInt(KEY_END_HOUR, DEFAULT_END_HOUR));
+    }
+
+    /**
+     * 存范围。**保证 start < end** —— 用户把起点设到晚于终点时（比如
+     * 22 点开始、6 点结束），渲染那边会算出一个负的行数，表现是整个
+     * 时间轴消失。这里直接把顺序摆正，比在下游每处都防一遍省事。
+     */
+    static void setRange(Context c, int start, int end) {
+        int a = clampHour(start);
+        int b = clampHour(end);
+        if (a >= b) {
+            if (start <= end) b = Math.min(23, a + 1);
+            else a = Math.max(0, b - 1);
+        }
+        sp(c).edit().putInt(KEY_START_HOUR, a).putInt(KEY_END_HOUR, b).apply();
+    }
+
+    static void resetRange(Context c) {
+        setRange(c, DEFAULT_START_HOUR, DEFAULT_END_HOUR);
+    }
+
+    private static int clampHour(int h) {
+        return Math.max(0, Math.min(23, h));
     }
 }

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  时间轴的一行 · 中档（28dp）。
+  什么时候用它由 ScheduleWidgetProvider.hourRowLayoutFor 按组件高度算 ——
+  时间轴设成 6:00–23:00 时只有紧凑档塞得下，拖大了才轮得到宽松档。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hour_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="28dp"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/hour_label"
+        android:layout_width="26dp"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="28dp"
+        android:text="07"
+        android:textColor="#8AA294"
+        android:textSize="10sp" />
+
+    <LinearLayout
+        android:id="@+id/hour_body"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical" />
+</LinearLayout>
