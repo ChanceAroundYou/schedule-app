@@ -13,6 +13,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { cx } from '../cx.ts';
 import { useDragSensors } from './sensors.ts';
+import { reorder } from '../../data/store.ts';
+import type { Entity } from '../../domain/types.ts';
 
 /* ============================ 可排序项 ============================ */
 
@@ -108,14 +110,16 @@ export function SortableZone({ items, onDragEnd, renderGhost, children }: {
  * 一个完整的可排序列表 = `SortableZone` + 套一层 `<div class="sortable-item">`。
  *
  * 用法：
- *   <SortableList items={ids} onReorder={fn} renderItem={(id) => <Row id={id} />} />
+ *   <SortableList items={ids} entity="task" renderItem={(id) => <Row id={id} />} />
  *
- * `onReorder` 收到的是**新的 id 顺序**，调用方负责把它写进 store。
+ * 拖完直接 `reorder(entity, 新顺序)` 写库 —— **dnd→store 的耦合收在这一个组件里**，
+ * 调用方（views/）只声明「这是哪类实体的列表」，不碰 `data/`（第 5 册 D1）。
  * 自己排版（要 `<li>`、要网格）的地方直接用 `SortableZone`。
  */
-export function SortableList({ items, onReorder, renderItem, className, scope }: {
+export function SortableList({ items, entity, renderItem, className, scope }: {
   items: string[];
-  onReorder: (newItems: string[]) => void;
+  /** 拖完写哪个实体的位次（'task' / 'habit'） */
+  entity: Entity;
   renderItem: (id: string) => ReactNode;
   className?: string;
   /** 渲染成容器上的 `data-scope`。探针靠它定位列表，也是拖动作用域的标识 */
@@ -127,10 +131,10 @@ export function SortableList({ items, onReorder, renderItem, className, scope }:
       const oldIndex = items.indexOf(String(active.id));
       const newIndex = items.indexOf(String(over.id));
       if (oldIndex >= 0 && newIndex >= 0) {
-        onReorder(arrayMove(items, oldIndex, newIndex));
+        reorder(entity, arrayMove(items, oldIndex, newIndex));
       }
     }
-  }, [items, onReorder]);
+  }, [items, entity]);
 
   return (
     <SortableZone items={items} onDragEnd={onDragEnd} renderGhost={renderItem}>

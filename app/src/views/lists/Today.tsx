@@ -10,7 +10,6 @@ import {
 } from '../../domain/model.ts';
 import { Caret, CheckinStrip, Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
-import { reorderList } from '../../data/store.ts';
 
 export function TodayView({ state }: { state: LocalState }) {
   const today = D.today();
@@ -47,7 +46,7 @@ export function TodayView({ state }: { state: LocalState }) {
 
       <SortableList
         items={list.map((t) => t.id)}
-        onReorder={reorderList}
+        entity="task"
         renderItem={(id) => <TaskRow task={state.tasks[id]} />}
         className="mc"
         scope={'day:' + today}
@@ -71,7 +70,7 @@ export function TodayView({ state }: { state: LocalState }) {
           </button>
           <SortableList
             items={doneToday.map((t) => t.id)}
-            onReorder={reorderList}
+            entity="task"
             renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
             className="td-body mc"
             scope={'done:' + today}

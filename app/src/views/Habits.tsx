@@ -20,7 +20,6 @@ import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
 import { SortableList } from '../ui/dndkit.tsx';
 import { Input, Btn } from '../ui/kit.tsx';
-import { reorder } from '../data/store.ts';
 
 export function HabitsView({ state }: { state: LocalState }) {
   const [draft, setDraft] = useState('');
@@ -83,7 +82,7 @@ export function HabitsView({ state }: { state: LocalState }) {
       {addBar}
       <SortableList
         items={habits.map((h) => h.id)}
-        onReorder={(newOrder) => reorder('habit', newOrder)}
+        entity="habit"
         scope="habits"
         renderItem={(id) => {
           const h = state.habits[id];

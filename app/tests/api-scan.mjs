@@ -2,13 +2,16 @@
  * api-scan.mjs —— 锁「样式归属三层」（第 1 册 R1–R5）里能**静态**锁住的那几条。
  * 零依赖，`node tests/api-scan.mjs`。
  *
- * 锁三条，各对应一条不变量：
+ * 锁四条，各对应一条不变量：
  *
  *   1. `domain/` 零 Tailwind 外观类 —— D1 纯净。domain 不含 React / DOM / 网络，
  *      连样式都不该碰，出现 `bg-[var(…)]` 就是分层破了。
  *   2. `views/` 零 Tailwind 外观类 —— D2 冻结。views 是纯展示，只用语义类
  *      （`.task-row` / `.nav-item` 那批），外观归 `styles/` 与 kit。
  *   3. `ui/` 调用方（**非 kit**）+ `app/` 的外观类**只减不增** —— R4 的方向。
+ *   4. `views/` 零 `data/store` import —— D1 单向依赖。views 不碰写入口；拖拽排序
+ *      走 `SortableList` 的 `entity` prop（`ui/dnd/sortable.tsx` 自己 `reorder`），
+ *      不在 views 里 import `reorder`/`commit` 那批。
  *
  * 为什么第 3 条是「只减不增」而不是「必须为零」：
  *   本项目既有的正确写法就是「调用方用 Tailwind 工具类 + CSS 变量」——
@@ -102,6 +105,23 @@ if (total > CALLER_BASELINE) {
   console.log('  FAIL 超出上限 ' + (total - CALLER_BASELINE) + ' 处：');
   console.log(over.join('\n'));
   console.log('  → 新外观进 kit 一处，别散进调用方；确要新增改 CALLER_BASELINE 并说明理由');
+}
+
+// 4. views/ 零 data/store import（D1：views 不碰写入口，拖拽排序走 SortableList 的 entity）
+const DATA_STORE_IMPORT = /from\s+['"][^'"]*data\/store/;
+console.log('\nviews/ 零 data/store import（D1）');
+let storeHits = 0;
+for (const f of listFiles(join(SRC, 'views'), ['.tsx'])) {
+  const m = strip(readFileSync(f, 'utf8')).match(DATA_STORE_IMPORT);
+  if (m) {
+    storeHits++;
+    console.log('  FAIL ' + rel(f) + '  ' + m[0]);
+  }
+}
+if (storeHits === 0) console.log('  ok    0 处');
+else {
+  failed++;
+  console.log('  → views 不碰 data/store 写入口；拖拽排序走 SortableList 的 entity prop');
 }
 
 console.log('\n不达标 ' + failed + ' 条');

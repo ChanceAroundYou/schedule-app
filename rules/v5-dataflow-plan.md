@@ -19,19 +19,16 @@
 | `views/` 受控 `Input onChange` ×N | 打字本地态，无 store 调用 | D2 特许，留 |
 | `Dropdown` 内部手写 `<button>` ×2 | 该走 `Btn` | 第 1 册 S4 修 |
 | `Sheet --kb` 兜底 | 运行时变量真默认值 | 第 3 册 N3 白名单，留 |
-| `views/` 5 处 import `reorder`/`reorderList`（`data/store/sort.ts`，走 `commitMany`）：`Habits` + `lists/{Inbox,Today,Overdue,Done}` | **D1 破**：views 引了 `data/store` 写入口（拖拽排序） | ⏸ 挂起，见下 |
 
-**D1 那条（5 处 `reorder`/`reorderList`）为什么挂起不修**：
+## 2. verify（2026-10-14）
 
-- **写门没绕过**：`reorder → commitMany → canWrite(roleOf)`，权限把关照走，不是安全洞，
-  纯粹是「views 不碰 `data/`」的分层破口。
-- **修起来和「views 零回调」顶牛**：dnd 的 `onReorder` 是个**回调**，不是可委托的
-  `data-act` 点击。`SortableList`（`ui/kit`）要它，而 views 又不许从 App 收 `onX` props
-  （D2.1）—— 这个回调**没有干净的下行路径**。把 5 处挪出 views 得先解决「dnd 回调从
-  哪来」，那是设计改动，不是搬代码。
-- **动的是踩坑 6/12 的 dnd 线**，风险配不上「分层更纯」这点收益。
-- 所以两条出路二选一，**都不在本册范围**：① 给 D1 加一条「dnd 排序回调（`reorder`/
-  `reorderList`）」的**显式豁免**（承认它是 dnd 的固有回调，不是普通写入口）；② 等哪天
-  重做 dnd 回调流时一并修。当前**先记着，不假装合规**。
-- 扫描器不锁这条：`api-scan.mjs` 若加「views 零 `data/store` import」会当场红（5 处已破），
-  和第一册 ratchet 一个道理——**代码不合规时锁不了**。等上面二选一落地再补锁。
+- **D1 破口闭合**：原先 5 处 views import `reorder`/`reorderList`（`data/store/sort.ts`，
+  走 `commitMany`）—— 拖拽排序的写入口散在 views 里。修法是把 **dnd→store 的耦合搬进
+  `ui/dnd/sortable.tsx` 的 `SortableList`**：它收 `entity: 'task'|'habit'`（普通字符串
+  prop，不是回调），拖完自己 `reorder(entity, 新顺序)` 写库。views 只声明「哪类实体的
+  列表」，不再碰 `data/`。`ui/` 引 `data/store` 是既有模式（CalItem/CalRow 等 8 处先例），
+  合规。死代码 `reorderList` 已删。
+- 现在 `views/` 零 `data/store` import、零 `onReorder`。**扫描器已补锁**：`api-scan.mjs`
+  第 4 条「views 零 `data/store` import」（有牙：造一个带 import 的 view 当场 FAIL）。
+- 验证：typecheck + 132 单测 + color-scan + api-scan + build + browser-smoke（第八/九节
+  真拖一条、验顺序变 + 落库 localStorage）全绿。

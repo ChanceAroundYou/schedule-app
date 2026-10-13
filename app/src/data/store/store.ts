@@ -37,6 +37,6 @@ export {
 } from './tasks.ts';
 export { addHabit, toggleHabit, deleteHabit, restoreHabit } from './habits.ts';
 export { addProject, patchProject, deleteProject, restoreProject, purgeProject } from './projects.ts';
-export { reorder, reorderWithin, moveUntimed, reorderList } from './sort.ts';
+export { reorder, reorderWithin, moveUntimed } from './sort.ts';
 export { moveToCal } from './moveToCal.ts';
 export { loadMigrated } from './load.ts';

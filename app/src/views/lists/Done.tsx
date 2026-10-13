@@ -8,7 +8,6 @@ import * as D from '../../domain/date.ts';
 import { doneTasks } from '../../domain/model.ts';
 import { Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
-import { reorderList } from '../../data/store.ts';
 
 export function DoneView({ state }: { state: LocalState }) {
   const list = doneTasks(state);
@@ -34,7 +33,7 @@ export function DoneView({ state }: { state: LocalState }) {
           {/* 按完成日分组，每组独立排序：组内可以拖，跨组不搬家 */}
           <SortableList
             items={groups.get(d)!.map((t) => t.id)}
-            onReorder={reorderList}
+            entity="task"
             renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
             className="mc"
             scope={'done:' + d}

@@ -11,8 +11,8 @@
 
 - `domain/` 纯度：**已验纯净**（零 React/DOM/网络 import，可在 Capacitor 与 Node 跑）。
 - `views/` 回调：**已验 0 处** `onX` props；行内按钮只写 `data-act` + `data-id`。
-- `views/` 引 `data/store`：**5 处** `reorder`/`reorderList`（拖拽排序，走 `commitMany`）——
-  D1 破口（写门没绕过，但与「views 零回调」顶牛），见 plan 违规清单，挂起。
+- `views/` 引 `data/store`：**0 处**（拖拽排序的写入口已收进 `ui/dnd/sortable.tsx` 的
+  `SortableList`，views 只传 `entity` prop）—— D1 合规，`api-scan.mjs` 第 4 条锁。
 - 委托链：`#content` 上一个 `onClick`（`clickDispatch.ts`），四步从具体到笼统
   `[data-act]` → `[data-jump]/[data-nav]/[data-jump-habits]` → `.task-el`（开抽屉）→ `[data-drop]`（空白新建）；
   另有一个 `onChange`（`next-project` 这类输入控件，change≠click）。
