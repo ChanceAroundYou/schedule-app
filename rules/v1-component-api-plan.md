@@ -52,12 +52,16 @@ ui/
 
 ## 2. 扫描器 / 守卫方案
 
-### 5.1 新增 `tests/api-scan.mjs`（零依赖静态扫描）
+### 5.1 新增 `tests/api-scan.mjs`（零依赖静态扫描）✅ 已落地（c2ccb48）
 
-锁三件事：
-1. **`ui/` `app/` 调用方不写 Tailwind 外观类**：正则 `/rounded-\[var\(|bg-\[var\(|text-\[var\(|border-\[var\(/` 扫 `.tsx`，豁免 `ui/kit/**` 内部
-2. **kit 组件无 `className` 透传**：扫 `ui/kit/**.tsx` 的 props 定义，有 `className?: string` 即报错
-3. **`views/` 语义类不动**：扫 `views/**/*.tsx` 的 `className`，出现 Tailwind 外观类即报错（语义类白名单豁免）
+锁三条（外观类口径 `rounded-[var(` / `bg-[var(` / `text-[var(` / `border-[var(`）：
+1. **`domain/` 零外观类**（D1 纯净）—— 硬锁，出现即失败
+2. **`views/` 零外观类**（D2 冻结）—— 硬锁，出现即失败
+3. **`ui/` 非 kit + `app/` 调用方外观类只减不增**（R4 方向）—— ratchet，baseline 73，涨即失败
+
+> 为什么第 3 条是 ratchet 不是清零：调用方用 Tailwind 工具类 + CSS 变量本就是本项目的
+> 正确写法（见 CLAUDE.md 三、界面硬规则），一步清零 = 重写整个 UI 层，不在本册范围。
+> 「kit 无 className」也不锁：kit 保留 `className`（布局类，见 2.1），外观走 variant/tone。
 
 ### 5.2 现有扫描器保持
 
@@ -74,15 +78,15 @@ ui/
 
 ## 3. 实施顺序（拆成多步，每步可独立验证）
 
-| 步 | 内容 | 改动文件 | 验证 |
+| 步 | 内容 | 改动文件 | 状态 |
 |---|---|---|---|
-| S1 | `Btn` 改 cva，删 `className` | `ui/kit/Btn.tsx` | typecheck + 探针 |
-| S2 | `Input` 删 `className` | `ui/kit/Input.tsx` | typecheck + 探针 |
-| S3 | `IconBtn` / `MiniIconBtn` 收 `size` / `tone`，删 `className` | `ui/kit/IconBtn.tsx` | typecheck + 探针 |
-| S4 | `Dropdown` 内部手写 button 改走 `Btn`，删 `className` / `menuClassName`，样式进 `.module.css` | `ui/kit/Dropdown.tsx` + `ui/kit/kit.module.css` | typecheck + 探针 |
-| S5 | 新增 `api-scan.mjs`，锁 R4 | `tests/api-scan.mjs` | 扫描器自身 |
-| S6 | 全局层拆出 `state.css` | `styles/tokens.css` `responsive.css` `state.css`（新建） | 探针 + 扫描器 |
-| S7 | `ui/<组>` 目录迁移（overlays / shell / kit） | 多文件 | 探针 + 扫描器 |
+| S1 | `Btn` 改 cva（`className` 留布局类） | `ui/kit/Btn.tsx` | ✅ 已做（72ff7dd） |
+| S2 | `Input`（无 variant 可 cva 化，`className` 留布局类） | `ui/kit/Input.tsx` | ✅ no-op（已合规） |
+| S3 | `MiniIconBtn` `danger`/`primary` → `tone` | `ui/kit/IconBtn.tsx` | ✅ 已做（88296f4） |
+| S4 | `Dropdown`（选项 `role="option"`，改 `Btn` 毁 A11y，不改） | `ui/kit/Dropdown.tsx` | ✅ no-op（A11y 挡住 + 已合规） |
+| S5 | 新增 `api-scan.mjs`，锁 R4（ratchet） | `tests/api-scan.mjs` | ✅ 已做（c2ccb48） |
+| S6 | 全局层拆出 `state.css` | `styles/*` | ⏸ 挂起（状态类在分组文件非 tokens/responsive，纯搬文件零收益） |
+| S7 | `ui/<组>` 目录迁移（overlays / shell / kit） | 多文件 | ⏸ 挂起（高风险纯重构，plan 冻结 lists/calendar） |
 
 **每步做完必须**：
 ```bash
@@ -93,14 +97,13 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 
 ---
 
-## 附录：当前违规清单（第一册要修的）
+## 附录：违规清单（第一册）
 
-| 文件:行 | 违规 | 修法 |
-|---|---|---|
-| `ui/kit/Dropdown.tsx:53` | 收 `className?: string` | 删；布局由外层管 |
-| `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` |
-| `ui/kit/Btn.tsx:38-45` | 手写 `Record<Variant>` | 改 cva |
-| `ui/kit/IconBtn.tsx` | 收 `className` | 删；布局由外层管 |
-| `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop |
-| `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） |
-| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]`（第 3 册 N5 修） |
+| 文件 | 违规 | 修法 | 状态 |
+|---|---|---|---|
+| `ui/kit/Btn.tsx` | 手写 `Record<Variant>` | 改 cva | ✅ 已修（72ff7dd） |
+| `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop | ✅ 已修（88296f4） |
+| `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` | ⏸ 不改（选项 `role="option"`，改 `Btn` 毁 A11y） |
+| `ui/kit/{Dropdown,IconBtn,Btn}.tsx` | 收 `className` | 留布局类（见 2.1） | ✅ 已定（布局类白名单，Interpretation B） |
+| `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） | — 保留 |
+| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]` | 归第 3 册 N5 |

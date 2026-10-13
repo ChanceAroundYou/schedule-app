@@ -9,11 +9,17 @@
 
 ## 0. 目标与判据
 
-**目标**：把样式和功能打包成封闭组件，调用方不写样式、不叠 `className`，想要别的样子就改组件或派生。零漂移和硬规则同等重要。
+**目标**：把样式和功能打包成封闭组件，外观集中在 kit，调用方不叠外观类，想要别的样子就改 kit 或派生。零漂移和硬规则同等重要。
+
+> **现状**：本册写的是**目标架构**（外观集中进 kit + 组件层用 CSS Modules）。当前项目用
+> **全局 CSS（`styles/`）+ Tailwind 工具类 + CSS 变量**，尚未引入 CSS Modules。
+> 已落地：S1（`Btn` cva）· S3（`MiniIconBtn` tone）· S5（`api-scan.mjs`）。
+> 挂起：S6（拆 `state.css`）· S7（`ui/<组>` 迁移）——纯搬文件，收益配不上风险。
+> 硬不变量（`api-scan.mjs` 锁）：`domain/` `views/` 零外观类；调用方外观类只减不增。
 
 **判据（怎么判成没成）**：
-1. 扫描器能抓出「调用方手写 Tailwind 外观类」→ 目标 = 抓出 0 处
-2. 每个 kit 组件只暴露固定数量 props → 目标 = props 有清单，无 `className` 透传
+1. 外观归属被锁住 → `domain/` `views/` 零外观类（硬锁）+ 调用方只减不增（ratchet）
+2. 每个 kit 组件外观走固定 `variant` / `tone` → props 有清单，`className` 只留布局类
 3. 新增外观只改 kit 一处 → 目标 = 改一处，全部调用点自动跟
 
 ---
@@ -43,10 +49,18 @@ CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自�
 集中列在全局层 `state.css` 一份清单里，注明「谁有权写」。`views/` 之外不得新增状态类。
 理由：它们是跨文件契约，不是样式。进 CSS Module 会被改写名、协议断。
 
-### R4 Tailwind 工具类只许出现在 kit 组件内部
+### R4 外观集中在 kit，调用方只减不增
 
-`ui/` `app/` 调用方、`views/` 一律不写 Tailwind 类。想要别的样子就改 kit 或派生。
-这是「样式+功能打包进组件」的落点。
+**外观的合法宿主是 `ui/kit/**`**：新增外观（颜色 / 圆角 / 描边）先进 kit 一处，
+调用方想要别的样子就改 kit 或派生，不散写。
+
+调用方（`ui/` 非 kit、`app/`）**可以**用 Tailwind 工具类 + CSS 变量——这是本项目的
+既有正确写法（CLAUDE.md 三、界面硬规则 里 `rounded-[var(--r-md)]` 就是推荐写法），
+**但只减不增**：`tests/api-scan.mjs` 的 ratchet 锁着调用方外观类总数不许涨。
+
+**两条硬锁**（`api-scan.mjs` 强制，出现即失败）：
+- `domain/` 零 Tailwind 外观类（D1 纯净，domain 连样式都不碰）
+- `views/` 零 Tailwind 外观类（D2 冻结，纯展示只用语义类）
 
 ### R5 机制与豁免
 
@@ -60,15 +74,16 @@ CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自�
 
 ### 2.1 每个组件只暴露固定 props
 
-**判据**：props 有清单，无 `className` 透传（除布局类白名单）。
+**判据**：props 有清单，外观走固定 `variant` / `tone`；`className` 只留**布局类**
+（`flex-1` / `mt-*` / `w-*` 那批，见 2.4），不叠外观类。
 
 | 组件 | 当前 props | 目标 props | 改动 |
 |------|-----------|-----------|------|
-| `Btn` | `variant` `size` `className` | `variant` `size` | 删 `className`；布局由 `Row`/`gap` 管 |
-| `Input` | `dense` `className` | `dense` | 删 `className`；尺寸由外层容器管 |
-| `IconBtn` | `label` `className` | `label` `size` | 删 `className`；尺寸收进 `size` |
-| `MiniIconBtn` | `label` `danger` `primary` `className` | `label` `tone` | `danger`/`primary` 合并为 `tone`；删 `className` |
-| `Dropdown` | `className` `menuClassName` … | 无 `className` | **先修**：内部手写 2 处 `<button>` 改走 `Btn`；面板样式进 `.module.css` |
+| `Btn` | `variant` `size` `className` | `variant` `size` `className`(布局) | 变体进 cva；`className` 只留布局类 |
+| `Input` | `dense` `className` | `dense` `className`(布局) | 无 variant 可 cva 化；`className` 只留布局类 |
+| `IconBtn` | `label` `className` | `label` `className`(布局) | `className` 只留布局类（未加 `size`：无调用方需要，YAGNI） |
+| `MiniIconBtn` | `label` `danger` `primary` `className` | `label` `tone` `className`(布局) | `danger`/`primary` 合并为 `tone`；`className` 只留布局类 |
+| `Dropdown` | `className` `menuClassName` … | 不变 | 选项是 `role="option"`（listbox），改 `Btn` 会毁 A11y，**不改**；`className`/`menuClassName` 实测全是布局/定位类，已合规 |
 | `Chips` | `label` `labelledBy` … | 不变 | 已是 `Btn` 封装，无需改 |
 | `Sheet` | `footer` `dismissable` … | 不变 | 已是封闭的 |
 
