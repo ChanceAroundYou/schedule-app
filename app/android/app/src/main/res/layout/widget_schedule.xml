@@ -27,8 +27,13 @@
         刻度列      竖分割线 + 主体
 
   · 左上空白角 = 「未定时」的标记，不写字，**永远常驻**
+  · 竖分割线**贯穿顶行和底行** —— 2026-10-13 用户指出「似乎没有探出头」，
+    以前只有下半截，十字是缺一半的。现在顶行也放一条，左右两格才真的分开。
+  · 刻度列 22dp → **16dp**（用户：给时间区留的太多了）
+  · 未定时卡与下方任务卡**左边缘对齐**（去掉 tl_tasks 的 paddingLeft；
+    两处卡片都靠 marginLeft=1dp 起排）
   · 细线只画在右下主体里 —— 这是**结构保证**的（它是 tl_frame 的子视图）
-  · 竖分割线与横分割线是「十字线」；右下的小时线颜色更淡，两者一眼可分
+  · 竖 / 横分割线与右下的小时线颜色不同，两者一眼可分
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -38,7 +43,10 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <!-- ============ head：所有可点控件统一 22dp 方框、垂直居中 ============ -->
+    <!-- ============ head：所有可点控件统一 22dp 方框、垂直居中 ============
+         2026-10-13：箭头由文字「‹ ›」改成矢量图标 —— 文字按基线居中、图标按
+         几何居中，两套规则下「盒子一样大」也照样高低不齐。现在五个控件都是
+         ImageView，同样 22dp、居中，图标内容都画在 24 viewBox 的 5..19 里。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="22dp"
@@ -50,17 +58,16 @@
             android:layout_width="22dp"
             android:layout_height="22dp"
             android:contentDescription="回到今天"
-            android:padding="2dp"
+            android:padding="5dp"
             android:src="@drawable/ic_widget_logo" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_prev_month"
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:gravity="center"
-            android:text="‹"
-            android:textColor="#4A6B58"
-            android:textSize="16sp" />
+            android:contentDescription="上一周"
+            android:padding="4dp"
+            android:src="@drawable/ic_chevron_left" />
 
         <TextView
             android:id="@+id/tv_month"
@@ -73,14 +80,13 @@
             android:textSize="12sp"
             android:textStyle="bold" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_next_month"
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:gravity="center"
-            android:text="›"
-            android:textColor="#4A6B58"
-            android:textSize="16sp" />
+            android:contentDescription="下一周"
+            android:padding="4dp"
+            android:src="@drawable/ic_chevron_right" />
 
         <TextView
             android:layout_width="1dp"
@@ -95,7 +101,7 @@
             android:layout_width="22dp"
             android:layout_height="22dp"
             android:contentDescription="新建任务"
-            android:padding="5dp"
+            android:padding="4dp"
             android:src="@drawable/ic_plus" />
 
         <ImageView
@@ -103,7 +109,7 @@
             android:layout_width="22dp"
             android:layout_height="22dp"
             android:contentDescription="小组件设置"
-            android:padding="5dp"
+            android:padding="4dp"
             android:src="@drawable/ic_more" />
     </LinearLayout>
 
@@ -137,15 +143,23 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- 顶行：左空白角（= 未定时的标记）+ 右未定时横条。常驻，高度固定 -->
+        <!-- 顶行：左空白角（= 未定时的标记）+ 竖分割线 + 右未定时横条。
+             常驻，高度固定。竖分割线在这一行也要有 —— 否则「十字」只有下半截，
+             左上空白角和右上未定时条分不开（用户 2026-10-13 指出）。 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="15dp"
             android:orientation="horizontal">
 
             <TextView
-                android:layout_width="22dp"
+                android:layout_width="16dp"
                 android:layout_height="match_parent"
+                android:text="" />
+
+            <TextView
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#C6DCCF"
                 android:text="" />
 
             <LinearLayout
@@ -173,7 +187,7 @@
 
             <LinearLayout
                 android:id="@+id/tl_scale"
-                android:layout_width="22dp"
+                android:layout_width="16dp"
                 android:layout_height="match_parent"
                 android:orientation="vertical" />
 
@@ -203,12 +217,13 @@
                     android:layout_height="match_parent"
                     android:orientation="vertical" />
 
+                <!-- 任务层。**没有 paddingLeft** —— 未定时卡在顶行也是从
+                     marginLeft=1dp 起排，两边靠同一个 1dp 对齐（用户要求）。 -->
                 <LinearLayout
                     android:id="@+id/tl_tasks"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:orientation="vertical"
-                    android:paddingLeft="2dp" />
+                    android:orientation="vertical" />
             </FrameLayout>
         </LinearLayout>
     </LinearLayout>

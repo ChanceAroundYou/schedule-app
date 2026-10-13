@@ -54,6 +54,9 @@ public class WidgetSettingsActivity extends Activity {
         super.onCreate(b);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.dialog_settings);
+        // 2026-10-13：去掉了「完成」按钮，所以必须能靠点弹框外部关掉，
+        // 否则用户只能按返回键 —— 那不像个「桌面小卡片」。
+        setFinishOnTouchOutside(true);
 
         startBtn = findViewById(R.id.s_start);
         endBtn = findViewById(R.id.s_end);
@@ -95,14 +98,6 @@ public class WidgetSettingsActivity extends Activity {
         });
 
         findViewById(R.id.s_refresh).setOnClickListener(v -> doRefresh());
-
-        findViewById(R.id.s_reset).setOnClickListener(v -> {
-            WidgetPrefs.resetRange(this);
-            WidgetPrefs.setAlpha(this, WidgetPrefs.DEFAULT_ALPHA);
-            afterChange();
-        });
-
-        findViewById(R.id.s_done).setOnClickListener(v -> finish());
     }
 
     private void afterChange() {

@@ -100,6 +100,10 @@ class WidgetSnapshot {
             for (int i = 0; i < ts.length(); i++) {
                 JSONObject t = ts.optJSONObject(i);
                 if (t == null) continue;
+                // 墓碑（软删除）不画。服务端快照本来就不带 deleted 的条，这里挡的是
+                // **本地乐观删除**：用户点删除后我们先在本地这份打上 deleted=true，
+                // 解析时就剔掉 → 桌面立刻不见，不必等一个网络往返。
+                if (t.optBoolean("deleted")) continue;
                 s.tasks.add(new WTask(
                         t.optString("id"),
                         t.optString("calId"),

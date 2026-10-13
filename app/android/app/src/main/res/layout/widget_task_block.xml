@@ -2,12 +2,15 @@
 <!--
   时间轴上的一个任务卡。
 
-  **竖向 padding 全部去掉**（用户 2026-10-13 明确）：卡片高度由代码按
-  「任务时长 × 每分钟 dp」钉死，多一分 padding 都会把所在时段撑高、
-  和整点线对不齐。横向只留 4dp，纯粹为了文字不贴边。
-  配色取自 App 标识那组绿。
+  高度由代码按「任务时长 × 每分钟 dp」钉死（setViewLayoutHeight），所以
+  **不能靠 margin 做间距** —— margin 会把卡片顶开、和时间轴错位。
+  卡片之间的缝由**背景图自己内缩**做出来（见 widget_task_bg.xml 的
+  android:top/bottom）—— 那是「内间距」，不占布局高度。
 
-  高度/字号都由代码 setViewLayoutHeight / setTextViewTextSize 现算。
+  2026-10-13：
+  · paddingLeft 1dp → **5dp** —— 用户反馈「文本离竖线太近」，要拉开一点。
+    竖条宽 2dp，留 3dp 间隔。
+  · 字号固定 9sp，不随块高变化。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/task_block"
@@ -19,7 +22,9 @@
     android:ellipsize="end"
     android:gravity="center_vertical"
     android:maxLines="1"
-    android:paddingLeft="4dp"
-    android:paddingRight="3dp"
+    android:paddingLeft="5dp"
+    android:paddingTop="1dp"
+    android:paddingRight="2dp"
+    android:paddingBottom="1dp"
     android:textColor="#1B3A2A"
-    android:textSize="10sp" />
+    android:textSize="9sp" />

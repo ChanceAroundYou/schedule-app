@@ -2,13 +2,11 @@
 <!--
   日期条上的一格。
 
-  2026-10-13 改：**选中态要正圆**。
-  以前把 oval 背景直接铺在「整个格子」上，而格子是 `0dp + weight` 均分出来的
-  矩形（宽 > 高），oval 套矩形必然拉成椭圆。现在改成：
-    外层 FrameLayout 只负责「等分占位」，
-    里面一个**固定 26dp × 26dp 的圆**居中 —— 宽高相等，永远是正圆。
-  圆里放「星期 + 日期」两行（用户要的：圆套整个格子含星期），字号相应缩到
-  8sp / 11sp 才塞得进 26dp。
+  **选中态是正圆**。以前把 oval 背景直接铺在「整个格子」上，而格子是
+  `0dp + weight` 均分出来的矩形（宽 > 高），oval 套矩形必然拉成椭圆。
+  现在改成：外层 FrameLayout 只负责「等分占位」，里面一个**固定 29dp × 29dp
+  的圆**居中 —— 宽高相等，永远是正圆（2026-10-13 由 26dp 略调大到 29dp）。
+  圆里放「星期 + 日期」两行，字号 8sp / 11sp。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/chip_root"
@@ -18,8 +16,8 @@
 
     <LinearLayout
         android:id="@+id/chip_circle"
-        android:layout_width="26dp"
-        android:layout_height="26dp"
+        android:layout_width="29dp"
+        android:layout_height="29dp"
         android:layout_gravity="center"
         android:gravity="center"
         android:orientation="vertical">

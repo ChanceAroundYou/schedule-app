@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 新建任务弹框 -->
+<!-- 新建任务弹框。
+
+     2026-10-13：单一的「时间」按钮改成**开始 / 结束两个表盘**，和编辑弹框一致
+     （用户要求任务能设起止时间）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="260dp"
     android:layout_height="wrap_content"
@@ -26,18 +29,54 @@
         android:textColorHint="#8AA294"
         android:textSize="13sp" />
 
-    <!-- 时间不是输入框，是个按钮 —— 点了弹表盘（TimePickerDialog）。
+    <!-- 起止时间：两个按钮，点了各弹一个系统表盘（TimePickerDialog）。
          手打「09:30」要切键盘、要记格式，桌面上做快速记一笔时最烦这一步。 -->
-    <Button
-        android:id="@+id/c_time"
-        style="?android:attr/borderlessButtonStyle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:background="@drawable/widget_chip_bg"
-        android:text="不设置时间"
-        android:textColor="#1B3A2A"
-        android:textSize="13sp" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/c_start"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/widget_chip_bg"
+            android:text="不设置"
+            android:textColor="#1B3A2A"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:text="至"
+            android:textColor="#6B8574"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/c_end"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/widget_chip_bg"
+            android:text="不设置"
+            android:textColor="#1B3A2A"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/c_durhint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#8AA294"
+        android:textSize="11sp" />
 
     <LinearLayout
         android:layout_width="match_parent"

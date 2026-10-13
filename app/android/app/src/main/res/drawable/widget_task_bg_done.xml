@@ -1,20 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   已完成任务块的底。**不用删除线**（用户明确反感过），改用整块退色：
-  底从浅绿变浅灰、左侧竖线从主绿变灰 —— 一眼能看出「这条已经过去了」，
-  但不会像删除线那样喧宾夺主。
+  底从浅绿变浅灰、左侧竖条从主绿变灰。
+
+  几何参数与 widget_task_bg.xml 一致（圆角 4dp / 上下内缩 1dp / 竖条缩 2dp），
+  否则「完成」和「未完成」的卡片形状会不一样。
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
+    <item
+        android:top="1.5dp"
+        android:bottom="1.5dp">
         <shape android:shape="rectangle">
             <solid android:color="#E9EDEA" />
-            <corners android:radius="7dp" />
+            <corners android:radius="4dp" />
         </shape>
     </item>
-    <item android:left="0dp" android:width="3dp">
+    <item
+        android:left="0dp"
+        android:width="2dp"
+        android:top="3dp"
+        android:bottom="3dp">
         <shape android:shape="rectangle">
             <solid android:color="#9CAFA3" />
-            <corners android:radius="1.5dp" />
+            <corners android:radius="1dp" />
         </shape>
     </item>
 </layer-list>

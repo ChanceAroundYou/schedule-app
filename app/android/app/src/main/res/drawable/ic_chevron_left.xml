@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 左箭头。颜色用 App 标识那一组的深绿，不用纯黑 -->
+<!--
+  上一周。**做成矢量图标而不是文字「‹」** —— 用户 2026-10-13 反馈头部四个
+  控件「始终没对齐、大小不一致」。根因是：文字字形按基线居中、图标按几何居中，
+  两套规则；而且文字的实际笔画大小由字体决定，和 24dp viewBox 的图标对不上。
+
+  ⚠️ 内容刻意控制在 24 viewBox 的 5..19 之间，和 ic_plus 同一尺寸 ——
+  这样四个图标在同样的 22dp 框 + 同样 padding 下，视觉大小天然一致。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#3E5A4A"
-        android:pathData="M8.6,4.6 L10,6 L6,10 L16,10 L16,14 L6,14 L10,18 L8.6,19.4 L2.2,13 Z" />
+        android:pathData="M15.4,5.6 L9.2,12 L15.4,18.4"
+        android:strokeColor="#4A6B58"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

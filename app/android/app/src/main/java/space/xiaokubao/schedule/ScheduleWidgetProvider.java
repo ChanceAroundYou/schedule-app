@@ -298,13 +298,19 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
     private static final int UNTIMED_MAX = 5;
     /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
-    private static final int HABIT_ROW_DP = 22;
-    /** 日期条占高（26dp 的正圆 + 一点余量） */
-    private static final int DATE_STRIP_DP = 28;
+    private static final int HABIT_ROW_DP = 19;
+    /** 日期条占高（29dp 的正圆） */
+    private static final int DATE_STRIP_DP = 29;
     /** 十字面板顶行（左空白角 + 右未定时横条）的高度。常驻，不随有无任务变 */
     private static final int PANEL_BAR_DP = 15;
-    /** 任务卡最小高度：很短的任务也保证能看清一行字 */
-    private static final int MIN_BLOCK_DP = 13;
+    /**
+     * 任务卡最小高度。
+     *
+     * 2026-10-13 由 13dp 提到 **15dp**：字号固定成 9sp 之后不再随块高缩小，
+     * 很短的卡片（5 分钟任务）如果只有 13dp，去掉 1dp 上下 padding 后
+     * 只剩 11dp 放字，会被裁。
+     */
+    private static final int MIN_BLOCK_DP = 15;
 
     /**
      * 十字面板左下角的**刻度列**。
@@ -317,9 +323,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         v.removeAllViews(R.id.tl_scale);
         int hours = hi - lo + 1;
         float dpPerHour = timelineDp / (float) hours;
-        // 行高很小时数字会叠在一起 → 隔 2~3 小时才写一个（判据跟 App 日视图一致）
+        // 行高很小时数字会叠在一起 → 隔 2~3 小时才写一个（判据跟 App 日视图一致）。
+        // ⚠️ 字号**不再随行高变化** —— 用户 2026-10-13 要求刻度 / 打卡 / 任务卡
+        // 统一 9sp，字号在 widget_tl_hour.xml 里定死，这里只控制「写哪几个」。
         int step = dpPerHour < 11f ? 3 : (dpPerHour < 16f ? 2 : 1);
-        float labelSp = dpPerHour >= 17f ? 9f : 8f;
 
         int prevY = 0;
         for (int k = 0; k < hours; k++) {
@@ -331,7 +338,6 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             e.setViewLayoutHeight(R.id.tl_hour, hgt, TypedValue.COMPLEX_UNIT_DIP);
             e.setTextViewText(R.id.tl_hour,
                     (k % step == 0) ? String.format(Locale.US, "%02d", lo + k) : "");
-            e.setTextViewTextSize(R.id.tl_hour, TypedValue.COMPLEX_UNIT_SP, labelSp);
             // 「现在」那一小时的刻度标红 —— 全宽红线在主体里单独一层
             e.setTextColor(R.id.tl_hour,
                     (isToday && nowMin >= 0 && (lo + k) == nowMin / 60)
@@ -492,10 +498,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static RemoteViews taskBlock(Context c, WTask t, int hDp) {
         RemoteViews block = new RemoteViews(c.getPackageName(), R.layout.widget_task_block);
         block.setTextViewText(R.id.task_block, label(t));
-        // 高度 = 时长，字号跟着块高走（块高很小时缩到 9sp）
         block.setViewLayoutHeight(R.id.task_block, hDp, TypedValue.COMPLEX_UNIT_DIP);
-        block.setTextViewTextSize(R.id.task_block, TypedValue.COMPLEX_UNIT_SP,
-                hDp >= 26 ? 11f : (hDp >= 20 ? 10f : 9f));
+        // ⚠️ **字号不再按块高变化** —— 用户 2026-10-13 明确「任务卡上的文字不随着
+        // 卡片变大而变大」。统一 9sp，写在 widget_task_block.xml 里（以前这里
+        // 按 hDp 挑 9/10/11sp，同屏卡片字大小不一）。
         if (t.done) {
             // 完成后**整块退色**：底从浅绿变浅灰、左竖线由主绿转灰、字转灰。
             // **不用删除线** —— 用户明确反感过，那东西在本来就不宽的任务块里太吵。
@@ -688,6 +694,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 ok = h != null && h.log != null;
             } else if ("create".equals(kind)) {
                 ok = true;      // 新建不依赖已有实体
+            } else if ("delete".equals(kind)) {
+                // 删除自带 calId，不依赖本地还有没有这条 —— 乐观删除之后
+                // taskById 必然查不到，若在这里判 null，删除就永远发不出去
+                ok = true;
             } else {
                 ok = snap.taskById(p.optString("taskId")) != null;
             }
@@ -751,7 +761,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     op.put("fields", fields);
                     ops.put(op);
                 } else if ("edit".equals(kind)) {
-                    // 编辑弹框存下的改动：标题 / 时间，可选连带「完成」状态
+                    // 编辑弹框存下的改动：标题 / 起止时间（= time + duration），
+                    // 可选连带「完成」状态
                     WTask t = snap.taskById(p.optString("taskId"));
                     if (t == null) return;
                     JSONObject op = new JSONObject();
@@ -761,12 +772,26 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     JSONObject fields = new JSONObject();
                     fields.put("title", p.optString("title"));
                     fields.put("time", p.isNull("time") ? JSONObject.NULL : p.optString("time"));
+                    // ⚠️ 字段名是 **duration**，不是 dur（服务端与 App 都读 duration）
+                    fields.put("duration", p.optInt("duration", 0));
                     // done 为 null = 「这次没动完成状态」，别把它当成 false 下发
                     if (!p.isNull("done")) {
                         boolean d = p.optBoolean("done");
                         fields.put("done", d);
                         fields.put("doneAt", d ? System.currentTimeMillis() : JSONObject.NULL);
                     }
+                    op.put("fields", fields);
+                    ops.put(op);
+                } else if ("delete".equals(kind)) {
+                    // 删除不依赖本地快照里还有没有这条 —— 乐观删除之后
+                    // taskById 就查不到了，但 calId 早就跟着队列存下来了
+                    JSONObject op = new JSONObject();
+                    op.put("entity", "task");
+                    op.put("entityId", p.optString("taskId"));
+                    op.put("calId", p.optString("calId"));
+                    JSONObject fields = new JSONObject();
+                    fields.put("deleted", true);
+                    fields.put("deletedAt", p.optLong("deletedAt"));
                     op.put("fields", fields);
                     ops.put(op);
                 } else if ("create".equals(kind)) {
@@ -778,7 +803,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     fields.put("title", p.optString("title"));
                     fields.put("date", p.optString("date"));
                     fields.put("time", p.isNull("time") ? JSONObject.NULL : p.optString("time"));
-                    fields.put("dur", 0);
+                    // ⚠️ duration，不是 dur
+                    fields.put("duration", p.optInt("duration", 0));
                     fields.put("done", false);
                     fields.put("doneAt", JSONObject.NULL);
                     op.put("fields", fields);

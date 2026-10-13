@@ -1,33 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 小组件设置弹框：时间轴范围 / 底板透明度 / 立即刷新 -->
+<!--
+  小组件设置弹框：时间轴范围 / 底板透明度 / 立即刷新。
+
+  2026-10-13：整体缩小、字号调小（用户要求）；**去掉「恢复默认」「完成」两个
+  按钮** —— 关闭改靠点弹框外部 / 返回键（见 WidgetSettingsActivity 里的
+  setFinishOnTouchOutside）。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="292dp"
+    android:layout_width="252dp"
     android:layout_height="wrap_content"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="12dp">
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="小组件设置"
         android:textColor="#1B3A2A"
-        android:textSize="15sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 
     <!-- ============ 时间轴范围 ============ -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="10dp"
         android:text="时间轴范围"
         android:textColor="#6B8574"
-        android:textSize="12sp" />
+        android:textSize="11sp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -40,16 +46,16 @@
             android:background="@drawable/widget_habit_bg"
             android:text="08:00"
             android:textColor="#1B3A2A"
-            android:textSize="14sp" />
+            android:textSize="12sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="8dp"
-            android:layout_marginRight="8dp"
+            android:layout_marginLeft="6dp"
+            android:layout_marginRight="6dp"
             android:text="至"
             android:textColor="#6B8574"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <Button
             android:id="@+id/s_end"
@@ -60,16 +66,16 @@
             android:background="@drawable/widget_habit_bg"
             android:text="20:00"
             android:textColor="#1B3A2A"
-            android:textSize="14sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/s_hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:textColor="#8AA294"
-        android:textSize="11sp" />
+        android:textSize="10sp" />
 
     <!-- ============ 底板透明度 ============
          拖到最右 = 完全不透明，最左 = 最透。
@@ -79,7 +85,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal">
 
         <TextView
@@ -88,7 +94,7 @@
             android:layout_weight="1"
             android:text="底板透明度"
             android:textColor="#6B8574"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <TextView
             android:id="@+id/s_alpha_label"
@@ -96,7 +102,7 @@
             android:layout_height="wrap_content"
             android:text="不透明"
             android:textColor="#27795A"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold" />
     </LinearLayout>
 
@@ -104,7 +110,7 @@
         android:id="@+id/s_alpha"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="0dp"
         android:max="4"
         android:progress="0"
         android:progressTint="#27795A"
@@ -114,56 +120,27 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="8dp"
         android:text="数据"
         android:textColor="#6B8574"
-        android:textSize="12sp" />
+        android:textSize="11sp" />
 
     <Button
         android:id="@+id/s_refresh"
         style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:background="@drawable/widget_habit_bg"
         android:text="立即刷新（拉服务器最新）"
         android:textColor="#27795A"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/s_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:textColor="#8AA294"
-        android:textSize="11sp" />
-
-    <!-- ============ 底部 ============ -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/s_reset"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="恢复默认"
-            android:textColor="#6B8574"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/s_done"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="完成"
-            android:textColor="#27795A"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+        android:textSize="10sp" />
 </LinearLayout>

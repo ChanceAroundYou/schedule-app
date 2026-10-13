@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   整点细线（十字面板右下主体里的「时间分割线」）。
-  **颜色要比十字分割线（#C6DCCF）更淡** —— 用户 2026-10-13 明确要求
+  **颜色要比十字分割线（#C6DCCF）淡** —— 用户 2026-10-13 明确要求
   「区域分割线」和「时间细分线」之间要有样式差别，一眼能分清哪个是分区、
   哪个是时间刻度。
+
+  2026-10-13 调深一档：#E7F1EB → #D9E9DF。原因是底板默认带透明度（70%），
+  浅色细线铺在半透明底上几乎看不见。仍比十字线淡，「两类线」的差别还在。
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:gravity="top"
         android:height="1dp">
         <shape android:shape="rectangle">
-            <solid android:color="#E7F1EB" />
+            <solid android:color="#D9E9DF" />
         </shape>
     </item>
 </layer-list>
