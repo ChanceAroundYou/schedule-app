@@ -3,6 +3,7 @@
  */
 
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cx } from '../cx.ts';
 
 /* 六种固定 variant，覆盖全应用所有按钮场景：
@@ -34,31 +35,36 @@ export type Variant = 'primary' | 'normal' | 'ghost' | 'danger' | 'chip' | 'chip
    在 语义样式模块 里**一个都没有** —— 于是两套主题下全是写死的颜色，
    主按钮那个 #4f7cff 压白字只有 3.70:1，暗色也没跟着 --primary 走。
    没有兜底值时写错名字会当场看得见（声明失效→继承），不会悄悄糊过去。
-   tests/contrast.mjs 末尾有一条扫描锁着这件事。 */
-const VARIANT: Record<Variant, string> = {
-  primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
-  normal: 'border-[length:var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
-  ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
-  danger: 'border-[length:var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
-  chip: 'border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
-  chipOn: 'border-[length:var(--border-w)] border-[var(--primary)] bg-[var(--panel)] font-medium text-[var(--primary)]',
-};
+   tests/contrast.mjs 末尾有一条扫描锁着这件事。
+   变体集中进 cva（第 1 册 2.2）：variant/size 正交，改一处全部跟。 */
+const btnVariants = cva(
+  'btn inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
+  {
+    variants: {
+      variant: {
+        primary: 'bg-[var(--primary)] text-[var(--on-primary)] hover:brightness-95 active:brightness-90',
+        normal: 'border-[length:var(--border-w)] border-[var(--input)] bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)] hover:border-[var(--text-3)]',
+        ghost: 'bg-transparent text-[var(--text-2)] hover:bg-[var(--panel-3)]',
+        danger: 'border-[length:var(--border-w)] border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]',
+        chip: 'border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] text-[var(--text-2)] hover:border-[var(--primary)] hover:text-[var(--primary)]',
+        chipOn: 'border-[length:var(--border-w)] border-[var(--primary)] bg-[var(--panel)] font-medium text-[var(--primary)]',
+      },
+      size: {
+        sm: 'h-[30px] px-2.5 text-[12.5px]',
+        md: 'h-9 px-3.5 text-sm',
+        lg: 'h-11 px-5 text-[15px]',
+      },
+    },
+    defaultVariants: { variant: 'normal', size: 'md' },
+  },
+);
 
-type Size = 'sm' | 'md' | 'lg';
-
-const SIZE: Record<Size, string> = {
-  sm: 'h-[30px] px-2.5 text-[12.5px]',
-  md: 'h-9 px-3.5 text-sm',
-  lg: 'h-11 px-5 text-[15px]',
-};
-
-interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: Variant;
-  size?: Size;
-}
+interface BtnProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof btnVariants> {}
 
 export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
-  { variant = 'normal', size = 'md', className, ...rest },
+  { variant, size, className, ...rest },
   ref,
 ) {
   return (
@@ -66,13 +72,7 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
       ref={ref}
       type="button"
       {...rest}
-      className={cx(
-        'btn inline-flex items-center justify-center gap-1.5 rounded-[var(--r-md)] font-medium transition',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        SIZE[size],
-        VARIANT[variant],
-        className,
-      )}
+      className={cx(btnVariants({ variant, size }), className)}
     />
   );
 });
