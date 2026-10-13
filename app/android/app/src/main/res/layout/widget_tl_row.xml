@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  任务层里「同一时间段重叠的几个任务」那一行。
+  高度由代码钉死（= 这一簇从最早到最晚跨多少 dp）。
+  行内每个任务占一列（widget_tl_col.xml），像 App 那样并排错开。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tl_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal" />

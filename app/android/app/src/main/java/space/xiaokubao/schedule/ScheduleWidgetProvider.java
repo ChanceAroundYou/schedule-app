@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.TypedValue;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -33,17 +34,18 @@ import java.util.Locale;
  *   1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
  *      用了 ScrollView 之类，**launcher inflate 时直接抛异常**，组件变成一块
  *      「载入窗口小部件时出现问题」的空板，而应用侧一条日志都没有。
- *      ⇒ 所以「时间轴看不到更晚的小时」**不能**靠加 ScrollView 解决。
- *        最终做法是**把行高压到贴着内容**、一屏装完，见
- *        {@link #hourRowLayoutFor} 与 widget_hour_row*.xml。
- *   2. 不能自定义 View、不能测量宽高。所以行高只能按档位选布局文件，
- *      不能真正「自适应」。
+ *   2. 不能自定义 View、不能测量宽高。
+ *      ⇒「卡片按真实分钟定位」于是这样做：**自己算绝对位置** —— 用
+ *        {@code setViewLayoutHeight} 把每个元素的高度钉死，再靠空占位条把
+ *        后面的元素顶到位。见 {@link #renderTimeline}。
+ *        （该接口是 API 31 / Android 12 起才有的，低版本 launcher 认不了。）
  *   3. 动态加子视图只能「按布局文件加」，不能凭空造容器 —— 想要多行就得
  *      有一个「行容器」的布局文件（见 widget_habit_row.xml）。
- *   4. 只有标了 {@code @RemotableViewMethod} 的方法能通过 setInt/setFloat
+ *   4. 子视图白名单里**没有裸 {@code View}**，占位条 / 分隔线一律用空 TextView。
+ *   5. 只有标了 {@code @RemotableViewMethod} 的方法能通过 setInt/setFloat
  *      反射调用。{@code View.setAlpha(float)} **没有**这个标注，所以透明度
  *      只能预先做成几档 drawable 来切 —— 见 {@link #bgFor}。
- *   5. 接不到手势。手指滑动、长按、双击一概做不到，只能靠点击。
+ *   6. 接不到手势。手指滑动、长按、双击一概做不到，只能靠点击。
  */
 public class ScheduleWidgetProvider extends AppWidgetProvider {
 
@@ -221,23 +223,29 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         int lo = WidgetPrefs.startHour(c);
         int hi = WidgetPrefs.endHour(c);
-        int hourRows = hi - lo + 1;
-        // 「未定时」那段算作时间轴的最后一行，一起参与分页 —— 这样它不会
-        // 因为翻页落到组件外面去（上一版它永远吊在底部，翻页后反而容易丢）
-        int totalRows = hourRows + (untimed.isEmpty() ? 0 : 1);
 
-        // **一屏画完，不翻页。** 行高压到贴着内容（见 widget_hour_row*.xml），
-        // 小时数多就换更薄的那一档；用户明确说过不想为「看 17 点以后」再点箭头。
         int habitRows = snap.habits.isEmpty() ? 0
                 : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-        int rowLayout = hourRowLayoutFor(mgr, widgetId, totalRows, habitRows);
 
-        v.removeAllViews(R.id.hour_rows);
+        // 时间轴能分到多少高度。**顶部全是固定高度**（用户要求顶部不随组件缩放），
+        // 所以这里能精确算出来，不用估。组件越高，多出来的全给时间轴。
+        int totalDp = mgr.getAppWidgetOptions(widgetId)
+                .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
+        int fixedTop = 16                    // root padding 上下各 8
+                + 22 + 2                     // 月份行 + margin
+                + 34 + 3                     // 日期条 + margin
+                + habitRows * HABIT_ROW_DP + (habitRows > 0 ? 6 : 0)   // 打卡区
+                + 1 + 3 + 6                  // 分隔线 + 两处 margin
+                + 15;                        // footer 预留
+        int untimedShown = Math.min(untimed.size(), UNTIMED_MAX);
+        int untimedDp = untimed.isEmpty() ? 0
+                : (3 + 11 + untimedShown * 16 + (untimed.size() > untimedShown ? 12 : 0));
+        int timelineDp = Math.max(80, totalDp - fixedTop - untimedDp);
+
         boolean isToday = day.equals(today);
-        int nowHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        for (int i = 0; i < totalRows; i++) {
-            drawHourRow(c, v, rowLayout, i, lo, hourRows, timed, untimed, isToday, nowHour);
-        }
+        int nowMin = isToday ? nowMinutes() : -1;
+        renderTimeline(c, v, timed, lo, hi, timelineDp, isToday, nowMin);
+        renderUntimed(c, v, untimed);
 
         /* ---- 底部状态 ---- */
         int pend = WidgetPrefs.pendingCount(c);
@@ -254,14 +262,16 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         if (lo != WidgetPrefs.DEFAULT_START_HOUR || hi != WidgetPrefs.DEFAULT_END_HOUR) {
             foot.append(" · ").append(lo).append("–").append(hi).append(" 时");
         }
-        // 时间在 [lo, hi] 之外的任务**一行都画不出来**（时间轴没有那一行）。
+        // 整条都落在 [lo, hi] 之外的任务画不出来（时间轴没有那一段）。
         // 不提示的话它们等于被静默吞掉，用户只会觉得「我明明记了」。
         int outside = 0;
         for (WTask t : timed) {
-            int h = startHour(t);
-            if (h < lo || h > hi) outside++;
+            int s = startMin(t);
+            if (s < 0) continue;
+            if (s + durOf(t) <= lo * 60 || s >= (hi + 1) * 60) outside++;
         }
         if (outside > 0) foot.append(" · ").append(outside).append(" 项在范围外");
+        if (!untimed.isEmpty()) foot.append(" · ").append(untimed.size()).append(" 未定时");
         foot.append(" · 更新 ").append(clockOf(snap.at));
         if (pend > 0) foot.append(" · ").append(pend).append(" 待同步");
         v.setTextViewText(R.id.tv_footer, foot.toString());
@@ -282,40 +292,183 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         mgr.updateAppWidget(widgetId, v);
     }
 
+    /* ==================== 时间轴渲染 ==================== */
+
+    /** 未定时区最多露几条，超出的收成一行「还有 N 个」 */
+    private static final int UNTIMED_MAX = 2;
+    /** 打卡区单行高度（跟 widget_habit_chip 实际高度对齐，用于算预算） */
+    private static final int HABIT_ROW_DP = 18;
+    /** 任务卡最小高度：很短的任务也保证能看清一行字 */
+    private static final int MIN_BLOCK_DP = 13;
+
     /**
-     * 画时间轴的第 {@code i} 行。
+     * 画时间轴。
      *
-     * {@code i < hourRows} 就是 {@code lo + i} 点那一行；最后一行留给「未定时」段。
-     * 以前未定时的任务被塞进「起始小时」那一行，看起来像 8 点的任务 —— 语义是错的。
+     * **核心：自己算绝对位置。**
+     *
+     * RemoteViews 既不能测量、也不能任意摆座标，所以「按真实分钟定位」只能
+     * 这样落地：把每个元素该占多少 dp 全算出来，用 {@code setViewLayoutHeight}
+     * 把高度钉死，再靠一个个空占位条把后面的元素顶到正确的位置。
+     *
+     * 三层共用同一个「每分钟多少 dp」的比例，所以：
+     *   · 整点线落在整点上（网格层等高铺满）
+     *   · 卡片落在它**真正的分钟**上，而不是吸附到 8:00 / 9:00
+     *   · 「现在」红线落在真实的现在
+     *
+     * ⚠️ {@code setViewLayoutHeight} 是 API 31（Android 12）才有的。低版本
+     * launcher 认不了这些 action，时间轴会退化成不定位的堆叠 —— 当前目标机
+     * 是 API 36，没问题。
      */
-    private static void drawHourRow(Context c, RemoteViews parent, int rowLayout, int i,
-                                    int lo, int hourRows, List<WTask> timed, List<WTask> untimed,
-                                    boolean isToday, int nowHour) {
-        RemoteViews row = new RemoteViews(c.getPackageName(), rowLayout);
-        if (i >= hourRows) {
-            row.setTextViewText(R.id.hour_label, "—");
-            row.setTextColor(R.id.hour_label, 0xFF8AA294);
-            for (WTask t : untimed) row.addView(R.id.hour_body, taskBlock(c, t));
-        } else {
-            int h = lo + i;
-            row.setTextViewText(R.id.hour_label, String.format(Locale.US, "%02d", h));
-            boolean isNowRow = isToday && h == nowHour;
-            row.setTextColor(R.id.hour_label, isNowRow ? 0xFF27795A : 0xFF8AA294);
-            for (WTask t : timed) {
-                if (startHour(t) != h) continue;
-                row.addView(R.id.hour_body, taskBlock(c, t));
-            }
+    private static void renderTimeline(Context c, RemoteViews v, List<WTask> timed,
+                                       int lo, int hi, int timelineDp,
+                                       boolean isToday, int nowMin) {
+        int hours = hi - lo + 1;
+        int fromMin = lo * 60;
+        int toMin = (hi + 1) * 60;
+        float dpPerMin = timelineDp / (float) (hours * 60);
+        float dpPerHour = timelineDp / (float) hours;
+
+        /* ---- 网格层：等高的整点格，格子的顶边就是整点 ---- */
+        v.removeAllViews(R.id.tl_grid);
+        // 行高很小时刻度会叠在一起 → 隔 2~3 小时才写一个字（判据跟 App 日视图一致）
+        int step = dpPerHour < 11f ? 3 : (dpPerHour < 16f ? 2 : 1);
+        float labelSp = dpPerHour >= 17f ? 9f : 8f;
+        int prevY = 0;
+        for (int k = 0; k < hours; k++) {
+            // 用累进目标值取整，避免逐行四舍五入攒出十几 dp 的偏移
+            int nextY = Math.round((k + 1) * dpPerHour);
+            int hgt = Math.max(1, nextY - prevY);
+            prevY = nextY;
+
+            RemoteViews e = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
+            e.setViewLayoutHeight(R.id.tl_hour, hgt, TypedValue.COMPLEX_UNIT_DIP);
+            e.setTextViewText(R.id.tl_hour,
+                    (k % step == 0) ? String.format(Locale.US, "%02d", lo + k) : "");
+            e.setTextViewTextSize(R.id.tl_hour, TypedValue.COMPLEX_UNIT_SP, labelSp);
+            // 「现在」那一小时的刻度标红 —— 全宽红线在下面单独一层
+            e.setTextColor(R.id.tl_hour,
+                    (isToday && nowMin >= 0 && (lo + k) == nowMin / 60)
+                            ? 0xFFD24A2E : 0xFFA2B5A9);
+            v.addView(R.id.tl_grid, e);
         }
-        parent.addView(R.id.hour_rows, row);
+
+        /* ---- 「现在」红线 ---- */
+        v.removeAllViews(R.id.tl_now);
+        if (isToday && nowMin >= fromMin && nowMin <= toMin) {
+            v.addView(R.id.tl_now, spacer(c, Math.round((nowMin - fromMin) * dpPerMin)));
+            v.addView(R.id.tl_now, new RemoteViews(c.getPackageName(), R.layout.widget_tl_nowline));
+        }
+
+        /* ---- 任务层 ---- */
+        v.removeAllViews(R.id.tl_tasks);
+
+        List<Ev> evs = new ArrayList<>();
+        for (WTask t : timed) {
+            int s = startMin(t);
+            if (s < 0) continue;
+            int e = s + durOf(t);
+            if (e <= fromMin || s >= toMin) continue;   // 整条都在范围外，画不出来
+            evs.add(new Ev(t, Math.max(s, fromMin), Math.min(e, toMin)));
+        }
+        evs.sort((a, b) -> Integer.compare(a.s, b.s));
+
+        int cursor = 0;
+        int i = 0;
+        while (i < evs.size()) {
+            // 摘一个「时间上连通重叠」的簇：簇内的任务才需要并排分列
+            int clS = evs.get(i).s;
+            int clE = evs.get(i).e;
+            List<Ev> cluster = new ArrayList<>();
+            int j = i;
+            while (j < evs.size() && evs.get(j).s < clE) {
+                clE = Math.max(clE, evs.get(j).e);
+                cluster.add(evs.get(j));
+                j++;
+            }
+            List<List<Ev>> cols = assignColumns(cluster);
+
+            int topDp = Math.round((clS - fromMin) * dpPerMin);
+            int spanDp = Math.max(MIN_BLOCK_DP, Math.round((clE - clS) * dpPerMin));
+            if (topDp - cursor > 0) v.addView(R.id.tl_tasks, spacer(c, topDp - cursor));
+
+            RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_tl_row);
+            row.setViewLayoutHeight(R.id.tl_row, spanDp, TypedValue.COMPLEX_UNIT_DIP);
+            for (List<Ev> col : cols) {
+                RemoteViews colv = new RemoteViews(c.getPackageName(), R.layout.widget_tl_col);
+                colv.setViewLayoutHeight(R.id.tl_col, spanDp, TypedValue.COMPLEX_UNIT_DIP);
+                int inner = 0;
+                for (Ev ev : col) {
+                    // 列内互不重叠 → 用前置占位条把卡片顶到它自己的分钟
+                    int sDp = Math.round((ev.s - clS) * dpPerMin);
+                    int hDp = Math.max(MIN_BLOCK_DP, Math.round((ev.e - ev.s) * dpPerMin));
+                    if (sDp - inner > 0) colv.addView(R.id.tl_col, spacer(c, sDp - inner));
+                    colv.addView(R.id.tl_col, taskBlock(c, ev.t, hDp));
+                    inner = sDp + hDp;
+                }
+                row.addView(R.id.tl_row, colv);
+            }
+            v.addView(R.id.tl_tasks, row);
+
+            cursor = topDp + spanDp;
+            i = j;
+        }
     }
 
-    private static RemoteViews taskBlock(Context c, WTask t) {
+    /** 任务在时间轴上的区间（分钟，已按显示范围裁剪） */
+    private static class Ev {
+        final WTask t;
+        final int s;
+        final int e;
+
+        Ev(WTask t, int s, int e) {
+            this.t = t;
+            this.s = s;
+            this.e = e;
+        }
+    }
+
+    /** 一个高度精确的空占位条。只能是 TextView —— RemoteViews 白名单里没有裸 View */
+    private static RemoteViews spacer(Context c, int dp) {
+        RemoteViews sp = new RemoteViews(c.getPackageName(), R.layout.widget_tl_spacer);
+        sp.setViewLayoutHeight(R.id.tl_spacer, dp, TypedValue.COMPLEX_UNIT_DIP);
+        return sp;
+    }
+
+    /**
+     * 簇内分列：互相重叠的并排，能共存的塞同一列。
+     * 贪心 —— 按开始时间走，找第一列「上一件已经结束」的放进去。
+     */
+    private static List<List<Ev>> assignColumns(List<Ev> cluster) {
+        List<List<Ev>> cols = new ArrayList<>();
+        List<Integer> ends = new ArrayList<>();
+        for (Ev ev : cluster) {
+            int k = -1;
+            for (int m = 0; m < cols.size(); m++) {
+                if (ends.get(m) <= ev.s) {
+                    k = m;
+                    break;
+                }
+            }
+            if (k < 0) {
+                cols.add(new ArrayList<>());
+                ends.add(0);
+                k = cols.size() - 1;
+            }
+            cols.get(k).add(ev);
+            ends.set(k, ev.e);
+        }
+        return cols;
+    }
+
+    private static RemoteViews taskBlock(Context c, WTask t, int hDp) {
         RemoteViews block = new RemoteViews(c.getPackageName(), R.layout.widget_task_block);
         block.setTextViewText(R.id.task_block, label(t));
+        // 高度 = 时长，字号跟着块高走（块高很小时缩到 9sp）
+        block.setViewLayoutHeight(R.id.task_block, hDp, TypedValue.COMPLEX_UNIT_DIP);
+        block.setTextViewTextSize(R.id.task_block, TypedValue.COMPLEX_UNIT_SP,
+                hDp >= 26 ? 11f : (hDp >= 20 ? 10f : 9f));
         if (t.done) {
             // 完成后**整块退色**：底从浅绿变浅灰、左竖线由主绿转灰、字转灰。
-            // 上一版只把字色改成 #9AAAA0，在浅绿底上几乎看不出来，用户反馈
-            // 「点了完成时间轴上一点变化都没有」。
             // **不用删除线** —— 用户明确反感过，那东西在本来就不宽的任务块里太吵。
             block.setInt(R.id.task_block, "setBackgroundResource",
                     R.drawable.widget_task_bg_done);
@@ -331,27 +484,43 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
-     * 时间轴用哪一档行高。
+     * 未定时任务区。
      *
-     * RemoteViews 不能测量，所以「自适应」只能退化成「准备两套布局挑一套」。
-     * 判据很直接：**这一档的行高乘上行数，塞不塞得进时间轴分到的高度。**
-     *
-     * 这里不再算「一屏能放几行」——以前靠它做翻页，现在设计目标就是一屏装完：
-     * 行高本来就贴着内容（见 widget_hour_row*.xml），装不下时换更薄的一档即可。
+     * 用户 2026-10-13 明确要求「没定好时间的任务也需要显示」。它们没有纵座标，
+     * 塞进时间轴只会误导，所以单独放在时间轴下面一条：一个「未定时」标题 +
+     * 最多 {@link #UNTIMED_MAX} 条，再多的收成「还有 N 个」—— 全铺开会把
+     * 时间轴挤没。
      */
-    private static int hourRowLayoutFor(AppWidgetManager mgr, int widgetId,
-                                        int totalRows, int habitRows) {
-        Bundle opts = mgr.getAppWidgetOptions(widgetId);
-        int totalDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 400);
+    private static void renderUntimed(Context c, RemoteViews v, List<WTask> untimed) {
+        v.removeAllViews(R.id.untimed_strip);
+        if (untimed.isEmpty()) {
+            v.setViewVisibility(R.id.untimed_strip, View.GONE);
+            return;
+        }
+        v.setViewVisibility(R.id.untimed_strip, View.VISIBLE);
 
-        // 除时间轴之外的固定占用：根 padding 18 + 月份行 28 + 日期条 46
-        // + 分隔线 8 + footer 24；打卡区按行数另算
-        int availDp = Math.max(40, totalDp - (124 + habitRows * 24));
+        v.addView(R.id.untimed_strip,
+                new RemoteViews(c.getPackageName(), R.layout.widget_untimed_head));
 
-        // 两档的 minHeight 见 widget_hour_row.xml（22dp）和 _tight.xml（15dp）
-        return (totalRows * 22 <= availDp)
-                ? R.layout.widget_hour_row
-                : R.layout.widget_hour_row_tight;
+        int shown = Math.min(untimed.size(), UNTIMED_MAX);
+        for (int i = 0; i < shown; i++) {
+            WTask t = untimed.get(i);
+            RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_row);
+            r.setTextViewText(R.id.untimed_row, t.title);
+            if (t.done) {
+                r.setInt(R.id.untimed_row, "setBackgroundResource",
+                        R.drawable.widget_task_bg_done);
+                r.setTextColor(R.id.untimed_row, 0xFF7E8F84);
+            }
+            r.setOnClickPendingIntent(R.id.untimed_row,
+                    WidgetIntent.of(c, ACTION_TASK, "u" + t.id).put(EXTRA_ID, t.id).build(c));
+            v.addView(R.id.untimed_strip, r);
+        }
+        if (untimed.size() > shown) {
+            RemoteViews more = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_head);
+            more.setTextViewText(R.id.untimed_head, "还有 " + (untimed.size() - shown) + " 个未定时");
+            v.addView(R.id.untimed_strip, more);
+        }
     }
 
     /* ============================ 打卡 ============================ */
@@ -641,19 +810,32 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     private static String label(WTask t) {
+        // 卡片本身已经按「真实分钟」摆好了，标题前不再重复时长，把宽度让给标题
         String when = t.time != null ? t.time : "未定时";
-        String dur = t.dur > 0 ? " · " + t.dur / 60 + "h" + (t.dur % 60 > 0 ? t.dur % 60 + "m" : "") : "";
-        return when + "  " + t.title + dur;
+        return when + "  " + t.title;
     }
 
-    private static int startHour(WTask t) {
+    /** "HH:mm" → 从 0 点起的分钟数；解析不了返回 -1 */
+    private static int startMin(WTask t) {
         if (t.time == null) return -1;
         int i = t.time.indexOf(':');
         try {
-            return Integer.parseInt(t.time.substring(0, i));
+            return Integer.parseInt(t.time.substring(0, i)) * 60
+                    + Integer.parseInt(t.time.substring(i + 1));
         } catch (Exception e) {
             return -1;
         }
+    }
+
+    /** 时长（分钟）。跟 App 的 durOf 一致：没设的按 60 分钟算 */
+    private static int durOf(WTask t) {
+        return t.dur > 0 ? t.dur : 60;
+    }
+
+    /** 设备当前时刻（从 0 点起的分钟数），给「现在」红线和刻度标红用 */
+    private static int nowMinutes() {
+        Calendar cal = Calendar.getInstance();
+        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
     }
 
     /** 标题显示**这一周**的范围，跟箭头按周翻保持一致（以前是「10月」） */

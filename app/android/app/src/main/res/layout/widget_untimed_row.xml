@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 未定时区里的一个任务。固定 15dp 高，跟时间轴上的卡片同一套配色。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/untimed_row"
+    android:layout_width="match_parent"
+    android:layout_height="15dp"
+    android:layout_marginTop="1dp"
+    android:background="@drawable/widget_task_bg"
+    android:ellipsize="end"
+    android:gravity="center_vertical"
+    android:maxLines="1"
+    android:paddingLeft="4dp"
+    android:paddingRight="3dp"
+    android:textColor="#1B3A2A"
+    android:textSize="10sp" />

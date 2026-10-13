@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一列。同一列里的任务互不重叠，于是可以在列内用「spacer + 卡片」把它们
+  按各自真正的分钟往下顶 —— 这就是「卡片按实际时间、而不是吸附整点」的做法。
+  列宽等分（weight=1），列高钉死为整簇的跨度。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tl_col"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:orientation="vertical" />

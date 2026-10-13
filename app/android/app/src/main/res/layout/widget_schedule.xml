@@ -2,17 +2,28 @@
 <!--
   日程小组件布局。
 
-  ⚠️ RemoteViews 的限制：
-  1. 不能用 ConstraintLayout / 自定义 View / 任何需要 inflate 后才知道宽高的东西。
-     容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
-  2. 用了不支持的容器（比如 ScrollView）**不是「滚不动」，而是 launcher
-     inflate 时直接抛异常**，整个组件变成一块「载入窗口小部件时出现问题」
-     的空板，应用侧一条日志都没有。
-  3. 也**接不到手势**，所以「滑动看更晚的时间」做不了。
+  ⚠️ RemoteViews 的限制（改之前先看，全是踩过的）：
+  1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
+     用 ScrollView 之类**不是「滚不动」，而是 launcher inflate 时直接抛异常**，
+     整个组件变成一块「载入窗口小部件时出现问题」的空板，应用侧零日志。
+  2. 子视图只能在这个白名单里：Frame / Linear / Relative / GridLayout、
+     TextView、ImageView、Button、ProgressBar…。
+     **`<View>` 不在白名单**，所以「占位条 / 分隔线」一律用空 TextView。
+  3. 不能测量宽高 → 「自适应」只能靠我们自己算。
+  4. 接不到手势 → 没有滑动、长按。
 
-  ⇒ 于是这个组件的设计目标是：**一屏装下全部小时**，不做滚动也不做翻页。
-    做法是把每一行压到刚好贴住内容（见 widget_hour_row.xml），
-    再按总行数挑刻度字号。空行只占很薄的一条，有任务的行才撑开。
+  ⇒ 时间轴的做法（2026-10-13 定）：
+     **自己算绝对位置，把每个元素的 height 用 setViewLayoutHeight 精确钉下去。**
+     两层叠在 FrameLayout 里：
+       · tl_grid  —— 网格层（底）：每个小时一根细线 + 左侧刻度
+       · tl_tasks —— 任务层（上）：spacer 顶出精确位置，再放任务卡
+     两层共用同一个「一分钟多少 dp」的比例，所以卡片落在它**真正的分钟**上，
+     而不是吸附到整点。
+
+  ⚠️ 这套依赖 `RemoteViews.setViewLayoutHeight`（API 31 / Android 12）。
+     低于 31 的机器上时间轴会退化成不定位的堆叠 —— 当前目标机是 API 36。
+
+  顶部（月份行 / 日期条 / 打卡区 / footer）**尺寸固定**，不随组件大小变化。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -20,30 +31,30 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="9dp">
+    android:padding="8dp">
 
-    <!-- ============ 月份行 ============ -->
+    <!-- ============ 月份行（固定 22dp）============ -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="22dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <!-- 应用标识，复用 app/public/icon.svg（见 ic_widget_logo.xml 的说明） -->
         <ImageView
             android:id="@+id/iv_logo"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
             android:contentDescription="回到今天"
             android:src="@drawable/ic_widget_logo" />
 
-        <ImageView
+        <TextView
             android:id="@+id/btn_prev_month"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:padding="5dp"
-            android:src="@drawable/ic_chevron_left"
-            android:contentDescription="上一周" />
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="#4A6B58"
+            android:textSize="17sp" />
 
         <TextView
             android:id="@+id/tv_month"
@@ -53,38 +64,38 @@
             android:gravity="center"
             android:text="十月"
             android:textColor="#1B3A2A"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:textStyle="bold" />
 
-        <ImageView
+        <TextView
             android:id="@+id/btn_next_month"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:padding="5dp"
-            android:contentDescription="下一周"
-            android:src="@drawable/ic_chevron_right" />
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:gravity="center"
+            android:text="›"
+            android:textColor="#4A6B58"
+            android:textSize="17sp" />
 
         <TextView
             android:layout_width="1dp"
-            android:layout_height="16dp"
-            android:layout_marginLeft="3dp"
-            android:layout_marginRight="3dp"
+            android:layout_height="13dp"
+            android:layout_marginLeft="2dp"
+            android:layout_marginRight="2dp"
             android:background="#DDE5DD"
             android:text="" />
 
         <ImageView
             android:id="@+id/btn_add"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:padding="4dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginLeft="3dp"
             android:contentDescription="新建任务"
             android:src="@drawable/ic_plus" />
 
         <ImageView
             android:id="@+id/btn_settings"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:padding="6dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:contentDescription="小组件设置"
             android:src="@drawable/ic_more" />
     </LinearLayout>
@@ -94,53 +105,77 @@
         android:id="@+id/date_strip"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="2dp"
         android:orientation="horizontal" />
 
     <!-- ============ 打卡区 ============
          纵向容器，**每行由代码按固定个数分包**（不是全塞一行）。
-         以前塞一行，勾选后 chip 变宽就把后面的顶出可视区 ——
-         而且看不出来是被顶掉了，像是「打卡项消失了」。
-         现在每行 4 个：常见习惯数量（6-9 个）刚好两行多，不至于把
-         时间轴挤没。 -->
+         以前塞一行，勾选后 chip 变宽就把后面的顶出可视区，且看不出来是被顶掉了。 -->
     <LinearLayout
         android:id="@+id/habit_rows"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="3dp"
         android:background="#E7F3EA"
         android:orientation="vertical"
-        android:padding="4dp"
+        android:padding="3dp"
         android:visibility="gone" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="5dp"
-        android:layout_marginBottom="2dp"
+        android:layout_marginTop="3dp"
         android:background="#DCE9DF"
         android:text="" />
 
-    <!-- ============ 时间轴 ============
-         **不滚、不翻页，一屏装完。** 行高由 widget_hour_row*.xml 的
-         minHeight 决定，挑哪一档看总行数（行数多→刻度字号小、行更薄）。
-         空行不塞子视图，自然就只是薄薄一条。 -->
-    <LinearLayout
-        android:id="@+id/hour_rows"
+    <!-- ============ 时间轴（两层：网格在底，任务在上）============ -->
+    <FrameLayout
+        android:id="@+id/tl_frame"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical" />
+        android:layout_marginTop="2dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:id="@+id/tl_grid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical" />
+
+        <!-- 「现在」红线：夹在网格和任务之间，不挡卡片点击 -->
+        <LinearLayout
+            android:id="@+id/tl_now"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical" />
+
+        <!-- paddingLeft 是「刻度栏」，让卡片不压住小时数字 -->
+        <LinearLayout
+            android:id="@+id/tl_tasks"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingLeft="22dp" />
+    </FrameLayout>
+
+    <!-- ============ 未定时任务 ============ -->
+    <LinearLayout
+        android:id="@+id/untimed_strip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:orientation="vertical"
+        android:visibility="gone" />
 
     <!-- 底部状态 -->
     <TextView
         android:id="@+id/tv_footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="2dp"
         android:gravity="center"
         android:text=""
         android:textColor="#6B8574"
-        android:textSize="10sp"
+        android:textSize="9sp"
         android:visibility="gone" />
 </LinearLayout>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整点细线：格子顶边那一根。颜色比分隔线更淡，避免压过卡片。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:gravity="top"
+        android:height="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#DCE9DF" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,28 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  时间轴上的一个任务块。配色取自 App 标识那组绿。
+  时间轴上的一个任务卡。
 
-  **高度要贴住内容**：padding 3dp、maxLines 1。上一版是 5dp + 2 行，
-  块高撑到 30dp 往上，而所在的行有 minHeight —— 两者对不齐，行与行之间
-  就露出一条白缝。现在块高 ≈ 行 minHeight，空行和有任务的行连成一片。
+  **竖向 padding 全部去掉**（用户 2026-10-13 明确）：卡片高度由代码按
+  「任务时长 × 每分钟 dp」钉死，多一分 padding 都会把所在时段撑高、
+  和整点线对不齐。横向只留 4dp，纯粹为了文字不贴边。
+  配色取自 App 标识那组绿。
 
-  标题只留一行、超出省略：点一下就能进编辑弹框看全名，桌面上优先保证
-  「一屏看完所有小时」。
+  高度/字号都由代码 setViewLayoutHeight / setTextViewTextSize 现算。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/task_block"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginLeft="4dp"
-    android:layout_marginTop="1dp"
+    android:layout_marginLeft="1dp"
     android:layout_marginRight="2dp"
-    android:layout_marginBottom="1dp"
     android:background="@drawable/widget_task_bg"
     android:ellipsize="end"
+    android:gravity="center_vertical"
     android:maxLines="1"
-    android:paddingLeft="8dp"
-    android:paddingTop="3dp"
-    android:paddingRight="6dp"
-    android:paddingBottom="3dp"
+    android:paddingLeft="4dp"
+    android:paddingRight="3dp"
     android:textColor="#1B3A2A"
-    android:textSize="11sp" />
+    android:textSize="10sp" />
