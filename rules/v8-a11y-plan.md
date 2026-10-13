@@ -16,5 +16,4 @@
 
 | 位置 | 现象 | 归属 |
 |---|---|---|
-| `overlays.css .check-circle border:#fff` 写死 | 暗色 `--primary` 压白勾 ~2:1 | 真 bug，待单修（重构 spec 附录 A 已记） |
 | 整数探针读 23 | 取整细节 | 非 bug，不修（本册 A2 已注） |
