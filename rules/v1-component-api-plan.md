@@ -62,8 +62,8 @@ ui/
 ### 5.2 现有扫描器保持
 
 - `color-scan.mjs`：颜色/圆角/令牌（已绿）
-- `contrast.mjs`：对比度 72 对（已绿）
-- `browser-smoke.mjs`：421 条断言（已绿）
+- `contrast.mjs`：对比度 70+ 对（已绿）
+- `browser-smoke.mjs`：400+ 条断言（已绿）
 
 ### 5.3 迁移期间的临时豁免
 
