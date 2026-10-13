@@ -45,7 +45,7 @@
 | **6. 数据实体与行为** | 六道口子、零迁移、派生与本地性 | `v6-entities-rules.md` | `v6-entities-plan.md` |
 | **7. 测试** | 三层测试、扫描器矩阵、隔离收尾 | `v7-testing-rules.md` | —（纪律式，无 plan） |
 | **8. 交互与无障碍** | a11y、浮层、键盘、动效、文案 | `v8-a11y-rules.md` | `v8-a11y-plan.md` |
-| **9. 后端接口** | 路由、鉴权、同步、AI 三段 | `v9-backend-rules.md` | `v9-backend-plan.md` |
+| **9. 后端接口** | 路由、鉴权、同步、AI 三段、SQL 绑定、校验分层、日志 | `v9-backend-rules.md` | `v9-backend-plan.md` |
 
 ### 每册判据（怎么判成没成）
 
@@ -58,7 +58,7 @@
 | 6 | 构造走 `make*`；外部数据必过 `hydrate*`；可见性只认 `isGone`/`isTrashed`；缺字段按旧行为处理 |
 | 7 | `npm test` + `browser-smoke.mjs`（483 断言）+ 4 个扫描器全绿；跑完收干净 |
 | 8 | 每个控件有可访问名字（placeholder 不算）；浮层四件套齐；动效全站关；探针断言锁 |
-| 9 | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在三入口 |
+| 9 | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在三入口；SQL 值必绑定、异常不泄敏感 |
 
 ---
 

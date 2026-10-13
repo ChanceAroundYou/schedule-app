@@ -27,6 +27,22 @@
   写 `sync.applyOps(userId, ops)`（唯一服务端把关点，绕过=只读被写穿）/
   落库带新 `seq`（客户端自然拉到，无需推送通道）。
 - 后端测试：`server/tests/`（api/migration/ai + `smoke-share.mjs`）。
+- SQL 注入面（实测）：生产 SQL 的值一律 `?` 绑定；动态拼接只用于占位符列表
+  （`calIds.map(() => '?')`）、固定条件、内部白名单表名（`ALL_TABLES` 常量）。
+  未发现把请求值直接拼入 SQL 的位置。
+- 输入校验分层：HTTP 层限 `MAX_BODY`（16 MiB）+ 拒非对象；注册/登录/改口令/
+  集名/同步 op/AI 正文有明确校验；集成员等接口 body 字段直接转交业务层。
+- 限流覆盖：注册/登录/改口令/发邀请/AI chat/AI confirm 接限流；
+  集 CRUD/成员/邀请响应/同步/AI 设置等**未接**（键按 IP / 用户名 / 用户 ID）。
+- 错误处理：router `try/catch` 兜底，普通错误统一 `{error: string}`；
+  **无进程级 `uncaughtException` / `unhandledRejection`**（只有 SIGTERM/SIGINT）。
+- 日志：`console.log` / `console.error`，无日志文件；启动信息 + 路由异常 message +
+  AI 异常堆栈。未显式打印密码/token/key，但异常对象内容边界未逐条审视。
+- 事务：`applyOps` 整批一个 `db.tx`；单条非法 op 拒绝后**继续**处理，
+  字段超限静默跳过，其他 SQL 异常使**整个事务回滚**。
+- 密码：`crypto.scryptSync` + 随机盐 + `timingSafeEqual`，存 `salt/hash` 不存明文。
+- JWT：固定 HS256，验签按固定 HMAC（不按 token 头动态选算法），查 `exp/sub/jti`。
+- AI key：**明文落库**（`ai_settings.api_key`），接口只回 `hasKey` 不回显。
 
 ---
 
@@ -70,6 +86,48 @@
 - `server/data/`（SQLite 权威库）gitignored；测试换目录跑（`SCHEDULE_DATA_DIR=/tmp/x`）。
 - 不引入 `v1/v2` 版本号并存；不改 nginx 路径结构（无 `/schedule2/`），回滚靠换 `dist/`。
 
+### B6 SQL：动态片段只能来自占位符生成器或固定白名单
+
+- 值一律 `?` 绑定，**不许把请求值拼进 SQL 字符串**。
+- 允许的动态拼接只有两种：`arr.map(() => '?')` 生成的占位符列表（`IN (...)`）、
+  以及常量白名单（`ALL_TABLES`、`SCHEMA_VERSION`）。两者来源都必须是程序构造。
+- 新写 `${}` 进 SQL 前自问：拼进来的是**值**还是**结构**？是值就改成 `?`。
+
+### B7 输入校验：分层，逐路由明确
+
+- HTTP 层管**体积与形状**：`MAX_BODY`（16 MiB）超限 413、非对象/数组 400。
+- 路由层管**类型化 + 必填 + 长度 + 控制字符**：`String()` 后校验，别直接把
+  `ctx.body.x` 递进业务层当字符串用（review checklist）。
+- 业务层管**语义**：集名非空且 ≤40、密码 6–200 且拒纯数字、同步 op 逐字段。
+- 校验不通过的早退，别让未校验值走到 SQL 或进程外。
+
+### B8 applyOps 部分失败语义：显式且可复述
+
+- 整批 ops 在一个 `db.tx` 里。单条校验失败 / 无写权限 / 字段超限 → **跳过该条继续**；
+  其他 SQL 异常 → **整个事务回滚**。
+- 这个"部分失败继续 vs 整体回滚"的边界是契约，改前先弄清为什么这么分
+  （逐条拒绝要能回报给客户端是哪条，单条 SQL 崩说明数据坏了不该半途收手）。
+- 跳过分支必须**可观测**（Rejected 三态返回给客户端），不许静默 `continue`。
+
+### B9 日志不泄凭据，进程有兜底
+
+- 显式日志（`console.*`）不得打印密码、token、AI key。AI 异常堆栈打印前
+  想清楚异常对象里可能带什么上游内容。
+- JWT 固定 `HS256`，验签按固定 HMAC 校验（**不读 token 头里的 `alg`**），
+  查 `exp` / `sub` / `jti`。漏过期检查或支持 `alg=none` 是 CRITICAL。
+- 进程级 `uncaughtException` / `unhandledRejection` **目前没有** —— 现状态下
+  一个未 await 的 rejected promise 会静默消失。要么补兜底，要么保证每个
+  async 边界都接住；别默认"反正有 router 的 try/catch"（它只包住同步 handler）。
+
+### B10 AI key 明文落库：把它当密钥看待
+
+- `ai_settings.api_key` **明文存库**（设计如此，schema 有注释说明）。接口层
+  只回 `hasKey` 布尔值，**任何路径都不回显 key**。
+- 因此**数据库泄露 ≈ 第三方 key 泄露**，影响面比"密码哈希被撞"直接得多：
+  保护数据目录权限（`server/data/`）、备份文件权限、别把库文件提交/同步出去。
+- 别把"hash 存密码"的思路套到 key 上——key 每次调用都要用原文，必须可逆；
+  防线在库文件本身，而不在存储形态。
+
 ---
 
 ## 3. 判据
@@ -78,6 +136,10 @@
 2. 权限判断三入口外无 `role ===` 比较（`rg` 全仓）。
 3. AI 写路径三段不断路：工具无 DB import、confirm 重查权限（review checklist）。
 4. 后端 `npm test`（api/migration/ai）全绿；`server/data/` 不在 git 里（`git check-ignore`）。
+5. SQL 值一律 `?` 绑定；`${}` 只出现占位符生成器（`map(()=>'?')`）或固定常量清单，
+   `rg '\$\{' server/lib/db/` 逐点确认来源非请求值。
+6. 集成员等 body 字段在路由层校验后再转交（对照 `cals.js` 邀请/成员路径）。
+7. 日志无 `key`/`token`/`password` 字面；异常对象不整对象 `console.error`。
 
 ---
 
