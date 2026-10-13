@@ -23,13 +23,13 @@
 |---|---|---|---|
 | **1. 组件 API** ✅已写 | props 封闭、cva 变体、派生、布局外层管 | `docs/组件库.md` + 第一册 spec | 每个 kit 组件 props 有清单、无 `className` 透传；调用方零 Tailwind 外观类 |
 | **2. 样式归属** ✅已写 | CSS 放哪、三层边界、状态类白名单 | 第一册 spec §1–§5 | 一个类名只有一个宿主；`:global` 只有状态类白名单；`styles/` 只留三份 |
-| **3. 命名** ⏳待填 | 变量 / 文件 / 组件 / 类名 / CSS 变量怎么起 | `docs/界面约定.md` §变量名与令牌、`CLAUDE.md` 三、令牌三条 | 令牌名写错当场可见（无兜底值，`contrast.mjs` 锁）；文件名 = 导出名；CSS 变量按角色不按序号 |
-| **4. 文件与目录** ⏳待填 | 文件长度上限、文件夹划分、粒度、barrel 规则 | 全局 `security-review.md`（800/50/4层）+ `docs/重构-组件合并-实施spec.md` §7 | 最长文件 313 行（AiPanel），远低于 800 上限；拆分只用 barrel 模式，外部 import 路径不变 |
-| **5. 分层与数据流** ⏳待填 | `domain→data→views` 单向、`views/` 零回调判定、委托协议 | `CLAUDE.md` 一、结构 + 二、AI + `docs/重构路线*.md` | `domain/` 零 React/DOM/网络（已验纯净）；`views/` 零 `onX` props（已验 0 处）；写操作只走 `data-act` 委托 + `store.commitMany()` / `sync.applyOps()` 两道把关 |
-| **6. 数据实体与行为** ⏳待填 | 六道口子（make/hydrate/visibility/model/commit/remote）、可选字段零迁移、派生与本地性、功能归属表 | `docs/业务模型.md` §数据结构 + `domain/types/*` + `domain/model/*` | 构造走 `make*`；外部数据必过 `hydrate*`；可见性只认 `isGone`/`isTrashed`；本地写只走 `commit/commitMany`；缺字段按旧行为处理，不写 migration |
-| **7. 测试** ⏳待填 | 三层测试、覆盖率、探针、扫描器矩阵 | `docs/测试.md` + `docs/重构-组件合并-实施spec.md` §8–§9 | `npm test`（domain/data/sync）+ `browser-smoke.mjs`（483 断言）+ `color-scan` / `contrast` / `api-scan`（新增）全绿；跑完收干净（`pkill -x chrome`、`ss -ltnp`） |
-| **8. 交互与无障碍** ⏳待填 | a11y 四条、可访问名字四种写法、命中区 24、浮层四件套、键盘一档微调、说明文字三条、断网说话、只读提示点名集 | `CLAUDE.md` 三、界面硬规则 + `docs/界面约定-无障碍.md` | 每个控件有可访问名字（placeholder 不算）；浮层四件套齐；`prefers-reduced-motion` 全站关（`.animate-spin` 例外）；探针断言锁 |
-| **9. 后端接口** ⏳待填 | 路由表、鉴权中间件、限流、错误码（`Rejected` 三态）、AI 写路径三段、snapshot/applyOps 复用 | `docs/接口*.md` + `CLAUDE.md` 二、AI + `server/lib` | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在 `db.roleOf()` / `canWrite`；后端只引 AI 那组依赖 |
+| **3. 命名** ✅已写 | 变量 / 文件 / 组件 / 类名 / CSS 变量怎么起 | `docs/界面约定.md` §变量名与令牌、`CLAUDE.md` 三、令牌三条 | 令牌名写错当场可见（无兜底值，`contrast.mjs` 锁）；文件名 = 导出名；CSS 变量按角色不按序号 |
+| **4. 文件与目录** ✅已写 | 文件长度上限、文件夹划分、粒度、barrel 规则 | 全局 `security-review.md`（800/50/4层）+ `docs/重构-组件合并-实施spec.md` §7 | 最长文件 313 行（AiPanel），远低于 800 上限；拆分只用 barrel 模式，外部 import 路径不变 |
+| **5. 分层与数据流** ✅已写 | `domain→data→views` 单向、`views/` 零回调判定、委托协议 | `CLAUDE.md` 一、结构 + 二、AI + `docs/重构路线*.md` | `domain/` 零 React/DOM/网络（已验纯净）；`views/` 零 `onX` props（已验 0 处）；写操作只走 `data-act` 委托 + `store.commitMany()` / `sync.applyOps()` 两道把关 |
+| **6. 数据实体与行为** ✅已写 | 六道口子（make/hydrate/visibility/model/commit/remote）、可选字段零迁移、派生与本地性、功能归属表 | `docs/业务模型.md` §数据结构 + `domain/types/*` + `domain/model/*` | 构造走 `make*`；外部数据必过 `hydrate*`；可见性只认 `isGone`/`isTrashed`；本地写只走 `commit/commitMany`；缺字段按旧行为处理，不写 migration |
+| **7. 测试** ✅已写 | 三层测试、覆盖率、探针、扫描器矩阵 | `docs/测试.md` + `docs/重构-组件合并-实施spec.md` §8–§9 | `npm test`（domain/data/sync）+ `browser-smoke.mjs`（483 断言）+ `color-scan` / `contrast` / `api-scan`（新增）全绿；跑完收干净（`pkill -x chrome`、`ss -ltnp`） |
+| **8. 交互与无障碍** ✅已写 | a11y 四条、可访问名字四种写法、命中区 24、浮层四件套、键盘一档微调、说明文字三条、断网说话、只读提示点名集 | `CLAUDE.md` 三、界面硬规则 + `docs/界面约定-无障碍.md` | 每个控件有可访问名字（placeholder 不算）；浮层四件套齐；`prefers-reduced-motion` 全站关（`.animate-spin` 例外）；探针断言锁 |
+| **9. 后端接口** ✅已写 | 路由表、鉴权中间件、限流、错误码（`Rejected` 三态）、AI 写路径三段、snapshot/applyOps 复用 | `docs/接口*.md` + `CLAUDE.md` 二、AI + `server/lib` | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在 `db.roleOf()` / `canWrite`；后端只引 AI 那组依赖 |
 
 ---
 
