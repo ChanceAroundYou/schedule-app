@@ -517,6 +517,54 @@ try {
   ok(hab.bad.length === 0, '打卡页每个控件都有名字'
     + (hab.bad.length ? '：\n      ' + hab.bad.join('\n      ') : ''));
 
+  /* ---- 打卡添加走 data-act 委托（原来是个 onAdd prop）----
+     断言的是「点击之后库里真的多了一条」，不是「按钮上有没有 data-act」——
+     data-act 只是个约定，落库在 clickDispatch 的 case 里。这一条同时锁住
+     两件容易回归的事：① 处理器从 `.habit-add` 里读词（不是从 props）；
+     ② 点完之后输入框被清空（视图那个 useEffect 干的活）。
+
+     **localStorage 可能还是空的**（这一节在探针里来得早，前面几节只做了
+     a11y 扫描，从没写过库）—— 那时候 `JSON.parse(null)` 是 null，
+     拿 `.habits` 会当场崩。所以先造一条底，再断言数量。 */
+  const habBefore = await evalJs(page, `(() => {
+    const raw = localStorage.getItem('schedule-app-v4');
+    const n = raw ? Object.keys(JSON.parse(raw).habits || {}).length : 0;
+    return n; })()`);
+  await evalJs(page, `document.querySelector('.habit-add input').value = '探针打卡'; return true;`);
+  await evalJs(page, `document.querySelector('.habit-add input')
+    .dispatchEvent(new Event('input', { bubbles: true })); return true;`);
+  await evalJs(page, `document.querySelector('.habit-add [data-act="add-habit"]').click(); return true;`);
+  await waitFor(page,
+    `(() => {
+       const raw = localStorage.getItem('schedule-app-v4');
+       if (!raw) return null;
+       const n = Object.keys(JSON.parse(raw).habits || {}).length;
+       return n === ${habBefore} + 1 ? 1 : null; })()`,
+    '点「添加」之后库里多了一条打卡', 8000);
+  ok(await evalJs(page, `return document.querySelector('.habit-add input').value === '';`),
+    '添加成功后输入框被清空');
+  ok(await evalJs(page, `return [...document.querySelectorAll('.habit-row .habit-title')]
+      .some((x) => x.textContent.includes('探针打卡'));`),
+    '新添的那一条显示在列表里');
+  // 清理：别把这条留给后面的节（打卡页有计数断言）
+  await evalJs(page, `(() => {
+    const id = [...document.querySelectorAll('.habit-row')].find((r) => r.textContent.includes('探针打卡'))?.dataset.habit;
+    if (!id) return false;
+    document.querySelector('[data-act="del-habit"][data-id="' + id + '"]').click();
+    return true; })();`);
+  await waitFor(page, `!!document.querySelector('[role="dialog"]')`, '删打卡项弹了确认框');
+  await evalJs(page, `(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const b = d && [...d.querySelectorAll('button')].find((x) => x.textContent.trim() === '删除');
+    if (b) b.click(); return !!b; })();`);
+  await waitFor(page,
+    `(() => {
+       const raw = localStorage.getItem('schedule-app-v4');
+       if (!raw) return null;
+       const n = Object.keys(JSON.parse(raw).habits || {}).length;
+       return n === ${habBefore} ? 1 : null; })()`,
+    '探针打卡已删除', 8000);
+
   console.log('\n五、设置页的日程集管理：改名能落库');
   // 侧栏那个「管理当前日程集」浮层删了 —— 设置页本来就是同一套（MembersSection
   // 都是抽出来共用的一份），所以这一段改走设置页。名字框 / 成员 / 危险区都还在，
@@ -4589,6 +4637,39 @@ try {
     await waitFor(page, `!document.querySelector('[role="dialog"]')`, '面板关掉了');
     await waitForUi('切回有写权限的集',
       `JSON.parse(localStorage.getItem('schedule-app-v4')).ui.cal === ${JSON.stringify(pjCal)} ? 1 : null`);
+
+    /* ---- 「下一步」走 data-act 委托（不是 onBlur 回调）----
+       这条路径原先是 views/ 里的 onBlur prop，行被换掉就丢。现在输入框只带
+       data-act，落库在 clickDispatch 里。**必须实测**：委托与 React 的
+       onChange 谁先跑、受控 input 的 DOM value 读不读得到，都是猜不出来的。 */
+    const nextBox = `document.querySelector('.pj-next-i')`;
+    ok(await evalJs(page, `return !!${nextBox};`), '泳道上有「下一步」输入框');
+    ok(await evalJs(page, `return ${nextBox}.getAttribute('data-act') === 'next-project';`),
+      '「下一步」带 data-act，不是 onBlur 回调');
+    await setField('.pj-next-i', '周五前出第一版');
+    await evalJs(page, `${nextBox}.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+    /* 查询**按内容**而不是按 id：探针不该假设「刚建的那个项目就在这」，
+       上游任何一步漏了这条断言就该红，而不是因为 id 找不着而崩。
+       判据是「有一条项目的 next = 我刚填的那句」。 */
+    await waitForUi('「下一步」落库',
+      `(() => {
+         const s = JSON.parse(localStorage.getItem('schedule-app-v4'));
+         if (!s || !s.projects) return null;
+         return Object.values(s.projects).some((p) => p && p.next === '周五前出第一版') ? 1 : null; })()`);
+    ok(await evalJs(page, `return document.querySelector('.pj-next-i').value === '周五前出第一版';`),
+      '输入框显示刚填的那句（受控值同步回来了）');
+
+    /* ---- 「编辑」按钮走 data-act，打开的是那个浮层 ---- */
+    await evalJs(page, `document.querySelector('.pj-more').click(); return true;`);
+    await waitFor(page, `!!document.querySelector('.field input')`, '点「编辑」打开了项目浮层');
+    ok(await evalJs(page, `return document.querySelector('.sheet-title, [role="dialog"] h2, [role="dialog"] .field') !== null;`),
+      '浮层里是编辑表单');
+    await evalJs(page, `
+      const d = document.querySelector('[role="dialog"]');
+      const btn = d && [...d.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭');
+      if (btn) btn.click();
+      return true;`);
+    await waitFor(page, `!document.querySelector('[role="dialog"]')`, '编辑浮层关掉了');
   }
 
   console.log('\n二十、修改密码：改完还登录着，别的设备被踢出去');
