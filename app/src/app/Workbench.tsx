@@ -42,6 +42,7 @@ import { useResizeTimeline } from './resizeTimeline.ts';
 import { useKeyboard } from './keyboard.ts';
 import { useBackup } from './backup.ts';
 import { contentDispatch } from './contentDispatch.tsx';
+import { publishWidgetSnapshot } from '../data/widget.ts';
 
 function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
   /**
@@ -86,6 +87,15 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     if (state.ui.theme !== 'auto') return;
     return T.watchSystemTheme(() => setTheme(T.applyAppearance(store.get().ui)));
   }, [state.ui.theme]);
+
+  /* -------- 桌面小组件快照 --------
+   *
+   * 数据一变就重写快照。**用整个 state 当依赖**是有意的：改标题、勾完成、
+   * 拖拽换日、同步拉回 —— 这些都该让桌面跟着变，逐个字段列举必然会漏。
+   * publishWidgetSnapshot 内部是「写 SharedPreferences + 发广播」，
+   * 静默失败（失败也只是桌面没更新，不影响用户正在做的事）。
+   */
+  useEffect(() => { void publishWidgetSnapshot(state); }, [state]);
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
   const key = `${state.ui.nav}|${state.ui.view}|${state.ui.cursor}`;

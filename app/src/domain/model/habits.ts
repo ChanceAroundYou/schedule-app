@@ -22,11 +22,16 @@ export function habitsTodayRemaining(s: LocalState): number {
   return liveHabits(s).filter((h) => !h.log || !h.log[t]).length;
 }
 
-/** 连续打卡天数：今天已打则从今天起算，否则从昨天起算 */
-export function habitStreak(h: Habit): number {
+/**
+ * 连续打卡天数：今天已打则从今天起算，否则从昨天起算。
+ *
+ * `todayIso` 可以传 —— 给小组件快照用（它要跟快照的日期范围用同一个
+ * 「今天」，否则测试里固定日期就对不上）。
+ */
+export function habitStreak(h: Habit, todayIso: string = D.today()): number {
   if (!h || !h.log) return 0;
   let n = 0;
-  let d = D.today();
+  let d = todayIso;
   if (!h.log[d]) {
     d = D.addDays(d, -1);
     if (!h.log[d]) return 0;
