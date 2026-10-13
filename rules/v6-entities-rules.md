@@ -13,7 +13,7 @@
 - 类型：`Task.ts` 52 行 / `Habit.ts` / `Project.ts` / `Op.ts` / `SyncMeta.ts` / `Cal.ts` /
   `RepeatRule.ts`，每字段有注释（`date null=待办箱`、`doing` 与 `done` 独立、`projectId` 可选零迁移）。
 - 完整字段表：`docs/业务模型.md` §数据结构（`LocalState` 24 键 + Task/Project 全字段）。
-- 行为：`domain/model/` 12 文件——`make`（构造）/`hydrate`（补全半个实体）/`visibility`
+- 行为：`domain/model/` 13 文件——`make`（构造）/`hydrate`（补全半个实体）/`visibility`
   （`isGone/isTrashed`）/`tasks`（`liveTasks/todayTasks/overdueTasks/counts`…）/`project`
   （`projectColumn/projectProgress/projectTouchedAt`…）/`permission`（`roleOf`）/`migration`/`id`。
 - 六道口子实测：`make*` 构造 → `hydrate*` 补全 → `model/*` 查询 → `commit/commitMany` 本地写 →

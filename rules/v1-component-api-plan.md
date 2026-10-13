@@ -46,7 +46,7 @@ ui/
     ...
 ```
 
-**注意**：`lists/` `calendar/` 两组若 `views/**` 仍冻结（当前决策），则**暂不迁移**，留在 `views/` 引全局 CSS。第二册再动 `views/`。
+**注意**：`lists/` `calendar/` 两组若 `views/**` 仍冻结（当前决策），则**暂不迁移**，留在 `views/` 引全局 CSS。第 4 册再动 `views/`。
 
 ---
 
@@ -63,7 +63,7 @@ ui/
 
 - `color-scan.mjs`：颜色/圆角/令牌（已绿）
 - `contrast.mjs`：对比度 72 对（已绿）
-- `browser-smoke.mjs`：483 条断言（已绿）
+- `browser-smoke.mjs`：421 条断言（已绿）
 
 ### 5.3 迁移期间的临时豁免
 
@@ -103,4 +103,4 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 | `ui/kit/IconBtn.tsx` | 收 `className` | 删；布局由外层管 |
 | `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop |
 | `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） |
-| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]`（第二册修） |
+| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]`（第 3 册 N5 修） |

@@ -2,7 +2,8 @@
 
 > 状态：**待审核**（9 册规则已写，实施未开始）
 > 目录：`rules/`（仓库顶层，本目录）
-> 不变量：**外部 import 路径一律不变**；`domain/` 保持零 React / DOM / 网络；后端不引任何新依赖。
+> 不变量：**外部 import 路径一律不变**；`domain/` 保持零 React / DOM / 网络；
+> 后端只引 AI 那组依赖（见第 9 册 B5），其余 Node 标准库。
 
 ---
 
@@ -56,7 +57,7 @@
 | 4 | 最长文件 313 行（AiPanel），远低于 800 上限；拆分只用 barrel 模式，外部 import 路径不变 |
 | 5 | `domain/` 零 React/DOM/网络（已验纯净）；`views/` 零 `onX` props（已验 0 处）；写操作只走委托 + 两道把关 |
 | 6 | 构造走 `make*`；外部数据必过 `hydrate*`；可见性只认 `isGone`/`isTrashed`；缺字段按旧行为处理 |
-| 7 | `npm test` + `browser-smoke.mjs`（483 断言）+ 4 个扫描器全绿；跑完收干净 |
+| 7 | `npm test` + `browser-smoke.mjs`（421 断言）+ 4 个扫描器全绿；跑完收干净 |
 | 8 | 每个控件有可访问名字（placeholder 不算）；浮层四件套齐；动效全站关；探针断言锁 |
 | 9 | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在三入口；SQL 值必绑定、异常不泄敏感 |
 

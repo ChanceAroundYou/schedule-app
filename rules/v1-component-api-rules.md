@@ -3,7 +3,7 @@
 > 状态：**长期规则**（本册规则已定，实施另见 `v1-component-api-plan.md`）
 > 依据：`ui/` `views/` `styles/` 逐文件审计 + 组件库现状（`docs/组件库.md`）+ 令牌三轴
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）；
->           `domain/` 保持零 React / DOM / 网络；后端不引任何新依赖。
+>           `domain/` 保持零 React / DOM / 网络；后端只引 AI 那组依赖（见第 9 册 B5）。
 
 ---
 
@@ -29,7 +29,7 @@
 | **视图层** | `views/**` 的语义类名（冻结） | `styles/lists.css` `calendar.css` | 全局 CSS（**不动**） |
 
 **为什么 `.module.css` 绑"样式组"不绑组件**：
-CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自己不知道被谁 import。`Btn` 被 50 处引用，若都写 `Btn.module.css`，该 module 实际服务全 UI 层，不是 `Btn`。
+CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自己不知道被谁 import。`Btn` 被几十处引用，若都写 `Btn.module.css`，该 module 实际服务全 UI 层，不是 `Btn`。
 `.task-row` 出现在 `lists` / `calendar` / `shell` 三个组里——**同一元素跨组复用**，按组件拆会把它撕成三个半套。
 
 ### R2 一个类名只有一个宿主
@@ -161,9 +161,10 @@ const iconBtnVariants = cva(cx(BTN_BASE, 'rounded-[var(--r-pill)]'), { variants:
 
 ## 4. 与其他册的边界
 
-- **第二册《命名与文件》**：变量名、文件长度、文件夹划分、粒度
-- **第三册《分层与数据流》**：`domain → data → views` 单向，`views/` 零回调判定
-- **第四册《数据结构与 SQLite》**：六条不变量 + 迁移/墓碑/游标
+- **第三册《命名》**：变量 / 文件 / 组件 / 类名 / CSS 变量
+- **第四册《文件与目录》**：文件长度、文件夹划分、粒度、barrel 拆分
+- **第五册《分层与数据流》**：`domain → data → views` 单向，`views/` 零回调判定
+- **第六册《数据实体与行为》**：六条不变量 + 迁移 / 墓碑 / 游标
 
 本册只覆盖：样式归属三层 + 组件 API 封闭化。不碰 `views/` 冻结类（见第 5 册 D2）、命名与文件（第 3/4 册）、数据流（第 5 册）。
 
