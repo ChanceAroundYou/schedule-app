@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 未定时区里的一个任务。固定 15dp 高，跟时间轴上的卡片同一套配色。 -->
+<!-- 未定时横条里的一张卡。宽度等分（weight=1），多个任务就均分这一行。 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/untimed_row"
-    android:layout_width="match_parent"
+    android:layout_width="0dp"
     android:layout_height="15dp"
-    android:layout_marginTop="1dp"
+    android:layout_marginLeft="1dp"
+    android:layout_marginRight="1dp"
+    android:layout_weight="1"
     android:background="@drawable/widget_task_bg"
     android:ellipsize="end"
     android:gravity="center_vertical"
     android:maxLines="1"
-    android:paddingLeft="4dp"
+    android:paddingLeft="3dp"
     android:paddingRight="3dp"
     android:textColor="#1B3A2A"
-    android:textSize="10sp" />
+    android:textSize="9sp" />

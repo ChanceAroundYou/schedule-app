@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 整点细线：格子顶边那一根。颜色比分隔线更淡，避免压过卡片。 -->
+<!--
+  整点细线（十字面板右下主体里的「时间分割线」）。
+  **颜色要比十字分割线（#C6DCCF）更淡** —— 用户 2026-10-13 明确要求
+  「区域分割线」和「时间细分线」之间要有样式差别，一眼能分清哪个是分区、
+  哪个是时间刻度。
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:gravity="top"
         android:height="1dp">
         <shape android:shape="rectangle">
-            <solid android:color="#DCE9DF" />
+            <solid android:color="#E7F1EB" />
         </shape>
     </item>
 </layer-list>

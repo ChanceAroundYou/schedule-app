@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  网格层的一个小时格。
+  十字面板左下角：刻度列的一格。
 
-  高度**由代码用 setViewLayoutHeight 精确钉死**（= 一小时多少 dp），所以这里
-  写 wrap_content 只是占位。背景 drawable 在**顶部**画一根 1dp 细线 ——
-  格子顶边就是整点，所以线正好落在 8:00 / 9:00 … 上。
-  刻度文字贴在线的下面，跟 App 日视图一个观感。
+  高度**由代码用 setViewLayoutHeight 精确钉死**（= 一小时多少 dp），
+  和右下主体里的网格格**同一个公式**，所以数字和小时线严格同高。
+  右对齐，让数字贴近竖分割线。
 
-  用 TextView 而不是 `<View>`：View 不在 RemoteViews 的白名单里。
+  用 TextView 而不是 `<View>`：View 不在 RemoteViews 白名单里。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/tl_hour"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/widget_hour_line"
-    android:gravity="top|start"
-    android:paddingLeft="1dp"
+    android:gravity="top|end"
+    android:paddingRight="2dp"
     android:text="08"
     android:textColor="#A2B5A9"
     android:textSize="8sp" />

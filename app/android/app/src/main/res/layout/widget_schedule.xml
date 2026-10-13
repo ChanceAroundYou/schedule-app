@@ -2,28 +2,33 @@
 <!--
   日程小组件布局。
 
-  ⚠️ RemoteViews 的限制（改之前先看，全是踩过的）：
+  ⚠️ RemoteViews 的限制（改之前先看）：
   1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
      用 ScrollView 之类**不是「滚不动」，而是 launcher inflate 时直接抛异常**，
      整个组件变成一块「载入窗口小部件时出现问题」的空板，应用侧零日志。
-  2. 子视图只能在这个白名单里：Frame / Linear / Relative / GridLayout、
-     TextView、ImageView、Button、ProgressBar…。
-     **`<View>` 不在白名单**，所以「占位条 / 分隔线」一律用空 TextView。
-  3. 不能测量宽高 → 「自适应」只能靠我们自己算。
-  4. 接不到手势 → 没有滑动、长按。
+  2. 子视图白名单里**没有裸 `<View>`**，占位条 / 分隔线一律用空 TextView。
+  3. 不能测量宽高 → 「自适应」只能自己算。
+  4. 接不到手势。
+  5. `setViewLayoutHeight` 是 API 31（Android 12）起才有的 —— 时间轴靠它
+     把每个元素的高度钉死。
 
-  ⇒ 时间轴的做法（2026-10-13 定）：
-     **自己算绝对位置，把每个元素的 height 用 setViewLayoutHeight 精确钉下去。**
-     两层叠在 FrameLayout 里：
-       · tl_grid  —— 网格层（底）：每个小时一根细线 + 左侧刻度
-       · tl_tasks —— 任务层（上）：spacer 顶出精确位置，再放任务卡
-     两层共用同一个「一分钟多少 dp」的比例，所以卡片落在它**真正的分钟**上，
-     而不是吸附到整点。
+  ≡≡ 结构（2026-10-13 定）≡≡
 
-  ⚠️ 这套依赖 `RemoteViews.setViewLayoutHeight`（API 31 / Android 12）。
-     低于 31 的机器上时间轴会退化成不定位的堆叠 —— 当前目标机是 API 36。
+  head 行 / 日期条 / 打卡区 → 尺寸固定，不随组件缩放。
 
-  顶部（月份行 / 日期条 / 打卡区 / footer）**尺寸固定**，不随组件大小变化。
+  然后是一个**十字面板**（未定时与已定时是同一条面板的四格）：
+
+       ┌──────┼────────────────────────────┐
+       │ 空白 │ [未1][未2][未3][未4][未5]+N │ ← 顶行（常驻）
+       ├──────┼────────────────────────────┤ ← 横分割线
+       │  08  │────── 小时细线 ────────────│
+       │  09  │  ██████                    │ ← 右下：主体
+       └──────┴────────────────────────────┘
+        刻度列      竖分割线 + 主体
+
+  · 左上空白角 = 「未定时」的标记，不写字，**永远常驻**
+  · 细线只画在右下主体里 —— 这是**结构保证**的（它是 tl_frame 的子视图）
+  · 竖分割线与横分割线是「十字线」；右下的小时线颜色更淡，两者一眼可分
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -33,7 +38,7 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <!-- ============ 月份行（固定 22dp）============ -->
+    <!-- ============ head：所有可点控件统一 22dp 方框、垂直居中 ============ -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="22dp"
@@ -42,9 +47,10 @@
 
         <ImageView
             android:id="@+id/iv_logo"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:contentDescription="回到今天"
+            android:padding="2dp"
             android:src="@drawable/ic_widget_logo" />
 
         <TextView
@@ -54,12 +60,12 @@
             android:gravity="center"
             android:text="‹"
             android:textColor="#4A6B58"
-            android:textSize="17sp" />
+            android:textSize="16sp" />
 
         <TextView
             android:id="@+id/tv_month"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="22dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="十月"
@@ -74,11 +80,11 @@
             android:gravity="center"
             android:text="›"
             android:textColor="#4A6B58"
-            android:textSize="17sp" />
+            android:textSize="16sp" />
 
         <TextView
             android:layout_width="1dp"
-            android:layout_height="13dp"
+            android:layout_height="14dp"
             android:layout_marginLeft="2dp"
             android:layout_marginRight="2dp"
             android:background="#DDE5DD"
@@ -86,17 +92,18 @@
 
         <ImageView
             android:id="@+id/btn_add"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:layout_marginLeft="3dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:contentDescription="新建任务"
+            android:padding="5dp"
             android:src="@drawable/ic_plus" />
 
         <ImageView
             android:id="@+id/btn_settings"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:contentDescription="小组件设置"
+            android:padding="5dp"
             android:src="@drawable/ic_more" />
     </LinearLayout>
 
@@ -109,8 +116,8 @@
         android:orientation="horizontal" />
 
     <!-- ============ 打卡区 ============
-         纵向容器，**每行由代码按固定个数分包**（不是全塞一行）。
-         以前塞一行，勾选后 chip 变宽就把后面的顶出可视区，且看不出来是被顶掉了。 -->
+         上下对称：容器 padding 2dp + 每格上下各 1dp margin = 上 3 / 下 3。
+         （以前格子只有 marginTop、没有 marginBottom，导致上 5 下 3。） -->
     <LinearLayout
         android:id="@+id/habit_rows"
         android:layout_width="match_parent"
@@ -118,54 +125,93 @@
         android:layout_marginTop="3dp"
         android:background="#E7F3EA"
         android:orientation="vertical"
-        android:padding="3dp"
+        android:padding="2dp"
         android:visibility="gone" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="3dp"
-        android:background="#DCE9DF"
-        android:text="" />
-
-    <!-- ============ 时间轴（两层：网格在底，任务在上）============ -->
-    <FrameLayout
-        android:id="@+id/tl_frame"
+    <!-- ============ 十字面板 ============ -->
+    <LinearLayout
+        android:id="@+id/panel"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_marginTop="2dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:orientation="vertical">
 
+        <!-- 顶行：左空白角（= 未定时的标记）+ 右未定时横条。常驻，高度固定 -->
         <LinearLayout
-            android:id="@+id/tl_grid"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical" />
+            android:layout_height="15dp"
+            android:orientation="horizontal">
 
-        <!-- 「现在」红线：夹在网格和任务之间，不挡卡片点击 -->
+            <TextView
+                android:layout_width="22dp"
+                android:layout_height="match_parent"
+                android:text="" />
+
+            <LinearLayout
+                android:id="@+id/untimed_bar"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </LinearLayout>
+
+        <!-- 横分割线（十字线之一） -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#C6DCCF"
+            android:text="" />
+
+        <!-- 底行：刻度列 + 竖分割线 + 主体 -->
         <LinearLayout
-            android:id="@+id/tl_now"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
 
-        <!-- paddingLeft 是「刻度栏」，让卡片不压住小时数字 -->
-        <LinearLayout
-            android:id="@+id/tl_tasks"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:paddingLeft="22dp" />
-    </FrameLayout>
+            <LinearLayout
+                android:id="@+id/tl_scale"
+                android:layout_width="22dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical" />
 
-    <!-- ============ 未定时任务 ============ -->
-    <LinearLayout
-        android:id="@+id/untimed_strip"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:orientation="vertical"
-        android:visibility="gone" />
+            <!-- 竖分割线（十字线之一） -->
+            <TextView
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#C6DCCF"
+                android:text="" />
+
+            <FrameLayout
+                android:id="@+id/tl_frame"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1">
+
+                <LinearLayout
+                    android:id="@+id/tl_grid"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical" />
+
+                <!-- 「现在」红线：夹在网格和任务之间，不挡卡片点击 -->
+                <LinearLayout
+                    android:id="@+id/tl_now"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical" />
+
+                <LinearLayout
+                    android:id="@+id/tl_tasks"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:paddingLeft="2dp" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
 
     <!-- 底部状态 -->
     <TextView

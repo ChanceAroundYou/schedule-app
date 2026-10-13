@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  十字面板右下主体里的**小时细线**。
+  高度由代码钉死（和刻度列同一公式），顶边画 1dp 细线。
+  颜色比十字分割线更淡 —— 用户要求「区域分割线」和「时间细线」一眼能分开。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tl_line"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/widget_hour_line"
+    android:text="" />

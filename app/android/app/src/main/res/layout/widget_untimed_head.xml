@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 未定时区的标题行 / 「还有 N 个」提示行 -->
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/untimed_head"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:text="未定时"
-    android:textColor="#8AA294"
-    android:textSize="9sp" />

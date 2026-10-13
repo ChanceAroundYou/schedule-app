@@ -2,20 +2,20 @@
 <!--
   打卡区的一格。
 
-  **宽度用 weight 等分，不是 wrap_content。** 用 wrap_content 的话，勾选后
-  底色一变、或者系统字号一大，格子就变宽，把同一行后面的顶出去 ——
-  用户看到的是「打卡项不见了」。等分之后每格位置固定。
+  **宽度用 weight 等分**（不是 wrap_content）—— wrap_content 时勾选后底色一变
+  或系统字号一大，格子就变宽把后面的顶出去，看着像「打卡项不见了」。
 
-  maxLines=1 + ellipsize=end：长名字宁可截断也不能撑破这一格。
+  上下都留 1dp margin（以前只有 marginTop，导致整块上重下轻）。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/habit_chip"
     android:layout_width="0dp"
     android:layout_height="wrap_content"
-    android:layout_weight="1"
     android:layout_marginLeft="2dp"
     android:layout_marginRight="2dp"
-    android:layout_marginTop="2dp"
+    android:layout_marginTop="1dp"
+    android:layout_marginBottom="1dp"
+    android:layout_weight="1"
     android:background="@drawable/widget_habit_bg"
     android:ellipsize="end"
     android:gravity="center"
