@@ -71,12 +71,10 @@ public class CreateTaskActivity extends Activity {
             } catch (Exception ignored) {
             }
 
-            // ② **先把时间轴翻到这条任务会出现的位置，再重画**。
-            //    上一版只在网络返回之后才 refresh，于是用户点保存、弹框关掉，
-            //    桌面上还得空等一个网络往返 —— 走公网慢的时候好几秒，观感就是
-            //    「保存了但没反应」。而且新任务（尤其未定时的）多半落在当前
-            //    视口之外，不翻过去照样看不见。
-            ScheduleWidgetProvider.revealRow(this, tm);
+            // ② **立刻重画桌面**。上一版只在网络返回之后才 refresh，于是用户
+            //    点保存、弹框关掉，桌面上还得空等一个网络往返 —— 走公网慢的时候
+            //    好几秒，观感就是「保存了但没反应」。
+            //    （时间轴现在一屏装完，不用再像上一版那样翻页去够新任务。）
             ScheduleWidgetProvider.refresh(this);
 
             // ③ 有票就直连（B 方案）。entityId 传 "@new" 由服务端发真 id。

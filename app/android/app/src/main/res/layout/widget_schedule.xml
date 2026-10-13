@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  日程小组件布局
+  日程小组件布局。
 
-  ⚠️ RemoteViews 的限制：**不能用** ConstraintLayout / 自定义 View / 任何
-  需要 inflate 后才知道宽高的东西。能用的只有 LinearLayout / FrameLayout /
-  RelativeLayout 和那几个官方控件。所以时间轴用「每小时一行」的 LinearLayout
-  堆出来，任务块塞进它开始的那一行 —— 不用绝对定位。
+  ⚠️ RemoteViews 的限制：
+  1. 不能用 ConstraintLayout / 自定义 View / 任何需要 inflate 后才知道宽高的东西。
+     容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
+  2. 用了不支持的容器（比如 ScrollView）**不是「滚不动」，而是 launcher
+     inflate 时直接抛异常**，整个组件变成一块「载入窗口小部件时出现问题」
+     的空板，应用侧一条日志都没有。
+  3. 也**接不到手势**，所以「滑动看更晚的时间」做不了。
+
+  ⇒ 于是这个组件的设计目标是：**一屏装下全部小时**，不做滚动也不做翻页。
+    做法是把每一行压到刚好贴住内容（见 widget_hour_row.xml），
+    再按总行数挑刻度字号。空行只占很薄的一条，有任务的行才撑开。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -13,7 +20,7 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="10dp">
+    android:padding="9dp">
 
     <!-- ============ 月份行 ============ -->
     <LinearLayout
@@ -25,19 +32,18 @@
         <!-- 应用标识，复用 app/public/icon.svg（见 ic_widget_logo.xml 的说明） -->
         <ImageView
             android:id="@+id/iv_logo"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_marginRight="2dp"
-            android:contentDescription="日程清单"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:contentDescription="回到今天"
             android:src="@drawable/ic_widget_logo" />
 
         <ImageView
             android:id="@+id/btn_prev_month"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:padding="5dp"
             android:src="@drawable/ic_chevron_left"
-            android:contentDescription="上一个月" />
+            android:contentDescription="上一周" />
 
         <TextView
             android:id="@+id/tv_month"
@@ -47,38 +53,38 @@
             android:gravity="center"
             android:text="十月"
             android:textColor="#1B3A2A"
-            android:textSize="16sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
         <ImageView
             android:id="@+id/btn_next_month"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:padding="5dp"
             android:contentDescription="下一周"
             android:src="@drawable/ic_chevron_right" />
 
         <TextView
             android:layout_width="1dp"
-            android:layout_height="18dp"
-            android:layout_marginLeft="4dp"
-            android:layout_marginRight="4dp"
+            android:layout_height="16dp"
+            android:layout_marginLeft="3dp"
+            android:layout_marginRight="3dp"
             android:background="#DDE5DD"
             android:text="" />
 
         <ImageView
             android:id="@+id/btn_add"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:padding="4dp"
             android:contentDescription="新建任务"
             android:src="@drawable/ic_plus" />
 
         <ImageView
             android:id="@+id/btn_settings"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:padding="7dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="6dp"
             android:contentDescription="小组件设置"
             android:src="@drawable/ic_more" />
     </LinearLayout>
@@ -88,103 +94,50 @@
         android:id="@+id/date_strip"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:orientation="horizontal" />
 
     <!-- ============ 打卡区 ============
          纵向容器，**每行由代码按固定个数分包**（不是全塞一行）。
-         以前塞一行，勾选后 chip 变宽（多了个 ✓）就把后面的顶出可视区 ——
-         而且看不出来是被顶掉了，像是「打卡项消失了」。 -->
+         以前塞一行，勾选后 chip 变宽就把后面的顶出可视区 ——
+         而且看不出来是被顶掉了，像是「打卡项消失了」。
+         现在每行 4 个：常见习惯数量（6-9 个）刚好两行多，不至于把
+         时间轴挤没。 -->
     <LinearLayout
         android:id="@+id/habit_rows"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:background="#E7F3EA"
         android:orientation="vertical"
-        android:padding="6dp"
+        android:padding="4dp"
         android:visibility="gone" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="5dp"
         android:layout_marginBottom="2dp"
         android:background="#DCE9DF"
         android:text="" />
 
-    <!-- ============ 时间轴（每小时一行，动态加）============
-         ⚠️ **不能包 ScrollView**：RemoteViews 只支持 FrameLayout / LinearLayout /
-         RelativeLayout / GridLayout 这四种。用 ScrollView 的后果不是「滚不动」，
-         而是 launcher inflate 时直接抛 InflateException，整个组件显示
-         「载入窗口小部件时出现问题」—— 桌面上一片空白，无从下手。
-
-         所以「看不到更晚的小时」不能靠滑动解决（RemoteViews 也接不到手势），
-         改成右侧一列**翻页箭头**：一屏放不下时按页平移，看得到 6:00–23:00
-         全部小时。翻页状态存在 WidgetPrefs，刷新后不回到顶部。 -->
+    <!-- ============ 时间轴 ============
+         **不滚、不翻页，一屏装完。** 行高由 widget_hour_row*.xml 的
+         minHeight 决定，挑哪一档看总行数（行数多→刻度字号小、行更薄）。
+         空行不塞子视图，自然就只是薄薄一条。 -->
     <LinearLayout
+        android:id="@+id/hour_rows"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal">
+        android:orientation="vertical" />
 
-        <LinearLayout
-            android:id="@+id/hour_rows"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:orientation="vertical" />
-
-        <!-- 翻页列。只有「一屏放不下」时才 VISIBLE，放得下就整个 GONE。
-
-             用最普通的 TextView 打 ▲/▼ 字符，**不做新图标**：「可点 / 已到头」
-             这两种状态靠 setTextColor 换色就够了（TextField 的 setTextColor 在
-             RemoteViews 白名单里）。做一套图标 + 一套淡色图标要 4 个文件，
-             而这里只需要改个颜色。 -->
-        <LinearLayout
-            android:id="@+id/scroll_col"
-            android:layout_width="20dp"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/btn_scroll_up"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
-                android:text="▲"
-                android:textColor="#27795A"
-                android:textSize="10sp" />
-
-            <!-- 撑开中间，把两个箭头推到上下两端 -->
-            <TextView
-                android:layout_width="1dp"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:text="" />
-
-            <TextView
-                android:id="@+id/btn_scroll_down"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
-                android:text="▼"
-                android:textColor="#27795A"
-                android:textSize="10sp" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- 底部：更新时间 + 空状态 -->
+    <!-- 底部状态 -->
     <TextView
         android:id="@+id/tv_footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="3dp"
         android:gravity="center"
         android:text=""
         android:textColor="#6B8574"

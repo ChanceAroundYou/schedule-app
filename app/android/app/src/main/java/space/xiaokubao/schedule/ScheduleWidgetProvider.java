@@ -33,8 +33,9 @@ import java.util.Locale;
  *   1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
  *      用了 ScrollView 之类，**launcher inflate 时直接抛异常**，组件变成一块
  *      「载入窗口小部件时出现问题」的空板，而应用侧一条日志都没有。
- *      ⇒ 所以「时间轴看不到更晚的小时」**不能**靠加 ScrollView 解决，
- *        见 {@link #planRows}　那一带的翻页方案。
+ *      ⇒ 所以「时间轴看不到更晚的小时」**不能**靠加 ScrollView 解决。
+ *        最终做法是**把行高压到贴着内容**、一屏装完，见
+ *        {@link #hourRowLayoutFor} 与 widget_hour_row*.xml。
  *   2. 不能自定义 View、不能测量宽高。所以行高只能按档位选布局文件，
  *      不能真正「自适应」。
  *   3. 动态加子视图只能「按布局文件加」，不能凭空造容器 —— 想要多行就得
@@ -55,20 +56,19 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     static final String ACTION_SETTINGS = "space.xiaokubao.schedule.SETTINGS";
     /** 点左上角标识 = 回到今天 */
     static final String ACTION_TODAY = "space.xiaokubao.schedule.TODAY";
-    /** 时间轴翻页：看更早 / 更晚的小时 */
-    static final String ACTION_SCROLL = "space.xiaokubao.schedule.SCROLL";
 
     static final String EXTRA_DAY = "day";
     static final String EXTRA_DELTA = "delta";
     static final String EXTRA_ID = "id";
-    /**
-     * 翻页步长（= 一屏行数）。由渲染时算好塞进 PendingIntent ——
-     * onReceive 里拿不到组件尺寸，算不出这个数。
-     */
-    static final String EXTRA_PAGE = "page";
 
-    /** 打卡区每行放几个。用户要「每行 2-3 个、分 2-3 行」 */
-    private static final int HABITS_PER_ROW = 3;
+    /**
+     * 打卡区每行放几个。
+     *
+     * 3 → 4 是因为用户说「很有可能会添加第七个」：3 个一行时第 7 个要单开
+     * 第三行，白占一整行高度；4 个一行的话 7 个正好两行（4+3），
+     * 常见习惯数（6-9 个）也都在两到三行内。
+     */
+    private static final int HABITS_PER_ROW = 4;
 
     @Override
     public void onUpdate(Context c, AppWidgetManager mgr, int[] ids) {
@@ -93,8 +93,6 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         } else if (ACTION_WEEK.equals(a)) {
             int delta = intent.getIntExtra(EXTRA_DELTA, 1);
             WidgetPrefs.setSelectedDay(c, addDays(WidgetPrefs.selectedDay(c), delta * 7));
-        } else if (ACTION_SCROLL.equals(a)) {
-            scroll(c, intent.getIntExtra(EXTRA_DELTA, 1), intent.getIntExtra(EXTRA_PAGE, 1));
         } else if (ACTION_TASK.equals(a)) {
             TaskDetailActivity.start(c, intent.getStringExtra(EXTRA_ID));
             return;
@@ -228,41 +226,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 因为翻页落到组件外面去（上一版它永远吊在底部，翻页后反而容易丢）
         int totalRows = hourRows + (untimed.isEmpty() ? 0 : 1);
 
+        // **一屏画完，不翻页。** 行高压到贴着内容（见 widget_hour_row*.xml），
+        // 小时数多就换更薄的那一档；用户明确说过不想为「看 17 点以后」再点箭头。
         int habitRows = snap.habits.isEmpty() ? 0
                 : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-        RowPlan plan = planRows(mgr, widgetId, totalRows, habitRows);
-
-        final boolean paging = plan.perPage < totalRows;
-        int top = 0;
-        int bottom = totalRows - 1;
-        if (paging) {
-            top = Math.max(0, Math.min(totalRows - plan.perPage, WidgetPrefs.viewTop(c)));
-            bottom = Math.min(top + plan.perPage - 1, totalRows - 1);
-        }
+        int rowLayout = hourRowLayoutFor(mgr, widgetId, totalRows, habitRows);
 
         v.removeAllViews(R.id.hour_rows);
         boolean isToday = day.equals(today);
         int nowHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        for (int i = top; i <= bottom; i++) {
-            drawHourRow(c, v, plan.layout, i, lo, hourRows, timed, untimed, isToday, nowHour);
-        }
-
-        if (paging) {
-            v.setViewVisibility(R.id.scroll_col, View.VISIBLE);
-            // 到头了把箭头**变淡**而不是隐藏 —— 隐藏会让布局跳动，用户也看不出
-            // 「到底是到头了还是根本没这功能」
-            boolean atTop = top <= 0;
-            boolean atBottom = bottom >= totalRows - 1;
-            v.setTextColor(R.id.btn_scroll_up, atTop ? DIM : GREEN);
-            v.setTextColor(R.id.btn_scroll_down, atBottom ? DIM : GREEN);
-            v.setOnClickPendingIntent(R.id.btn_scroll_up,
-                    WidgetIntent.of(c, ACTION_SCROLL, "sc-up")
-                            .put(EXTRA_DELTA, -1).put(EXTRA_PAGE, plan.perPage).build(c));
-            v.setOnClickPendingIntent(R.id.btn_scroll_down,
-                    WidgetIntent.of(c, ACTION_SCROLL, "sc-down")
-                            .put(EXTRA_DELTA, 1).put(EXTRA_PAGE, plan.perPage).build(c));
-        } else {
-            v.setViewVisibility(R.id.scroll_col, View.GONE);
+        for (int i = 0; i < totalRows; i++) {
+            drawHourRow(c, v, rowLayout, i, lo, hourRows, timed, untimed, isToday, nowHour);
         }
 
         /* ---- 底部状态 ---- */
@@ -275,10 +249,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         } else {
             foot.append(dayTasks.size()).append(" 项");
         }
-        if (paging) {
-            // 翻页时把「现在看的是哪一段」写出来，否则用户不知道还能往哪翻
-            foot.append(" · ").append(Math.min(lo + top, hi))
-                    .append("–").append(Math.min(lo + bottom, hi)).append(" 时");
+        // 改过时间轴范围就把范围写出来 —— 不然用户看到一个「从 6 点开始」的
+        // 时间轴，会以为是显示出了 bug 而不是自己设的
+        if (lo != WidgetPrefs.DEFAULT_START_HOUR || hi != WidgetPrefs.DEFAULT_END_HOUR) {
+            foot.append(" · ").append(lo).append("–").append(hi).append(" 时");
         }
         // 时间在 [lo, hi] 之外的任务**一行都画不出来**（时间轴没有那一行）。
         // 不提示的话它们等于被静默吞掉，用户只会觉得「我明明记了」。
@@ -357,122 +331,27 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
-     * 一屏能画几行、用哪档行高。
+     * 时间轴用哪一档行高。
      *
-     * RemoteViews 不能测量，所以「自适应」只能退化成「准备几套布局挑一套」。
-     * 这里算两件事：
-     *   · {@code layout} —— 把可用高度摊给全部行，落进哪一档就用哪档布局
-     *   · {@code perPage} —— 用这一档的**实际**行高反过来算一屏能放几行
+     * RemoteViews 不能测量，所以「自适应」只能退化成「准备两套布局挑一套」。
+     * 判据很直接：**这一档的行高乘上行数，塞不塞得进时间轴分到的高度。**
      *
-     * 分页不是锦上添花，是修一个真 bug：以前行数超出可用高度就**直接画到
-     * 组件外面**被裁掉，用户永远看不到 17 点之后的东西，而且没有任何提示 ——
-     * 他只会觉得「这组件就到下午 4 点为止」。
+     * 这里不再算「一屏能放几行」——以前靠它做翻页，现在设计目标就是一屏装完：
+     * 行高本来就贴着内容（见 widget_hour_row*.xml），装不下时换更薄的一档即可。
      */
-    private static RowPlan planRows(AppWidgetManager mgr, int widgetId,
-                                    int totalRows, int habitRows) {
+    private static int hourRowLayoutFor(AppWidgetManager mgr, int widgetId,
+                                        int totalRows, int habitRows) {
         Bundle opts = mgr.getAppWidgetOptions(widgetId);
-        int totalDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 250);
+        int totalDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 400);
 
-        // 月份行 30 + 日期条 42 + footer 18 + 根 padding 20 + 各处 margin 10
-        int availDp = Math.max(40, totalDp - (120 + habitRows * 26));
+        // 除时间轴之外的固定占用：根 padding 18 + 月份行 28 + 日期条 46
+        // + 分隔线 8 + footer 24；打卡区按行数另算
+        int availDp = Math.max(40, totalDp - (124 + habitRows * 24));
 
-        int perRow = availDp / Math.max(1, totalRows);
-        final int layout;
-        final int rowDp;
-        if (perRow >= 24) {
-            layout = R.layout.widget_hour_row;
-            rowDp = 38;
-        } else if (perRow >= 18) {
-            layout = R.layout.widget_hour_row_mid;
-            rowDp = 28;
-        } else {
-            layout = R.layout.widget_hour_row_tight;
-            rowDp = 21;
-        }
-        int perPage = Math.max(1, availDp / rowDp);
-        return new RowPlan(layout, perPage);
-    }
-
-    /** 行高布局 + 一屏能放几行 */
-    private static class RowPlan {
-        final int layout;
-        final int perPage;
-
-        RowPlan(int layout, int perPage) {
-            this.layout = layout;
-            this.perPage = perPage;
-        }
-    }
-
-    /**
-     * 把时间轴翻到「这条任务将要出现的位置」。
-     *
-     * 为什么需要：新任务多半落在当前视口之外 —— 「未定时」更是被放在时间轴
-     * 最后一行。用户点完保存，桌面上什么都没变，观感就是「没保存上」，
-     * 比等一个网络往返还糟。
-     *
-     * @param time 任务的 HH:mm，null = 未定时
-     */
-    static void revealRow(Context c, String time) {
-        AppWidgetManager mgr = AppWidgetManager.getInstance(c);
-        int[] ids = mgr.getAppWidgetIds(
-                new android.content.ComponentName(c, ScheduleWidgetProvider.class));
-        if (ids == null || ids.length == 0) return;
-
-        WidgetSnapshot snap = WidgetPrefs.snapshot(c);
-        int lo = WidgetPrefs.startHour(c);
-        int hi = WidgetPrefs.endHour(c);
-        int hourRows = hi - lo + 1;
-
-        boolean hasUntimed = false;
-        for (WTask t : snap.tasksOf(WidgetPrefs.selectedDay(c))) {
-            if (t.time == null) { hasUntimed = true; break; }
-        }
-        int totalRows = hourRows + (hasUntimed ? 1 : 0);
-
-        int habitRows = snap.habits.isEmpty() ? 0
-                : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-        RowPlan plan = planRows(mgr, ids[0], totalRows, habitRows);
-        if (plan.perPage >= totalRows) return;   // 一屏就放得下，没什么可翻的
-
-        final int row;
-        if (time == null) {
-            row = totalRows - 1;                 // 未定时 = 最后一行
-        } else {
-            int h;
-            try {
-                h = Integer.parseInt(time.substring(0, time.indexOf(':')));
-            } catch (Exception e) {
-                h = lo;
-            }
-            // 时间落在范围外的任务时间轴上根本没有那一行，clamp 到最近的端点
-            row = Math.max(0, Math.min(hourRows - 1, h - lo));
-        }
-        // 让它落在可视区的**最后一行**而不是顶到最上面 —— 上下的上下文都还在，
-        // 用户更能明白「我刚建的这条在以哪儿为中心的位置」
-        int maxTop = Math.max(0, totalRows - plan.perPage);
-        WidgetPrefs.setViewTop(c, Math.max(0, Math.min(maxTop, row - plan.perPage + 1)));
-    }
-
-    /**
-     * 时间轴翻页。
-     *
-     * 在**这里**就把位置 clamp 到有效范围再存 —— 只在渲染时 clamp 的话，
-     * 用户连点几下「下」会存下一个很大的值，之后再点「上」得按半天才动，
-     * 看着像卡死。
-     */
-    private static void scroll(Context c, int dir, int page) {
-        int lo = WidgetPrefs.startHour(c);
-        int hi = WidgetPrefs.endHour(c);
-        int rows = hi - lo + 1;
-        for (WTask t : WidgetPrefs.snapshot(c).tasksOf(WidgetPrefs.selectedDay(c))) {
-            if (t.time == null) { rows++; break; }
-        }
-
-        int step = Math.max(1, page - 1);   // 留一行重叠，翻页之后能接得上
-        int maxTop = Math.max(0, rows - Math.max(1, page));
-        int top = WidgetPrefs.viewTop(c) + dir * step;
-        WidgetPrefs.setViewTop(c, Math.max(0, Math.min(maxTop, top)));
+        // 两档的 minHeight 见 widget_hour_row.xml（22dp）和 _tight.xml（15dp）
+        return (totalRows * 22 <= availDp)
+                ? R.layout.widget_hour_row
+                : R.layout.widget_hour_row_tight;
     }
 
     /* ============================ 打卡 ============================ */
@@ -677,6 +556,25 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     fields.put("doneAt", p.optBoolean("on") ? System.currentTimeMillis() : JSONObject.NULL);
                     op.put("fields", fields);
                     ops.put(op);
+                } else if ("edit".equals(kind)) {
+                    // 编辑弹框存下的改动：标题 / 时间，可选连带「完成」状态
+                    WTask t = snap.taskById(p.optString("taskId"));
+                    if (t == null) return;
+                    JSONObject op = new JSONObject();
+                    op.put("entity", "task");
+                    op.put("entityId", t.id);
+                    op.put("calId", t.calId);
+                    JSONObject fields = new JSONObject();
+                    fields.put("title", p.optString("title"));
+                    fields.put("time", p.isNull("time") ? JSONObject.NULL : p.optString("time"));
+                    // done 为 null = 「这次没动完成状态」，别把它当成 false 下发
+                    if (!p.isNull("done")) {
+                        boolean d = p.optBoolean("done");
+                        fields.put("done", d);
+                        fields.put("doneAt", d ? System.currentTimeMillis() : JSONObject.NULL);
+                    }
+                    op.put("fields", fields);
+                    ops.put(op);
                 } else if ("create".equals(kind)) {
                     JSONObject op = new JSONObject();
                     op.put("entity", "task");
@@ -725,16 +623,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     private static final String[] WD = {"一", "二", "三", "四", "五", "六", "日"};
 
-    /** 主绿 —— 跟 App 标识、时间轴当前小时用同一个色 */
-    private static final int GREEN = 0xFF27795A;
-    /** 淡绿 —— 时间轴翻页箭头用它表示「这个方向已经到头了」 */
-    private static final int DIM = 0xFFCBDCD1;
-
-    /** 透明度档位 → 底板资源。三档：不透明 / 70% / 45% */
+    /** 透明度档位 → 底板资源。五档：40% / 55% / 70% / 85% / 不透明 */
     private static int bgFor(int alpha) {
         switch (alpha) {
+            case 40: return R.drawable.widget_bg_a40;
+            case 55: return R.drawable.widget_bg_a55;
             case 70: return R.drawable.widget_bg_a70;
-            case 45: return R.drawable.widget_bg_a45;
+            case 85: return R.drawable.widget_bg_a85;
             default: return R.drawable.widget_bg;
         }
     }

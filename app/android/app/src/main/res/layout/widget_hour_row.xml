@@ -1,20 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 时间轴的一行：左列小时刻度 + 右列内容 -->
+<!--
+  时间轴的一行 · 宽松档。
+
+  为什么 minHeight 只有 22dp：**行高必须贴着内容**。以前这里是 38dp，
+  而任务块实际只有 21dp —— 于是每行下面都多出十几 dp 的白条，
+  两个挨着的小时之间看着像隔了一条缝。现在 minHeight 跟任务块一样高，
+  空行就占这么薄的一条，有任务的行由任务块自己撑开，中间没有空隙。
+
+  什么时候用哪一档由 ScheduleWidgetProvider.hourRowLayoutFor 按总行数挑。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/hour_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="38dp"
+    android:gravity="center_vertical"
+    android:minHeight="22dp"
     android:orientation="horizontal">
 
+    <!-- 刻度用 wrap_content 而不是 match_parent：父容器是 wrap_content，
+         子视图的 match_parent 在这种组合下会被算成「父容器已确定的高度」，
+         而父容器的高度恰恰又是子视图撑起来的 —— 有被算成 0 的风险（刻度消失）。
+         靠 root 的 gravity=center_vertical 让它跟着行高居中就够了。 -->
     <TextView
         android:id="@+id/hour_label"
-        android:layout_width="30dp"
+        android:layout_width="26dp"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:text="07"
         android:textColor="#8AA294"
-        android:textSize="11sp" />
+        android:textSize="10sp" />
 
     <LinearLayout
         android:id="@+id/hour_body"

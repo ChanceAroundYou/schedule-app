@@ -1,45 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 任务详情弹框。不用打开 App，就在桌面上弹出来 -->
+<!--
+  任务**编辑**弹框。不用打开 App，就在桌面上改。
+
+  以前这只是个只读的详情卡（标题 + 时间 + 一个「标记完成」），用户在桌面上
+  看到写错的任务只能开 App 改。现在标题是可输入的 EditText、时间是个按钮
+  （点了弹系统表盘），跟新建弹框用同一套交互。
+
+  日期**只显示不可改**：时间轴是按天翻的，要挪到别的天，切到那天新建更直接。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="260dp"
+    android:layout_width="286dp"
     android:layout_height="wrap_content"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
     android:padding="14dp">
 
     <TextView
-        android:id="@+id/d_title"
+        android:id="@+id/d_head"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="任务"
+        android:text="编辑任务"
         android:textColor="#1B3A2A"
         android:textSize="15sp"
         android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/d_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:hint="做什么"
+        android:inputType="text"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textColor="#1B3A2A"
+        android:textColorHint="#8AA294"
+        android:textSize="14sp" />
 
     <TextView
         android:id="@+id/d_when"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text=""
-        android:textColor="#3E5A4A"
-        android:textSize="12sp" />
-
-    <TextView
-        android:id="@+id/d_dur"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="4dp"
         android:text=""
         android:textColor="#6B8574"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        android:textSize="12sp" />
+
+    <!-- 时间不是输入框，是个按钮 —— 点了弹表盘（跟新建弹框一样） -->
+    <Button
+        android:id="@+id/d_time"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/widget_habit_bg"
+        android:text="不设置时间"
+        android:textColor="#1B3A2A"
+        android:textSize="13sp" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="10dp"
-        android:layout_marginBottom="10dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="8dp"
         android:background="#DCE9DF" />
 
     <LinearLayout
@@ -53,9 +76,12 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
             android:text="标记完成"
             android:textColor="#27795A"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
 
         <Button
             android:id="@+id/d_close"
@@ -63,8 +89,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
             android:text="关闭"
             android:textColor="#6B8574"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/d_save"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:text="保存"
+            android:textColor="#27795A"
+            android:textSize="12sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>

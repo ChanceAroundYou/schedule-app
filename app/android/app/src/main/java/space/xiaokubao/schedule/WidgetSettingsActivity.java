@@ -5,6 +5,7 @@ import android.app.TimePickerDialog;
 import android.os.Bundle;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -20,11 +21,13 @@ import java.util.Locale;
  *   · 时间轴以前写死 8:00–20:00，作息不同的人（早起 6 点、或者晚上 23 点
  *     还有安排）就看不到自己要的那些小时。
  *   · 底板透明度 —— 壁纸好看的时候，实心绿底板很碍眼。
- *     ⚠️ **只能是四档**，不能做连续滑杆：RemoteViews 调不到 View.setAlpha
- *     （该方法没有 @RemotableViewMethod 标注，反射调用会抛 ActionException），
- *     透明度只能预先做成几档 drawable 来切。
  *   · 立即刷新 —— 小组件平时只在系统愿意调 onUpdate 时才更新；用户在 App 里
  *     改完数据，桌面上可能还是旧的。这里给一个手动拉的入口。
+ *
+ * ⚠️ 透明度那条是**滑杆的样子、档位的里子**：RemoteViews 调不到
+ * {@code View.setAlpha}（没标 @RemotableViewMethod，反射会抛 ActionException），
+ * 能安全改的只有 setBackgroundResource —— 所以底下是五张预置的 drawable，
+ * 滑杆松手时吸附到最近的一张。看上去是连续拖动，实际只有五档。
  *
  * 同样用**对话框主题的 Activity** —— 观感是桌面弹出小卡片，不离开桌面。
  */
@@ -36,14 +39,15 @@ public class WidgetSettingsActivity extends Activity {
         c.startActivity(i);
     }
 
-    /** 三个透明度按钮，下标与 WidgetPrefs.ALPHAS 一一对应 */
-    private static final int[] ALPHA_IDS = {R.id.s_a100, R.id.s_a70, R.id.s_a45};
+    /** 五档各自的说法，下标与 WidgetPrefs.ALPHAS 一一对应 */
+    private static final String[] ALPHA_NAMES = {"不透明", "微透", "半透明", "较透明", "很透明"};
 
     private Button startBtn;
     private Button endBtn;
     private TextView hint;
     private TextView status;
-    private Button[] alphaBtns;
+    private SeekBar alphaBar;
+    private TextView alphaLabel;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -55,8 +59,8 @@ public class WidgetSettingsActivity extends Activity {
         endBtn = findViewById(R.id.s_end);
         hint = findViewById(R.id.s_hint);
         status = findViewById(R.id.s_status);
-        alphaBtns = new Button[ALPHA_IDS.length];
-        for (int i = 0; i < ALPHA_IDS.length; i++) alphaBtns[i] = findViewById(ALPHA_IDS[i]);
+        alphaBar = findViewById(R.id.s_alpha);
+        alphaLabel = findViewById(R.id.s_alpha_label);
 
         refreshLabels();
 
@@ -72,20 +76,29 @@ public class WidgetSettingsActivity extends Activity {
             afterChange();
         }));
 
-        for (int i = 0; i < ALPHA_IDS.length; i++) {
-            final int pct = WidgetPrefs.ALPHAS[i];
-            alphaBtns[i].setOnClickListener(v -> {
-                WidgetPrefs.setAlpha(this, pct);
-                afterChange();
-            });
-        }
+        alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) return;      // refreshLabels() 里回写进度也会触发，别绕回来
+                WidgetPrefs.setAlpha(WidgetSettingsActivity.this, WidgetPrefs.ALPHAS[progress]);
+                refreshLabels();
+                ScheduleWidgetProvider.refresh(WidgetSettingsActivity.this);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
 
         findViewById(R.id.s_refresh).setOnClickListener(v -> doRefresh());
 
         findViewById(R.id.s_reset).setOnClickListener(v -> {
             WidgetPrefs.resetRange(this);
             WidgetPrefs.setAlpha(this, WidgetPrefs.DEFAULT_ALPHA);
-            WidgetPrefs.resetViewTop(this);
             afterChange();
         });
 
@@ -104,17 +117,16 @@ public class WidgetSettingsActivity extends Activity {
         endBtn.setText(hh(b));
 
         int lines = b - a + 1;
-        hint.setText("共 " + lines + " 行。一屏放不下时时间轴右侧会出现上下翻页箭头，"
-                + "把组件拖大一些能一屏看到更多。");
+        hint.setText("共 " + lines + " 行，一屏显示完。行数多时刻度会自动缩小，"
+                + "把组件拖大一些会更舒展。");
 
         int cur = WidgetPrefs.alpha(this);
-        for (int i = 0; i < alphaBtns.length; i++) {
-            boolean sel = WidgetPrefs.ALPHAS[i] == cur;
-            // 选中态复用打卡区那套语言：实心绿 + 白字
-            alphaBtns[i].setBackgroundResource(
-                    sel ? R.drawable.widget_habit_bg_done : R.drawable.widget_habit_bg);
-            alphaBtns[i].setTextColor(sel ? 0xFFFFFFFF : 0xFF1B3A2A);
+        int idx = 0;
+        for (int i = 0; i < WidgetPrefs.ALPHAS.length; i++) {
+            if (WidgetPrefs.ALPHAS[i] == cur) { idx = i; break; }
         }
+        if (alphaBar.getProgress() != idx) alphaBar.setProgress(idx);
+        alphaLabel.setText(ALPHA_NAMES[Math.min(idx, ALPHA_NAMES.length - 1)]);
 
         long at = WidgetPrefs.snapshot(this).at;
         status.setText(at > 0 ? "数据更新于 " + clockOf(at) : "还没有同步过数据，打开 App 一次");

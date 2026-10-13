@@ -72,73 +72,49 @@
         android:textSize="11sp" />
 
     <!-- ============ 底板透明度 ============
-         **只能是档位，不能是连续滑杆**：RemoteViews 调不到 View.setAlpha
-         （没标 @RemotableViewMethod），透明度只能预先做成几档 drawable 来切。
-         和打卡区的选中态用同一套视觉（浅绿描边=未选，实心绿=选中）。 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:text="底板透明度"
-        android:textColor="#6B8574"
-        android:textSize="12sp" />
-
+         拖到最右 = 完全不透明，最左 = 最透。
+         ⚠️ 底下其实是**五档预置的 drawable**，只是把它包装成滑杆了：
+         RemoteViews 调不到 View.setAlpha（没标 @RemotableViewMethod），
+         透明度只能预先做成几档资源来切。滑杆松手时会吸附到最近的档位。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="14dp"
         android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/s_a100"
-            style="?android:attr/borderlessButtonStyle"
+        <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/widget_habit_bg"
-            android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
+            android:text="底板透明度"
+            android:textColor="#6B8574"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/s_alpha_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="不透明"
-            android:textColor="#1B3A2A"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/s_a70"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginLeft="4dp"
-            android:layout_weight="1"
-            android:background="@drawable/widget_habit_bg"
-            android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
-            android:text="半透明"
-            android:textColor="#1B3A2A"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/s_a45"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginLeft="4dp"
-            android:layout_weight="1"
-            android:background="@drawable/widget_habit_bg"
-            android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
-            android:text="很透明"
-            android:textColor="#1B3A2A"
-            android:textSize="11sp" />
+            android:textColor="#27795A"
+            android:textSize="12sp"
+            android:textStyle="bold" />
     </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/s_alpha"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:max="4"
+        android:progress="0"
+        android:progressTint="#27795A"
+        android:thumbTint="#27795A" />
 
     <!-- ============ 数据 ============ -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="12dp"
         android:text="数据"
         android:textColor="#6B8574"
         android:textSize="12sp" />

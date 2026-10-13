@@ -44,15 +44,15 @@ class WidgetPrefs {
     static final int DEFAULT_START_HOUR = 8;
     static final int DEFAULT_END_HOUR = 20;
 
-    /** 时间轴**翻页**到第几行（相对 startHour 的偏移）。一屏放不下时才会用到 */
-    static final String KEY_VIEW_TOP = "schedule_widget_view_top";
-
     /**
-     * 底板透明度（百分比）。**只能是这几档之一** —— 每档对应一份 drawable。
-     * 三档是有意为之：100 = 原样，70 = 半透，45 = 很透。
+     * 底板透明度（百分比）。**只能是这几档之一** —— 每档对应一份 drawable
+     * （原因见 drawable/widget_bg_a70.xml：RemoteViews 改不了 View 的 alpha）。
+     *
+     * 顺序 = 设置页滑杆**从左到右**的顺序：往右拉越透明（用户明确要的方向）。
+     * 五档是「拖动感」和「文件数量」的折中 —— 再多就得为每档养一份资源。
      */
     static final String KEY_ALPHA = "schedule_widget_alpha";
-    static final int[] ALPHAS = {100, 70, 45};
+    static final int[] ALPHAS = {100, 85, 70, 55, 40};
     static final int DEFAULT_ALPHA = 100;
 
     private static SharedPreferences sp(Context c) {
@@ -267,35 +267,11 @@ class WidgetPrefs {
             if (start <= end) b = Math.min(23, a + 1);
             else a = Math.max(0, b - 1);
         }
-        // 同时把翻页位置归零：行号是相对 startHour 的，范围一变含义就全变了
-        sp(c).edit().putInt(KEY_START_HOUR, a).putInt(KEY_END_HOUR, b)
-                .remove(KEY_VIEW_TOP).apply();
+        sp(c).edit().putInt(KEY_START_HOUR, a).putInt(KEY_END_HOUR, b).apply();
     }
 
     static void resetRange(Context c) {
         setRange(c, DEFAULT_START_HOUR, DEFAULT_END_HOUR);
-    }
-
-    // ── 时间轴翻页 ───────────────────────────────────────────────────────
-
-    /**
-     * 时间轴当前顶部的**行号偏移**（0 = 从 startHour 那一行开始）。
-     *
-     * 存原始值、不做 clamp —— 有效范围取决于「选中那天有几个未定时任务」
-     * 和「一屏能放几行」，这两个只有渲染时才知道。渲染侧 clamp 之后再画，
-     * 写操作那边 clamp 之后再存（否则用户会连点几下都没反应）。
-     */
-    static int viewTop(Context c) {
-        return Math.max(0, sp(c).getInt(KEY_VIEW_TOP, 0));
-    }
-
-    static void setViewTop(Context c, int top) {
-        sp(c).edit().putInt(KEY_VIEW_TOP, Math.max(0, top)).apply();
-    }
-
-    /** 改了时间轴范围就把翻页位置归零 —— 行号的含义整个变了 */
-    static void resetViewTop(Context c) {
-        sp(c).edit().remove(KEY_VIEW_TOP).apply();
     }
 
     // ── 底板透明度 ───────────────────────────────────────────────────────
