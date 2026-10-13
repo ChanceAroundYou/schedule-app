@@ -93,7 +93,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_schedule);
         WidgetSnapshot snap = WidgetPrefs.snapshot(c);
         String day = WidgetPrefs.selectedDay(c);
-        String today = WidgetPrefs.today(c);
+        // 「今天」优先用快照里那个（来自服务端）—— 手机时钟/时区不准时，
+        // 自己算出来的今天会跟服务端差一天，打卡就写到隔壁去了。
+        // 快照是空的（还没同步过）才退回设备时间。
+        String today = (snap.today != null && !snap.today.isEmpty())
+                ? snap.today : WidgetPrefs.today(c);
 
         v.setTextViewText(R.id.tv_month, monthTitle(day));
 

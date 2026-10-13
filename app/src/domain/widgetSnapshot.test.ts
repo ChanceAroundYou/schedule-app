@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as D from './date.ts';
-import { buildWidgetSnapshot, widgetRange, WIDGET_WEEKS } from './widgetSnapshot.ts';
+import { buildWidgetSnapshot, serializeWidgetSnapshot, widgetRange, WIDGET_WEEKS } from './widgetSnapshot.ts';
 import { makeTask, makeHabit, normalizeUi } from './model.ts';
 import type { Habit, LocalState, Task } from './types.ts';
 
@@ -88,8 +88,26 @@ test('打卡：done 看今天，streak 按今天/昨天起算', () => {
   const habit = { ...makeHabit('学英语', 0, 'c1'), log };
   const snap = buildWidgetSnapshot(state([], { h1: habit }), T);
   assert.deepEqual(snap.habits, [{
-    id: habit.id, title: '学英语', done: true, streak: 3,
+    id: habit.id, calId: 'c1', title: '学英语', done: true, streak: 3,
   }]);
+});
+
+test('每条都带 calId，快照带 today —— 原生直连写服务器缺了这两样就写不进去', () => {
+  // 这条是给 B 方案兜底的。原生的 WidgetApi 发 op 时要 calId 去查权限，
+  // 服务端那边只做 `if (!calId) continue`（不报错），所以缺了的表现是
+  // 「桌面点了半天，服务器没变」—— 静默失败，最难查。
+  const task = makeTask({ title: '交房租', date: T, calId: 'c1', time: '09:00' });
+  const habit = makeHabit('学英语', 0, 'c2');
+  const s = state([task], { h1: habit });
+  const snap = buildWidgetSnapshot(s, T);
+
+  assert.equal(snap.today, T, 'today 必须是传入的那个基准日');
+  assert.equal(snap.tasks[0].calId, 'c1');
+  assert.equal(snap.habits[0].calId, 'c2');
+  // 序列化后也得在 —— 原生读的是 JSON 不是对象
+  const raw = JSON.parse(serializeWidgetSnapshot(s));
+  assert.equal(raw.tasks[0].calId, 'c1');
+  assert.ok(raw.today, '序列化里也要有 today');
 });
 
 test('打卡：今天还没打但昨天打过，streak 仍从昨天起算且 done=false', () => {

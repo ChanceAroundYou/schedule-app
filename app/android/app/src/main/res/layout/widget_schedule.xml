@@ -58,12 +58,13 @@
             android:src="@drawable/ic_chevron_right"
             android:contentDescription="下一个月" />
 
-        <View
+        <TextView
             android:layout_width="1dp"
             android:layout_height="18dp"
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp"
-            android:background="#DDE5DD" />
+            android:background="#DDE5DD"
+            android:text="" />
 
         <ImageView
             android:id="@+id/btn_add"
@@ -93,28 +94,26 @@
         android:padding="6dp"
         android:visibility="gone" />
 
-    <View
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
         android:layout_marginBottom="2dp"
-        android:background="#DCE9DF" />
+        android:background="#DCE9DF"
+        android:text="" />
 
-    <!-- ============ 时间轴（每小时一行，动态加）============ -->
-    <ScrollView
-        android:id="@+id/hour_scroll"
+    <!-- ============ 时间轴（每小时一行，动态加）============
+         ⚠️ **不能包 ScrollView**：RemoteViews 只支持 FrameLayout / LinearLayout /
+         RelativeLayout / GridLayout 这四种。用 ScrollView 的后果不是「滚不动」，
+         而是 launcher inflate 时直接抛 InflateException，整个组件显示
+         「载入窗口小部件时出现问题」—— 桌面上一片空白，无从下手。
+         高度不够时靠 resizeMode 让用户拖大（见 schedule_widget_info.xml）。 -->
+    <LinearLayout
+        android:id="@+id/hour_rows"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:id="@+id/hour_rows"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </ScrollView>
+        android:orientation="vertical" />
 
     <!-- 底部：更新时间 + 空状态 -->
     <TextView
