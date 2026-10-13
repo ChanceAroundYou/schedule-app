@@ -295,6 +295,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     /* ==================== 时间轴渲染 ==================== */
 
+    /**
+     * 整条时间轴**整体下移**多少 dp。
+     *
+     * 用户 2026-10-14：细线原本画在每格的**顶边**，而左侧「08/10/12」是
+     * top 对齐、也贴着顶边 —— 于是线压在数字**上方**，数字整颗吊在线下面。
+     * 把线和内容一起下移半个字高（9sp ≈ 11dp → 约 5dp），数字的**垂直中心**
+     * 就正好落在自己那根线上。
+     *
+     * ⚠️ 线、现在红线、任务卡**必须一起下移** —— 它们是同一套换算，
+     * 只动线会让「10:00 的任务」顶边比 10:00 那根线高一截。
+     * 代价：时间轴底部少 5dp（用户已确认）。
+     */
+    private static final int LINE_OFFSET_DP = 5;
+
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
     private static final int UNTIMED_MAX = 5;
     /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
@@ -322,7 +336,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                                     int timelineDp, boolean isToday, int nowMin) {
         v.removeAllViews(R.id.tl_scale);
         int hours = hi - lo + 1;
-        float dpPerHour = timelineDp / (float) hours;
+        // 和主体用同一个「一小时多少 dp」—— 见 LINE_OFFSET_DP：主体整体下移了
+        // 5dp，所以可用高度要先扣掉，否则数字和线会越往下越错开。
+        float dpPerHour = Math.max(1, timelineDp - LINE_OFFSET_DP) / (float) hours;
         // 行高很小时数字会叠在一起 → 隔 2~3 小时才写一个（判据跟 App 日视图一致）。
         // ⚠️ 字号**不再随行高变化** —— 用户 2026-10-13 要求刻度 / 打卡 / 任务卡
         // 统一 9sp，字号在 widget_tl_hour.xml 里定死，这里只控制「写哪几个」。
@@ -370,11 +386,15 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         int hours = hi - lo + 1;
         int fromMin = lo * 60;
         int toMin = (hi + 1) * 60;
-        float dpPerMin = timelineDp / (float) (hours * 60);
-        float dpPerHour = timelineDp / (float) hours;
+        // 扣掉整体下移量。**线、红线和任务卡共用这一个比例**，
+        // 所以下移之后三者仍然严格对齐（见 LINE_OFFSET_DP）。
+        int innerDp = Math.max(1, timelineDp - LINE_OFFSET_DP);
+        float dpPerMin = innerDp / (float) (hours * 60);
+        float dpPerHour = innerDp / (float) hours;
 
         /* ---- 网格层：等高的格子，格子的顶边就是整点。只有线，刻度在左侧列 ---- */
         v.removeAllViews(R.id.tl_grid);
+        v.addView(R.id.tl_grid, spacer(c, LINE_OFFSET_DP));
         int prevY = 0;
         for (int k = 0; k < hours; k++) {
             // 用累进目标值取整，避免逐行四舍五入攒出十几 dp 的偏移
@@ -390,6 +410,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         /* ---- 「现在」红线 ---- */
         v.removeAllViews(R.id.tl_now);
         if (isToday && nowMin >= fromMin && nowMin <= toMin) {
+            v.addView(R.id.tl_now, spacer(c, LINE_OFFSET_DP));
             v.addView(R.id.tl_now, spacer(c, Math.round((nowMin - fromMin) * dpPerMin)));
             v.addView(R.id.tl_now, new RemoteViews(c.getPackageName(), R.layout.widget_tl_nowline));
         }
@@ -407,7 +428,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         }
         evs.sort((a, b) -> Integer.compare(a.s, b.s));
 
-        int cursor = 0;
+        // 从「负的偏移」起步 → 第一个 spacer 自动多出 5dp，整层跟着下移
+        int cursor = -LINE_OFFSET_DP;
         int i = 0;
         while (i < evs.size()) {
             // 摘一个「时间上连通重叠」的簇：簇内的任务才需要并排分列
@@ -771,6 +793,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     op.put("calId", t.calId);
                     JSONObject fields = new JSONObject();
                     fields.put("title", p.optString("title"));
+                    // 日期可改了（2026-10-14）。老队列里没有这个键 → 不下发，
+                    // 免得把日期写成空串
+                    if (p.has("date") && !p.isNull("date")) {
+                        fields.put("date", p.optString("date"));
+                    }
                     fields.put("time", p.isNull("time") ? JSONObject.NULL : p.optString("time"));
                     // ⚠️ 字段名是 **duration**，不是 dur（服务端与 App 都读 duration）
                     fields.put("duration", p.optInt("duration", 0));

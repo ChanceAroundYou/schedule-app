@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  任务**编辑**弹框。不用打开 App，就在桌面上改。
+  任务**编辑 / 删除**弹框。不用打开 App，就在桌面上改。
 
-  2026-10-13 扩充：
-  · **起止时间**：开始 / 结束两个按钮（点了各弹一个系统表盘），代替原来单一
-    的「时间」按钮。结束 ≠ 开始 + 默认时长，用户能直接填「几点到几点」。
-  · **删除**：底部多一个删除按钮，二次确认后软删除（App 回收站可找回）。
-  · 「标记完成」单独占一行 —— 和删除 / 关闭 / 保存挤一行会太密。
+  2026-10-14 收紧凑（用户要求跟设置弹框一个密度）：
+  · 286dp → **252dp**，内边距 14 → **12dp**，字号各降一档，行距收紧
+  · 底排由「删除 / 关闭 / 保存」→ **[完成|未完成] [保存] [删除]**；
+    去掉「关闭」，改成点弹框外部 / 返回键关闭
+  · **日期可编辑**（`d_date` 点了弹日历选择器）
 
-  日期**只显示不可改**：时间轴是按天翻的，要挪到别的天，切到那天新建更直接。
+  日期只显示「落到哪天」这个事实本身，不加任何说明性小字 —— 用户明确不要。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="286dp"
+    android:layout_width="252dp"
     android:layout_height="wrap_content"
-    android:background="@drawable/widget_bg"
+    android:background="@drawable/dialog_bg"
     android:orientation="vertical"
-    android:padding="14dp">
+    android:padding="12dp">
 
     <TextView
         android:id="@+id/d_head"
@@ -23,36 +23,39 @@
         android:layout_height="wrap_content"
         android:text="编辑任务"
         android:textColor="#1B3A2A"
-        android:textSize="15sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 
     <EditText
         android:id="@+id/d_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:hint="做什么"
         android:inputType="text"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
         android:textColor="#1B3A2A"
         android:textColorHint="#8AA294"
-        android:textSize="14sp" />
+        android:textSize="13sp" />
 
-    <TextView
-        android:id="@+id/d_when"
+    <!-- 日期：整行按钮，点了弹日历选择器 -->
+    <Button
+        android:id="@+id/d_date"
+        style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text=""
-        android:textColor="#6B8574"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_habit_bg"
+        android:text="2026-10-13"
+        android:textColor="#1B3A2A"
         android:textSize="12sp" />
 
     <!-- 起止时间：两个表盘按钮 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -65,16 +68,16 @@
             android:background="@drawable/widget_habit_bg"
             android:text="不设置"
             android:textColor="#1B3A2A"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="8dp"
-            android:layout_marginRight="8dp"
+            android:layout_marginLeft="6dp"
+            android:layout_marginRight="6dp"
             android:text="至"
             android:textColor="#6B8574"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <Button
             android:id="@+id/d_end"
@@ -85,7 +88,7 @@
             android:background="@drawable/widget_habit_bg"
             android:text="不设置"
             android:textColor="#1B3A2A"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <TextView
@@ -94,35 +97,24 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:textColor="#8AA294"
-        android:textSize="11sp" />
+        android:textSize="10sp" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="10dp"
-        android:layout_marginBottom="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="6dp"
         android:background="#DCE9DF"
         android:text="" />
 
-    <!-- 标记完成 / 取消完成：整行，避免和下面三个按钮挤 -->
-    <Button
-        android:id="@+id/d_toggle"
-        style="?android:attr/borderlessButtonStyle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@drawable/widget_habit_bg"
-        android:text="标记完成"
-        android:textColor="#27795A"
-        android:textSize="13sp" />
-
+    <!-- 底部三个按钮：完成/未完成 · 保存 · 删除 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/d_delete"
+            android:id="@+id/d_toggle"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -130,21 +122,8 @@
             android:minWidth="0dp"
             android:paddingLeft="0dp"
             android:paddingRight="0dp"
-            android:text="删除"
-            android:textColor="#C0392B"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/d_close"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
-            android:text="关闭"
-            android:textColor="#6B8574"
+            android:text="完成"
+            android:textColor="#27795A"
             android:textSize="12sp" />
 
         <Button
@@ -160,5 +139,18 @@
             android:textColor="#27795A"
             android:textSize="12sp"
             android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/d_delete"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:text="删除"
+            android:textColor="#C0392B"
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

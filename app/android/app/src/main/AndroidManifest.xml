@@ -52,21 +52,21 @@
             android:name=".TaskDetailActivity"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:theme="@style/Theme.AppCompat.Dialog"
+            android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".CreateTaskActivity"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:theme="@style/Theme.AppCompat.Dialog"
+            android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".WidgetSettingsActivity"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:theme="@style/Theme.AppCompat.Dialog"
+            android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />
 
         <provider

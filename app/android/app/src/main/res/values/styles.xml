@@ -19,4 +19,16 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+
+    <!--
+      三个「桌面弹框」（任务编辑 / 新建任务 / 小组件设置）用的主题。
+
+      **windowBackground 必须透明**：Theme.AppCompat.Dialog 默认给窗口铺了一张
+      浅色小圆角矩形，而弹框布局自己的背景（@drawable/dialog_bg）圆角更大，
+      于是窗口背景会在大圆角外面露出四个亮白色的小圆角 —— 用户 2026-10-14
+      报的「四边四个亮白色的较小圆角区域」就是它。透明之后只剩一层边界。
+    -->
+    <style name="AppTheme.WidgetDialog" parent="Theme.AppCompat.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>

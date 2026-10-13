@@ -58,7 +58,7 @@
             android:layout_width="22dp"
             android:layout_height="22dp"
             android:contentDescription="回到今天"
-            android:padding="5dp"
+            android:padding="2dp"
             android:src="@drawable/ic_widget_logo" />
 
         <ImageView
