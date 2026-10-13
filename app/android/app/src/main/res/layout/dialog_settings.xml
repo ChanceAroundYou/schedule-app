@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 小组件设置弹框：目前只有时间轴的起止范围 -->
+<!-- 小组件设置弹框：时间轴范围 / 底板透明度 / 立即刷新 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="280dp"
+    android:layout_width="292dp"
     android:layout_height="wrap_content"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
@@ -15,6 +15,7 @@
         android:textSize="15sp"
         android:textStyle="bold" />
 
+    <!-- ============ 时间轴范围 ============ -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -36,7 +37,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/widget_chip_bg"
+            android:background="@drawable/widget_habit_bg"
             android:text="08:00"
             android:textColor="#1B3A2A"
             android:textSize="14sp" />
@@ -56,7 +57,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/widget_chip_bg"
+            android:background="@drawable/widget_habit_bg"
             android:text="20:00"
             android:textColor="#1B3A2A"
             android:textSize="14sp" />
@@ -66,10 +67,102 @@
         android:id="@+id/s_hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:textColor="#8AA294"
         android:textSize="11sp" />
 
+    <!-- ============ 底板透明度 ============
+         **只能是档位，不能是连续滑杆**：RemoteViews 调不到 View.setAlpha
+         （没标 @RemotableViewMethod），透明度只能预先做成几档 drawable 来切。
+         和打卡区的选中态用同一套视觉（浅绿描边=未选，实心绿=选中）。 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="底板透明度"
+        android:textColor="#6B8574"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/s_a100"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/widget_habit_bg"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:text="不透明"
+            android:textColor="#1B3A2A"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/s_a70"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_habit_bg"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:text="半透明"
+            android:textColor="#1B3A2A"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/s_a45"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_habit_bg"
+            android:minWidth="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:text="很透明"
+            android:textColor="#1B3A2A"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- ============ 数据 ============ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="数据"
+        android:textColor="#6B8574"
+        android:textSize="12sp" />
+
+    <Button
+        android:id="@+id/s_refresh"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_habit_bg"
+        android:text="立即刷新（拉服务器最新）"
+        android:textColor="#27795A"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/s_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#8AA294"
+        android:textSize="11sp" />
+
+    <!-- ============ 底部 ============ -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -100,6 +100,12 @@ function widgetView(userId) {
       title: typeof h.title === 'string' ? h.title : '',
       done: !!(h.log && h.log[today]),
       streak: streakOf(h.log, today),
+      // ⚠️ **必须带上整个 log 映射**，不能只给 done。
+      // log 是按日期的稀疏表，而 applyOps 是「字段整值替换」——
+      // 小组件改打卡时要回写整个对象，只发一天会把别的日期全抹掉。
+      // 早年这里没带 log，小组件只能发一个日期字符串，服务端存进去之后
+      // `h.log[today]` 恒为 undefined，表现是「打卡点了永远不生效」。
+      log: (h.log && typeof h.log === 'object') ? h.log : {},
     });
   }
   habits.sort((a, b) => (a.order || 0) - (b.order || 0));

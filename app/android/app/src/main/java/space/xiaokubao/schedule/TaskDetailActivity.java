@@ -69,7 +69,12 @@ public class TaskDetailActivity extends Activity {
             } catch (Exception ignored) {
             }
 
-            // ② 有票就直连（B 方案）；没票/断网就入队等 App 启动后补发
+            // ② **立刻重画桌面**：弹框一关，时间轴上就得看到那条任务退色了。
+            //    以前要等网络返回才画，用户点完「标记完成」看到的还是原样，
+            //    跟打卡那边一样的问题。
+            ScheduleWidgetProvider.refresh(this);
+
+            // ③ 有票就直连（B 方案）；没票/断网就入队等 App 启动后补发
             if (WidgetPrefs.canDirect(this)) {
                 try {
                     JSONArray ops = new JSONArray();

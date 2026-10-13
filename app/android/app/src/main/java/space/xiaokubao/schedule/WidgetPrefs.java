@@ -44,6 +44,17 @@ class WidgetPrefs {
     static final int DEFAULT_START_HOUR = 8;
     static final int DEFAULT_END_HOUR = 20;
 
+    /** 时间轴**翻页**到第几行（相对 startHour 的偏移）。一屏放不下时才会用到 */
+    static final String KEY_VIEW_TOP = "schedule_widget_view_top";
+
+    /**
+     * 底板透明度（百分比）。**只能是这几档之一** —— 每档对应一份 drawable。
+     * 三档是有意为之：100 = 原样，70 = 半透，45 = 很透。
+     */
+    static final String KEY_ALPHA = "schedule_widget_alpha";
+    static final int[] ALPHAS = {100, 70, 45};
+    static final int DEFAULT_ALPHA = 100;
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -108,8 +119,46 @@ class WidgetPrefs {
         sp(c).edit().remove(KEY_PENDING).apply();
     }
 
+    /** 整队覆盖。用于去重之后写回，以及发送成功之后扣掉已发的那一批 */
+    static void setPending(Context c, List<JSONObject> ops) {
+        if (ops == null || ops.isEmpty()) {
+            clearPending(c);
+            return;
+        }
+        JSONArray arr = new JSONArray();
+        for (JSONObject o : ops) arr.put(o);
+        sp(c).edit().putString(KEY_PENDING, arr.toString()).apply();
+    }
+
+    /**
+     * 把队首的 n 条移掉 —— 那一批已经成功发出去了。
+     *
+     * 为什么要按批扣而不是整个 clearPending：服务端一次最多收 50 条 op，
+     * 队列更长时必须分批发，发完一批只能减去一批。以前整批发、整队清，
+     * 一旦超过 50 就永远是 400，队列只进不出。
+     */
+    static void dropPending(Context c, int n) {
+        List<JSONObject> rest = pendingOps(c);
+        if (n >= rest.size()) {
+            clearPending(c);
+            return;
+        }
+        setPending(c, new ArrayList<>(rest.subList(n, rest.size())));
+    }
+
     static int pendingCount(Context c) {
         return pendingOps(c).size();
+    }
+
+    /**
+     * 有没有攒着没发出去的改动。
+     *
+     * **不解析 JSON** —— 只想问「有没有」的时候没必要把上百条逐个 parse。
+     * {@code "[]"} 是空队列的字面量，长过它就说明有东西。
+     */
+    static boolean hasPending(Context c) {
+        String s = sp(c).getString(KEY_PENDING, null);
+        return s != null && s.length() > 4;
     }
 
     /**
@@ -218,11 +267,56 @@ class WidgetPrefs {
             if (start <= end) b = Math.min(23, a + 1);
             else a = Math.max(0, b - 1);
         }
-        sp(c).edit().putInt(KEY_START_HOUR, a).putInt(KEY_END_HOUR, b).apply();
+        // 同时把翻页位置归零：行号是相对 startHour 的，范围一变含义就全变了
+        sp(c).edit().putInt(KEY_START_HOUR, a).putInt(KEY_END_HOUR, b)
+                .remove(KEY_VIEW_TOP).apply();
     }
 
     static void resetRange(Context c) {
         setRange(c, DEFAULT_START_HOUR, DEFAULT_END_HOUR);
+    }
+
+    // ── 时间轴翻页 ───────────────────────────────────────────────────────
+
+    /**
+     * 时间轴当前顶部的**行号偏移**（0 = 从 startHour 那一行开始）。
+     *
+     * 存原始值、不做 clamp —— 有效范围取决于「选中那天有几个未定时任务」
+     * 和「一屏能放几行」，这两个只有渲染时才知道。渲染侧 clamp 之后再画，
+     * 写操作那边 clamp 之后再存（否则用户会连点几下都没反应）。
+     */
+    static int viewTop(Context c) {
+        return Math.max(0, sp(c).getInt(KEY_VIEW_TOP, 0));
+    }
+
+    static void setViewTop(Context c, int top) {
+        sp(c).edit().putInt(KEY_VIEW_TOP, Math.max(0, top)).apply();
+    }
+
+    /** 改了时间轴范围就把翻页位置归零 —— 行号的含义整个变了 */
+    static void resetViewTop(Context c) {
+        sp(c).edit().remove(KEY_VIEW_TOP).apply();
+    }
+
+    // ── 底板透明度 ───────────────────────────────────────────────────────
+
+    static int alpha(Context c) {
+        return normalizeAlpha(sp(c).getInt(KEY_ALPHA, DEFAULT_ALPHA));
+    }
+
+    static void setAlpha(Context c, int pct) {
+        sp(c).edit().putInt(KEY_ALPHA, normalizeAlpha(pct)).apply();
+    }
+
+    /** 吸附到最近的合法档位 —— 免得旧版本存下的值或手改的值画出四不像 */
+    private static int normalizeAlpha(int pct) {
+        int best = DEFAULT_ALPHA;
+        int diff = Integer.MAX_VALUE;
+        for (int a : ALPHAS) {
+            int d = Math.abs(a - pct);
+            if (d < diff) { diff = d; best = a; }
+        }
+        return best;
     }
 
     private static int clampHour(int h) {

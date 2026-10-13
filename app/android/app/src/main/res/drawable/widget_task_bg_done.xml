@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  已完成任务块的底。**不用删除线**（用户明确反感过），改用整块退色：
+  底从浅绿变浅灰、左侧竖线从主绿变灰 —— 一眼能看出「这条已经过去了」，
+  但不会像删除线那样喧宾夺主。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#E9EDEA" />
+            <corners android:radius="7dp" />
+        </shape>
+    </item>
+    <item android:left="0dp" android:width="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#9CAFA3" />
+            <corners android:radius="1.5dp" />
+        </shape>
+    </item>
+</layer-list>

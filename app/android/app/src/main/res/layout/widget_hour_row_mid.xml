@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   时间轴的一行 · 中档（28dp）。
-  什么时候用它由 ScheduleWidgetProvider.hourRowLayoutFor 按组件高度算 ——
+  什么时候用它由 ScheduleWidgetProvider.planRows 按组件高度算 ——
   时间轴设成 6:00–23:00 时只有紧凑档塞得下，拖大了才轮得到宽松档。
+  如果连紧凑档也放不下全部行，就由 planRows 算出 perPage 走翻页。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/hour_root"

@@ -51,6 +51,7 @@ class WidgetApi {
     static void bootstrap(Context c, Callback cb) {
         String token = WidgetPrefs.token(c);
         if (token == null || token.isEmpty()) {
+            Log.w(TAG, "bootstrap 跳过：本地还没有票（App 没登录过？）");
             cb.onFail("no-token");
             return;
         }
@@ -68,6 +69,7 @@ class WidgetApi {
     static void op(Context c, JSONArray ops, Callback cb) {
         String token = WidgetPrefs.token(c);
         if (token == null || token.isEmpty()) {
+            Log.w(TAG, "op 跳过：本地还没有票（App 没登录过？）");
             cb.onFail("no-token");
             return;
         }
@@ -100,17 +102,36 @@ class WidgetApi {
                 if (body != null) {
                     conn.setDoOutput(true);
                     conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                    // ⚠️⚠️ setDoOutput(true) 只是「打开写通道」，**必须真的把正文写出去**。
+                    // 这里以前漏了下面这几行 —— 请求确实发出去了、状态码也是
+                    // 服务端回的，但正文是空的，于是每次 POST 都被打回
+                    // 400「ops 不能为空」。
+                    //
+                    // 后果极难查：打卡、新建、勾完成**全部**失败，但走的是
+                    // 静默入队那条路，界面照常乐观更新，日志一片干净。表现就是
+                    // 「桌面点了半天，服务器一点没变」「新建的任务过很久才出现」
+                    // —— 其实它永远不会自己出现，得等 App 打开后走网页侧同步。
+                    OutputStream os = conn.getOutputStream();
+                    os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                    os.close();
                 }
 
                 int code = conn.getResponseCode();
                 InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
                 String text = readAll(is);
 
+                // ⚠️ 这四条日志是**必须**的。以前非 2xx 走的是「静默入队」：
+                // 请求打不出去、日志里一个字都没有，表现只是「桌面点了半天，
+                // 服务器没变」，无从查起。宁可刷屏也不能再瞎。
                 if (code == 401) {
+                    Log.w(TAG, method + " " + path + " -> 401 票无效/过期");
                     fail(cb, "unauthorized");
                     return;
                 }
                 if (code < 200 || code >= 300) {
+                    Log.w(TAG, method + " " + path + " -> HTTP " + code + " "
+                            + brief(text));
                     fail(cb, "http-" + code);
                     return;
                 }
@@ -118,9 +139,11 @@ class WidgetApi {
                 try {
                     out = new JSONObject(text);
                 } catch (Exception e) {
+                    Log.w(TAG, method + " " + path + " -> 返回不是 JSON: " + brief(text));
                     fail(cb, "bad-json");
                     return;
                 }
+                Log.i(TAG, method + " " + path + " -> 200");
                 ok(cb, out);
             } catch (Exception e) {
                 Log.w(TAG, method + " " + path + " 失败: " + e);
@@ -131,6 +154,13 @@ class WidgetApi {
         });
         t.setPriority(Thread.MIN_PRIORITY);   // 别跟渲染抢
         t.start();
+    }
+
+    /** 截断响应体再进日志 —— 服务端的报错原文多半就在里面，但不值得刷一整屏 */
+    private static String brief(String s) {
+        if (s == null) return "";
+        String one = s.replaceAll("\\s+", " ").trim();
+        return one.length() > 180 ? one.substring(0, 180) + "…" : one;
     }
 
     private static String readAll(InputStream is) throws Exception {

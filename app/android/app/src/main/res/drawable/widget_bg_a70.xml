@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小组件底板 · 70% 不透明（半透，能看到壁纸颜色）。
+
+  为什么是**独立文件**而不是一个 setAlpha()：RemoteViews 只认标了
+  @RemotableViewMethod 的方法，View.setAlpha(float) 不在其中，反射调用会抛
+  ActionException。能安全改背景的只有 setBackgroundResource —— 所以透明度
+  只能预先做成几档资源来切。三档：不透明(widget_bg) / 70%(本文件) / 45%(a45)。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#B3F1F8F3" />
+    <corners android:radius="20dp" />
+    <stroke android:width="1dp" android:color="#B3D5E7DA" />
+</shape>

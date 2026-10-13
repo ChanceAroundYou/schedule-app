@@ -51,12 +51,27 @@ class WHabit {
     final boolean done;
     final int streak;
 
-    WHabit(String id, String calId, String title, boolean done, int streak) {
+    /**
+     * 完整的打卡记录：{ "2026-10-13": true } 这样的**稀疏表**。
+     *
+     * ⚠️ 为什么要整个表而不是只知道「今天打没打」：服务端的 applyOps 是
+     * **字段整值替换**（见 server/lib/sync.js），改打卡就得把整个 log 回写。
+     * 手里只有 done 的话只能瞎猜一个空表发上去，那会把这个人过去所有的
+     * 打卡记录一次抹干净。
+     *
+     * {@code null} 表示**服务端没给这个字段**（老版本服务端只返回 done/streak）。
+     * 这时候宁可先把改动入队等着，也不能冒险发。
+     */
+    final org.json.JSONObject log;
+
+    WHabit(String id, String calId, String title, boolean done, int streak,
+           org.json.JSONObject log) {
         this.id = id;
         this.calId = calId;
         this.title = title;
         this.done = done;
         this.streak = streak;
+        this.log = log;
     }
 }
 
@@ -102,7 +117,10 @@ class WidgetSnapshot {
                 if (h == null) continue;
                 s.habits.add(new WHabit(
                         h.optString("id"), h.optString("calId"), h.optString("title"),
-                        h.optBoolean("done"), h.optInt("streak")));
+                        h.optBoolean("done"), h.optInt("streak"),
+                        // 老服务端没有这个字段 → null（= 「不敢写打卡」），
+                        // 新服务端至少返回 {}（= 「可以写，表是空的」）
+                        h.optJSONObject("log")));
             }
         }
         return s;

@@ -71,7 +71,15 @@ public class CreateTaskActivity extends Activity {
             } catch (Exception ignored) {
             }
 
-            // ② 有票就直连（B 方案）。entityId 传 "@new" 由服务端发真 id。
+            // ② **先把时间轴翻到这条任务会出现的位置，再重画**。
+            //    上一版只在网络返回之后才 refresh，于是用户点保存、弹框关掉，
+            //    桌面上还得空等一个网络往返 —— 走公网慢的时候好几秒，观感就是
+            //    「保存了但没反应」。而且新任务（尤其未定时的）多半落在当前
+            //    视口之外，不翻过去照样看不见。
+            ScheduleWidgetProvider.revealRow(this, tm);
+            ScheduleWidgetProvider.refresh(this);
+
+            // ③ 有票就直连（B 方案）。entityId 传 "@new" 由服务端发真 id。
             //    calId 拿不到时不能发 —— 服务端会因为缺 calId 整条丢掉（不报错）
             if (WidgetPrefs.canDirect(this) && !calId.isEmpty()) {
                 try {
