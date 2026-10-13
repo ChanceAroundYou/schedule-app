@@ -25,6 +25,46 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "WidgetBridge")
 public class WidgetBridge extends Plugin {
 
+  /**
+   * 把登录票与接口基址交给原生侧存着。
+   *
+   * 这是 **B 方案的关键一步**：小组件要能「不打开 App 也读写服务器」，
+   * 就得有票。而小组件不自己登录（那要在原生侧存口令，太危险），
+   * 所以由 App 登录成功后把票推过来。
+   *
+   * 存在 {@code CapacitorStorage} 这个 SharedPreferences 文件里 ——
+   * 原生侧和网页侧共用同一份，小组件进程也读得到。
+   */
+  @PluginMethod
+  public void setAuth(PluginCall call) {
+    String token = call.getString("token");
+    String base = call.getString("base");
+    if (token == null || token.isEmpty()) {
+      call.reject("token 不能为空");
+      return;
+    }
+    try {
+      WidgetPrefs.setToken(getContext(), token);
+      WidgetPrefs.setApiBase(getContext(), base);
+      // 顺手触发一次刷新：票刚到手，桌面还是旧的
+      refreshAll();
+      JSObject ret = new JSObject();
+      ret.put("ok", true);
+      call.resolve(ret);
+    } catch (Exception e) {
+      call.reject("保存登录状态失败：" + e.getMessage());
+    }
+  }
+
+  /** 登出 / 票失效时清掉。小组件会退回「只显示快照」 */
+  @PluginMethod
+  public void clearAuth(PluginCall call) {
+    WidgetPrefs.setToken(getContext(), null);
+    JSObject ret = new JSObject();
+    ret.put("ok", true);
+    call.resolve(ret);
+  }
+
   @PluginMethod
   public void refresh(PluginCall call) {
     String cls = call.getString("provider");
@@ -50,6 +90,17 @@ public class WidgetBridge extends Plugin {
       call.resolve(ret);
     } catch (Exception e) {
       call.reject("刷新小组件失败：" + e.getMessage());
+    }
+  }
+
+  /** 给所有 provider 发一次刷新。setAuth 后用，免得桌面留着旧数据 */
+  private void refreshAll() {
+    try {
+      Intent intent = new Intent();
+      intent.setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
+      getContext().sendBroadcast(intent);
+    } catch (Exception ignored) {
+      // 刷新失败不影响票已存下这个事实
     }
   }
 }

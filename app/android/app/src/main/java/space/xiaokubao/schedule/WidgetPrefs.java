@@ -28,6 +28,16 @@ class WidgetPrefs {
     /** 离线时攒下的改动，等 App 启动时读走并推送 */
     static final String KEY_PENDING = "schedule_widget_pending";
 
+    /**
+     * 登录票。**由 App（网页侧）登录成功后写进来**，小组件拿着它直连服务器。
+     * 存在同一个文件里，所以原生侧读得到。
+     */
+    static final String KEY_TOKEN = "schedule_widget_token";
+    /** 接口基址，App 启动时一并写下来（打包进 APK 的那个 VITE_API_BASE） */
+    static final String KEY_API_BASE = "schedule_widget_api_base";
+    /** 小组件自己的设备号，发 op 时要带（applyOps 校验 deviceId 非空且 <64 字符） */
+    static final String KEY_DEVICE_ID = "schedule_widget_device_id";
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -86,5 +96,89 @@ class WidgetPrefs {
 
     static int pendingCount(Context c) {
         return pendingOps(c).size();
+    }
+
+    /**
+     * 乐观更新：改本地快照里某一条的字段，让桌面**立刻**变。
+     *
+     * 直连服务器成功后会拿新快照覆盖，这里只是抢那几百毫秒的观感。
+     * 只认 done / title / date / time / dur / calId 这几个小组件画得出来的字段，
+     * 别的（备注、重复规则）在快照里本来就没有。
+     *
+     * {@code insertIfMissing} 为 true 时，找不到这条就**新建**一条
+     * （新建任务的乐观更新要靠这个 —— 服务端的真 id 要等它返回才知道）。
+     */
+    static void patchEntity(Context c, String entity, String id, JSONObject fields,
+                            boolean insertIfMissing) {
+        SharedPreferences p = sp(c);
+        String json = p.getString(KEY_SNAPSHOT, null);
+        if (json == null) return;
+        try {
+            JSONObject o = new JSONObject(json);
+            JSONArray arr = o.optJSONArray(entity);
+            if (arr == null) return;
+            JSONObject hit = null;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject e = arr.optJSONObject(i);
+                if (e != null && id.equals(e.optString("id"))) { hit = e; break; }
+            }
+            if (hit == null) {
+                if (!insertIfMissing) return;
+                hit = new JSONObject();
+                hit.put("id", id);
+                arr.put(hit);
+            }
+            JSONArray names = fields.names();
+            for (int k = 0; k < names.length(); k++) {
+                String key = names.getString(k);
+                if (fields.isNull(key)) hit.remove(key);
+                else hit.put(key, fields.get(key));
+            }
+            p.edit().putString(KEY_SNAPSHOT, o.toString()).apply();
+        } catch (Exception ignored) {
+            // 改不动就算了 —— 直连成功后会用服务端的真值覆盖
+        }
+    }
+
+    /** 用服务端返回的新快照整体替换本地那份 */
+    static void replaceSnapshot(Context c, JSONObject snap) {
+        sp(c).edit().putString(KEY_SNAPSHOT, snap.toString()).apply();
+    }
+
+    // ── 直连服务器要用的三样 ──────────────────────────────────────────────
+
+    static String token(Context c) {
+        return sp(c).getString(KEY_TOKEN, null);
+    }
+
+    static void setToken(Context c, String t) {
+        sp(c).edit().putString(KEY_TOKEN, t).apply();
+    }
+
+    /** 没有基址时给个默认值 —— 线上那个，宁可连不上也不能拼出半截 URL */
+    static String apiBase(Context c) {
+        String b = sp(c).getString(KEY_API_BASE, null);
+        return (b == null || b.isEmpty()) ? "https://home.xiaokubao.space/schedule" : b;
+    }
+
+    static void setApiBase(Context c, String b) {
+        if (b != null && !b.isEmpty()) sp(c).edit().putString(KEY_API_BASE, b).apply();
+    }
+
+    /** 一次生成、之后不变 —— op 里的 deviceId 稳定，服务端好追溯 */
+    static String deviceId(Context c) {
+        SharedPreferences p = sp(c);
+        String id = p.getString(KEY_DEVICE_ID, null);
+        if (id == null) {
+            id = "widget-" + java.util.UUID.randomUUID().toString().substring(0, 12);
+            p.edit().putString(KEY_DEVICE_ID, id).apply();
+        }
+        return id;
+    }
+
+    /** 是否已经具备直连条件（票 + 基址都在） */
+    static boolean canDirect(Context c) {
+        String t = token(c);
+        return t != null && !t.isEmpty();
     }
 }

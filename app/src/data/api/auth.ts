@@ -5,16 +5,32 @@
 import type { PublicUser } from '../../domain/types.ts';
 import { req } from './request.ts';
 import { setToken, setCachedUser, type AuthResult } from './token.ts';
+import { pushWidgetAuth } from '../widget.ts';
+
+/** 登录成功后的统一收尾：换票 + 把票推给原生侧的小组件 */
+function noteAuthed(r: AuthResult): void {
+  setToken(r.token);
+  setCachedUser(r.user);
+  // 小组件要能不打开 App 就读写服务器，得有票。**void** —— 推失败只是
+  // 小组件退回「只显示快照」，不影响用户正在做的事。
+  void pushWidgetAuth(r.token);
+}
 
 export const auth = {
   health: () => req<{ ok: boolean; time: number }>('GET', 'health'),
 
   /** 自助注册，开放。注册成功服务器会顺手建一个「我的日程」 */
-  register: (name: string, password: string) =>
-    req<AuthResult>('POST', 'auth/register', { name, password }),
+  register: async (name: string, password: string) => {
+    const r = await req<AuthResult>('POST', 'auth/register', { name, password });
+    noteAuthed(r);
+    return r;
+  },
 
-  login: (name: string, password: string) =>
-    req<AuthResult>('POST', 'auth/login', { name, password }),
+  login: async (name: string, password: string) => {
+    const r = await req<AuthResult>('POST', 'auth/login', { name, password });
+    noteAuthed(r);
+    return r;
+  },
 
   logout: () => req<{ ok: boolean }>('POST', 'auth/logout', {}),
 
@@ -30,8 +46,7 @@ export const auth = {
       'POST', 'auth/password', { oldPassword, newPassword },
       { keepTokenOn401: true },
     );
-    setToken(r.token);
-    setCachedUser(r.user);
+    noteAuthed(r);
     return r;
   },
 

@@ -15,6 +15,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { serializeWidgetSnapshot } from '../domain/widgetSnapshot.ts';
+import { API_BASE } from './api/request.ts';
 import type { LocalState } from '../domain/types.ts';
 
 /** 原生侧读同一个 key。**两边必须一致**，改这里要同步改 Kotlin */
@@ -23,6 +24,15 @@ export const WIDGET_SNAPSHOT_KEY = 'schedule_widget_snapshot';
 interface WidgetBridgePlugin {
   /** 通知指定小组件重画。provider 传组件类全名 */
   refresh(options: { provider: string }): Promise<{ ids: number }>;
+  /**
+   * 把登录票与接口基址交给原生侧存着。
+   *
+   * 这是 **B 方案**的关键一步：小组件要能不打开 App 就读写服务器，就得有票。
+   * 而小组件不自己登录（那要在原生侧存口令，太危险），所以由 App 登录成功后
+   * 把票推过来。登出时要调 clearAuth。
+   */
+  setAuth(options: { token: string; base: string }): Promise<{ ok: boolean }>;
+  clearAuth(): Promise<{ ok: boolean }>;
 }
 
 const WidgetBridge = registerPlugin<WidgetBridgePlugin>('WidgetBridge');
@@ -58,4 +68,29 @@ export async function publishWidgetSnapshot(state: LocalState): Promise<void> {
   for (const p of providers) {
     try { await WidgetBridge.refresh({ provider: p }); } catch (_) { /* 这个没有实例 */ }
   }
+}
+
+/**
+ * 把登录票推给原生侧，让小组件能直连服务器。
+ *
+ * 只在原生平台有意义（网页版没有小组件）。**静默失败** —— 推不成只是
+ * 小组件退回「只显示快照 + 攒待同步队列」，不影响 App 本身。
+ *
+ * base 用打包时注入的那个（`VITE_API_BASE`），和请求用的是同一个值。
+ */
+export async function pushWidgetAuth(token: string): Promise<void> {
+  if (!Capacitor.isNativePlatform() || !token) return;
+  try {
+    await WidgetBridge.setAuth({ token, base: API_BASE });
+  } catch (_) {
+    // 原生侧没这个插件（旧 APK）时也会走到这儿，忽略即可
+  }
+}
+
+/** 登出 / 票失效时清掉原生侧那份 */
+export async function clearWidgetAuth(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await WidgetBridge.clearAuth();
+  } catch (_) { /* 同上 */ }
 }

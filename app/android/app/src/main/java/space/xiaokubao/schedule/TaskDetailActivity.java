@@ -6,6 +6,7 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.List;
@@ -56,17 +57,62 @@ public class TaskDetailActivity extends Activity {
         toggle.setText(theTask.done ? "取消完成" : "标记完成");
 
         toggle.setOnClickListener(v -> {
+            final boolean on = !theTask.done;
+            final long now = System.currentTimeMillis();
+
+            // ① 乐观更新本地，弹框关掉后桌面已经是新状态
             try {
-                JSONObject op = new JSONObject();
-                op.put("kind", "toggle");
-                op.put("taskId", theTask.id);
-                op.put("on", !theTask.done);
-                WidgetPrefs.enqueuePending(this, op);
+                JSONObject f = new JSONObject();
+                f.put("done", on);
+                f.put("doneAt", on ? now : JSONObject.NULL);
+                WidgetPrefs.patchEntity(this, "tasks", theTask.id, f, false);
             } catch (Exception ignored) {
             }
-            ScheduleWidgetProvider.refresh(this);
+
+            // ② 有票就直连（B 方案）；没票/断网就入队等 App 启动后补发
+            if (WidgetPrefs.canDirect(this)) {
+                try {
+                    JSONArray ops = new JSONArray();
+                    JSONObject op = new JSONObject();
+                    op.put("entity", "task");
+                    op.put("entityId", theTask.id);
+                    op.put("calId", theTask.calId);
+                    JSONObject fields = new JSONObject();
+                    fields.put("done", on);
+                    fields.put("doneAt", on ? now : JSONObject.NULL);
+                    op.put("fields", fields);
+                    ops.put(op);
+                    WidgetApi.op(this, ops, new WidgetApi.Callback() {
+                        @Override
+                        public void onOk(JSONObject body) {
+                            WidgetPrefs.replaceSnapshot(TaskDetailActivity.this, body);
+                            ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
+                        }
+
+                        @Override
+                        public void onFail(String why) {
+                            enqueueToggle(theTask.id, on);
+                        }
+                    });
+                } catch (Exception e) {
+                    enqueueToggle(theTask.id, on);
+                }
+            } else {
+                enqueueToggle(theTask.id, on);
+            }
             finish();
         });
         close.setOnClickListener(v -> finish());
+    }
+
+    private void enqueueToggle(String taskId, boolean on) {
+        try {
+            JSONObject op = new JSONObject();
+            op.put("kind", "toggle");
+            op.put("taskId", taskId);
+            op.put("on", on);
+            WidgetPrefs.enqueuePending(this, op);
+        } catch (Exception ignored) {
+        }
     }
 }

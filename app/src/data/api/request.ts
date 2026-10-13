@@ -14,7 +14,7 @@ import { ApiError } from './error.ts';
  * App 自己的域上去（那里没有后端）。打包时注入 `VITE_API_BASE`
  * 指到线上站点即可。
  */
-const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) || '.';
+export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) || '.';
 
 async function req<T>(
   method: string, path: string, body?: unknown,

@@ -810,3 +810,116 @@ test('改口令接口要登录：没带票进不来', async () => {
   });
   assert.strictEqual(r.status, 401);
 });
+
+/* -------------------------------------------------- 桌面小组件接口 */
+
+// ⚠️ 注册有每 IP 每小时 10 次的限流（routes/auth.js:38），这个文件里前面已经
+// 用掉大半配额。所以下面**尽量复用 dad**，只为一个只读成员的用例新开一个账户。
+// 新加用例时先数一下这里注册了几次。
+
+test('小组件 bootstrap：未登录进不来，登录后返回快照形状', async () => {
+  assert.strictEqual((await api('GET', '/api/widget/bootstrap')).status, 401);
+
+  // ⚠️ 前面「改口令」那几个用例把 dad 的票作废了（改口令会让之前签发的全部失效）。
+  // 这里重新登录拿一张新的，否则后面全是 401。口令是那个用例改后的值。
+  const relogin = await api('POST', '/api/auth/login', {
+    body: { name: '爸爸', password: 'dad-new-2026' },
+  });
+  assert.strictEqual(relogin.status, 200, JSON.stringify(relogin.body));
+  dad.token = relogin.body.token;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const far = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+  await push([
+    op('wt-in', { title: '窗口内的事', date: todayIso, time: '09:00', done: false }, 0, 'd1'),
+    op('wt-out', { title: '窗口外的事', date: far, time: null }, 0, 'd1'),
+  ], 1);
+
+  const r = await api('GET', '/api/widget/bootstrap', { token: dad.token });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.today, todayIso);
+  assert.strictEqual(r.body.defaultCalId, CAL);
+  const titles = r.body.tasks.map((t) => t.title);
+  assert.ok(titles.includes('窗口内的事'), '窗口内的任务应该在');
+  assert.ok(!titles.includes('窗口外的事'), '窗口外的任务不该出现');
+  // 形状必须跟 App 写的快照一致，否则原生侧两套解析器会对不上
+  const t = r.body.tasks.find((x) => x.title === '窗口内的事');
+  assert.strictEqual(t.calId, CAL, '任务必须带 calId —— 写操作要用');
+  assert.strictEqual(t.dur, 0);
+  assert.strictEqual(t.done, false);
+});
+
+test('小组件 op：勾完成真的落库，@new 由服务端发 id', async () => {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  await push([
+    op('wt-t1', { title: '待勾的事', date: todayIso, time: '10:00', done: false }, 0, 'd1'),
+  ], 1);
+
+  const r = await api('POST', '/api/widget/op', {
+    token: dad.token,
+    body: {
+      deviceId: 'widget-test',
+      ops: [
+        { entity: 'task', entityId: 'wt-t1', calId: CAL, fields: { done: true, doneAt: Date.now() } },
+        { entity: 'task', entityId: '@new', calId: CAL, fields: { title: '桌面新建', date: todayIso, time: null, done: false, doneAt: null } },
+      ],
+    },
+  });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.applied, 2);
+
+  const snap = await snapshot();
+  assert.strictEqual(snap.tasks['wt-t1'].done, true, '勾完成必须真的写进库');
+  const made = r.body.tasks.find((t) => t.title === '桌面新建');
+  assert.ok(made, '新建的任务必须在回读里');
+  assert.ok(/^t_[0-9a-f]{16}$/.test(made.id), 'id 该是服务端发的那个: ' + made.id);
+  assert.ok(snap.tasks[made.id], '新建的那条也得在库里');
+});
+
+test('小组件 op：只读成员写不进去（权限没被绕开）', async () => {
+  // 最关键的一条：这个接口自己**不做**权限判断，全靠 applyOps。
+  // 哪天有人图省事在这里直接写库，这条会红。
+  const viewer = await registerUser('小组件观群员', 'widget-viewer-1');
+  const todayIso = new Date().toISOString().slice(0, 10);
+  await push([
+    op('wt-v1', { title: '群主的任务', date: todayIso, time: '08:00', done: false }, 0, 'd1'),
+  ], 1);
+
+  const made = await api('POST', `/api/cals/${CAL}/invites`, {
+    token: dad.token, body: { name: viewer.name, role: 'viewer' },
+  });
+  assert.strictEqual(made.status, 200, JSON.stringify(made.body));
+  const inbox = await api('GET', '/api/invites', { token: viewer.token });
+  assert.strictEqual(inbox.body.invites.length, 1, JSON.stringify(inbox.body));
+  assert.strictEqual((await api('POST', `/api/invites/${inbox.body.invites[0].id}/accept`, {
+    token: viewer.token,
+  })).status, 200);
+
+  const r = await api('POST', '/api/widget/op', {
+    token: viewer.token,
+    body: {
+      deviceId: 'widget-test',
+      ops: [{ entity: 'task', entityId: 'wt-v1', calId: CAL, fields: { done: true } }],
+    },
+  });
+  assert.strictEqual(r.status, 200, '接口本身不报错 —— 拒绝逐条 op 体现');
+  assert.strictEqual(r.body.applied, 0, '只读成员一条都不该生效');
+  assert.ok(r.body.rejected.length > 0 && r.body.rejected[0].code === 'forbidden',
+    '拒绝原因必须是 forbidden: ' + JSON.stringify(r.body.rejected));
+
+  const snap = await snapshot(viewer.token);
+  assert.strictEqual(snap.tasks['wt-v1'].done, false, '库里必须还是没完成');
+});
+
+test('小组件 op：空 ops / 超量都挡住', async () => {
+  assert.strictEqual((await api('POST', '/api/widget/op', {
+    token: dad.token, body: { deviceId: 'x', ops: [] },
+  })).status, 400);
+  const many = [];
+  for (let i = 0; i < 51; i++) {
+    many.push({ entity: 'task', entityId: '@new', calId: CAL, fields: { title: 't' + i } });
+  }
+  assert.strictEqual((await api('POST', '/api/widget/op', {
+    token: dad.token, body: { deviceId: 'x', ops: many },
+  })).status, 400);
+});

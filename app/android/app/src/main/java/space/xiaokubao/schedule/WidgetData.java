@@ -15,6 +15,8 @@ import java.util.List;
  */
 class WTask {
     final String id;
+    /** 这个任务属于哪个集。写操作（勾完成）要把它带给服务端 */
+    final String calId;
     final String date;
     /** null = 未定时 */
     final String time;
@@ -23,8 +25,9 @@ class WTask {
     final String title;
     final boolean done;
 
-    WTask(String id, String date, String time, int dur, String title, boolean done) {
+    WTask(String id, String calId, String date, String time, int dur, String title, boolean done) {
         this.id = id;
+        this.calId = calId;
         this.date = date;
         this.time = time;
         this.dur = dur;
@@ -42,12 +45,15 @@ class WTask {
 
 class WHabit {
     final String id;
+    /** 属于哪个集。打卡写操作要用 */
+    final String calId;
     final String title;
     final boolean done;
     final int streak;
 
-    WHabit(String id, String title, boolean done, int streak) {
+    WHabit(String id, String calId, String title, boolean done, int streak) {
         this.id = id;
+        this.calId = calId;
         this.title = title;
         this.done = done;
         this.streak = streak;
@@ -58,18 +64,22 @@ class WidgetSnapshot {
     final long at;
     final String from;
     final String to;
+    /** 服务端的「今天」—— 设备时间可能不准，判今天/红线都以它为准 */
+    final String today;
     final List<WTask> tasks = new ArrayList<>();
     final List<WHabit> habits = new ArrayList<>();
 
-    private WidgetSnapshot(long at, String from, String to) {
+    private WidgetSnapshot(long at, String from, String to, String today) {
         this.at = at;
         this.from = from;
         this.to = to;
+        this.today = today;
     }
 
     static WidgetSnapshot parse(String json) throws Exception {
         JSONObject o = new JSONObject(json);
-        WidgetSnapshot s = new WidgetSnapshot(o.optLong("at"), o.optString("from"), o.optString("to"));
+        WidgetSnapshot s = new WidgetSnapshot(
+                o.optLong("at"), o.optString("from"), o.optString("to"), o.optString("today"));
         JSONArray ts = o.optJSONArray("tasks");
         if (ts != null) {
             for (int i = 0; i < ts.length(); i++) {
@@ -77,6 +87,7 @@ class WidgetSnapshot {
                 if (t == null) continue;
                 s.tasks.add(new WTask(
                         t.optString("id"),
+                        t.optString("calId"),
                         t.optString("date"),
                         t.isNull("time") ? null : t.optString("time", null),
                         t.optInt("dur"),
@@ -90,7 +101,7 @@ class WidgetSnapshot {
                 JSONObject h = hs.optJSONObject(i);
                 if (h == null) continue;
                 s.habits.add(new WHabit(
-                        h.optString("id"), h.optString("title"),
+                        h.optString("id"), h.optString("calId"), h.optString("title"),
                         h.optBoolean("done"), h.optInt("streak")));
             }
         }
@@ -99,7 +110,7 @@ class WidgetSnapshot {
 
     /** 空快照：还没同步到数据时用它，至少别崩 */
     static WidgetSnapshot empty() {
-        return new WidgetSnapshot(0, "", "");
+        return new WidgetSnapshot(0, "", "", "");
     }
 
     List<WTask> tasksOf(String iso) {
@@ -107,5 +118,15 @@ class WidgetSnapshot {
         for (WTask t : tasks) if (iso.equals(t.date)) out.add(t);
         out.sort((a, b) -> Integer.compare(a.sortKey(), b.sortKey()));
         return out;
+    }
+
+    WTask taskById(String id) {
+        for (WTask t : tasks) if (t.id.equals(id)) return t;
+        return null;
+    }
+
+    WHabit habitById(String id) {
+        for (WHabit h : habits) if (h.id.equals(id)) return h;
+        return null;
     }
 }

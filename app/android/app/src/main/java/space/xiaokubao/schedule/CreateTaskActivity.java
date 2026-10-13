@@ -6,6 +6,7 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -39,19 +40,79 @@ public class CreateTaskActivity extends Activity {
         save.setOnClickListener(v -> {
             String t = title.getText().toString().trim();
             if (t.isEmpty()) { title.setError("总得写点什么"); return; }
+            final String tm = time.getText().toString().trim();
+
+            // ① 乐观更新：本地造一条（id 是临时的，服务端返回真值后会整体覆盖）
+            final String localId = "t_local_" + System.currentTimeMillis();
             try {
-                JSONObject op = new JSONObject();
-                op.put("kind", "create");
-                op.put("title", t);
-                op.put("date", date);
-                String tm = time.getText().toString().trim();
-                op.put("time", tm.isEmpty() ? JSONObject.NULL : tm);
-                WidgetPrefs.enqueuePending(this, op);
+                JSONObject f = new JSONObject();
+                f.put("title", t);
+                f.put("date", date);
+                f.put("time", tm.isEmpty() ? JSONObject.NULL : tm);
+                f.put("dur", 0);
+                f.put("done", false);
+                f.put("calId", WidgetPrefs.snapshot(this).tasks.isEmpty()
+                        ? "" : WidgetPrefs.snapshot(this).tasks.get(0).calId);
+                WidgetPrefs.patchEntity(this, "tasks", localId, f, true);
             } catch (Exception ignored) {
             }
-            ScheduleWidgetProvider.refresh(this);
+
+            // ② 有票就直连（B 方案）。entityId 传 "@new" 由服务端发真 id
+            if (WidgetPrefs.canDirect(this)) {
+                try {
+                    JSONArray ops = new JSONArray();
+                    JSONObject op = new JSONObject();
+                    op.put("entity", "task");
+                    op.put("entityId", "@new");
+                    op.put("calId", defaultCalId(this));
+                    JSONObject fields = new JSONObject();
+                    fields.put("title", t);
+                    fields.put("date", date);
+                    fields.put("time", tm.isEmpty() ? JSONObject.NULL : tm);
+                    fields.put("dur", 0);
+                    fields.put("done", false);
+                    fields.put("doneAt", JSONObject.NULL);
+                    op.put("fields", fields);
+                    ops.put(op);
+                    WidgetApi.op(this, ops, new WidgetApi.Callback() {
+                        @Override
+                        public void onOk(JSONObject body) {
+                            WidgetPrefs.replaceSnapshot(CreateTaskActivity.this, body);
+                            ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
+                        }
+
+                        @Override
+                        public void onFail(String why) {
+                            enqueueCreate(t, date, tm);
+                        }
+                    });
+                } catch (Exception e) {
+                    enqueueCreate(t, date, tm);
+                }
+            } else {
+                enqueueCreate(t, date, tm);
+            }
             finish();
         });
         cancel.setOnClickListener(v -> finish());
+    }
+
+    /** 默认集：从现有任务里随便借一个 calId（快照一定带） */
+    private static String defaultCalId(android.content.Context c) {
+        WidgetSnapshot s = WidgetPrefs.snapshot(c);
+        if (!s.tasks.isEmpty()) return s.tasks.get(0).calId;
+        return "";
+    }
+
+    private void enqueueCreate(String t, String date, String tm) {
+        try {
+            JSONObject op = new JSONObject();
+            op.put("kind", "create");
+            op.put("title", t);
+            op.put("date", date);
+            op.put("time", tm.isEmpty() ? JSONObject.NULL : tm);
+            WidgetPrefs.enqueuePending(this, op);
+        } catch (Exception ignored) {
+        }
     }
 }
