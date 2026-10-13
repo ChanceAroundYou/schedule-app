@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 新建。用 App 标识的主绿 #27795A -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#27795A"
+        android:pathData="M11,5 L11,11 L5,11 L5,13 L11,13 L11,19 L13,19 L13,13 L19,13 L19,11 L13,11 L13,5 Z" />
+</vector>

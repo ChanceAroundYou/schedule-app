@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 右箭头。颜色用 App 标识那一组的深绿，不用纯黑 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#3E5A4A"
+        android:pathData="M15.4,4.6 L14,6 L18,10 L8,10 L8,14 L18,14 L14,18 L15.4,19.4 L21.8,13 Z" />
+</vector>
