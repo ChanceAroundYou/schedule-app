@@ -1,6 +1,6 @@
 # 组件 API 与样式归属规范（第一册）
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（本册规则已定，实施另见 `v1-component-api-plan.md`）
 > 依据：`ui/` `views/` `styles/` 逐文件审计 + 组件库现状（`docs/组件库.md`）+ 令牌三轴
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）；
 >           `domain/` 保持零 React / DOM / 网络；后端不引任何新依赖。
@@ -158,106 +158,14 @@ const iconBtnVariants = cva(cx(BTN_BASE, 'rounded-[var(--r-pill)]'), { variants:
 
 其余 `shell.css` `calendar.css` `lists.css` `quick-add.css` `overlays.css` 里**只服务 `ui/**`** 的部分，下沉到 `ui/<组>/<组>.module.css`。
 
----
 
-## 4. `ui/<组>` 目录规划
-
-按**样式组**（不是组件）划分，每组一个 `.module.css`：
-
-```
-ui/
-  overlays/          ← 浮层通用（dp-*/field/repeat-*）
-    overlays.module.css
-    DatePicker.tsx
-    TimePicker.tsx
-    WhenPop.tsx
-    RepeatPop.tsx
-  shell/             ← 外壳（jp-*/search-*/nav-*）
-    shell.module.css
-    Topbar.tsx
-    Sidebar.tsx
-    Tabbar.tsx
-    JumpPop.tsx
-    QuickAdd.tsx
-    SearchInput.tsx
-  lists/             ← 列表（habit-*/task-*/ci-*）
-    lists.module.css
-    （列表组件，若 views/ 仍冻结则暂留 views/）
-  calendar/          ← 日历（week-*/month-*/task-*）
-    calendar.module.css
-    （若 views/ 仍冻结则暂留 views/）
-  kit/               ← 基础组件（Btn/Input/IconBtn/...）
-    kit.module.css   ← 或每个组件一个 .module.css，视耦合度
-    Btn.tsx
-    Input.tsx
-    ...
-```
-
-**注意**：`lists/` `calendar/` 两组若 `views/**` 仍冻结（当前决策），则**暂不迁移**，留在 `views/` 引全局 CSS。第二册再动 `views/`。
-
----
-
-## 5. 扫描器 / 守卫方案
-
-### 5.1 新增 `tests/api-scan.mjs`（零依赖静态扫描）
-
-锁三件事：
-1. **`ui/` `app/` 调用方不写 Tailwind 外观类**：正则 `/rounded-\[var\(|bg-\[var\(|text-\[var\(|border-\[var\(/` 扫 `.tsx`，豁免 `ui/kit/**` 内部
-2. **kit 组件无 `className` 透传**：扫 `ui/kit/**.tsx` 的 props 定义，有 `className?: string` 即报错
-3. **`views/` 语义类不动**：扫 `views/**/*.tsx` 的 `className`，出现 Tailwind 外观类即报错（语义类白名单豁免）
-
-### 5.2 现有扫描器保持
-
-- `color-scan.mjs`：颜色/圆角/令牌（已绿）
-- `contrast.mjs`：对比度 72 对（已绿）
-- `browser-smoke.mjs`：483 条断言（已绿）
-
-### 5.3 迁移期间的临时豁免
-
-`Dropdown` 当前收了 `className` / `menuClassName`，`Sheet` 收了 `--kb` 兜底。
-第一册修 `Dropdown`，`Sheet` 的 `--kb` 是运行时变量（键盘高度），扫描器已豁免，**不动**。
-
----
-
-## 6. 实施顺序（拆成多步，每步可独立验证）
-
-| 步 | 内容 | 改动文件 | 验证 |
-|---|---|---|---|
-| S1 | `Btn` 改 cva，删 `className` | `ui/kit/Btn.tsx` | typecheck + 探针 |
-| S2 | `Input` 删 `className` | `ui/kit/Input.tsx` | typecheck + 探针 |
-| S3 | `IconBtn` / `MiniIconBtn` 收 `size` / `tone`，删 `className` | `ui/kit/IconBtn.tsx` | typecheck + 探针 |
-| S4 | `Dropdown` 内部手写 button 改走 `Btn`，删 `className` / `menuClassName`，样式进 `.module.css` | `ui/kit/Dropdown.tsx` + `ui/kit/kit.module.css` | typecheck + 探针 |
-| S5 | 新增 `api-scan.mjs`，锁 R4 | `tests/api-scan.mjs` | 扫描器自身 |
-| S6 | 全局层拆出 `state.css` | `styles/tokens.css` `responsive.css` `state.css`（新建） | 探针 + 扫描器 |
-| S7 | `ui/<组>` 目录迁移（overlays / shell / kit） | 多文件 | 探针 + 扫描器 |
-
-**每步做完必须**：
-```bash
-cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tests/api-scan.mjs && npm run build && node tests/browser-smoke.mjs
-```
-
-**收尾**（踩坑 40）：`pkill -x chrome` 确认归零；`ss -ltnp` 查残留服务并 `kill`。
-
----
-
-## 7. 与其他册的边界
+## 4. 与其他册的边界
 
 - **第二册《命名与文件》**：变量名、文件长度、文件夹划分、粒度
 - **第三册《分层与数据流》**：`domain → data → views` 单向，`views/` 零回调判定
 - **第四册《数据结构与 SQLite》**：六条不变量 + 迁移/墓碑/游标
 
-本册只覆盖：样式归属三层 + 组件 API 封闭化 + 扫描器守卫。不碰 `views/` 冻结类（单独排期）、不碰命名（第二册）、不碰数据流（第三册）。
+本册只覆盖：样式归属三层 + 组件 API 封闭化。不碰 `views/` 冻结类（见第 5 册 D2）、命名与文件（第 3/4 册）、数据流（第 5 册）。
 
 ---
 
-## 附录：当前违规清单（第一册要修的）
-
-| 文件:行 | 违规 | 修法 |
-|---|---|---|
-| `ui/kit/Dropdown.tsx:53` | 收 `className?: string` | 删；布局由外层管 |
-| `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` |
-| `ui/kit/Btn.tsx:38-45` | 手写 `Record<Variant>` | 改 cva |
-| `ui/kit/IconBtn.tsx` | 收 `className` | 删；布局由外层管 |
-| `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop |
-| `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） |
-| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]`（第二册修） |

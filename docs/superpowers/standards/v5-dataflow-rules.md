@@ -1,6 +1,6 @@
 # 编码规范第 5 册 · 分层与数据流
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（实施另见 `v5-dataflow-plan.md`）
 > 依据：`app/clickDispatch.ts`、`data/store/commit.ts`、`ui/hooks/store.ts`、
 > `CLAUDE.md` 一、结构 + 二、不变量、`docs/重构路线*.md`
 > 不变量：**外部 import 路径一律不变**；`domain/` 保持零 React / DOM / 网络；本册只定流向，不动逻辑。
@@ -88,15 +88,8 @@ domain（纯） ← data（store/设备） ← sync（outbox+游标） ← app�
 
 1. `domain/` 无 React/DOM/网络 import（`rg "from 'react'|document\.|window\.|fetch\(" domain/` = 0）。
 2. `views/` 无 `onX` props、无 `data/store` 写入口 import。
-3. 新增 `data-act` 必有 `runAct` 对应 case，否则 `api-scan.mjs` 报错（第 1 册 §5.1 扩两条：D1+D2）。
+3. 新增 `data-act` 必有 `runAct` 对应 case，否则 `api-scan.mjs` 报错（第 1 册 plan §2 扩两条：D1+D2）。
 4. 跨集/按集页面清单与 D3 表一致（抽查 `contentDispatch`）。
 
 ---
 
-## 4. 违规清单（本册不修，只记）
-
-| 位置 | 现象 | 归属 |
-|---|---|---|
-| `views/` 受控 `Input onChange` ×N | 打字本地态，无 store 调用 | D2 特许，留 |
-| `Dropdown` 内部手写 `<button>` ×2 | 该走 `Btn` | 第 1 册 S4 修 |
-| `Sheet --kb` 兜底 | 运行时变量真默认值 | 第 3 册 N3 白名单，留 |

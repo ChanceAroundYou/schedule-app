@@ -1,6 +1,6 @@
 # 编码规范第 3 册 · 命名
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（实施另见 `v3-naming-plan.md`）
 > 依据：`docs/界面约定.md` §变量名与令牌、`CLAUDE.md` 三、令牌三条、
 > `domain/types/*`、`domain/model/*`、`ui/kit/*`、`data-*` 实测清单
 > 不变量：**外部 import 路径一律不变**；本册只定名字，不改任何导出。
@@ -70,14 +70,7 @@
 
 1. `contrast.mjs` ③④段 0 报错（未定义变量 / 多余兜底值）。
 2. 新增文件 `rg` 无同类实现；文件名与主导出一致（抽查）。
-3. 新增 `data-*` 必进 N4 表，否则 `api-scan.mjs` 报错（第 1 册 §5.1 扩一条）。
+3. 新增 `data-*` 必进 N4 表，否则 `api-scan.mjs` 报错（第 1 册 plan §2 扩一条）。
 
 ---
 
-## 4. 违规清单（本册不修，只记）
-
-| 位置 | 现象 | 归属 |
-|---|---|---|
-| `ui/kit/Dropdown.tsx:53` | `className/menuClassName` 对外透传 | 第 1 册 S4 修 |
-| `ui/settings/SettingsView.tsx:120` | `rounded-full` 写死圆角 | 第 1 册附录（`--r-pill` 替换） |
-| `--panel-2/--text-2` 类序号 | 同角色深浅档，**允许保留**，不算违规 | — |

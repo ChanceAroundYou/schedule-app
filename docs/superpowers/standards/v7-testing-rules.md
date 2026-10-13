@@ -1,6 +1,6 @@
 # 编码规范第 7 册 · 测试
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（本册含验证命令，无独立 plan）
 > 依据：`docs/测试.md`、`docs/重构-组件合并-实施spec.md` §8–§9、
 > `app/tests/`（browser-smoke/contrast/color-scan）、`server/tests/`（api/migration/ai/smoke-share）
 > 不变量：测试隔离第一（临时后端+随机端口，不碰线上库）；跑完收干净；本册只定矩阵与纪律，不写用例。
@@ -15,7 +15,7 @@
 | 后端 api/migration/ai | `node --test` + `smoke-share.mjs` | 46 + 8 + 18 条 | 临时库+随机端口 |
 | 颜色/令牌 | `contrast.mjs`（72 对）+ `color-scan.mjs` | 0 不达标 | 静态扫描，零依赖 |
 | UI 全量 | `browser-smoke.mjs`（无头 Chrome + CDP） | 419→483 条 | 临时后端+静态服务+独立 profile |
-| 待新增 | `api-scan.mjs`（第 1 册 §5.1） | — | 静态扫描，零依赖 |
+| 待新增 | `api-scan.mjs`（第 1 册 plan §2） | — | 静态扫描，零依赖 |
 
 - 探针纪律（踩坑沉淀）：`evalJs` 一律写 `return`；`waitFor` 只吃表达式、不以换行开头、
   条件只可能因那件事成立；`waitForUi` TDZ 注意定义顺序；读 DOM 用原型 setter + input 事件；

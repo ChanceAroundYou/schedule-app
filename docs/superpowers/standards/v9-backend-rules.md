@@ -1,6 +1,6 @@
 # 编码规范第 9 册 · 后端接口
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（实施另见 `v9-backend-plan.md`）
 > 依据：`server/routes/*`（auth/cals/sync/ai 四组）、`server/lib/sync.js`（Rejected 三态）、
 > `server/lib/auth.js`（自签 JWT+jti 吊销）、`server/lib/ai/*`（工具→提案→确认三段）、
 > `server/tests/*`、`docs/接口*.md`、`CLAUDE.md` 二、AI
@@ -81,8 +81,3 @@
 
 ---
 
-## 4. 违规清单（本册不修，只记）
-
-| 位置 | 现象 | 结论 |
-|---|---|---|
-| 无 | 本次审计后端无违规 | — |

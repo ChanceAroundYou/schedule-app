@@ -1,6 +1,6 @@
 # 编码规范第 8 册 · 交互与无障碍
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（实施另见 `v8-a11y-plan.md`）
 > 依据：`docs/界面约定-无障碍.md`、`CLAUDE.md` 三、界面硬规则、
 > `ui/hooks/overlay.ts`（useOutsideClose/useEscape/useFocusTrap）、
 > `ui/hooks/modalFocus.ts`、`app/tests/browser-smoke.mjs`（`a11y()`/`nameOf()`）
@@ -85,9 +85,3 @@
 
 ---
 
-## 4. 违规清单（本册不修，只记）
-
-| 位置 | 现象 | 归属 |
-|---|---|---|
-| `overlays.css .check-circle border:#fff` 写死 | 暗色 `--primary` 压白勾 ~2:1 | 真 bug，待单修（重构 spec 附录 A 已记） |
-| 整数探针读 23 | 取整细节 | 非 bug，不修（本册 A2 已注） |

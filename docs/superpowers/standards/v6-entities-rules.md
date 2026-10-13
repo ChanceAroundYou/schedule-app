@@ -1,6 +1,6 @@
 # 编码规范第 6 册 · 数据实体与行为
 
-> 状态：**待审核**（spec 已产出，实现未开始）
+> 状态：**长期规则**（实施另见 `v6-entities-plan.md`）
 > 依据：`domain/types/*`（Task/Habit/Project/Op/SyncMeta/Cal/RepeatRule）、
 > `domain/model/*`（make/hydrate/visibility/tasks/project/permission/migration/id）、
 > `docs/业务模型.md` §数据结构、`data/store/commit.ts`、`data/store/moveToCal.ts`
@@ -80,10 +80,3 @@
 
 ---
 
-## 4. 违规清单（本册不修，只记）
-
-| 位置 | 现象 | 结论 |
-|---|---|---|
-| `hydrateTask` 50 行 | 12 个并列 if | 第 4 册 F1 特许形态，留 |
-| `SyncResponse.snapshot.projects?` 可选 | 老响应落新客户端不炸 | E2 先例，留（新实体照抄） |
-| `overlays.css .check-circle border:#fff` 写死 | 白勾压浅绿 `--primary` 对比度 ~2:1 | 真 bug，属颜色，待第 8 册或单修（重构 spec 附录 A 已记） |
