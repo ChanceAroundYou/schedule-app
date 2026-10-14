@@ -15,7 +15,9 @@
 ---
 ## 1. `ui/<组>` 目录规划
 
-按**样式组**（不是组件）划分，每组一个 `.module.css`：
+> **2026-10-14 用户裁决**：按本节五组落地（不采用「按现有 CSS 文件原样成组」的轻量方案）。
+> 一次全做完，内部拆子步；每子步全量 gate 绿才进下一步。落地时**类名跟随它实际所在的
+> CSS 文件搬迁**，组件文件按主样式归属移动；下表「实际映射」列是本节的权威口径。
 
 ```
 ui/
@@ -45,6 +47,28 @@ ui/
     Input.tsx
     ...
 ```
+
+**实际映射**（2026-10-14 按磁盘核实；「宿主」= 用了该前缀的 .tsx）：
+
+| 组 | `.module.css` | 接收的类前缀 | 宿主（.tsx） | 类名现居 |
+|---|---|---|---|---|
+| `overlays/` | `overlays.module.css` | `.dp-` `.tp-` `.drawer*` `.mask` `.toast` `.rep-` `.repeat-pop` | DatePicker · TimePicker · Drawer · RepeatPop · MiniCalendar(共用 `.dp-`) | `overlays.css` |
+| `shell/` | `shell.module.css` | `.topbar*` `.brand*` `.nav*` `.sidebar*` `.search*` `.cal-menu*` `.jump*` `.view-switch` `.view-title` `.more-sheet` `.tab` `.tabbar` | Topbar · Sidebar · Tabbar · JumpPop · SearchInput · Calendars | `shell.css` + `responsive.css` |
+| `quick-add/` | `quick-add.module.css` | `.fast-*` `.fc-*` `.when-pop` `.wp-*` `.cp-*` `.repeat-panel` `.rp-*` | QuickAdd · FastSide · WhenPop · Clock · RepeatPop | `quick-add.css` |
+| `kit/` | `kit.module.css` | `.btn` `.input` `.icon-btn` `.field-*` `.check-circle` `.check-wrap` | kit 全体 · Drawer · AiSettings | `overlays.css` 部分 |
+| `lists/` | `lists.module.css` | `.task-row` `.habit-*` `.ci-*` `.td-*` `.heat-*` `.check-btn` `.list-*` `.today-done` `.trash-*` `.od-*` `.row-*` `.group-*` `.drag-overlay` `.drop-hole` | **views/**（冻结） | `lists.css` |
+| `calendar/` | `calendar.module.css` | `.week-*` `.month-*` `.wk-*` `.cell-*` `.ev-*` `.tl-*` `.task-el` `.task-pill` `.allday-*` `.zone-*` `.empty*` | **views/**（冻结） | `calendar.css` |
+
+**搬迁规则**（R2「一个类名一个宿主」的落地口径）：
+
+1. **类名跟随它实际所在的 CSS 文件**——`.cp-*` 物理在 `quick-add.css` 就算 `quick-add/` 组，
+   尽管 plan 上面的目录树把它画在 `overlays/` 段（纸面理想，对不上代码）。**本表为准**。
+2. **共用前缀不拆**：`.dp-` 被 DatePicker + MiniCalendar 用、`.jp-` 被 MiniCalendar + DayGrid + JumpPop 用
+   ——两个组件都进同一组、共用一份 module。这正是 R1「绑组不绑组件」的原意。
+3. **组件文件按主样式归属移动一次**（`RepeatPop` 从 `ui/drawer/` → `ui/quick-add/`、
+   `Clock` 从 `ui/` → `ui/quick-add/`、`DatePicker`/`TimePicker`/`WhenPop`/`MiniCalendar` → `ui/overlays/`）；
+   `import` 路径归 barrel（第 4 册）管，本册只保证 `ui/kit.tsx` `ui/hooks.ts` 两个入口的导出名不变。
+4. **`views/Projects.tsx` 的 74 处内联外观类不迁**：`views/` 冻结（第 5 册 D2），本册只登记进附录。
 
 **注意**：`lists/` `calendar/` 两组若 `views/**` 仍冻结（当前决策），则**暂不迁移**，留在 `views/` 引全局 CSS。第 4 册再动 `views/`。
 
@@ -86,7 +110,7 @@ ui/
 | S4 | `Dropdown`（选项 `role="option"`，改 `Btn` 毁 A11y，不改） | `ui/kit/Dropdown.tsx` | ✅ no-op（A11y 挡住 + 已合规） |
 | S5 | 新增 `api-scan.mjs`，锁 R4（ratchet） | `tests/api-scan.mjs` | ✅ 已做（c2ccb48） |
 | S6 | 全局层 `state.css`（R3 状态类白名单） | `styles/state.css` | ✅ 已做（登记 7 个状态类 + 谁有权写；`base.state` 规则**不搬**——纯换宿主零收益 + cascade 顺序风险） |
-| S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | ⛔ 不做（见 §4：`.module.css` 与探针硬冲突；目录重组无收益） |
+| S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | 🔄 进行中（2026-10-14 用户裁决重启；子步见 §5） |
 
 **每步做完必须**：
 ```bash
@@ -97,7 +121,7 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 
 ---
 
-## 4. verify（2026-10-14）—— S6 落地，S7 有据不修
+## 4. verify（2026-10-14）—— S6 落地，S7 有据不修【S7 部分已推翻，见 §5】
 
 **S6 落地**：`styles/state.css` 建成 R3 状态类**白名单清单**（登记 7 个状态类 + 谁有权写：
 `.done`/`.today`/`.busy` 数据驱动、`.open`/`.sheet-open` JS 状态、`.dragging`/`.drag-land` dnd-kit），
@@ -118,6 +142,44 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 
 > 结论：v1 判据 1（外观归属被 api-scan 锁）+ 判据 2（kit 走 variant/tone，S1/S3）已绿；
 > S6 补上 R3 清单；S7 的两半各有硬约束挡着，**不修是对的**，不是没做完。
+
+> **【2026-10-14 推翻 —— 旧结论保留，不删】** 上述两条经复核**都不成立**：
+>
+> 1. **「与探针硬冲突」前提就错了。** R6（rules §1）已把**业务类**（组件根，`.when-pop`
+>    `.fast-fab` `.drawer`）与**样式类**（内部子元素，`.dp-cell` `.wp-row`）分开：探针选的是
+>    **业务类**，CSS Modules 只哈希**样式类**。业务根留全局 → 400+ 断言的选择器**一个字不改**。
+>    原判断把「所有类都进 module」当成了唯一做法。
+> 2. **「目录重组无收益」实测不成立。** R2「一个类名一个宿主」**现在就是破的**：
+>    `.rp-row` 两宿主（`quick-add.css:303` + `overlays.css:260`）、`.check-*` 三宿主
+>    （`.check-btn`@lists / `.check-circle` / `.check-wrap`@overlays）、跨组件选择器
+>    `.dp-pop .jp-cell`×4、`.repeat-pop input.rp-n` —— 这些**正是「零散样式」的形态**。
+>
+> 更正：S7 的前置条件是「业务类已挂到组件根」，这正是 §5 的子步 A。
+
+---
+
+## 5. S7 子目标树（2026-10-14 立项）
+
+**大目标**：`ui/**` 的零散样式打包成 6 个样式组（`overlays/ shell/ quick-add/ kit/ lists/ calendar/`），
+每组一份 `.module.css`；业务根类留全局当测试把手；全量 gate 绿。
+
+**不变量**（每个子步都查）：
+- `ui/kit.tsx`、`ui/hooks.ts` 两个 barrel 的**导出名不变**（调用方无感）
+- 探针断言**不改选择器**（只认业务类）；红了先怀疑业务类没挂上
+- `styles/` 只留 `tokens.css` `responsive.css` `state.css` + `lists.css` `calendar.css`（views 冻结）
+- `api-scan.mjs` 的调用方外观类 ratchet 只减不增（74 → 0）
+
+| 子步 | 干什么 | 判据 | 状态 |
+|---|---|---|---|
+| **A** | **业务根类补齐**：逐组件根挂稳定语义类（`.when-pop` `.fast-add` `.drawer` 已有；`.tp` `.dp` `.cp-face` `.jp-grid` `.field` 等规范化），登记进 `state.css` 同级清单 | 每个 `ui/**` 组件根有业务类；探针选择器全绿 | ⬜ |
+| **B** | **建 6 个 module**：类名按 §1 实际映射表搬进 `<组>.module.css`；状态类在 module 内写 `:global(.open)`；`styles/*.css` 对应段删除 | 6 个 module 存在；`styles/` 只剩 5 文件 | ⬜ |
+| **C** | **组件改引 module**：`import s from './<组>.module.css'`；内部子元素 `className={s.xxx}`；根仍为业务类裸串 | typecheck 绿；`npm run build` 后页面无未加样式 | ⬜ |
+| **D** | **清调用方外观类**：`ui/` 非 kit 的 74 处内联 `*-[var(--*)]` 归到 module 或 kit variant | `api-scan` 调用方 74 → 0 | ⬜ |
+| **E** | **目录落位**：组件文件按 §1 规则 3 移动；barrel 重导出；删空目录 | 经 barrel 的 import 不变；探针绿 | ⬜ |
+| **F** | **锁死**：`api-scan.mjs` 加两条 —— ① `styles/` 不得出现已迁前缀 ② `ui/**/*.tsx` 不得出现 module 内样式类字面量 | 扫描器绿；故意犯规能红（TDD 先红后绿） | ⬜ |
+
+**顺序**：A 必须最先（没有业务根类，B/C 一改就断探针 —— 那才是「硬冲突」的真身）。
+B/C **按组推进**（`overlays → quick-add → shell → kit`），每组改完立刻跑一次全量 gate，红就退回该组。
 
 ---
 
