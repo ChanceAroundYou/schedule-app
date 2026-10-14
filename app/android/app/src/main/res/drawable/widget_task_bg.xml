@@ -1,20 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  任务块底：浅绿。
+  任务块底：未完成的「进行中」态（主绿实心 + 白字）。
 
-  2026-10-14：去掉了左侧那根主绿竖条 —— 用户觉得没必要（无论定时与否，
-  新建的任务卡片最左边都顶着一根深条，看着是多余的装饰）。去掉之后文字的
-  paddingLeft 也相应收到 2dp（见 widget_task_block.xml / widget_untimed_row.xml）。
+  2026-10-14：颜色统一 —— 未完成的任务与未完成的打卡**同一主绿**
+  （#27795A 实心 + 白字）；完成的任务与完成的打卡**同一浅灰**
+  （见 widget_task_bg_done.xml）。以前任务未完成是浅绿、打卡未完成是深绿，
+  两种绿对不上，现在并成一种，一眼能区分「未完成 / 已完成」两类。
 
-  几何参数：圆角 4dp，上下内缩 1.5dp —— 相邻两个任务的卡片之间自然留一条缝，
-  而**视图自身的布局高度不变**，不会像 margin 那样把卡片顶开、和整点线错位。
+  左侧竖条已在 2026-10-14 去掉（见历史说明），几何参数保持一致：
+  圆角 4dp，上下内缩 1.5dp 留出卡片间缝隙（内间距，不占布局高度，
+  否则会和整点线错位）。
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:top="1.5dp"
         android:bottom="1.5dp">
         <shape android:shape="rectangle">
-            <solid android:color="#DFF0E5" />
+            <solid android:color="#27795A" />
             <corners android:radius="4dp" />
         </shape>
     </item>

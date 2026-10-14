@@ -248,11 +248,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         int totalDp = mgr.getAppWidgetOptions(widgetId)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
         int fixedDp = 16                       // root padding 上下各 8
-                + 22 + 2                        // head 行 + margin
+                + 28 + 2                        // head 行（图标已放大到 26dp）+ margin
                 + DATE_STRIP_DP + 2             // 日期条 + margin
                 + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)   // 打卡区 + margin
-                + PANEL_BAR_DP + 1 + 2          // 未定时横条（常驻）+ 横分割线 + margin
-                + 15;                           // footer 预留
+                + PANEL_BAR_DP + 1 + 2;         // 未定时横条（常驻）+ 横分割线 + margin
         int timelineDp = Math.max(70, totalDp - fixedDp);
 
         boolean isToday = day.equals(today);
@@ -261,35 +260,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         renderTimeline(c, v, timed, lo, hi, timelineDp, isToday, nowMin);
         renderUntimedBar(c, v, untimed);
 
-        /* ---- 底部状态 ---- */
-        int pend = WidgetPrefs.pendingCount(c);
-        StringBuilder foot = new StringBuilder();
-        if (dayTasks.isEmpty() && snap.habits.isEmpty()) {
-            foot.append("还没有数据，打开 App 同步一下");
-        } else if (dayTasks.isEmpty()) {
-            foot.append("这天没有安排");
-        } else {
-            foot.append(dayTasks.size()).append(" 项");
-        }
-        // 改过时间轴范围就把范围写出来 —— 不然用户看到一个「从 6 点开始」的
-        // 时间轴，会以为是显示出了 bug 而不是自己设的
-        if (lo != WidgetPrefs.DEFAULT_START_HOUR || hi != WidgetPrefs.DEFAULT_END_HOUR) {
-            foot.append(" · ").append(lo).append("–").append(hi).append(" 时");
-        }
-        // 整条都落在 [lo, hi] 之外的任务画不出来（时间轴没有那一段）。
-        // 不提示的话它们等于被静默吞掉，用户只会觉得「我明明记了」。
-        int outside = 0;
-        for (WTask t : timed) {
-            int s = startMin(t);
-            if (s < 0) continue;
-            if (s + durOf(t) <= lo * 60 || s >= (hi + 1) * 60) outside++;
-        }
-        if (outside > 0) foot.append(" · ").append(outside).append(" 项在范围外");
-        if (!untimed.isEmpty()) foot.append(" · ").append(untimed.size()).append(" 未定时");
-        foot.append(" · 更新 ").append(clockOf(snap.at));
-        if (pend > 0) foot.append(" · ").append(pend).append(" 待同步");
-        v.setTextViewText(R.id.tv_footer, foot.toString());
-        v.setViewVisibility(R.id.tv_footer, View.VISIBLE);
+        /* ---- 底部状态：用户 2026-10-14 要求整行去掉，页面更精简 ---- */
+        v.setViewVisibility(R.id.tv_footer, View.GONE);
 
         v.setOnClickPendingIntent(R.id.btn_add,
                 WidgetIntent.of(c, ACTION_ADD, "add").build(c));
@@ -538,15 +510,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 卡片变大而变大」。统一 9sp，写在 widget_task_block.xml 里（以前这里
         // 按 hDp 挑 9/10/11sp，同屏卡片字大小不一）。
         if (t.done) {
-            // 完成后**整块退色**：底从浅绿变浅灰、左竖线由主绿转灰、字转灰。
+            // 完成后**整块退色**：底变浅灰、字转灰。
             // **不用删除线** —— 用户明确反感过，那东西在本来就不宽的任务块里太吵。
             block.setInt(R.id.task_block, "setBackgroundResource",
                     R.drawable.widget_task_bg_done);
             block.setTextColor(R.id.task_block, 0xFF7E8F84);
         } else {
+            // 未完成：与未完成打卡同一主绿（#27795A）+ 白字，做到「未完成的任务和
+            // 未完成的打卡」同一色系（用户 2026-10-14：两类未完成要同色）。
             block.setInt(R.id.task_block, "setBackgroundResource",
                     R.drawable.widget_task_bg);
-            block.setTextColor(R.id.task_block, 0xFF1B3A2A);
+            block.setTextColor(R.id.task_block, 0xFFFFFFFF);
         }
         block.setOnClickPendingIntent(R.id.task_block,
                 WidgetIntent.of(c, ACTION_TASK, "t" + t.id).put(EXTRA_ID, t.id).build(c));
@@ -577,6 +551,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 r.setInt(R.id.untimed_row, "setBackgroundResource",
                         R.drawable.widget_task_bg_done);
                 r.setTextColor(R.id.untimed_row, 0xFF7E8F84);
+            } else {
+                // 未完成：与未完成打卡同一主绿 + 白字（未完成的任务/打卡同色系）。
+                // ⚠️ 必须显式设底和字：widget_untimed_row.xml 的默认底是
+                // widget_task_bg（现为主绿）、默认字是深绿，不覆盖会「绿底深字」看不清。
+                r.setInt(R.id.untimed_row, "setBackgroundResource",
+                        R.drawable.widget_task_bg);
+                r.setTextColor(R.id.untimed_row, 0xFFFFFFFF);
             }
             r.setOnClickPendingIntent(R.id.untimed_row,
                     WidgetIntent.of(c, ACTION_TASK, "u" + t.id).put(EXTRA_ID, t.id).build(c));
@@ -973,9 +954,22 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     private static String label(WTask t) {
-        // 卡片本身已经按「真实分钟」摆好了，标题前不再重复时长，把宽度让给标题
-        String when = t.time != null ? t.time : "未定时";
-        return when + "  " + t.title;
+        // 定时任务在卡片上直接显示「起止时段」（如 13:00-14:00），一眼看到几点到几点；
+        // 详情里本来就有，现在面板上一瞥也该看到（用户 2026-10-14）。未定时没有时段，只放标题。
+        if (t.time != null) return rangeOf(t) + "  " + t.title;
+        return t.title;
+    }
+
+    /** 定时任务的起止时段文字，如 "13:00-14:00"（时长取 durOf，缺省 60 分钟） */
+    private static String rangeOf(WTask t) {
+        int s = startMin(t);
+        if (s < 0) return "";
+        return hhmm(s) + "-" + hhmm(s + durOf(t));
+    }
+
+    /** 分钟数 → "HH:MM" */
+    private static String hhmm(int min) {
+        return String.format(Locale.US, "%02d:%02d", min / 60, min % 60);
     }
 
     /** "HH:mm" → 从 0 点起的分钟数；解析不了返回 -1 */
