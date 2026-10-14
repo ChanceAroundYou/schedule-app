@@ -37,10 +37,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import * as D from '../domain/date.ts';
-import { ClockBody } from './Clock.tsx';
+import * as D from '../../domain/date.ts';
+import { ClockBody } from '../quick-add/Clock.tsx';
 import { MiniCalendar } from './MiniCalendar.tsx';
-import { useAnchoredPositionFrom, useEscape } from './hooks.ts';
+import { useAnchoredPositionFrom, useEscape } from '../hooks.ts';
 
 
 /** 面板里那只表盘比抽屉里的小一号：这个面板宽 268，扣掉内边距只剩 234，

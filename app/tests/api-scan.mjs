@@ -122,5 +122,38 @@ else {
   console.log('  → views 不碰 data/store 写入口；拖拽排序走 SortableList 的 entity prop');
 }
 
+// 5. styles/ 只留全局层（S7 收尾）：样式组已搬进 ui/<组>/，styles/ 不得再出现
+//    group .css。允许集 = 全局令牌/状态/响应式 + views 冻结的 lists/calendar + 入口。
+const STYLES_ALLOWED = new Set(['tokens.css', 'responsive.css', 'state.css', 'lists.css', 'calendar.css', 'tailwind.css']);
+console.log('\nstyles/ 只留全局层（S7：样式组已进 ui/<组>/）');
+{
+  const stylesDir = join(SRC, 'styles');
+  const stray = readdirSync(stylesDir).filter((n) => n.endsWith('.css') && !STYLES_ALLOWED.has(n));
+  if (stray.length === 0) console.log('  ok    无 group .css 回 styles/');
+  else {
+    failed++;
+    console.log('  FAIL ' + stray.join(' '));
+    console.log('  → 样式组归 ui/<组>/<组>.css，别往 styles/ 塞');
+  }
+}
+
+// 6. ui/** 零 .css import（S7 收尾）：所有样式只经 tailwind.css 的 @import 进，
+//    组件不直接引 .css（引了就是绕开统一 cascade 顺序，回到 per-component 碎片化）。
+const CSS_IMPORT = /import\s+[^'"]*['"][^'"]*\.css['"]/;
+console.log('\nui/** 零 .css import（样式只经 tailwind.css @import）');
+let cssImportHits = 0;
+for (const f of listFiles(join(SRC, 'ui'), ['.tsx', '.ts'])) {
+  const m = strip(readFileSync(f, 'utf8')).match(CSS_IMPORT);
+  if (m) {
+    cssImportHits++;
+    console.log('  FAIL ' + rel(f) + '  ' + m[0]);
+  }
+}
+if (cssImportHits === 0) console.log('  ok    0 处');
+else {
+  failed++;
+  console.log('  → 样式进 ui/<组>/<组>.css 并由 tailwind.css @import，组件不引 .css');
+}
+
 console.log('\n不达标 ' + failed + ' 条');
 process.exit(failed ? 1 : 0);

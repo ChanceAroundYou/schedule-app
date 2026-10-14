@@ -11,7 +11,7 @@
  */
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import * as D from '../domain/date.ts';
+import * as D from '../../domain/date.ts';
 
 export interface MiniCalendarProps {
   /** 当前显示月份的 1 号 */

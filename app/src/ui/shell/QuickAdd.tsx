@@ -11,7 +11,7 @@ import { parse, type ParseOut } from '../../domain/parse.ts';
 import { useIsNarrow } from '../hooks.ts';
 import { Textarea } from '../kit.tsx';
 import { useOverlayScrollbar } from '../scroll.ts';
-import { WhenPop } from '../WhenPop.tsx';
+import { WhenPop } from '../overlays/WhenPop.tsx';
 import { FastSide } from './FastSide.tsx';
 
 /** 占位符**不随 tab 变** —— 需求 1B：展开后文本不需要跟着所在的 tab 变。

@@ -9,8 +9,8 @@
  */
 
 import { useRef, useState } from 'react';
-import { ClockBody } from './Clock.tsx';
-import { useAnchoredPosition, useOutsideClose, useEscape } from './hooks.ts';
+import { ClockBody } from '../quick-add/Clock.tsx';
+import { useAnchoredPosition, useOutsideClose, useEscape } from '../hooks.ts';
 
 export function TimePicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const [open, setOpen] = useState(false);

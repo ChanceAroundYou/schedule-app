@@ -7,7 +7,7 @@ import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { useOutsideClose } from '../hooks.ts';
 import { Input } from '../kit.tsx';
-import { MiniCalendar } from '../MiniCalendar.tsx';
+import { MiniCalendar } from '../overlays/MiniCalendar.tsx';
 
 /** 某天**还没做完**的任务数 —— 面板用它表示「哪天忙」 */
 function jumpLoad(state: LocalState, isoDay: string): number {

@@ -30,7 +30,7 @@ import { IconBtn, Input } from '../kit.tsx';
 import { ConflictBox } from './ConflictBox.tsx';
 import { useDrawer } from './useDrawer.ts';
 import { CalProjRow, DateTimeRow, NoteRow } from './DrawerFields.tsx';
-import { RepeatPop } from './RepeatPop.tsx';
+import { RepeatPop } from '../quick-add/RepeatPop.tsx';
 
 export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onDelete, onDismissConflict }: {
   state: LocalState;

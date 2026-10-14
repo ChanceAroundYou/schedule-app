@@ -3,7 +3,7 @@
  * 小时分成内圈 0–11、外圈 12–23；分钟仍是每 5 分钟一格。
  */
 import { useState } from 'react';
-import * as D from '../domain/date.ts';
+import * as D from '../../domain/date.ts';
 
 const FACE_POP = 246;
 const R_INSET = 18;
