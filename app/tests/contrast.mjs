@@ -110,15 +110,7 @@ const NONTEXT = [
  * **一个都没有定义** —— 有兜底值，所以不报错、不白屏，只是**两套主题下全是
  * 写死的颜色**：主按钮压白字 3.70:1，暗色也没跟着 --primary 走。
  * 静默降级比直接坏掉难查得多，所以这里给它一条会响的线。
- *
- * 两个**由 JS 内联设置**的变量在允许名单里（它们本来就不该在 CSS 里定义）。
  */
-const RUNTIME_SET = {
-  '--cols': 'views/Calendar.tsx 按格子数内联设',
-  '--week-head-h': 'views/Calendar.tsx 量的表头实高',
-  '--kb': 'ui/hooks.ts 量的软键盘高度，写在 documentElement 上',
-};
-
 export function undefinedVars() {
   const defs = new Set();
   const files = [...styleSources().map((p) => join(STYLE_DIR, p.file)), TW];
@@ -132,7 +124,7 @@ export function undefinedVars() {
       used.get(m[1]).add(f.slice(SRC.length + 1));
     }
   }
-  return [...used].filter(([k]) => !defs.has(k) && !RUNTIME_SET[k])
+  return [...used].filter(([k]) => !defs.has(k))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, files]) => ({ name, files: [...files].sort() }));
 }

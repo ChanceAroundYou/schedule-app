@@ -42,11 +42,11 @@
 - 选择器组件 props 统一 `value/options/onPick/label/labelledBy`
  （`Dropdown/Chips/SheetPicker` 三者一致，新选择器照抄）。
 
-### N3 CSS 变量引用：无兜底值（真默认值除外）
+### N3 CSS 变量引用：无兜底值
 
 - `.tsx` 里 `var(--x)` **一律不给兜底值**——写错名当场可见（声明失效→继承），不静默糊。
-- 例外（真默认值，扫描器白名单）：`var(--kb,0px)`（无键盘时本就不存在）、
-  `var(--cols,1)` / `var(--week-head-h,79px)`（JS 内联设置前的默认值）。新增例外需进白名单+注释理由。
+- JS 运行时才设的变量（`--cols` `--week-head-h` `--kb`）默认值写在全局 `tokens.css` `:root`，
+  JS 设值时覆盖、撤值时回落 —— **不靠兜底值**（第 1 册 S7 起兜底值归零，白名单已删）。
 - 判据由 `contrast.mjs` ③④段锁（未定义变量 / 多余兜底值）。
 
 ### N4 `data-*`：协议分三类，探针抓手走透传

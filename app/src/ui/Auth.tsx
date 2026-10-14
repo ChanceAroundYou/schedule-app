@@ -61,7 +61,7 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
     // 会把顶部裁掉且滚不上去，正是这里最怕的那种情况。
     // pb 里的 --kb 是 ui/hooks.ts 量的键盘高度（见那里的注释）。
     <div className="auth-bg fixed inset-0 flex flex-col overflow-y-auto
-                    p-6 pb-[calc(1.5rem+var(--kb,0px))]">
+                    p-6 pb-[calc(1.5rem+var(--kb))]">
       <form
         onSubmit={submit}
         className="auth-card mx-auto my-auto w-full max-w-sm

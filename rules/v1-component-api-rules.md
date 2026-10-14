@@ -11,11 +11,13 @@
 
 **目标**：把样式和功能打包成封闭组件，外观集中在 kit，调用方不叠外观类，想要别的样子就改 kit 或派生。零漂移和硬规则同等重要。
 
-> **现状**：本册写的是**目标架构**（外观集中进 kit + 组件层用 CSS Modules）。当前项目用
-> **全局 CSS（`styles/`）+ Tailwind 工具类 + CSS 变量**，尚未引入 CSS Modules。
-> 已落地：S1（`Btn` cva）· S3（`MiniIconBtn` tone）· S5（`api-scan.mjs`）· S6（`state.css` R3 白名单清单）。
-> 不修：S7（`ui/<组>` + `.module.css`）—— `.module.css` 与探针的全局类名断言硬冲突、目录重组无收益（见 plan §4）。
-> 硬不变量（`api-scan.mjs` 锁）：`domain/` `views/` 零外观类；调用方外观类只减不增。
+> **现状**：本册目标（外观集中进 kit + 样式按组打包）**已全部落地**。组件层用**普通
+> `.css` 组文件**（`ui/<组>/<组>.css`），**不是 CSS Modules** —— S7 落地时按 plan §4 的
+> 风险兜底退回普通 CSS：探针选中的类必须保持全局（不哈希），且 Vite 对 `@import` 的
+> `.module.css` 不做 module 处理（字面 `:global(` + 双重注入打乱 cascade）。所有类全局，
+> 组文件按既定顺序 `@import` 进 `tailwind.css`。
+> 已落地：S1（`Btn` cva）· S3（`MiniIconBtn` tone）· S5（`api-scan.mjs`）· S6（`state.css` R3 白名单）· S7（6 组普通 CSS + 组件按组落位 + 调用方外观类 73→0）。
+> 硬不变量（`api-scan.mjs` 锁）：`domain/` `views/` 零外观类；调用方外观类 0；`styles/` 只留全局 6 文件；`ui/**` 零 `.css` import。
 
 **判据（怎么判成没成）**：
 1. 外观归属被锁住 → `domain/` `views/` 零外观类（硬锁）+ 调用方只减不增（ratchet）
@@ -31,23 +33,23 @@
 | 层 | 内容 | 归属 | 机制 |
 |---|---|---|---|
 | **全局层** | 令牌、响应式轴、降动静效、焦点环、跨组件状态类 | `styles/`（唯一） | 全局 CSS |
-| **组件层** | `ui/**` 每个样式组一个 `.module.css` | `ui/<组>/<组>.module.css` | CSS Modules |
+| **组件层** | `ui/**` 每个样式组一个 `.css` | `ui/<组>/<组>.css` | 全局 CSS（`@import` 进 tailwind.css） |
 | **视图层** | `views/**` 的语义类名（冻结） | `styles/lists.css` `calendar.css` | 全局 CSS（**不动**） |
 
-**为什么 `.module.css` 绑"样式组"不绑组件**：
-CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自己不知道被谁 import。`Btn` 被几十处引用，若都写 `Btn.module.css`，该 module 实际服务全 UI 层，不是 `Btn`。
+**为什么组 `.css` 绑"样式组"不绑组件**：
+`Btn` 被几十处引用，若按组件拆成 `Btn.css`，该文件实际服务全 UI 层，不是 `Btn`。
 `.task-row` 出现在 `lists` / `calendar` / `shell` 三个组里——**同一元素跨组复用**，按组件拆会把它撕成三个半套。
 
 ### R2 一个类名只有一个宿主
 
-新写样式一律就近进组件的 `.module.css`；发现同一类在第二处出现，先合并再谈别的。
+新写样式一律就近进组件的组 `.css`；发现同一类在第二处出现，先合并再谈别的。
 这条直接掐死 `.jp-cell ×30` 那类扩散。
 
 ### R3 状态类协议白名单
 
 `.on` `.open` `.dragging` `.today` `busy` `.done` 这类由 JS / dndkit 写的类，
 集中列在全局层 `state.css` 一份清单里，注明「谁有权写」。`views/` 之外不得新增状态类。
-理由：它们是跨文件契约，不是样式。进 CSS Module 会被改写名、协议断。
+理由：它们是跨文件契约，不是样式。
 
 ### R4 外观集中在 kit，调用方只减不增
 
@@ -62,11 +64,11 @@ CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自�
 - `domain/` 零 Tailwind 外观类（D1 纯净，domain 连样式都不碰）
 - `views/` 零 Tailwind 外观类（D2 冻结，纯展示只用语义类）
 
-### R5 机制与豁免
+### R5 机制
 
-- `ui/**` 用 CSS Modules（Vite 内置，**零新依赖**）
-- 需要逃逸到全局的地方显式写 `:global(.xxx)`，**只有** R3 状态类白名单里的类才准写
-- `views/**` 保持全局语义类，**不 scoped 改名**（`parts.tsx` 开头：照抄 legacy、一个字不能改）
+- 组 `.css` 按既定顺序 `@import` 进 `tailwind.css`（**零新依赖**，无 CSS Modules）
+- `ui/**` 组件**不直接 import 任何 `.css`**（`api-scan.mjs` 锁）——样式只经 `tailwind.css` 进
+- `views/**` 保持全局语义类，**不改名**（`parts.tsx` 开头：照抄 legacy、一个字不能改）
 
 ### R6 业务类 vs 样式类：彻底分家（2026-10-14 新）
 
@@ -76,18 +78,18 @@ CSS Modules 每个 Module 文件 = 一套独立的类名改写表，Module 自�
 |---|---|---|
 | 是什么 | 组件**根元素**的语义类（`.task-row` `.when-pop` `.drawer` `.fast-fab`） | 组件**内部**子元素的视觉类（`.dp-cell` `.wp-row` `.fc-t`） |
 | 回答 | 「这是**什么**组件」 | 「它**长什么样**」 |
-| 归属 | 全局、稳定、**不哈希** | 关进组件的 `.module.css`（CSS Modules 哈希），**不外泄** |
+| 归属 | 全局、稳定 | 关进组件的组 `.css`（全局，**不外泄**到别的组） |
 | 谁能依赖 | 测试 / 探针 / 跨组件逻辑**只认它** | 只有组件自己 |
 
 **四条硬规矩**：
 
 1. **每个组件根必须挂一个业务类**（组件自带或调用方传），当稳定把手。
-2. **样式类关在组件内部**：进 `.module.css`，哈希后不外泄；改样式不破坏任何外部。
+2. **样式类关在组件内部**：进该组件的组 `.css`，不写进别的组；改样式不破坏任何外部。
 3. **测试除样式断言外，一律只用业务类选元素**，不碰样式类（样式断言走 `color-scan`/`contrast` 那批静态扫描，不在探针里）。
-4. **状态类**（`.open` `.done` `.dragging`…）是**业务类**（协议，JS 写），留全局（`state.css` 白名单，见 R3），**不进 module**。
+4. **状态类**（`.open` `.done` `.dragging`…）是**业务类**（协议，JS 写），留全局（`state.css` 白名单，见 R3）。
 
-> 为什么这条能解开 S7 的死结：探针选的是**业务类**（不哈希），CSS Modules 只哈希**内部样式类**，
-> 所以「上 CSS Modules」和「探针不回归」不再冲突——前提是业务类确实稳定、确实挂在根上。
+> 探针只认**业务类**（组件根，稳定），所以样式怎么组织（组 `.css` / 全局）都不影响探针——
+> 前提是业务类确实稳定、确实挂在根上。
 
 ---
 
@@ -188,11 +190,11 @@ const iconBtnVariants = cva(cx(BTN_BASE, 'rounded-[var(--r-pill)]'), { variants:
 
 | 文件 | 内容 | 为什么留在全局 |
 |---|---|---|
-| `tokens.css` | `:root` 变量集 | 全项目引用，下沉到 module 会断 |
+| `tokens.css` | `:root` 变量集 | 全项目引用，下沉到组文件会断 |
 | `responsive.css` | `@media` / `prefers-reduced-motion` / `:focus-visible` | **跨切面轴**，不属于任何单个组件；CLAUDE.md 明写必须压过 Tailwind `@layer` |
-| `state.css`（新增） | R3 状态类白名单 | 跨组件协议，进 module 会被改写名 |
+| `state.css` | R3 状态类白名单 | 跨组件协议，留全局 |
 
-其余 `shell.css` `calendar.css` `lists.css` `quick-add.css` `overlays.css` 里**只服务 `ui/**`** 的部分，下沉到 `ui/<组>/<组>.module.css`。
+其余 `shell.css` `calendar.css` `lists.css` `quick-add.css` `overlays.css` 里**只服务 `ui/**`** 的部分，下沉到 `ui/<组>/<组>.css`（S7 已做）。
 
 
 ## 4. 与其他册的边界
