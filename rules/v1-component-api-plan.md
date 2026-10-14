@@ -110,7 +110,7 @@ ui/
 | S4 | `Dropdown`（选项 `role="option"`，改 `Btn` 毁 A11y，不改） | `ui/kit/Dropdown.tsx` | ✅ no-op（A11y 挡住 + 已合规） |
 | S5 | 新增 `api-scan.mjs`，锁 R4（ratchet） | `tests/api-scan.mjs` | ✅ 已做（c2ccb48） |
 | S6 | 全局层 `state.css`（R3 状态类白名单） | `styles/state.css` | ✅ 已做（登记 7 个状态类 + 谁有权写；`base.state` 规则**不搬**——纯换宿主零收益 + cascade 顺序风险） |
-| S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | 🔄 进行中（2026-10-14 用户裁决重启；子步见 §5） |
+| S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | ✅ 已做（fbaaacc A–D + f3ae050 E–F；module 方案退回普通 `.css`，见 §4 风险兜底） |
 
 **每步做完必须**：
 ```bash
@@ -171,12 +171,12 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 
 | 子步 | 干什么 | 判据 | 状态 |
 |---|---|---|---|
-| **A** | **业务根类补齐**：逐组件根挂稳定语义类（`.when-pop` `.fast-add` `.drawer` 已有；`.tp` `.dp` `.cp-face` `.jp-grid` `.field` 等规范化），登记进 `state.css` 同级清单 | 每个 `ui/**` 组件根有业务类；探针选择器全绿 | ⬜ |
-| **B** | **建 6 个 module**：类名按 §1 实际映射表搬进 `<组>.module.css`；状态类在 module 内写 `:global(.open)`；`styles/*.css` 对应段删除 | 6 个 module 存在；`styles/` 只剩 5 文件 | ⬜ |
-| **C** | **组件改引 module**：`import s from './<组>.module.css'`；内部子元素 `className={s.xxx}`；根仍为业务类裸串 | typecheck 绿；`npm run build` 后页面无未加样式 | ⬜ |
-| **D** | **清调用方外观类**：`ui/` 非 kit 的 74 处内联 `*-[var(--*)]` 归到 module 或 kit variant | `api-scan` 调用方 74 → 0 | ⬜ |
-| **E** | **目录落位**：组件文件按 §1 规则 3 移动；barrel 重导出；删空目录 | 经 barrel 的 import 不变；探针绿 | ⬜ |
-| **F** | **锁死**：`api-scan.mjs` 加两条 —— ① `styles/` 不得出现已迁前缀 ② `ui/**/*.tsx` 不得出现 module 内样式类字面量 | 扫描器绿；故意犯规能红（TDD 先红后绿） | ⬜ |
+| **A** | **业务根类补齐**：逐组件根挂稳定语义类（`.when-pop` `.fast-add` `.drawer` 已有；`.tp` `.dp` `.cp-face` `.jp-grid` `.field` 等规范化），登记进 `state.css` 同级清单 | 每个 `ui/**` 组件根有业务类；探针选择器全绿 | ✅ |
+| **B** | **建 6 个样式组**：类名按 §1 实际映射表搬进 `<组>.css`（module 方案退回普通 CSS，见 §4 风险兜底）；`styles/*.css` 对应段删除 | 6 个组 css 存在；`styles/` 只剩 5 内容文件 | ✅ |
+| **C** | **组件改引**：内部子元素用全局类裸串（module 退回后 `s.xxx` 变裸串）；根仍为业务类裸串 | typecheck 绿；`npm run build` 后页面无未加样式 | ✅ |
+| **D** | **清调用方外观类**：`ui/` 非 kit 的 74 处内联 `*-[var(--*)]` 归到语义类（`tailwind.css` 末「S7 子步 D」段） | `api-scan` 调用方 74 → 0 | ✅ |
+| **E** | **目录落位**：组件文件按 §1 规则 3 移动；import 路径改；删空目录 | 经 import 的引用不变；探针绿 | ✅ |
+| **F** | **锁死**：`api-scan.mjs` 加两条 —— ① `styles/` 只留全局 6 文件 ② `ui/**` 零 `.css` import（module 方案退回后按实际架构重述） | 扫描器绿；故意犯规能红（TDD 先红后绿） | ✅ |
 
 **顺序**：A 必须最先（没有业务根类，B/C 一改就断探针 —— 那才是「硬冲突」的真身）。
 B/C **按组推进**（`overlays → quick-add → shell → kit`），每组改完立刻跑一次全量 gate，红就退回该组。
