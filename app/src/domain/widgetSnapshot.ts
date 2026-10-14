@@ -45,6 +45,15 @@ export interface SnapshotTask {
    */
   reminder?: string | null;
   /**
+   * 重复系列的根 id。原生 `RepeatSpawn.refillAll` 靠它区分「系列根」与
+   * 「已生成的实例」—— 实例自己也有 repeat，不区分就会无界重复派生。
+   */
+  seriesId?: string | null;
+  /**
+   * 已进回收站（软删除）。补齐窗口时要跳过，否则会一直给删掉的任务续命。
+   */
+  deleted?: boolean;
+  /**
    * 原始重复规则。小组件的「编辑任务」弹窗要显示「重复：每周三」，
    * 也必须能原样回写（只带标签的话会把 weekdays/end 这些细节丢掉）。
    */
@@ -110,6 +119,10 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       done: t.done,
       reminder: t.reminder ?? null,
       repeat: t.repeat ?? null,
+      // seriesId / deleted：原生 RepeatSpawn 靠这两个字段判断「系列根」和
+      // 「跳过已删的」，缺了它就会给每个实例重复派生、或给回收站里的任务续命。
+      seriesId: t.seriesId ?? null,
+      deleted: t.deleted === true,
     }))
     // 排序：日期 → 时间（**未定时的排在最后**，跟 App 里「未定时区在最上方
     // 但属于同一段」的语义不同：这里是列表，未定时没有时刻就没有位置）

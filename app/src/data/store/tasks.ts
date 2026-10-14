@@ -48,8 +48,14 @@ export function addTask(d: TaskDraft): string {
   return t.id;
 }
 
-/** 预生成未来几次重复实例 */
-export const REPEAT_LOOKAHEAD = 4;
+/**
+ * 预生成未来几次重复实例。
+ *
+ * 2026-10-14 从 4 提到 14：窗口太浅的话，用户几天没打开 App（或没开小组件）
+ * 就又断档了 —— 补齐逻辑必须能在「很久没运行」之后一次性把窗口推远。
+ * 14 次对每天重复 ≈ 两周，足够覆盖绝大多数间隔。
+ */
+export const REPEAT_LOOKAHEAD = 14;
 
 /**
  * 给所有「重复且未完成」的任务补齐未来 N 次实例（真的写进库）。
@@ -78,21 +84,88 @@ export function ensureRepeatOccurrences(): void {
     const r = t.repeat;
     if (!r || r.unit === 'none') continue;
 
-    // 先把游标推到「今天或之后」 —— 过去的发生日不补
-    let cursor = t.date || today;
-    let seq = t.repeatSeq || 0;
-    let reached = false;
-    for (let guard = 0; guard < 800; guard++) {
-      const nxt = nextOccurrence(r, cursor, seq);
-      if (!nxt) break;
-      cursor = nxt;
-      seq += 1;
-      if (nxt >= today) { reached = true; break; }
+    // ⚠️ **游标必须从「已存在的最后一个实例」起算，不能从系列根自己的日期起算**
+    // （2026-10-14 修，用户报「每天重复只重复几天就断了」）。
+    //
+    // 原来的写法：`cursor = t.date`（根的原始日期）、`seq = t.repeatSeq || 0`，
+    // 于是**每次调用都从同一起点重新推一遍**，生成出来的永远是同样那 4 条。
+    // 一旦这 4 条都被消费掉（过了窗口期），再调多少次都不会有新实例 ——
+    // 表现就是「设了每天，第 5 天起就没了，App 和小组件上都找不到」。
+    //
+    // 现在改成：先扫出这个系列**已经存在**的所有实例，取日期最大的那个当游标，
+    // 从它继续往后补。于是窗口可以一轮一轮往前滚，越滚越远，且幂等
+    // （已存在的 id 会被跳过）。
+    const existing: string[] = [];
+    /** 已存在的实例里最大的 repeatSeq —— 「按次数结束」靠它判断还能不能继续 */
+    let maxSeq = 0;
+    for (const o of Object.values(state.tasks)) {
+      if (!o || o.deleted) continue;
+      if (seriesRootOf(o) !== root) continue;
+      if (o.date) existing.push(o.date);
+      if ((o.repeatSeq ?? 0) > maxSeq) maxSeq = o.repeatSeq ?? 0;
     }
-    if (!reached) continue;
+    existing.sort();
 
-    // 从第一个「今天及以后」的发生日开始，连做 N 个
-    for (let i = 0; i < REPEAT_LOOKAHEAD; i++) {
+    /* ⚠️ **窗口已满就直接跳过，按缺口补而不是固定补 N 次**（2026-10-14 修）。
+     * - 跳过：否则每次调用都再往后推 LOOKAHEAD 次，窗口无限膨胀（每天重复
+     *   一个月能攒几百条同一条任务）。
+     * - 按缺口：补的数量 = 窗口目标 − 当前未完成数。固定补 N 次的话，
+     *   消费掉 1 条就补 14 条、净增 13，窗口反而越滚越大。
+     *
+     * 只数**未完成且今天及以后**的：已完成的表示「这一次已经消费掉了」，
+     * 不该继续占着窗口；过去的实例同理（用户不回头看历史）。 */
+    let futureCount = 0;
+    for (const o of Object.values(state.tasks)) {
+      if (!o || o.deleted || o.done) continue;
+      if (seriesRootOf(o) !== root) continue;
+      if (o.date && o.date >= today) futureCount++;
+    }
+    const need = REPEAT_LOOKAHEAD - futureCount;
+    if (need <= 0) continue;
+
+    /* 游标取**全部**实例（含已完成）里最远的那天。
+     *
+     * 试过用「未完成的最远」，结果补不齐：完成掉的那些 id 仍占在
+     * `state.tasks` 里，游标又退回到它们之前，推出来的 id 全都撞上已存在
+     * 的实例被跳过 —— 实测「完成 1 条 → 只补出 0 条」，缺口永远填不上。
+     * 用最远的（含已完成）才能保证每次都往**全新的**日期上走。 */
+    let cursor = existing.length ? existing[existing.length - 1] : (t.date || today);
+    /* seq 取**已存在的最大 repeatSeq**，不是实例个数（2026-10-14 修）。
+     *
+     * 用 `existing.length` 看着等价，其实不对：预生成已经把未来几次铺满了，
+     * 于是库里躺着 N 条、seq 也就是 N，「按N 次结束」会被预生成的这些占满 ——
+     * 用户勾选一次想再要下下一次时，发现次数已经用完，派生不出来
+     * （实测 end.count=1 的系列，勾选后 seq 从 0 跳到 2）。
+     * repeatSeq 表达的是「这是第几次发生」，语义上才是对的。 */
+    let seq = maxSeq;
+    // ⚠️ 游标先**推进一步**再生成（2026-10-14 修）。
+    // 原来的写法是「拿最后一个已有日期直接生成」，于是第一天就会造出一个
+    // 与系列根**同日期**的实例（根是 10-14，实例也是 10-14）—— 同一天出现
+    // 两条一模一样的任务。正确语义：根就是「第一次发生」，实例从第二次开始。
+    // 推不到下一步（规则已结束）就没什么可补的。
+    let advanced = nextOccurrence(r, cursor, seq);
+    if (!advanced) continue;
+    cursor = advanced;
+    seq += 1;
+
+    // 游标可能还停在今天之前（窗口内但今天的实例尚未生成），先推到今天或之后
+    if (cursor < today) {
+      let reached = false;
+      for (let guard = 0; guard < 800; guard++) {
+        const nxt = nextOccurrence(r, cursor, seq);
+        if (!nxt) break;
+        cursor = nxt;
+        seq += 1;
+        if (nxt >= today) { reached = true; break; }
+      }
+      if (!reached) continue;
+    }
+
+    // 从游标往后补，直到「今天起至少还有 LOOKAHEAD 次」为止。
+    // 为什么要看剩余量而不是固定补 N 次：已经攒了 20 条实例时再补 4 条毫无意义，
+    // 只有把窗口维持住才是对的。
+    let made = 0;
+    for (let i = 0; i < need; i++) {
       const id = instanceId(root, cursor);
       if (!state.tasks[id]) {
         const occ = makeTask({
@@ -104,6 +177,7 @@ export function ensureRepeatOccurrences(): void {
         occ.reminder = t.reminder ?? null;
         state.tasks[id] = occ;
         items.push({ entity: 'task', id, calId: t.calId, fields: dataOf(occ) });
+        made++;
       }
       const nxt = nextOccurrence(r, cursor, seq);
       if (!nxt) break;

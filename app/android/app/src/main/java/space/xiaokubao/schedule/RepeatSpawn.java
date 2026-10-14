@@ -1,5 +1,7 @@
 package space.xiaokubao.schedule;
 
+import android.content.Context;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -18,8 +20,13 @@ import java.util.Locale;
  */
 final class RepeatSpawn {
 
-    /** 预生成未来几次（与 App 的 REPEAT_LOOKAHEAD 一致） */
-    private static final int LOOKAHEAD = 4;
+    /**
+     * 预生成未来几次。
+     *
+     * 2026-10-14 从 4 提到 14，与 App 的 REPEAT_LOOKAHEAD 对齐。原因一样：
+     * 窗口太浅的话用户几天没操作就断档，而补齐的触发（组件每次刷新）并不频繁。
+     */
+    private static final int LOOKAHEAD = 14;
 
     private RepeatSpawn() {
     }
@@ -73,6 +80,9 @@ final class RepeatSpawn {
                 f.put("doneAt", JSONObject.NULL);
                 f.put("repeat", rule);
                 f.put("reminder", reminder == null ? JSONObject.NULL : reminder);
+                // ⚠️ seriesId 必须写：refillAll 靠它区分「系列根」与「实例」。
+                // 缺了它，下次扫描会把每个实例都当成一个新的系列根再派生一批。
+                f.put("seriesId", rootId);
 
                 JSONObject lf = new JSONObject(f.toString());
                 lf.put("calId", calId);
@@ -108,6 +118,85 @@ final class RepeatSpawn {
             // 离线不入队：等 App 同步后由 ensureRepeatOccurrences 补，id 规则一致不会重复
         } catch (Exception ignored) {
         }
+    }
+
+    /**
+     * 扫描整个快照，把「窗口快用完」的重复系列补齐。
+     *
+     * 为什么需要这个（用户2026-10-14 报「每天只重复几天就断了」）：
+     * 原来只有「新建/编辑那一刻」才派生一次。用户设完就走，之后既没建新任务、
+     * 也没改任何字段 —— 于是那几次消费完之后就永远断档，App 和组件上都找不到。
+     * App 侧靠「每轮同步都补」解决；组件这边不跑同步引擎，所以挂在
+     * {@link ScheduleWidgetProvider#refresh} 上：组件每次刷新（切日期、改设置、
+     * 定时刷新、开关通知等都会触发）都检查一遍。
+     *
+     * 幂等：已存在的实例 id 会被 patchEntity 跳过，且窗口够长时直接 return，
+     * 不会反复发请求。
+     */
+    static void refillAll(Context c) {
+        try {
+            WidgetSnapshot snap = WidgetPrefs.snapshot(c);
+            String today = (snap.today != null && !snap.today.isEmpty()) ? snap.today : null;
+            java.util.Set<String> roots = new java.util.LinkedHashSet<>();
+            for (WTask t : snap.tasks) {
+                if (t == null || t.done || t.deleted) continue;
+                JSONObject r = t.repeat;
+                if (r == null || "none".equals(r.optString("unit", "none"))) continue;
+                // 只处理系列根：实例自己也有 repeat，处理它会重复派生
+                String sid = t.seriesId;
+                if (sid != null && !sid.isEmpty() && !sid.equals(t.id)) continue;
+                roots.add(t.id);
+            }
+            for (String rootId : roots) {
+                WTask root = snap.taskById(rootId);
+                if (root == null || root.repeat == null) continue;
+                if (countFuture(snap, root, today) >= LOOKAHEAD) continue;
+                // ⚠️ 起点用「已存在的最远日期」，不是根自己的日期。
+                // 用根的日期会每次都从同一天重推一遍，生成的永远是同样那几条 ——
+                // 窗口消费完后再补多少次也不出来（App 侧同一个坑，见
+                // ensureRepeatOccurrences 的注释）。
+                String from = furthestDate(snap, root);
+                spawn(new ContextWrapper(c), rootId, root.title, root.calId,
+                        from != null ? from : root.date, root.repeat, root.reminder);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 这个系列已存在的实例里最远的那天（含根自己）；没有就返回 null */
+    private static String furthestDate(WidgetSnapshot snap, WTask root) {
+        String max = null;
+        for (WTask t : snap.tasks) {
+            if (t == null || t.deleted || t.date == null) continue;
+            String sid = t.seriesId;
+            boolean same = sid != null && !sid.isEmpty()
+                    ? sid.equals(root.id) || root.id.equals(sid)
+                    : t.id.equals(root.id);
+            if (!same) continue;
+            if (max == null || t.date.compareTo(max) > 0) max = t.date;
+        }
+        return max;
+    }
+
+    /**
+     * 这个系列从今天起还剩几次**未完成**的实例（用于判断窗口够不够）。
+     *
+     * ⚠️ 必须排除 done：已完成的表示「这一次已经消费掉了」，不该继续占着窗口。
+     * 不排除的话，用户勾掉今天的重复任务后窗口仍算满，就永远补不出明天的 ——
+     * 那正是「每天只重复几天就断了」的另一种表现。
+     */
+    private static int countFuture(WidgetSnapshot snap, WTask root, String today) {
+        int n = 0;
+        for (WTask t : snap.tasks) {
+            if (t == null || t.deleted || t.done) continue;
+            String sid = t.seriesId;
+            boolean same = sid != null && !sid.isEmpty()
+                    ? sid.equals(root.id) || root.id.equals(sid)
+                    : t.id.equals(root.id);
+            if (!same) continue;
+            if (today == null || t.date == null || t.date.compareTo(today) >= 0) n++;
+        }
+        return n;
     }
 
     /** 推进一步。工作日跳过周末；周按 weekdays 命中（对齐 App 的 repeatAdvance）。 */

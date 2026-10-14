@@ -141,6 +141,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 都会走到这里，见 ReminderScheduler 的说明）。
         ReminderScheduler.reschedule(c);
 
+        /* 重复任务的窗口补齐（2026-10-14）。
+         *
+         * 原来只在「新建 / 编辑那一刻」派生一次，用户设完就走，之后几天窗口
+         * 用完就断了（他报「每天只重复几天就断了」）。这里挂在 refresh 上：
+         * 组件每次刷新都会检查一遍，窗口不足就补。refillAll 幂等且窗口够时
+         * 直接返回，不会有额外开销或请求。
+         *
+         * 必须在 ReminderScheduler 之前还是之后无所谓，但要在读快照之前跑 ——
+         * 它会写快照，补出来的新实例要参与本次渲染。 */
+        RepeatSpawn.refillAll(c);
+
         AppWidgetManager mgr = AppWidgetManager.getInstance(c);
         int[] ids = mgr.getAppWidgetIds(new android.content.ComponentName(c, ScheduleWidgetProvider.class));
         if (ids == null || ids.length == 0) return;
