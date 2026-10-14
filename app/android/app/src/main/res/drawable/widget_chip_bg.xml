@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 圆角透明底。日期格（未选中）与 dialog_create 的按钮共用。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#00000000" />
-    <corners android:radius="14dp" />
-</shape>
