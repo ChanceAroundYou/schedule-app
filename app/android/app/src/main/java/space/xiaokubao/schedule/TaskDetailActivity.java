@@ -26,7 +26,10 @@ import java.util.Locale;
  *  · 收紧凑（252dp / padding 12dp / 字号降档），跟设置弹框一个密度
  *  · **日期可编辑** —— 点了弹日历选择器（DatePickerDialog）。改完**留在当前
  *    日期**不跳走（用户选的），任务会从眼前消失，切过去才看得到。
- *  · 底排只剩 **[保存] [删除]**；「完成」独立成左侧勾选框（d_done）
+ *  · 2026-10-14（第八轮）：**去掉底部「保存 / 删除」按钮行**。
+ *    保存 = **关窗即存**（{@link #finish()} → {@link #autoSave()}）；
+ *    删除 = 左列那个淡色小垃圾桶（{@link #confirmDelete()}）。
+ *    「完成」仍是左侧圆形勾选框（d_done）。
  *    关闭靠点弹框外部 / 返回键（setFinishOnTouchOutside）
  *  · 窗口背景换透明主题后，四个角的亮白小圆角消失（见 AppTheme.WidgetDialog）
  *
@@ -46,6 +49,14 @@ public class TaskDetailActivity extends Activity {
     private WTask task;
     /** 编辑中的「完成」状态（来自左侧勾选框，独立于保存/删除） */
     private boolean pendingDone;
+    /**
+     * 是否正在走「删除」流程。
+     *
+     * 底部按钮行去掉后，保存改由 {@link #finish()} 触发（关窗即存）；
+     * 但删除也会走 finish()，所以要用这个旗标把删除那一路的自动保存**关掉**，
+     * 否则删完又会被 autoSave 写回去。
+     */
+    private boolean deleteRequested;
     /** 编辑中的日期（yyyy-MM-dd） */
     private String pickedDate;
     /** 编辑中的开始时间，null = 不设置 */
@@ -105,9 +116,21 @@ public class TaskDetailActivity extends Activity {
         dateBtn.setOnClickListener(v -> pickDate());
         startBtn.setOnClickListener(v -> pickStart());
         endBtn.setOnClickListener(v -> pickEnd());
-        // 「完成」已独立成左侧勾选框（pendingDone），保存时连同其它字段一起提交
-        findViewById(R.id.d_save).setOnClickListener(v -> save());
-        findViewById(R.id.d_delete).setOnClickListener(v -> confirmDelete());
+        // 底部按钮行已去掉：保存 = 关窗即存（见 autoSave()/finish()），
+        // 删除 = 左列那个淡色小垃圾桶（点一下弹二次确认）
+        findViewById(R.id.d_trash).setOnClickListener(v -> confirmDelete());
+    }
+
+    /**
+     * 关窗即自动保存。点弹窗外部 / 返回键都会走到这里 —— 用户 2026-10-14：
+     * 不要底部「保存 / 删除」按钮了，改成一关窗就把改动存下。
+     *
+     * ⚠️ 删除也走 finish()，所以用 {@link #deleteRequested} 把删除那一路排除掉。
+     */
+    @Override
+    public void finish() {
+        if (!deleteRequested) autoSave();
+        super.finish();
     }
 
     /* ==================== 日期 ==================== */
@@ -211,7 +234,7 @@ public class TaskDetailActivity extends Activity {
     /* ==================== 保存 / 删除 ==================== */
 
     /**
-     * 存下来并关掉。
+     * 关窗时把改动存下来（**不再有显式「保存」按钮**）。
      *
      * **先本地改样式再发请求**：弹框一关桌面就得是新样子，不等服务端往返。
      * 三种结局分别处理，见 {@link WidgetApi.OpCallback}：
@@ -219,19 +242,27 @@ public class TaskDetailActivity extends Activity {
      *   · 拒绝 → 同样换成服务端的值 = 回到真相，并提示用户
      *   · 问不出去 → 保留本地结果，入队等下次
      *
-     * 「完成」状态来自左侧勾选框（{@link #pendingDone}），与标题 / 日期 / 起止时间
-     * 合成**一条** op 发出去，省一次往返。
+     * 两种「不保存」的情况：标题被清空（不建空任务）、以及**什么都没改**
+     * （省一次无谓的请求）。
      */
-    private void save() {
+    private void autoSave() {
+        if (task == null || titleBox == null) return;
         final String newTitle = titleBox.getText().toString().trim();
-        if (newTitle.isEmpty()) {
-            titleBox.setError("总得写点什么");
-            return;
-        }
+        if (newTitle.isEmpty()) return;
+
         final boolean done = pendingDone;
         final String date = (pickedDate != null && !pickedDate.isEmpty()) ? pickedDate : task.date;
         final String tm = pickedStart;
         final int dur = durationMinutes();
+
+        // 没动过就别发请求了（逐字段比对原值）
+        boolean same = newTitle.equals(task.title)
+                && date.equals(task.date)
+                && (tm == null ? task.time == null : tm.equals(task.time))
+                && dur == durOf(task)
+                && done == task.done;
+        if (same) return;
+
         final long now = System.currentTimeMillis();
 
         // ① 乐观更新本地快照 + **立刻重画**，弹框一关桌面就是新样子
@@ -250,7 +281,6 @@ public class TaskDetailActivity extends Activity {
 
         // ② 有票就直连（B 方案），否则入队等 App 启动后补发
         sendEdit(newTitle, date, tm, dur, done, now);
-        finish();
     }
 
     private void sendEdit(String newTitle, String date, String tm, int dur, boolean done, long now) {
@@ -338,6 +368,8 @@ public class TaskDetailActivity extends Activity {
     }
 
     private void doDelete() {
+        // 删除也走 finish() → 先立旗标，别让关窗时的 autoSave 把这条又写回来
+        deleteRequested = true;
         final long now = System.currentTimeMillis();
         // ① 本地打墓碑 —— WidgetData 解析时会剔掉 deleted 的条 → 桌面立刻不见
         try {

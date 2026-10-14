@@ -2,15 +2,13 @@
 <!--
   任务**编辑 / 删除**弹框。不用打开 App，就在桌面上改。
 
-  2026-10-14（第六轮）：左侧留出一整列，只放完成勾选框。
-  · 结构改成「标题 / 左右分栏 / 分割线 / 底部按钮」四段：
-    中间那段是**左右分栏**——左边一列**固定 30dp 宽、整列留白，只放勾选框**；
-    右边一列放标题输入框 + 日期 + 起止时间 + 时长提示。
-    这样勾选框和输入区左边缘对齐，勾选框独占一列，右侧全是输入控件。
-  · 勾选框由方形改**圆形**（ic_check_on/off 重绘成圆），符合你要的圆形。
-  · 底部保存/删除按钮之前**文字被裁掉看不见** —— 原因是按钮写死 32dp 高
-    又设了 includeFontPadding=false，字被切了。这轮：按钮高 36dp、
-    去掉 includeFontPadding=false、底部再加 4dp 下边距，留足显示空间。
+  2026-10-14（第八轮）：去掉底部按钮行。
+  · 结构改成「标题 / 左右分栏」两段 —— 底部「保存 / 删除」整行删除。
+  · **保存改为关窗即自动保存**（点弹窗外部 / 返回键时提交，见 TaskDetailActivity）。
+  · **删除改由左列的淡色小垃圾桶承担**（点一下弹二次确认）。
+  · 左列：上下两个图标 —— 圆形勾选框（mark 完成）+ 小垃圾桶（删除）；
+    勾选框圆心与右侧任务文字垂直居中对齐。
+  · 第六轮已把左列独立成固定 30dp 宽的一整列、勾选框改圆形（ic_check 重绘成圆）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="272dp"
@@ -40,21 +38,33 @@
         android:layout_marginTop="10dp"
         android:orientation="horizontal">
 
-        <!-- 左列：整列留白，**只有**勾选框（垂直居中） -->
+        <!-- 左列：整列留白，**只放勾选框 + 垃圾桶两个图标**（2026-10-14 第八轮）。
+             保存/删除的底部按钮行已去掉 —— 保存改为「关窗即存」，删除改由
+             这里的淡色垃圾桶承担。 -->
         <LinearLayout
             android:layout_width="30dp"
             android:layout_height="match_parent"
             android:gravity="center_horizontal"
             android:orientation="vertical">
 
-            <!-- 圆形勾选框。ImageView 而非 CheckBox：CheckBox 的 button
-                 drawable 会被拉伸填满宽度，长成方形而不是圆形。 -->
+            <!-- 圆形勾选框。marginTop=7dp 让**圆心**与右侧任务文字的垂直中心对齐
+                 （标题输入框 36dp、文字居中 → 中心在 18dp；圆 22dp → 上移 7dp）。 -->
             <ImageView
                 android:id="@+id/d_done"
                 android:layout_width="22dp"
                 android:layout_height="22dp"
+                android:layout_marginTop="7dp"
                 android:contentDescription="标记完成"
                 android:src="@drawable/ic_check_off" />
+
+            <!-- 淡色小垃圾桶：点一下弹二次确认后删除 -->
+            <ImageView
+                android:id="@+id/d_trash"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginTop="18dp"
+                android:contentDescription="删除任务"
+                android:src="@drawable/ic_trash" />
         </LinearLayout>
 
         <!-- 右列：所有输入控件 -->
@@ -155,48 +165,5 @@
                 android:textColor="#8AA294"
                 android:textSize="10sp" />
         </LinearLayout>
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="10dp"
-        android:background="#E4EFE8"
-        android:text="" />
-
-    <!-- 底部两个按钮：保存 · 删除，**占满整宽**（左列不参与这一行）。
-         高度 36dp、不关includeFontPadding —— 之前写 32dp + 关掉行高，
-         结果文字被裁掉看不见。底部留 4dp 余量。 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginBottom="4dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/d_save"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:text="保存"
-            android:textColor="#27795A"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/d_delete"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:text="删除"
-            android:textColor="#C0392B"
-            android:textSize="13sp" />
     </LinearLayout>
 </LinearLayout>

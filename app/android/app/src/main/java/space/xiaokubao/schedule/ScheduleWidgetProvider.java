@@ -163,6 +163,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         String monday = mondayOf(day);
         v.setTextViewText(R.id.tv_month, monthTitle(day));
+        // 左上角标识 = **当天日期数字**（黑白、无彩色）。用户 2026-10-14：
+        // 不要 logo 了，直接显示今天几号，一眼看到；点一下仍回今天。
+        v.setTextViewText(R.id.iv_logo, dayOfMonth(today));
 
         /* ---- 日期条：选中日所在的那一周 ---- */
         v.removeAllViews(R.id.date_strip);
@@ -178,8 +181,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // 必然被拉成椭圆 —— 这正是用户看到的「选中的日期变成了椭圆」。
             chip.setInt(R.id.chip_circle, "setBackgroundResource",
                     sel ? R.drawable.widget_chip_bg_sel : 0);
-            chip.setTextColor(R.id.chip_wd, sel ? 0xBFFFFFFF : 0xFF6B8574);
-            // 今天那格即使没选中也用主绿写字，一眼能找到
+            // 星期是固定的，**不用白色**（白字在没有底的星期上会看不见）；
+            // 选中时只把它染成主绿做轻微提示（用户 2026-10-14 第八轮）。
+            chip.setTextColor(R.id.chip_wd, sel ? 0xFF27795A : 0xFF6B8574);
+            // 今天那格即使没选中也用主绿写字，一眼能找到；选中=圆圈内白字
             chip.setTextColor(R.id.chip_date,
                     sel ? 0xFFFFFFFF : (isToday ? 0xFF27795A : 0xFF1B3A2A));
             chip.setOnClickPendingIntent(R.id.chip_root,
@@ -248,7 +253,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         int totalDp = mgr.getAppWidgetOptions(widgetId)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
         int fixedDp = 16                       // root padding 上下各 8
-                + 28 + 2                        // head 行（图标已放大到 26dp）+ margin
+                + 32 + 2                        // head 行（FrameLayout 32dp）+ margin
                 + DATE_STRIP_DP + 2             // 日期条 + margin
                 + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)   // 打卡区 + margin
                 + PANEL_BAR_DP + 1 + 2;         // 未定时横条（常驻）+ 横分割线 + margin
@@ -298,8 +303,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int UNTIMED_MAX = 5;
     /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
     private static final int HABIT_ROW_DP = 19;
-    /** 日期条占高（29dp 的正圆） */
-    private static final int DATE_STRIP_DP = 29;
+    /**
+     * 日期条占高。2026-10-14 第八轮：高亮圈只包日期数字后，结构变成
+     * 「星期（9sp）在上 + 日期圆（22dp）在下」，条高 29 → **35dp**。
+     */
+    private static final int DATE_STRIP_DP = 35;
     /** 十字面板顶行（左空白角 + 右未定时横条）的高度。常驻，不随有无任务变 */
     private static final int PANEL_BAR_DP = 15;
     /**

@@ -1,6 +1,7 @@
 package space.xiaokubao.schedule;
 
 import android.app.Activity;
+import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.content.DialogInterface;
 import android.os.Bundle;
@@ -14,6 +15,7 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Calendar;
 import java.util.Locale;
 
 /**
@@ -39,10 +41,13 @@ public class CreateTaskActivity extends Activity {
         c.startActivity(i);
     }
 
+    /** 选中的日期（yyyy-MM-dd）。默认 = 打开组件时那天 */
+    private String pickedDate = null;
     /** 选中的开始时间，null = 不设置 */
     private String pickedStart = null;
     /** 选中的结束时间，null = 不设置 */
     private String pickedEnd = null;
+    private Button dateBtn;
     private Button startBtn;
     private Button endBtn;
     private TextView durHint;
@@ -57,7 +62,7 @@ public class CreateTaskActivity extends Activity {
         // 不要再手动点一下输入框才出键盘（2026-10-14）。
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
 
-        final String date = getIntent().getStringExtra("date");
+        pickedDate = getIntent().getStringExtra("date");
         final EditText title = findViewById(R.id.c_title);
         // 标题框立即拿到焦点并弹出键盘（见上方 setSoftInputMode），点「+」后直接能输入
         title.requestFocus();
@@ -65,19 +70,23 @@ public class CreateTaskActivity extends Activity {
             InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
             if (imm != null) imm.showSoftInput(title, InputMethodManager.SHOW_IMPLICIT);
         });
+        dateBtn = findViewById(R.id.c_date);
         startBtn = findViewById(R.id.c_start);
         endBtn = findViewById(R.id.c_end);
         durHint = findViewById(R.id.c_durhint);
         Button save = findViewById(R.id.c_save);
         Button cancel = findViewById(R.id.c_cancel);
 
+        updateDateLabel();
         updateTimeLabels();
+        dateBtn.setOnClickListener(v -> pickDate());
         startBtn.setOnClickListener(v -> pickStart());
         endBtn.setOnClickListener(v -> pickEnd());
 
         save.setOnClickListener(v -> {
             String t = title.getText().toString().trim();
             if (t.isEmpty()) { title.setError("总得写点什么"); return; }
+            final String date = pickedDate;
             final String tm = pickedStart;
             final int dur = durationMinutes();
             final String calId = defaultCalId(this);
@@ -159,6 +168,29 @@ public class CreateTaskActivity extends Activity {
         fields.put("doneAt", JSONObject.NULL);
         op.put("fields", fields);
         return op;
+    }
+
+    /* ==================== 日期 ==================== */
+
+    /** 点了日期行 → 弹日历选择器。默认停在当前选中的日期。 */
+    private void pickDate() {
+        Calendar cal = Calendar.getInstance();
+        int[] ymd = ymdOf(pickedDate);
+        if (ymd != null) {
+            cal.set(ymd[0], ymd[1] - 1, ymd[2]);
+        }
+        DatePickerDialog d = new DatePickerDialog(this, (view, y, m, day) -> {
+            pickedDate = String.format(Locale.US, "%04d-%02d-%02d", y, m + 1, day);
+            updateDateLabel();
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH));
+        d.show();
+    }
+
+    private void updateDateLabel() {
+        if (dateBtn == null) return;
+        dateBtn.setText(pickedDate == null
+                ? "不设置日期"
+                : pickedDate + " " + weekdayOf(pickedDate));
     }
 
     /* ==================== 时间 ==================== */
@@ -279,5 +311,30 @@ public class CreateTaskActivity extends Activity {
     private static String timeOf(int minutes) {
         int m = ((minutes % 1440) + 1440) % 1440;
         return String.format(Locale.US, "%02d:%02d", m / 60, m % 60);
+    }
+
+    /** "yyyy-MM-dd" → {y, m, d}；解析不了返回 null */
+    private static int[] ymdOf(String iso) {
+        if (iso == null || iso.length() < 10) return null;
+        try {
+            return new int[]{
+                    Integer.parseInt(iso.substring(0, 4)),
+                    Integer.parseInt(iso.substring(5, 7)),
+                    Integer.parseInt(iso.substring(8, 10))
+            };
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 下标 = Calendar.DAY_OF_WEEK（1 是周日） */
+    private static final String[] WD = {"", "周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+
+    private static String weekdayOf(String iso) {
+        int[] ymd = ymdOf(iso);
+        if (ymd == null) return "";
+        Calendar cal = Calendar.getInstance();
+        cal.set(ymd[0], ymd[1] - 1, ymd[2]);
+        return WD[cal.get(Calendar.DAY_OF_WEEK)];
     }
 }

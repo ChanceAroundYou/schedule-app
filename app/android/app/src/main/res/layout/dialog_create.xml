@@ -42,12 +42,30 @@
         android:textColorHint="#9BB3A5"
         android:textSize="13sp" />
 
+    <!-- 日期：整行按钮，点了弹日历选择器（2026-10-14 第八轮新增 ——
+         原来只能选时间、不能选日期，新建的任务永远落在打开组件时的那天）。 -->
+    <Button
+        android:id="@+id/c_date"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="2026-10-14 周三"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
+
     <!-- 起止时间：两个按钮，点了各弹一个系统表盘（TimePickerDialog）。
          手打「09:30」要切键盘、要记格式，桌面上做快速记一笔时最烦这一步。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="34dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:orientation="horizontal">
 
         <Button

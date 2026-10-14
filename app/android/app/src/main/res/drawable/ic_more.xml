@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 竖排三个点（设置入口）。配色用主绿，跟其它图标一致 -->
+<!-- 竖排三个点（设置入口）。配色用主绿，跟其它图标一致。
+
+     2026-10-14（第八轮）：用户说「加号和三个点大小不一样」——
+     加号 path 占 14/24（≈58%），三个点只占中间很窄一竖，视觉上明显偏小。
+     这里把点**放大**（半径 1.9 → 2.5，间距 4 → 4.6），让三点簇的体量和加号接近；
+     同时两个图标的容器尺寸、padding 保持一致（见 widget_schedule.xml）。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -7,11 +12,11 @@
     android:viewportWidth="24">
     <path
         android:fillColor="#27795A"
-        android:pathData="M12,8m-1.9,0a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0" />
+        android:pathData="M12,5.6m-2.5,0a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0" />
     <path
         android:fillColor="#27795A"
-        android:pathData="M12,12m-1.9,0a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0" />
+        android:pathData="M12,12m-2.5,0a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0" />
     <path
         android:fillColor="#27795A"
-        android:pathData="M12,16m-1.9,0a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0" />
+        android:pathData="M12,18.4m-2.5,0a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0" />
 </vector>
