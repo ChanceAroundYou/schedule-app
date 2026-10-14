@@ -29,6 +29,19 @@ export interface Task extends SyncMeta {
   repeatSeq: number;
   /** 重复系列根 id。非重复任务是 null */
   seriesId: string | null;
+  /**
+   * 这次发生被用户「有意跳过」（删了但保留系列规则）。
+   *
+   * 2026-10-14：删除重复任务时新增「只删这一次」，光打 deleted 不够 ——
+   * 窗口补齐会用确定性 id 把它重新造出来，等于没删。这个标记让别处
+   * （组件侧、补齐逻辑）都能看懂「是跳过的，不是删失败」。
+   */
+  skipped?: boolean;
+  /**
+   * 重复系列在**这一天（不含）结束** —— 用户选「从这次起往后全删」时写到根上。
+   * null = 没结束。窗口补齐看到它就整个系列跳过。
+   */
+  repeatUntil?: string | null;
   /** 「同一天、未定时间」这一组的位次 */
   order: number | null;
   /** 用户在任意列表里手动拖出来的顺序，独立于 order */

@@ -35,3 +35,27 @@ export function CheckBtn({ id, on, act = 'toggle', sm }: {
     />
   );
 }
+
+/**
+ * 多选用的选择圈（2026-10-14）。
+ *
+ * 与 {@link CheckBtn} 分开而不是复用：**勾选圈点一下会让行从列表里让位**
+ * （已完成就收进「已完成」），而选择圈点一下只是选中。复用同一个组件、
+ * 靠外部改 data-act 的话，两件事的语义会混在一个按钮里，读屏文案也会打架。
+ *
+ * 点击同样走委托（`data-act="sel-toggle"`），所以这里零回调。
+ */
+export function SelDot({ id, on }: { id: string; on: boolean }) {
+  const label = on ? '取消选择' : '选择';
+  return (
+    <button
+      type="button"
+      className={'sel-dot' + (on ? ' on' : '')}
+      data-act="sel-toggle"
+      data-id={id}
+      title={label}
+      aria-label={label}
+      aria-pressed={on}
+    />
+  );
+}

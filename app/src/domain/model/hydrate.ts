@@ -41,6 +41,9 @@ export function hydrateTask<T extends Partial<Task> & MetaLike>(e: T): T & Task 
   if (t.doneAt === undefined) t.doneAt = null;
   if (t.repeatSeq === undefined) t.repeatSeq = 0;
   if (t.seriesId === undefined) t.seriesId = null;
+  // skipped / repeatUntil 是 2026-10-14 新加的删除语义字段，老数据没有 → 补默认值
+  if (t.skipped === undefined) t.skipped = false;
+  if (t.repeatUntil === undefined) t.repeatUntil = null;
   if (t.order === undefined) t.order = null;
   if (t.ord === undefined) t.ord = null;
   if (t.createdAt === undefined) t.createdAt = 0;

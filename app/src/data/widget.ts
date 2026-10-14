@@ -33,6 +33,14 @@ interface WidgetBridgePlugin {
    */
   setAuth(options: { token: string; base: string }): Promise<{ ok: boolean }>;
   clearAuth(): Promise<{ ok: boolean }>;
+  /**
+   * 系统栏实际占用的尺寸（CSS px）。见 WidgetBridge.java 的 insets。
+   *
+   * 走原生是因为 Android 15+ 强制 edge-to-edge，而 Capacitor 的
+   * `setOverlaysWebView` 在那儿已经不可用、WebView 里的
+   * `env(safe-area-inset-top)` 又恒为 0。
+   */
+  insets(): Promise<{ top: number; bottom: number; left: number; right: number }>;
 }
 
 const WidgetBridge = registerPlugin<WidgetBridgePlugin>('WidgetBridge');
@@ -93,4 +101,32 @@ export async function clearWidgetAuth(): Promise<void> {
   try {
     await WidgetBridge.clearAuth();
   } catch (_) { /* 同上 */ }
+}
+
+
+/* ---------------------------------------------------------------- 安全区 */
+
+/**
+ * 把系统栏的实际占位写进 CSS 变量，供布局做内边距。
+ *
+ * 变量名与 CSS 里的兜底值（`--sat` 等，见 styles/shell.css）是一对：
+ * **不调这个函数时它们就是空的**，CSS 会退化成原来的样子 ——
+ * 所以网页版（浏览器里跑）完全不受影响，只有 App 里才会多出这几像素。
+ *
+ * 只对 App 生效：Capacitor.isNativePlatform() 为假时直接返回，
+ * 免得在浏览器控制台刷一堆「插件不存在」。
+ */
+export async function applySafeAreaInsets(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const r = await WidgetBridge.insets();
+    const root = document.documentElement;
+    const px = (v: number) => (Number.isFinite(v) && v > 0 ? Math.round(v) : 0) + 'px';
+    root.style.setProperty('--sat', px(r.top));
+    root.style.setProperty('--sab', px(r.bottom));
+    root.style.setProperty('--sal', px(r.left));
+    root.style.setProperty('--sar', px(r.right));
+  } catch (_) {
+    // 量不到就算了 —— CSS 的兜底值本来就是 0，界面退回加边距之前的样子
+  }
 }

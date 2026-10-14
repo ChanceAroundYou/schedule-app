@@ -7,7 +7,7 @@ import { Repeat } from 'lucide-react';
 import type { Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
-import { CheckBtn } from './CheckBtn.tsx';
+import { CheckBtn, SelDot } from './CheckBtn.tsx';
 
 /* ============================== 分隔点 ============================== */
 
@@ -37,9 +37,14 @@ export interface TaskRowProps {
   extra?: ReactNode;
   /** 覆盖 .task-row 的附加类（逾期行用 od-row） */
   className?: string;
+  /**
+   * 多选模式（2026-10-14）。null = 没在多选；false/true = 在多选、这条有没有被选。
+   * 传了它就在行首画一个圈（选中画勾），点击行为也由 dispatch 改成切换选中。
+   */
+  sel?: boolean | null;
 }
 
-export function TaskRow({ task: t, bare, showDoneAt, extra, className }: TaskRowProps) {
+export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = null }: TaskRowProps) {
   const meta: ReactNode[] = [];
   const today = D.today();
   if (!bare) {
@@ -69,11 +74,17 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className }: TaskRow
 
   return (
     <div
-      className={'task-row task-el' + (t.done ? ' done' : '') + (className ? ' ' + className : '')}
+      className={'task-row task-el' + (t.done ? ' done' : '')
+        + (className ? ' ' + className : '')
+        + (sel === null ? '' : ' sel-mode' + (sel ? ' sel-on' : ''))}
       data-id={t.id}
       data-untimed={t.time ? undefined : '1'}
+      data-sel={sel === null ? undefined : sel ? '1' : '0'}
     >
-      <CheckBtn id={t.id} on={!!t.done} />
+      {/* 多选时用选择圈**替换**勾选圈：两个圈并排既挤又分不清点哪个是哪个。
+          勾选圈藏起来而不是不渲染 —— 位置留着，行高和多选前后完全一致，
+          进出多选时列表不会跳一下。 */}
+      {sel === null ? <CheckBtn id={t.id} on={!!t.done} /> : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
         <div className="row-title">{t.title}</div>
         <Meta items={meta} />

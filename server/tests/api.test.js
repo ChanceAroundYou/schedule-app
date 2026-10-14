@@ -923,3 +923,71 @@ test('小组件 op：空 ops / 超量都挡住', async () => {
     token: dad.token, body: { deviceId: 'x', ops: many },
   })).status, 400);
 });
+
+/* ---------------------------------------------------- repeatUntil 的级联清理 */
+
+/**
+ * 「从这次起往后全部」的服务端兜底（2026-10-14 实机发现的问题）。
+ *
+ * 场景：小组件发起删除时，它手里只有「上次同步时的快照」，而 App 那边还在
+ * 滚预生成窗口、会补出更远的实例。发起端删不干净，于是残留。
+ *
+ * 现在客户端只落一个 `repeatUntil` 标记，由服务端把该系列结束日及以后的
+ * 实例全部标记删除 —— 所有端通过普通增量同步收敛。
+ */
+test('落下 repeatUntil 后，服务端把该系列结束日及以后的实例全部删掉', async () => {
+  const SERIES = 'series-cascade';
+  const DATES = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19'];
+
+  await push([op(SERIES, { title: '每天跑步', date: DATES[0], seriesId: null }, 40000, 'devA')]);
+  for (const d of DATES.slice(1)) {
+    await push([op(`${SERIES}#${d}`, {
+      title: '每天跑步', date: d, seriesId: SERIES,
+    }, 40100, 'devA')]);
+  }
+
+  const before = await snapshot();
+  assert.ok(before.tasks[`${SERIES}#${DATES[4]}`], '前提：最后一次实例先得存在');
+
+  // 用户在 10-17 那一次上选「从这次起往后全部」
+  await push([op(SERIES, { repeatUntil: '2026-10-17' }, 41000, 'devA')]);
+
+  const after = await snapshot();
+  console.log('  级联后:',
+    '根(10-15):' + (after.tasks[SERIES] ? '在' : '删'),
+    DATES.slice(1).map((d) => `${d}:${after.tasks[`${SERIES}#${d}`] ? '在' : '删'}`).join(' '));
+
+  // 结束日**及以后**的实例必须都没了（墓碑不进快照 → 表现为「不在快照里」）
+  for (const d of ['2026-10-17', '2026-10-18', '2026-10-19']) {
+    assert.ok(!after.tasks[`${SERIES}#${d}`], `${d} 在结束日及以后，必须被级联删掉`);
+  }
+  // 结束日**之前**的照旧（含系列根本不是实例，不能被牵连）
+  assert.ok(after.tasks[`${SERIES}#2026-10-16`], '10-16 在结束日之前，不该被动');
+  assert.ok(after.tasks[SERIES], '系列根（10-15）早于结束日，不该被删');
+  assert.strictEqual(after.tasks[SERIES].repeatUntil, '2026-10-17', '标记本身要留在根上');
+});
+
+test('级联是幂等的：重复落同一个 repeatUntil 不会出错', async () => {
+  const SERIES = 'series-cascade-2';
+  await push([op(SERIES, { title: '喝水', date: '2026-10-15' }, 42000, 'devA')]);
+  await push([op(`${SERIES}#2026-10-16`, { title: '喝水', date: '2026-10-16', seriesId: SERIES }, 42010, 'devA')]);
+
+  await push([op(SERIES, { repeatUntil: '2026-10-16' }, 42020, 'devA')]);
+  const first = await snapshot();
+  await push([op(SERIES, { repeatUntil: '2026-10-16' }, 42030, 'devA')]);
+  const second = await snapshot();
+
+  assert.ok(!first.tasks[`${SERIES}#2026-10-16`], '第一次就该删掉');
+  assert.ok(!second.tasks[`${SERIES}#2026-10-16`], '再落一次仍是删除态，不该复活');
+});
+
+test('repeatUntil 为 null（撤销标记）时不误删任何实例', async () => {
+  const SERIES = 'series-cascade-3';
+  await push([op(SERIES, { title: '读书', date: '2026-10-15' }, 43000, 'devA')]);
+  await push([op(`${SERIES}#2026-10-16`, { title: '读书', date: '2026-10-16', seriesId: SERIES }, 43010, 'devA')]);
+
+  await push([op(SERIES, { repeatUntil: null }, 43020, 'devA')]);
+
+  const snap = await snapshot();
+  assert.ok(snap.tasks[`${SERIES}#2026-10-16`], 'null 只是「没设结束日」，不该删东西');
+});

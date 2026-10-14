@@ -32,6 +32,10 @@ import { DndProvider, useTimelineDrag } from '../ui/dndkit.tsx';
 import { Shell, Topbar, CalSubheader, QuickAdd } from '../ui/Shell.tsx';
 import { InviteSheet } from '../ui/Calendars.tsx';
 import { ProjectSheet } from '../ui/ProjectSheet.tsx';
+import { DeleteRepeatSheet, type DeleteRepeatChoice } from '../ui/kit/DeleteRepeatSheet.tsx';
+import { seriesRootOf } from '../domain/repeat.ts';
+import { navLabel } from './navLabel.ts';
+import { toast } from '../ui/kit.tsx';
 import { Drawer } from '../ui/Drawer.tsx';
 import { useViewLayout } from '../views/Calendar.tsx';
 import { useNav } from './useNav.ts';
@@ -61,6 +65,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [openId, setOpenId] = useState<string | null>(null);
+  /** 删除重复任务时的「删哪些」浮层；null = 没在问（2026-10-14） */
+  const [delRepeat, setDelRepeat] = useState<{ id: string; title: string; date: string | null } | null>(null);
   const [invOpen, setInvOpen] = useState(false);
   /** 找日期面板与「更多」抽屉的开关放在这里 —— Esc 要按一个固定顺序逐层关 */
   const [jumpOpen, setJumpOpen] = useState(false);
@@ -108,7 +114,26 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const { nav, shift } = useNav();
 
   /* -------- 任务操作 -------- */
-  const { createTask, removeTask } = useTaskActions(setOpenId);
+  const { createTask, removeTask } = useTaskActions(setOpenId, setDelRepeat);
+
+  /** 删除重复任务：先问「删哪些」，再动手（2026-10-14） */
+  const onDeleteRepeat = useCallback((c: DeleteRepeatChoice) => {
+    const ask = delRepeat;
+    setDelRepeat(null);
+    if (!ask || c === 'cancel') return;
+    const t = store.get().tasks[ask.id];
+    if (!t) return;
+    const root = seriesRootOf(t) ?? t.id;
+    if (c === 'one') {
+      // 删这一次：规则保留，下一次照常出现
+      store.deleteOne(root, ask.date ?? D.today(), navLabel(store.get().ui.nav));
+      toast('已跳过这一次', { label: '撤销', run: () => store.restoreTask(t.id) });
+    } else {
+      store.deleteSeriesFrom(root, ask.date ?? D.today(), navLabel(store.get().ui.nav));
+      const kept = (t.date ?? '') < (ask.date ?? '') ? '，之前的历史保留' : '';
+      toast('已删除这一次及以后的所有重复' + kept);
+    }
+  }, [delRepeat]);
 
   /* -------- 点击委托（唯一那一个 onClick，挂 `#content` 上）-------- */
   useContentEvents(contentRef, { confirm, nav, setOpenId, onProject: setPjSheet });
@@ -214,6 +239,13 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
         />
 
         {/* 两个浮层都传全量 state：它们要读 cals / invites，那是跨集的东西 */}
+        <DeleteRepeatSheet
+          open={!!delRepeat}
+          title={delRepeat?.title ?? ''}
+          date={delRepeat?.date ?? null}
+          onChoose={onDeleteRepeat}
+        />
+
         <InviteSheet state={state} open={invOpen} onClose={() => setInvOpen(false)} />
         {pjSheet && (
           <ProjectSheet
