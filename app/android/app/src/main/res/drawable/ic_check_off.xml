@@ -3,11 +3,10 @@
     android:height="22dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 未勾：空心方块，描边用偏深的绿灰，保证在浅绿底上够「显眼」 -->
+    <!-- 未勾：空心**圆**，描边偏深绿灰，在浅绿底上够显眼 -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#5E7C6A"
         android:strokeWidth="2"
-        android:strokeLineJoin="round"
-        android:pathData="M5,5 h14 a3,3 0 0 1 3,3 v8 a3,3 0 0 1 -3,3 h-14 a3,3 0 0 1 -3,-3 v-8 a3,3 0 0 1 3,-3 z" />
+        android:pathData="M12,2 a10,10 0 1 0 0.1,0 z" />
 </vector>

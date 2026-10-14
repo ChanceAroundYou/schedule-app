@@ -3,15 +3,15 @@
     android:height="22dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 已勾：实心方块 + 白勾，主绿铺底，小面积用饱和色反而更「显著」 -->
+    <!-- 已勾：实心**圆** + 白勾。小面积用饱和色反而更「显著」 -->
     <path
         android:fillColor="#27795A"
-        android:pathData="M5,5 h14 a3,3 0 0 1 3,3 v8 a3,3 0 0 1 -3,3 h-14 a3,3 0 0 1 -3,-3 v-8 a3,3 0 0 1 3,-3 z" />
+        android:pathData="M12,2 a10,10 0 1 0 0.1,0 z" />
     <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFF"
         android:strokeWidth="2.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M8,12.5 l3,3 l5,-6" />
+        android:pathData="M7.5,12.2 l3,3 l6,-6.2" />
 </vector>

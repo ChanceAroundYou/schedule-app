@@ -2,25 +2,25 @@
 <!--
   任务**编辑 / 删除**弹框。不用打开 App，就在桌面上改。
 
-  2026-10-14（第四轮）整体重做（用户：太丑、弹窗乱）：
-  · 标题「编辑任务」**居中**（原来左对齐，看着像没排版）
-  · 完成勾选框从 CheckBox 改成 **ImageView** —— CheckBox 自带 button 会在
-    22dp 宽度里把方框拉成**长条**（用户报「是个长方形」），ImageView 尺寸
-    就是正方形，一行代码在 Java 里换图
-  · 输入框 / 按钮底色从 widget_habit_bg（**灰绿**，那是「已完成」色）换成
-    **dialog_field**（极浅绿白 #F4FAF6）—— 不再一片灰
-  · 弹框底板改**纯白**，与输入框的浅绿形成层次
-  · 日期行、时间行**高度写死 34dp**、minHeight/minWidth=0、padding 归零 ——
-    原来 wrap_content + borderlessButtonStyle 的默认内边距撑出个大空盒，
-    文字小盒子大（用户报「方框特别大」）
-  · 宽度 232 → 260dp：输入框留白加回来一些，不再窄得憋屈
+  2026-10-14（第六轮）：左侧留出一整列，只放完成勾选框。
+  · 结构改成「标题 / 左右分栏 / 分割线 / 底部按钮」四段：
+    中间那段是**左右分栏**——左边一列**固定 30dp 宽、整列留白，只放勾选框**；
+    右边一列放标题输入框 + 日期 + 起止时间 + 时长提示。
+    这样勾选框和输入区左边缘对齐，勾选框独占一列，右侧全是输入控件。
+  · 勾选框由方形改**圆形**（ic_check_on/off 重绘成圆），符合你要的圆形。
+  · 底部保存/删除按钮之前**文字被裁掉看不见** —— 原因是按钮写死 32dp 高
+    又设了 includeFontPadding=false，字被切了。这轮：按钮高 36dp、
+    去掉 includeFontPadding=false、底部再加 4dp 下边距，留足显示空间。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="260dp"
+    android:layout_width="272dp"
     android:layout_height="wrap_content"
     android:background="@drawable/dialog_bg"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:paddingLeft="14dp"
+    android:paddingTop="12dp"
+    android:paddingRight="14dp"
+    android:paddingBottom="12dp">
 
     <!-- 标题：居中 -->
     <TextView
@@ -33,133 +33,153 @@
         android:textSize="14sp"
         android:textStyle="bold" />
 
-    <!-- 标题行：左侧正方形勾选框 + 任务输入框 -->
+    <!-- ===== 左右分栏：左列只放圆形勾选框，右列放全部输入控件 ===== -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <!-- 完成勾选框。**必须是 ImageView**：CheckBox 的 button drawable
-             会被拉伸填满 22dp 宽 → 变成 22×14 的长方形。ImageView 严格正方。 -->
-        <ImageView
-            android:id="@+id/d_done"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_marginRight="8dp"
-            android:contentDescription="标记完成"
-            android:src="@drawable/ic_check_off" />
+        <!-- 左列：整列留白，**只有**勾选框（垂直居中） -->
+        <LinearLayout
+            android:layout_width="30dp"
+            android:layout_height="match_parent"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
 
-        <EditText
-            android:id="@+id/d_title"
+            <!-- 圆形勾选框。ImageView 而非 CheckBox：CheckBox 的 button
+                 drawable 会被拉伸填满宽度，长成方形而不是圆形。 -->
+            <ImageView
+                android:id="@+id/d_done"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="标记完成"
+                android:src="@drawable/ic_check_off" />
+        </LinearLayout>
+
+        <!-- 右列：所有输入控件 -->
+        <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="36dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/dialog_field"
-            android:gravity="center_vertical"
-            android:hint="做什么"
-            android:inputType="text"
-            android:paddingLeft="10dp"
-            android:paddingRight="10dp"
-            android:textColor="#1B3A2A"
-            android:textColorHint="#9BB3A5"
-            android:textSize="13sp" />
+            android:orientation="vertical">
+
+            <!-- 任务标题输入框 -->
+            <EditText
+                android:id="@+id/d_title"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:background="@drawable/dialog_field"
+                android:gravity="center_vertical"
+                android:hint="做什么"
+                android:inputType="text"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:textColor="#1B3A2A"
+                android:textColorHint="#9BB3A5"
+                android:textSize="13sp" />
+
+            <!-- 日期：整行按钮，点了弹日历选择器 -->
+            <Button
+                android:id="@+id/d_date"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/dialog_field"
+                android:gravity="center_vertical"
+                android:minHeight="0dp"
+                android:minWidth="0dp"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:text="2026-10-13"
+                android:textColor="#1B3A2A"
+                android:textSize="12sp" />
+
+            <!-- 起止时间：两个表盘按钮 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/d_start"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/dialog_field"
+                    android:gravity="center"
+                    android:minHeight="0dp"
+                    android:minWidth="0dp"
+                    android:paddingLeft="6dp"
+                    android:paddingRight="6dp"
+                    android:text="不设置"
+                    android:textColor="#1B3A2A"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:layout_marginLeft="6dp"
+                    android:layout_marginRight="6dp"
+                    android:gravity="center"
+                    android:text="至"
+                    android:textColor="#8AA294"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/d_end"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/dialog_field"
+                    android:gravity="center"
+                    android:minHeight="0dp"
+                    android:minWidth="0dp"
+                    android:paddingLeft="6dp"
+                    android:paddingRight="6dp"
+                    android:text="不设置"
+                    android:textColor="#1B3A2A"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- 时长提示 -->
+            <TextView
+                android:id="@+id/d_durhint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:textColor="#8AA294"
+                android:textSize="10sp" />
+        </LinearLayout>
     </LinearLayout>
-
-    <!-- 日期：整行按钮（高度写死 34dp，不再撑成大空盒），点了弹日历选择器 -->
-    <Button
-        android:id="@+id/d_date"
-        style="?android:attr/borderlessButtonStyle"
-        android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/dialog_field"
-        android:minHeight="0dp"
-        android:minWidth="0dp"
-        android:paddingLeft="10dp"
-        android:paddingRight="10dp"
-        android:text="2026-10-13"
-        android:textColor="#1B3A2A"
-        android:textSize="12sp" />
-
-    <!-- 起止时间：两个表盘按钮，同样 34dp 写死高度 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/d_start"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/dialog_field"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp"
-            android:text="不设置"
-            android:textColor="#1B3A2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_marginLeft="6dp"
-            android:layout_marginRight="6dp"
-            android:gravity="center"
-            android:text="至"
-            android:textColor="#8AA294"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/d_end"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/dialog_field"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp"
-            android:text="不设置"
-            android:textColor="#1B3A2A"
-            android:textSize="12sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/d_durhint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="5dp"
-        android:textColor="#8AA294"
-        android:textSize="10sp" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="2dp"
+        android:layout_marginTop="10dp"
         android:background="#E4EFE8"
         android:text="" />
 
-    <!-- 底部两个按钮：保存 · 删除。收紧，不再空荡荡 -->
+    <!-- 底部两个按钮：保存 · 删除，**占满整宽**（左列不参与这一行）。
+         高度 36dp、不关includeFontPadding —— 之前写 32dp + 关掉行高，
+         结果文字被裁掉看不见。底部留 4dp 余量。 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="36dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
         android:orientation="horizontal">
 
         <Button
             android:id="@+id/d_save"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="0dp"
-            android:layout_height="32dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:includeFontPadding="false"
             android:minHeight="0dp"
             android:minWidth="0dp"
             android:text="保存"
@@ -171,9 +191,8 @@
             android:id="@+id/d_delete"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="0dp"
-            android:layout_height="32dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:includeFontPadding="false"
             android:minHeight="0dp"
             android:minWidth="0dp"
             android:text="删除"
