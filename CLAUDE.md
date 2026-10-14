@@ -241,7 +241,7 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 
 **状态语义三个别混用**：`aria-current="page"` 用「现在在哪一页」；`aria-expanded` 只给
 **真的是折叠开关**的；`aria-haspopup="dialog"` 给「按下去弹浮层，但开没开的状态在 App
-那层」的。**`prefers-reduced-motion` 全站关，只有 `.animate-spin` 例外**（通配 `*` +
+那层」的。**`prefers-reduced-motion` 全站关，无例外**（通配 `*` +
 `!important`）—— 会动的地方十几处，**挑漏一处等于没关**。
 
 ### 说明性文字：默认不写，写就写一句（2026-10-07）
@@ -349,7 +349,7 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 
 > 后两个的差别就是「开没开这个状态**在谁手里**」。
 
-### 降低动态效果：全站关，只有「正在同步」例外（2026-10-06）
+### 降低动态效果：全站关（2026-10-06）
 
 `styles/responsive.css` **文件最末**一段 `@media (prefers-reduced-motion: reduce)`：
 通配 `*` + `!important` 把 `animation-duration` / `transition-duration` 压到
@@ -357,8 +357,8 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 
 - **为什么不挑几个「大动作」**：会动的地方有十几处，挑漏一处就等于没关，
   而且日后再加一处也不会有人记得回来补。
-- **唯一的例外是 `.animate-spin`**（同步中的加载圈）：它不是动效，是在说
-  「正在同步，别以为卡死了」。停下来传达的正好是相反的意思。
+- **无例外**（含同步中的加载圈）：reduced-motion 是用户明确要「少动」，
+  同步状态靠顶栏文字/云图标说，不靠转圈。
 - 这一条必须**压得过内联 style 和 Tailwind 层**，所以 `!important` 不是偷懒。
 
 ---

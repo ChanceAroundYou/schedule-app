@@ -61,11 +61,11 @@
   其余 `data-act` 全是真 `<button>`，Tab 即达，不补键位（用户裁决）。
 - 焦点在把手上时只截方向键，`1/2/3` 切视图、`d/t` 跳页不受影响。
 
-### A6 动效全站关，同步圈例外
+### A6 动效全站关
 
 - `responsive.css` 最末 `@media (prefers-reduced-motion: reduce)`：通配 `*` + `!important`
-  压到 `.01ms`、`scroll-behavior` 复位——不挑"大动作"（漏一处等于没关）。
-- 唯一例外 `.animate-spin`（正在同步的信号，停下传反话）。`!important` 必须压过内联 style 与 Tailwind 层。
+  压到 `.01ms`、`scroll-behavior` 复位——不挑"大动作"（漏一处等于没关），**无例外**
+  （同步圈也一并停：reduced-motion 是用户明确要「少动」，同步状态靠顶栏文字/云图标说，不靠转圈）。
 
 ### A7 说明文字三条 + 界面说话义务
 

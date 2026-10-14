@@ -110,31 +110,14 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // cal 只保证是字符串或 null。它到底还存不存在要等服务器把集列表发下来，
   // 那一步在 store.setCals 里做 —— normalizeUi 是纯函数，不知道有哪些集。
   if (ui.cal != null && typeof ui.cal !== 'string') ui.cal = null;
-  /* cals 是勾选显示的集合。老数据没有这个字段（undefined），落成 [] = 一个都
-     不显示 —— 对老用户来说等于「日程页空了」，所以**从 cal 起步**：把当前
-     那个集勾上，其余一个不勾。
-
-     **判的是 `raw.cals` 而不是 `ui.cals`**：上面 `{ ...d, ...raw }` 已经用
-     默认值把 cals 补成 [] 了，再问 ui.cals 永远是数组，老数据这条永远走不到
-     （写的时候没发现，是 domain.test.ts 那条断言红的）。 */
+  // cals 是勾选显示的集合。老数据没有这个字段，落成 [] = 一个都不显示（老用户看到
+  // 「日程页空了」），所以**从 cal 起步**：把当前那个集勾上。判的是 `raw.cals` 不是
+  // `ui.cals` —— 上面已用默认值把 cals 补成 []，再问 ui.cals 永远是数组，老数据走不到。
   const rawCals = raw?.cals;
   if (!Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
   else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', 'week', 'month'].includes(ui.view)) ui.view = 'day';
-  /* 时间窗：只认 0–24 的整数小时，且至少留 MIN_SPAN 小时。
-     写坏的值（字符串、NaN、to ≤ from）一律回落成整天 —— 归一化的职责是
-     「认得的值原样保留，不认得的打回默认」，不是替用户猜一个好看的窗。 */
-  const hour = (v: unknown): number =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(24, Math.round(v))) : NaN;
-  const from = hour(ui.dayFrom);
-  const to = hour(ui.dayTo);
-  if (Number.isNaN(from) || Number.isNaN(to)) {
-    ui.dayFrom = 0;
-    ui.dayTo = 24;
-  } else {
-    ui.dayFrom = Math.min(from, 24 - MIN_SPAN / 60);
-    ui.dayTo = Math.max(ui.dayFrom + MIN_SPAN / 60, to);
-  }
+  normalizeDayWindow(ui);
   if (!ui.cursor) ui.cursor = D.today();
   if (ui.nav === 'notes') ui.nav = 'today';
   if (!NAV_ALL.includes(ui.nav)) ui.nav = 'today';
@@ -146,6 +129,45 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   delete bag.noteId;
   delete bag.listFilter;
 
+  normalizeNav(ui);
+
+  // defaultCal 这里**只做形状校正**，不判断它还在不在列表里 —— `normalizeUi`
+  // 拿不到 `cals`（签名只有 ui），那是 `resolveDefaultCal()` 的活。
+  // 空串归一成 null：老版本没这个字段（undefined）与「显式留空」一样，
+  // 都表示「没选过」，由 resolveDefaultCal 兜底。
+  if (typeof ui.defaultCal !== 'string' || !ui.defaultCal) ui.defaultCal = null;
+
+  // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
+  // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，
+  // 两个列表各排各的，用户不知道为什么。
+  //
+  // 口径在 `orderTabs()` 里，**设置页那两处写入方用的是同一个函数** ——
+  // 在这里就地写一遍的话，那两处迟早和这里漂开（踩坑 49 就是这么来的）。
+  ui.tabs = orderTabs(ui.navOrder, ui.tabs);
+
+  return ui;
+}
+
+/** 时间窗归一化：只认 0–24 的整数小时，且至少留 MIN_SPAN 小时。
+    写坏的值（字符串、NaN、to ≤ from）一律回落成整天 —— 归一化的职责是
+    「认得的值原样保留，不认得的打回默认」，不是替用户猜一个好看的窗。 */
+function normalizeDayWindow(ui: UiPrefs): void {
+  const hour = (v: unknown): number =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(24, Math.round(v))) : NaN;
+  const from = hour(ui.dayFrom);
+  const to = hour(ui.dayTo);
+  if (Number.isNaN(from) || Number.isNaN(to)) {
+    ui.dayFrom = 0;
+    ui.dayTo = 24;
+  } else {
+    ui.dayFrom = Math.min(from, 24 - MIN_SPAN / 60);
+    ui.dayTo = Math.max(ui.dayFrom + MIN_SPAN / 60, to);
+  }
+}
+
+/** 侧栏顺序归一化：navOrder 过滤+补全，navBottom / navHidden 按同一 order 过滤。
+    三者的「空则默认 vs 空数组保留」口径各自不同，见各段注释。 */
+function normalizeNav(ui: UiPrefs): void {
   // order 只收 CUSTOMIZABLE 里的键：设置不进这个列表（见上面的注释）。
   // 过滤 + 补全用的是同一个列表，两边不一致时会出现「过滤掉的又被补回来」。
   const order = Array.isArray(ui.navOrder)
@@ -168,22 +190,6 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   ui.navHidden = Array.isArray(ui.navHidden)
     ? ui.navHidden.filter((k) => order.indexOf(k) >= 0)
     : [];
-
-  // defaultCal 这里**只做形状校正**，不判断它还在不在列表里 —— `normalizeUi`
-  // 拿不到 `cals`（签名只有 ui），那是 `resolveDefaultCal()` 的活。
-  // 空串归一成 null：老版本没这个字段（undefined）与「显式留空」一样，
-  // 都表示「没选过」，由 resolveDefaultCal 兜底。
-  if (typeof ui.defaultCal !== 'string' || !ui.defaultCal) ui.defaultCal = null;
-
-  // tabs 是 navOrder 的子集 —— 所以按 navOrder 的顺序重排它，而不是
-  // 保留它在盘上自己的顺序。否则侧栏拖个序，底栏的顺序也跟着变，
-  // 两个列表各排各的，用户不知道为什么。
-  //
-  // 口径在 `orderTabs()` 里，**设置页那两处写入方用的是同一个函数** ——
-  // 在这里就地写一遍的话，那两处迟早和这里漂开（踩坑 49 就是这么来的）。
-  ui.tabs = orderTabs(order, ui.tabs);
-
-  return ui;
 }
 
 /* -------------------------------------------------------- 快速添加的默认值 */

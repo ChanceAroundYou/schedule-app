@@ -107,7 +107,7 @@ ui/
 | S1 | `Btn` 改 cva（`className` 留布局类） | `ui/kit/Btn.tsx` | ✅ 已做（72ff7dd） |
 | S2 | `Input`（无 variant 可 cva 化，`className` 留布局类） | `ui/kit/Input.tsx` | ✅ no-op（已合规） |
 | S3 | `MiniIconBtn` `danger`/`primary` → `tone` | `ui/kit/IconBtn.tsx` | ✅ 已做（88296f4） |
-| S4 | `Dropdown`（选项 `role="option"`，改 `Btn` 毁 A11y，不改） | `ui/kit/Dropdown.tsx` | ✅ no-op（A11y 挡住 + 已合规） |
+| S4 | `Dropdown`（触发器/选项是 ARIA listbox 部件，非动作按钮，不适用 Btn） | `ui/kit/Dropdown.tsx` | ✅ 已定（listbox 部件保持手写 + 完整 ARIA，收在 `DropdownMenu`） |
 | S5 | 新增 `api-scan.mjs`，锁 R4（ratchet） | `tests/api-scan.mjs` | ✅ 已做（c2ccb48） |
 | S6 | 全局层 `state.css`（R3 状态类白名单） | `styles/state.css` | ✅ 已做（登记 7 个状态类 + 谁有权写；`base.state` 规则**不搬**——纯换宿主零收益 + cascade 顺序风险） |
 | S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | ✅ 已做（fbaaacc A–D + f3ae050 E–F；module 方案退回普通 `.css`，见 §4 风险兜底） |
@@ -189,6 +189,6 @@ B/C **按组推进**（`overlays → quick-add → shell → kit`），每组改
 |---|---|---|---|
 | `ui/kit/Btn.tsx` | 手写 `Record<Variant>` | 改 cva | ✅ 已修（72ff7dd） |
 | `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop | ✅ 已修（88296f4） |
-| `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` | ⏸ 不改（选项 `role="option"`，改 `Btn` 毁 A11y） |
+| `ui/kit/Dropdown.tsx` | 触发器/选项手写 `<button>` | ARIA listbox 部件，非动作按钮 | ✅ 已定（`role="option"` 不适用 Btn，保持手写 + 完整 ARIA，收在 `DropdownMenu`） |
 | `ui/kit/{Dropdown,IconBtn,Btn}.tsx` | 收 `className` | 留布局类（见 2.1） | ✅ 已定（布局类白名单，Interpretation B） |
 | `ui/settings/SettingsView.tsx` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]` | ✅ 已修（现为 `rounded-[var(--r-lg)]`/`rounded-[var(--r-sm)]`，归第 3 册 N5 一并清） |

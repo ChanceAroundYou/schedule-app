@@ -2449,8 +2449,8 @@ try {
     '没开降低动效时抽屉的过渡是真过渡（基准 ' + motion.drawer + '）');
   ok(secs(reduced.drawer) < 0.01,
     '开了 prefers-reduced-motion 之后过渡被关掉：' + motion.drawer + ' → ' + reduced.drawer);
-  ok(reduced.spin === '1s',
-    '加载圈是例外，照转不误（它不是动效，是在说「正在同步」）：' + motion.spin + ' → ' + reduced.spin);
+  ok(secs(reduced.spin) < 0.01,
+    '开了 prefers-reduced-motion 之后加载圈也一并停（无例外，同步状态靠顶栏文字说）：' + motion.spin + ' → ' + reduced.spin);
 
   // 关掉抽屉：焦点要还给刚才那个输入框
   await key(page, 'Escape', 'Escape', 27);
@@ -2580,7 +2580,9 @@ try {
   // 面板是**两层折叠**：点标题行展开对应那层，两层不能同时开。
   // 待办箱默认无日期 → 打开时应该先开**日期**层（需求 5）
   await clickEl(page, `document.querySelector('.fast-clock')`);
-  await waitFor(page, `document.querySelector('.when-pop') ? 1 : null`, '先出日期面板', 8000);
+  // 等**日期层渲染出格子**，不是只等 `.when-pop` 容器出现 —— 容器先出、格子后渲染，
+  // 只等容器会在 ~1/4 的跑次里读到 0 格（面板还没展开完）。
+  await waitFor(page, `document.querySelector('.when-pop .jp-cell') ? 1 : null`, '先出日期面板', 8000);
   const dp = await evalJs(page, `
     const pop = document.querySelector('.when-pop');
     const rows = [...pop.querySelectorAll('.wp-head')];

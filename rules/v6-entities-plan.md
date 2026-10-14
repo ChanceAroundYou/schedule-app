@@ -16,7 +16,6 @@
 
 | 位置 | 现象 | 结论 |
 |---|---|---|
-| `hydrateTask` 50 行 | 12 个并列 if | 第 4 册 F1 特许形态，留 |
 | `SyncResponse.snapshot.projects?` 可选 | 老响应落新客户端不炸 | E2 先例，留（新实体照抄） |
 
 ## 2. verify（2026-10-14）

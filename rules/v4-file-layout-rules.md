@@ -14,8 +14,9 @@
 - barrel：`ui/kit.tsx`（`export * from './kit/kit.ts'`）、`ui/hooks.ts`、`ui/shell/shell.ts`、
   `views/parts.tsx`、`domain/types.ts`——全部只 re-export，头部注释写明"保持 import 路径不变"。
 - 最长文件：`AiPanel.tsx` 313 行 → 800 上限**无压力**；server 最长 `calendars.js` 228 行。
-- 超 50 行函数：`makeTask`、`migrateV3`、`normalizeUi`、`Dropdown`、`IconBtn` 等——
-  全是"一组并列字段补全 / 一组 variant 定义"，**拆不开也无收益**，属特许形态（见 F2）。
+- 函数长度：逻辑函数**全部 ≤50 行，无特许**——`normalizeUi`/`migrateV3` 已按逻辑单元拆成
+  `normalizeDayWindow`/`normalizeNav`、`migrateTasks`/`migrateTrash`/`migrateHabits`；
+  `Dropdown` 按部件拆成 `Dropdown`/`DropdownMenu`/`handleKeyDown`，逻辑单元各 ≤50。
 
 ---
 
@@ -26,8 +27,9 @@
 - 单文件 **≤800 行**（含注释）——超了必须拆，拆法只许 barrel 模式（F4）。
 - **300 行是软线**：超 300 先问"是不是混了两件事"（如 `AiPanel` = 状态+发送+气泡列表混）。
   问完仍内聚（如注释占一半的 `DayView` 249 行），留。
-- 函数 **≤50 行**：超了先 early return 压嵌套；压完还超且是"并列字段/并列分支"
-  （`hydrateTask` 12 个 if、`VARIANT` 6 档），留——并列分支拆函数只多跳转。
+- 函数 **≤50 行，无例外**：超了先 early return 压嵌套，再按逻辑单元拆（并列字段/分支
+  各自成函数）。React 组件按部件拆（触发器/菜单/键盘各成函数），逻辑单元各 ≤50——
+  组件的 props 类型与 JSX 是声明，不计入逻辑行数。
 - 嵌套 **≤4 层**：超了抽函数或反转条件；`switch` 穿透用 `noFallthroughCasesInSwitch` 锁（tsconfig 已开）。
 
 ### F2 粒度：按行为分组，不按实体切碎

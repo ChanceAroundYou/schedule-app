@@ -41,17 +41,28 @@ export interface MigrationResult {
  */
 export function migrateV3(raw: V3State): MigrationResult {
   const now = Date.now();
-  const tasks: Task[] = [];
-  const habits: Habit[] = [];
-  let ignored = 0;
+  const tasks = migrateTasks(raw, now);
+  const trash = migrateTrash(raw, now);
+  const habits = migrateHabits(raw, now);
+  return {
+    tasks: [...tasks.list, ...trash.list],
+    habits: habits.list,
+    ui: normalizeUi(raw.ui),
+    ignored: tasks.ignored + trash.ignored + habits.ignored,
+  };
+}
 
+/** 旧版任务列表 → v4 任务。归属（calId）由 store.loadMigrated 落位 —— 迁移这一步还不知道有哪些集。 */
+function migrateTasks(raw: V3State, now: number): { list: Task[]; ignored: number } {
+  const list: Task[] = [];
+  let ignored = 0;
   for (const t of raw.tasks || []) {
     if (!t || typeof t !== 'object') { ignored++; continue; }
     const id = t.id || newId();
     const repeat = toRepeat(t.repeat, t.date ?? null);
-    tasks.push({
+    list.push({
       id,
-      calId: '',   // 归属由 store.loadMigrated 落位 —— 迁移这一步还不知道有哪些集
+      calId: '',
       title: t.title || '未命名任务',
       note: t.note || '',
       date: t.date ?? null,
@@ -70,14 +81,18 @@ export function migrateV3(raw: V3State): MigrationResult {
       _dev: {},
     });
   }
+  return { list, ignored };
+}
 
-  // 旧版的 trash 是整条任务的深拷贝快照。v4 用墓碑表达 —— 垃圾箱就是
-  // deleted && !purged 的实体本身，这样删除才能同步到其他设备。
+/** 旧版 trash 是整条任务的深拷贝快照 → v4 用墓碑表达（deleted && !purged 的实体本身），这样删除才能同步到其他设备。 */
+function migrateTrash(raw: V3State, now: number): { list: Task[]; ignored: number } {
+  const list: Task[] = [];
+  let ignored = 0;
   for (const item of raw.trash || []) {
     if (!item || item.kind !== 'task' || !item.payload) { ignored++; continue; }
     const p = item.payload;
     const id = p.id || newId();
-    tasks.push({
+    list.push({
       id,
       calId: '',
       title: p.title || '未命名任务',
@@ -101,10 +116,16 @@ export function migrateV3(raw: V3State): MigrationResult {
       _dev: {},
     });
   }
+  return { list, ignored };
+}
 
+/** 旧版打卡 → v4 打卡。 */
+function migrateHabits(raw: V3State, now: number): { list: Habit[]; ignored: number } {
+  const list: Habit[] = [];
+  let ignored = 0;
   for (const h of raw.habits || []) {
     if (!h || typeof h !== 'object') { ignored++; continue; }
-    habits.push({
+    list.push({
       id: h.id || newId(),
       calId: '',
       title: h.title || '未命名习惯',
@@ -115,8 +136,7 @@ export function migrateV3(raw: V3State): MigrationResult {
       _dev: {},
     });
   }
-
-  return { tasks, habits, ui: normalizeUi(raw.ui), ignored };
+  return { list, ignored };
 }
 
 /**

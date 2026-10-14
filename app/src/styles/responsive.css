@@ -364,11 +364,6 @@ body.sheet-open .tab:active { background: none; }
     transition-duration: .01ms !important;
     scroll-behavior: auto !important;
   }
-  /* 同步中的加载圈：例外，它不是动效，是在说「正在同步」 */
-  .animate-spin {
-    animation-duration: 1s !important;
-    animation-iteration-count: infinite !important;
-  }
 }
 /* ================= 焦点环 =================
    一条统一定义，**不要再散着写**。

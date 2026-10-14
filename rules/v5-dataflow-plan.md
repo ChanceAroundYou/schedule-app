@@ -16,8 +16,8 @@
 
 | 位置 | 现象 | 归属 |
 |---|---|---|
-| `views/` 受控 `Input onChange` ×N | 打字本地态，无 store 调用 | D2 特许，留 |
-| `Dropdown` 内部手写 `<button>` ×2 | 该走 `Btn` | 第 1 册 S4 修（选项 `role="option"`，改 `Btn` 毁 A11y，不改） |
+| `views/` 受控 `Input onChange` ×N | 打字本地态，无 store 调用 | 合规（本地态，非 store 写，不触 D2） |
+| `Dropdown` 触发器/选项手写 `<button>` | ARIA listbox 部件，非动作按钮 | 第 1 册 S4 已定：listbox 部件不适用 Btn（`role="option"`），保持手写 + 完整 ARIA（收在 `DropdownMenu`） |
 
 ## 2. verify（2026-10-14）
 

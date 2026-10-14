@@ -106,7 +106,7 @@
 | `Input` | `dense` `className` | `dense` `className`(布局) | 无 variant 可 cva 化；`className` 只留布局类 |
 | `IconBtn` | `label` `className` | `label` `className`(布局) | `className` 只留布局类（未加 `size`：无调用方需要，YAGNI） |
 | `MiniIconBtn` | `label` `danger` `primary` `className` | `label` `tone` `className`(布局) | `danger`/`primary` 合并为 `tone`；`className` 只留布局类 |
-| `Dropdown` | `className` `menuClassName` … | 不变 | 选项是 `role="option"`（listbox），改 `Btn` 会毁 A11y，**不改**；`className`/`menuClassName` 实测全是布局/定位类，已合规 |
+| `Dropdown` | `className` `menuClassName` … | 不变 | 触发器与选项是 ARIA listbox 部件（`role="option"`），**不是动作按钮**，不适用 Btn 的 variant 模型（保持手写 + 完整 ARIA，收在 `DropdownMenu`）；`className`/`menuClassName` 实测全是布局/定位类，已合规 |
 | `Chips` | `label` `labelledBy` … | 不变 | 已是 `Btn` 封装，无需改 |
 | `Sheet` | `footer` `dismissable` … | 不变 | 已是封闭的 |
 

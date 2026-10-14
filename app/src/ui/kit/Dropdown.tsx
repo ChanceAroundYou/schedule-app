@@ -2,7 +2,7 @@
  * Dropdown —— 自定义下拉选择器
  */
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { cx } from '../cx.ts';
 import { useOutsideClose } from '../hooks.ts';
@@ -28,20 +28,7 @@ const SIZE: Record<Size, string> = {
  * `renderValue` / `renderOption` 可插入色点、图标等内容，`className`、
  * `menuClassName` 留给调用方接入同一套令牌下的尺寸和强调色。
  */
-export function Dropdown<K extends string | number>({
-  value,
-  options,
-  onPick,
-  label,
-  labelledBy,
-  placeholder = '选择…',
-  disabled = false,
-  size = 'md',
-  className,
-  menuClassName,
-  renderValue,
-  renderOption,
-}: {
+interface DropdownProps<K extends string | number> {
   value: K | null;
   options: readonly DropdownOption<K>[];
   onPick: (value: K) => void;
@@ -57,7 +44,22 @@ export function Dropdown<K extends string | number>({
       传了 renderValue 就以它为准，没传才回退到选项文字 / placeholder。 */
   renderValue?: (option: DropdownOption<K> | undefined) => ReactNode;
   renderOption?: (option: DropdownOption<K>, selected: boolean) => ReactNode;
-}) {
+}
+
+export function Dropdown<K extends string | number>({
+  value,
+  options,
+  onPick,
+  label,
+  labelledBy,
+  placeholder = '选择…',
+  disabled = false,
+  size = 'md',
+  className,
+  menuClassName,
+  renderValue,
+  renderOption,
+}: DropdownProps<K>) {
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -90,6 +92,23 @@ export function Dropdown<K extends string | number>({
     setActive(next.index);
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!open) setOpen(true);
+      move(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      if (open && active >= 0) {
+        event.preventDefault();
+        const option = options[active];
+        if (option) pick(option);
+      }
+    } else if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      setOpen(false);
+    }
+  };
+
   return (
     <div ref={root} className="relative inline-block min-w-0">
       <button
@@ -102,22 +121,7 @@ export function Dropdown<K extends string | number>({
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((currentOpen) => !currentOpen)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            if (!open) setOpen(true);
-            move(event.key === 'ArrowDown' ? 1 : -1);
-          } else if (event.key === 'Enter' || event.key === ' ') {
-            if (open && active >= 0) {
-              event.preventDefault();
-              const option = options[active];
-              if (option) pick(option);
-            }
-          } else if (event.key === 'Escape' && open) {
-            event.preventDefault();
-            setOpen(false);
-          }
-        }}
+        onKeyDown={handleKeyDown}
         className={cx(
           'inline-flex min-w-0 items-center justify-between gap-2 rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel-2)] text-[var(--text)] outline-none transition',
           'hover:border-[var(--primary)] focus:border-[var(--primary)] focus:bg-[var(--panel)]',
@@ -132,48 +136,89 @@ export function Dropdown<K extends string | number>({
         <ChevronDown size={14} aria-hidden="true" className={cx('shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div
+        <DropdownMenu
           id={listId}
-          role="listbox"
-          aria-label={label}
-          className={cx(
-            // `w-max` 而不是只 `min-w-full`：面板是绝对定位的，宽度走
-            // shrink-to-fit —— 触发按钮窄的时候（成员行那个角色选择器只有
-            // 78px），面板会被压到触发按钮那么窄，于是「可编辑」竖着断成
-            // 两行（实测 option 高 53px = 两行）。`w-max` 让它按内容撑开，
-            // 再 `min-w-full` 保证不比触发按钮窄。选项文字同时加
-            // `whitespace-nowrap`，双保险。
-            'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 w-max min-w-full overflow-y-auto rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
-            menuClassName,
-          )}
-        >
-          {options.map((option, index) => {
-            const selected = option.value === value;
-            return (
-              <button
-                key={String(option.value)}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                disabled={option.disabled}
-                onMouseEnter={() => !option.disabled && setActive(index)}
-                onClick={() => pick(option)}
-                className={cx(
-                  'flex w-full items-center justify-between gap-3 rounded-[var(--r-sm)] px-2.5 py-2 text-left text-[13px] transition',
-                  selected
-                    ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                    : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
-                  active === index && !selected && 'bg-[var(--panel-3)]',
-                  'disabled:cursor-not-allowed disabled:opacity-40',
-                )}
-              >
-                <span className="min-w-0 flex-1 whitespace-nowrap">{renderOption ? renderOption(option, selected) : option.label}</span>
-                {selected && <Check size={14} aria-hidden="true" />}
-              </button>
-            );
-          })}
-        </div>
+          label={label}
+          options={options}
+          value={value}
+          active={active}
+          onPick={pick}
+          onHover={setActive}
+          menuClassName={menuClassName}
+          renderOption={renderOption}
+        />
       )}
+    </div>
+  );
+}
+
+/**
+ * listbox 面板：`role="listbox"` + 每个选项 `role="option"`。
+ * 这是 ARIA listbox 部件，**不是动作按钮**（不适用 Btn 的 variant 模型），
+ * 所以在这里自成一体，触发器与选项的完整 ARIA 都收在这一处。
+ */
+function DropdownMenu<K extends string | number>({
+  id,
+  label,
+  options,
+  value,
+  active,
+  onPick,
+  onHover,
+  menuClassName,
+  renderOption,
+}: {
+  id: string;
+  label: string;
+  options: readonly DropdownOption<K>[];
+  value: K | null;
+  active: number;
+  onPick: (option: DropdownOption<K>) => void;
+  onHover: (index: number) => void;
+  menuClassName?: string;
+  renderOption?: (option: DropdownOption<K>, selected: boolean) => ReactNode;
+}) {
+  return (
+    <div
+      id={id}
+      role="listbox"
+      aria-label={label}
+      className={cx(
+        // `w-max` 而不是只 `min-w-full`：面板是绝对定位的，宽度走
+        // shrink-to-fit —— 触发按钮窄的时候（成员行那个角色选择器只有
+        // 78px），面板会被压到触发按钮那么窄，于是「可编辑」竖着断成
+        // 两行（实测 option 高 53px = 两行）。`w-max` 让它按内容撑开，
+        // 再 `min-w-full` 保证不比触发按钮窄。选项文字同时加
+        // `whitespace-nowrap`，双保险。
+        'absolute left-0 top-[calc(100%+4px)] z-[60] max-h-64 w-max min-w-full overflow-y-auto rounded-[var(--r-md)] border-[length:var(--border-w)] border-[var(--input)] bg-[var(--panel)] p-1 shadow-lg',
+        menuClassName,
+      )}
+    >
+      {options.map((option, index) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={String(option.value)}
+            type="button"
+            role="option"
+            aria-selected={selected}
+            disabled={option.disabled}
+            onMouseEnter={() => !option.disabled && onHover(index)}
+            onClick={() => onPick(option)}
+            className={cx(
+              'flex w-full items-center justify-between gap-3 rounded-[var(--r-sm)] px-2.5 py-2 text-left text-[13px] transition',
+              selected
+                ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
+                : 'text-[var(--text-2)] hover:bg-[var(--panel-3)] hover:text-[var(--text)]',
+              active === index && !selected && 'bg-[var(--panel-3)]',
+              'disabled:cursor-not-allowed disabled:opacity-40',
+            )}
+          >
+            <span className="min-w-0 flex-1 whitespace-nowrap">{renderOption ? renderOption(option, selected) : option.label}</span>
+            {selected && <Check size={14} aria-hidden="true" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
