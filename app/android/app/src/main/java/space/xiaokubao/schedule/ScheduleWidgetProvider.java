@@ -351,10 +351,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             e.setViewLayoutHeight(R.id.tl_hour, hgt, TypedValue.COMPLEX_UNIT_DIP);
             e.setTextViewText(R.id.tl_hour,
                     (k % step == 0) ? String.format(Locale.US, "%02d", lo + k) : "");
-            // 「现在」那一小时的刻度标红 —— 全宽红线在主体里单独一层
-            e.setTextColor(R.id.tl_hour,
-                    (isToday && nowMin >= 0 && (lo + k) == nowMin / 60)
-                            ? 0xFFD24A2E : 0xFFA2B5A9);
+            // 刻度数字恒为普通灰。**不再给「当前那一小时」标红**（用户 2026-10-14：
+            // 不要任何「现在几点」的体现）。
+            e.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
             v.addView(R.id.tl_scale, e);
         }
     }
@@ -404,13 +403,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             v.addView(R.id.tl_grid, e);
         }
 
-        /* ---- 「现在」红线 ---- */
-        v.removeAllViews(R.id.tl_now);
-        if (isToday && nowMin >= fromMin && nowMin <= toMin) {
-            v.addView(R.id.tl_now, spacer(c, LINE_OFFSET_DP));
-            v.addView(R.id.tl_now, spacer(c, Math.round((nowMin - fromMin) * dpPerMin)));
-            v.addView(R.id.tl_now, new RemoteViews(c.getPackageName(), R.layout.widget_tl_nowline));
-        }
+        /* ---- 「现在」红线：**整层已删除**（用户 2026-10-14：不要任何
+           「现在几点」的体现 —— 刻度标红和这条红线一起去掉，
+           连 widget_schedule.xml 里的 tl_now 容器也删了） ---- */
 
         /* ---- 任务层 ---- */
         v.removeAllViews(R.id.tl_tasks);
@@ -887,6 +882,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     fields.put("duration", p.optInt("duration", 0));
                     fields.put("done", false);
                     fields.put("doneAt", JSONObject.NULL);
+                    // 重复 / 提醒（2026-10-14 新增的字段）。老队列里没有这两个键
+                    // → 不下发，保持「不重复 / 不提醒」的默认语义。
+                    JSONObject rep = p.optJSONObject("repeat");
+                    if (rep != null) fields.put("repeat", rep);
+                    if (p.has("reminder")) {
+                        fields.put("reminder",
+                                p.isNull("reminder") ? JSONObject.NULL : p.optString("reminder"));
+                    }
                     op.put("fields", fields);
                     ops.put(op);
                 }

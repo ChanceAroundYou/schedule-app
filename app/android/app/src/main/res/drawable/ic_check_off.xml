@@ -3,10 +3,13 @@
     android:height="22dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 未勾：空心**圆**，描边偏深绿灰，在浅绿底上够显眼 -->
+    <!-- 未完成：空心圆。
+         ⚠️ 与 ic_trash **共用同一套描边参数**（#5E7C6A / 1.8dp / 22dp 盒）——
+         用户 2026-10-14：左圆圈和右垃圾桶看着不像一套，颜色、大小、风格都要一致。
+         改这里请同步改 ic_trash。 -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#5E7C6A"
-        android:strokeWidth="2"
-        android:pathData="M12,2 a10,10 0 1 0 0.1,0 z" />
+        android:strokeWidth="1.8"
+        android:pathData="M12,2.1 a9.9,9.9 0 1 0 0.1,0 z" />
 </vector>

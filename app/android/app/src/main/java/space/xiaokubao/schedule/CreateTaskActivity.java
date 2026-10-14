@@ -23,15 +23,19 @@ import java.util.Locale;
  * 新建任务弹框。
  *
  * 同样是对话框主题的 Activity —— 用户不离开桌面就能建一条。
- * **只有标题和时间**：备注 / 重复这些留给 App，桌面上只做「快速记一笔」。
  *
- * 2026-10-13：单一的「时间」按钮改成**开始 / 结束两个表盘**（用户要求任务能设
- * 起止时间）。服务端存的是「开始 time + 时长 duration」，所以这里把结束换算成
- * duration 下发。
+ * 2026-10-13：单一的「时间」按钮改成开始 / 结束两个表盘。
+ * 2026-10-14（第十轮）：
+ *   · **只设开始时间** —— 去掉结束。「时间段」交给**编辑弹窗**（那边有开始+结束）。
+ *     存的是 time + duration；这里没结束 → duration 发 null（App 语义：默认一小时卡高）。
+ *   · **重复**升级成「预设 + 结束条件」：
+ *       预设：不重复 / 每天 / 工作日(周一~五) / 每周 / 每月 / 每年
+ *       结束：不结束 / 按次数 / 按日期
+ *     写出的仍是标准 RepeatRule（weekdays 用 App 口径 0=周日…6=周六）。
+ *   · **提醒**：选 HH:mm，写入 reminder 字段。
  *
- * ⚠️ 时长字段名必须是 **duration** —— 旧代码写的是 `dur`，而服务端和 App
- * （widgetSnapshot.ts: `dur: t.duration`）读的都是 duration，于是小组件设的时间
- * 段长度从来没生效过。一并修掉。
+ * ⚠️ 时长字段名必须是 **duration** —— 旧代码写的是 `dur`，服务端和 App 读的
+ * 都是 duration。
  */
 public class CreateTaskActivity extends Activity {
 
@@ -46,22 +50,27 @@ public class CreateTaskActivity extends Activity {
     private String pickedDate = null;
     /** 选中的开始时间，null = 不设置 */
     private String pickedStart = null;
-    /** 选中的结束时间，null = 不设置 */
-    private String pickedEnd = null;
-    /** 重复单位：none / day / week / month / year（简化档位） */
+    /** 重复预设：none / day / workday / week / month / year */
     private String repeatUnit = "none";
-    /** 提醒时刻 HH:mm，null = 不提醒（写在任务 reminder 字段上） */
+    /** 重复结束：never / count / date */
+    private String repeatEndType = "never";
+    /** 「按次数」的次数 */
+    private int repeatCount = 10;
+    /** 「按日期」的截止日 yyyy-MM-dd */
+    private String repeatEndDate = null;
+    /** 提醒时刻 HH:mm，null = 不提醒 */
     private String pickedRemind = null;
+
     private Button dateBtn;
+    private Button startBtn;
     private Button repeatBtn;
     private Button remindBtn;
-    private Button startBtn;
-    private Button endBtn;
     private TextView durHint;
 
-    /** 重复档位的显示名，下标与 REPEAT_VALUES 对齐 */
-    private static final String[] REPEAT_LABELS = {"不重复", "每天", "每周", "每月", "每年"};
-    private static final String[] REPEAT_VALUES = {"none", "day", "week", "month", "year"};
+    private static final String[] REPEAT_LABELS = {"不重复", "每天", "工作日（周一~五）", "每周", "每月", "每年"};
+    private static final String[] REPEAT_VALUES = {"none", "day", "workday", "week", "month", "year"};
+    private static final String[] END_LABELS = {"不结束", "按次数", "按日期"};
+    private static final String[] END_VALUES = {"never", "count", "date"};
 
     @Override
     protected void onCreate(Bundle b) {
@@ -69,43 +78,41 @@ public class CreateTaskActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.dialog_create);
 
-        // 弹框一打开就把焦点给标题、并唤起软键盘 —— 用户点「+」后要**直接能打字**，
-        // 不要再手动点一下输入框才出键盘（2026-10-14）。
+        // 弹框一打开就把焦点给标题、并唤起软键盘 —— 点「+」后要直接能打字
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
 
         pickedDate = getIntent().getStringExtra("date");
+        if (pickedDate == null || pickedDate.isEmpty()) pickedDate = todayIso();
         final EditText title = findViewById(R.id.c_title);
-        // 标题框立即拿到焦点并弹出键盘（见上方 setSoftInputMode），点「+」后直接能输入
         title.requestFocus();
         title.post(() -> {
             InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
             if (imm != null) imm.showSoftInput(title, InputMethodManager.SHOW_IMPLICIT);
         });
+
         dateBtn = findViewById(R.id.c_date);
+        startBtn = findViewById(R.id.c_start);
         repeatBtn = findViewById(R.id.c_repeat);
         remindBtn = findViewById(R.id.c_remind);
-        startBtn = findViewById(R.id.c_start);
-        endBtn = findViewById(R.id.c_end);
         durHint = findViewById(R.id.c_durhint);
         Button save = findViewById(R.id.c_save);
         Button cancel = findViewById(R.id.c_cancel);
 
         updateDateLabel();
+        updateStartLabel();
         updateRepeatLabel();
         updateRemindLabel();
-        updateTimeLabels();
+
         dateBtn.setOnClickListener(v -> pickDate());
+        startBtn.setOnClickListener(v -> pickStart());
         repeatBtn.setOnClickListener(v -> pickRepeat());
         remindBtn.setOnClickListener(v -> pickRemind());
-        startBtn.setOnClickListener(v -> pickStart());
-        endBtn.setOnClickListener(v -> pickEnd());
 
         save.setOnClickListener(v -> {
             String t = title.getText().toString().trim();
             if (t.isEmpty()) { title.setError("总得写点什么"); return; }
             final String date = pickedDate;
             final String tm = pickedStart;
-            final int dur = durationMinutes();
             final String calId = defaultCalId(this);
 
             // ① 乐观更新：本地造一条（id 是临时的，服务端返回真 id 后再换掉）
@@ -115,7 +122,7 @@ public class CreateTaskActivity extends Activity {
                 f.put("title", t);
                 f.put("date", date);
                 f.put("time", tm == null ? JSONObject.NULL : tm);
-                f.put("dur", dur);
+                f.put("dur", JSONObject.NULL);       // 只设开始 → 时长不设（默认一小时）
                 f.put("done", false);
                 f.put("calId", calId);
                 f.put("repeat", buildRepeat());
@@ -124,23 +131,17 @@ public class CreateTaskActivity extends Activity {
             } catch (Exception ignored) {
             }
 
-            // ② **立刻重画桌面**。上一版只在网络返回之后才 refresh，于是用户
-            //    点保存、弹框关掉，桌面上还得空等一个网络往返 —— 走公网慢的时候
-            //    好几秒，观感就是「保存了但没反应」。
+            // ② 立刻重画桌面
             ScheduleWidgetProvider.refresh(this);
 
-            // ③ 有票就直连（B 方案）。entityId 传 "@new" 由服务端发真 id。
-            //    calId 拿不到时不能发 —— 服务端会因为缺 calId 整条丢掉（不报错）
+            // ③ 有票就直连；否则入队等 App 启动后补发
             if (WidgetPrefs.canDirect(this) && !calId.isEmpty()) {
                 try {
                     JSONArray ops = new JSONArray();
-                    ops.put(createOp(t, date, tm, dur, calId));
+                    ops.put(createOp(t, date, tm, calId));
                     WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                         @Override
                         public void onAccepted(JSONObject body) {
-                            // 把假 id 的占位换成服务端那条（真 id）。
-                            // **不能整表 replaceSnapshot** —— 那会把还没发出去
-                            // 的乐观改动一并抹掉，见 adoptCreated 的说明
                             WidgetPrefs.adoptCreated(CreateTaskActivity.this, body,
                                     localId, t, date, tm);
                             ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
@@ -148,7 +149,6 @@ public class CreateTaskActivity extends Activity {
 
                         @Override
                         public void onRejected(JSONObject body, String why) {
-                            // 服务端不答应 → 撤掉占位，桌面回到真相
                             WidgetPrefs.removeEntity(CreateTaskActivity.this, "tasks", localId);
                             ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
                             Ui.toast(CreateTaskActivity.this, "新建没有成功，服务端没有接受");
@@ -156,44 +156,22 @@ public class CreateTaskActivity extends Activity {
 
                         @Override
                         public void onUnreachable(String why) {
-                            // 离线/问不出去 → 保留本地那条，入队等下次
-                            enqueueCreate(t, date, tm, dur, localId);
+                            enqueueCreate(t, date, tm, localId);
                         }
                     });
                 } catch (Exception e) {
-                    enqueueCreate(t, date, tm, dur, localId);
+                    enqueueCreate(t, date, tm, localId);
                 }
             } else {
-                enqueueCreate(t, date, tm, dur, localId);
+                enqueueCreate(t, date, tm, localId);
             }
             finish();
         });
         cancel.setOnClickListener(v -> finish());
     }
 
-    /** ⚠️ 字段名 duration（服务端字段），不是 dur */
-    private JSONObject createOp(String t, String date, String tm, int dur, String calId)
-            throws Exception {
-        JSONObject op = new JSONObject();
-        op.put("entity", "task");
-        op.put("entityId", "@new");
-        op.put("calId", calId);
-        JSONObject fields = new JSONObject();
-        fields.put("title", t);
-        fields.put("date", date);
-        fields.put("time", tm == null ? JSONObject.NULL : tm);
-        fields.put("duration", dur);
-        fields.put("done", false);
-        fields.put("doneAt", JSONObject.NULL);
-        fields.put("repeat", buildRepeat());
-        fields.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
-        op.put("fields", fields);
-        return op;
-    }
-
     /* ==================== 日期 ==================== */
 
-    /** 点了日期行 → 弹日历选择器。默认停在当前选中的日期。 */
     private void pickDate() {
         Calendar cal = Calendar.getInstance();
         int[] ymd = ymdOf(pickedDate);
@@ -209,14 +187,41 @@ public class CreateTaskActivity extends Activity {
 
     private void updateDateLabel() {
         if (dateBtn == null) return;
-        dateBtn.setText(pickedDate == null
-                ? "不设置日期"
-                : pickedDate + " " + weekdayOf(pickedDate));
+        dateBtn.setText("日期：" + (pickedDate == null ? "不设置" : pickedDate + " " + weekdayOf(pickedDate)));
     }
 
-    /* ==================== 重复 / 提醒 ==================== */
+    /* ==================== 开始时间 ==================== */
 
-    /** 重复：单选 不重复 / 每天 / 每周 / 每月 / 每年 */
+    private void pickStart() {
+        int h = 9, m = 0;
+        if (pickedStart != null) {
+            int[] hm = hhmm(pickedStart);
+            h = hm[0];
+            m = hm[1];
+        }
+        TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
+            pickedStart = String.format(Locale.US, "%02d:%02d", hh, mm);
+            updateStartLabel();
+        }, h, m, true);
+        d.show();
+        d.setButton(DialogInterface.BUTTON_NEUTRAL, "不设置", (dlg, which) -> {
+            pickedStart = null;
+            updateStartLabel();
+        });
+    }
+
+    private void updateStartLabel() {
+        if (startBtn == null) return;
+        startBtn.setText("开始时间：" + (pickedStart == null ? "不设置" : pickedStart));
+        if (durHint == null) return;
+        durHint.setText(pickedStart == null
+                ? "不设时间就落到「未定时」里；时长/时间段可在编辑里设"
+                : "时长默认 1 小时；要设时间段请点开该任务编辑");
+    }
+
+    /* ==================== 重复 ==================== */
+
+    /** 两步：先选预设，非「不重复」再选结束条件。 */
     private void pickRepeat() {
         int cur = 0;
         for (int i = 0; i < REPEAT_VALUES.length; i++) {
@@ -226,25 +231,138 @@ public class CreateTaskActivity extends Activity {
                 .setTitle("重复")
                 .setSingleChoiceItems(REPEAT_LABELS, cur, (dlg, which) -> {
                     repeatUnit = REPEAT_VALUES[which];
-                    updateRepeatLabel();
                     dlg.dismiss();
+                    if ("none".equals(repeatUnit)) {
+                        repeatEndType = "never";
+                        repeatEndDate = null;
+                        updateRepeatLabel();
+                    } else {
+                        pickRepeatEnd();
+                    }
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void updateRepeatLabel() {
-        if (repeatBtn == null) return;
-        for (int i = 0; i < REPEAT_VALUES.length; i++) {
-            if (REPEAT_VALUES[i].equals(repeatUnit)) {
-                repeatBtn.setText(REPEAT_LABELS[i]);
-                return;
-            }
+    private void pickRepeatEnd() {
+        int cur = 0;
+        for (int i = 0; i < END_VALUES.length; i++) {
+            if (END_VALUES[i].equals(repeatEndType)) { cur = i; break; }
         }
-        repeatBtn.setText("不重复");
+        new AlertDialog.Builder(this)
+                .setTitle("结束")
+                .setSingleChoiceItems(END_LABELS, cur, (dlg, which) -> {
+                    repeatEndType = END_VALUES[which];
+                    dlg.dismiss();
+                    if ("count".equals(repeatEndType)) pickRepeatCount();
+                    else if ("date".equals(repeatEndType)) pickRepeatEndDate();
+                    else { repeatEndDate = null; updateRepeatLabel(); }
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
-    /** 提醒：选 HH:mm（同一天）。「不设置」清空。 */
+    /** 按次数：弹一个数字输入框（用系统 AlertDialog + EditText） */
+    private void pickRepeatCount() {
+        final EditText input = new EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(repeatCount));
+        input.setSelection(input.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle("重复多少次")
+                .setView(input)
+                .setPositiveButton("确定", (dlg, w) -> {
+                    try {
+                        repeatCount = Math.max(1, Integer.parseInt(input.getText().toString().trim()));
+                    } catch (Exception ignored) {
+                        repeatCount = 10;
+                    }
+                    updateRepeatLabel();
+                })
+                .setNegativeButton("取消", (dlg, w) -> {
+                    repeatEndType = "never";
+                    updateRepeatLabel();
+                })
+                .show();
+    }
+
+    /** 按日期：弹日历选截止日（默认 = 任务日期 +1 个月） */
+    private void pickRepeatEndDate() {
+        Calendar cal = Calendar.getInstance();
+        int[] ymd = ymdOf(repeatEndDate != null ? repeatEndDate : pickedDate);
+        if (ymd != null) {
+            cal.set(ymd[0], ymd[1] - 1, ymd[2]);
+            cal.add(Calendar.MONTH, 1);
+        }
+        DatePickerDialog d = new DatePickerDialog(this, (view, y, m, day) -> {
+            repeatEndDate = String.format(Locale.US, "%04d-%02d-%02d", y, m + 1, day);
+            updateRepeatLabel();
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH));
+        d.show();
+    }
+
+    private void updateRepeatLabel() {
+        if (repeatBtn == null) return;
+        String name = "不重复";
+        for (int i = 0; i < REPEAT_VALUES.length; i++) {
+            if (REPEAT_VALUES[i].equals(repeatUnit)) { name = REPEAT_LABELS[i]; break; }
+        }
+        if (!"none".equals(repeatUnit)) {
+            if ("count".equals(repeatEndType)) name += " · " + repeatCount + " 次";
+            else if ("date".equals(repeatEndType) && repeatEndDate != null) name += " · 至 " + repeatEndDate.substring(5);
+        }
+        repeatBtn.setText("重复：" + name);
+    }
+
+    /**
+     * 拼一份标准 RepeatRule（与 App 的 domain/types/RepeatRule.ts 同形）。
+     *
+     * 预设 → unit 映射：
+     *   每天   → unit=day
+     *   工作日 → unit=week, weekdays=[1,2,3,4,5]  （App 口径 0=周日）
+     *   每周   → unit=week, weekdays=[任务那天星期]
+     *   每月   → unit=month, monthday=任务那天几号
+     *   每年   → unit=year,  yearMonth+monthday
+     */
+    private JSONObject buildRepeat() throws Exception {
+        String unit = repeatUnit;
+        JSONArray wd = new JSONArray();
+        Calendar cal = Calendar.getInstance();
+        int[] ymd = ymdOf(pickedDate);
+        if (ymd != null) cal.set(ymd[0], ymd[1] - 1, ymd[2]);
+
+        if ("workday".equals(unit)) {
+            unit = "week";
+            for (int d = 1; d <= 5; d++) wd.put(d);   // 周一~周五
+        } else if ("week".equals(unit)) {
+            wd.put(cal.get(Calendar.DAY_OF_WEEK) - 1); // Calendar 1=周日 → App 0=周日
+        }
+
+        JSONObject r = new JSONObject();
+        r.put("unit", unit);
+        r.put("n", 1);
+        r.put("weekdays", wd);
+        r.put("monthday", cal.get(Calendar.DAY_OF_MONTH));
+        r.put("yearMonth", cal.get(Calendar.MONTH) + 1);
+
+        if (!"none".equals(repeatUnit) && "count".equals(repeatEndType)) {
+            JSONObject e = new JSONObject();
+            e.put("type", "count");
+            e.put("count", repeatCount);
+            r.put("end", e);
+        } else if (!"none".equals(repeatUnit) && "date".equals(repeatEndType) && repeatEndDate != null) {
+            JSONObject e = new JSONObject();
+            e.put("type", "date");
+            e.put("date", repeatEndDate);
+            r.put("end", e);
+        } else {
+            r.put("end", JSONObject.NULL);
+        }
+        return r;
+    }
+
+    /* ==================== 提醒 ==================== */
+
     private void pickRemind() {
         int h = 9, m = 0;
         if (pickedRemind != null) {
@@ -265,107 +383,29 @@ public class CreateTaskActivity extends Activity {
 
     private void updateRemindLabel() {
         if (remindBtn == null) return;
-        remindBtn.setText(pickedRemind == null ? "不提醒" : "提醒 " + pickedRemind);
+        remindBtn.setText("提醒：" + (pickedRemind == null ? "不提醒" : pickedRemind));
     }
 
-    /**
-     * 拼一份标准 RepeatRule（和 App 的 domain/types/RepeatRule.ts 同形）。
-     *
-     * 小部件只做**简化档位**（n 恒为 1），但写出来的必须是合法规则，
-     * App 打开后能继续细化：
-     *   · week  → weekdays = [任务日期那天的星期]（App 用 0=周日…6=周六）
-     *   · month → monthday = 任务日期那天的几号
-     *   · year  → yearMonth + monthday
-     */
-    private JSONObject buildRepeat() throws Exception {
-        JSONObject r = new JSONObject();
-        r.put("unit", repeatUnit);
-        r.put("n", 1);
-        JSONArray wd = new JSONArray();
-        Calendar cal = Calendar.getInstance();
-        int[] ymd = ymdOf(pickedDate);
-        if (ymd != null) cal.set(ymd[0], ymd[1] - 1, ymd[2]);
-        if ("week".equals(repeatUnit)) {
-            wd.put(cal.get(Calendar.DAY_OF_WEEK) - 1);   // Calendar: 1=周日 → App: 0=周日
-        }
-        r.put("weekdays", wd);
-        r.put("monthday", cal.get(Calendar.DAY_OF_MONTH));
-        r.put("yearMonth", cal.get(Calendar.MONTH) + 1);
-        r.put("end", JSONObject.NULL);
-        return r;
-    }
+    /* ==================== 下发 ==================== */
 
-    /* ==================== 时间 ==================== */
-
-    private void pickStart() {
-        int h = 9, m = 0;
-        if (pickedStart != null) {
-            int[] hm = hhmm(pickedStart);
-            h = hm[0];
-            m = hm[1];
-        }
-        TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
-            pickedStart = String.format(Locale.US, "%02d:%02d", hh, mm);
-            if (pickedEnd == null || minOf(pickedEnd) <= minOf(pickedStart)) {
-                pickedEnd = timeOf((minOf(pickedStart) + 60) % 1440);
-            }
-            updateTimeLabels();
-        }, h, m, true);
-        d.show();
-        d.setButton(DialogInterface.BUTTON_NEUTRAL, "不设置", (dlg, which) -> {
-            pickedStart = null;
-            pickedEnd = null;
-            updateTimeLabels();
-        });
-    }
-
-    private void pickEnd() {
-        int h = 10, m = 0;
-        if (pickedEnd != null) {
-            int[] hm = hhmm(pickedEnd);
-            h = hm[0];
-            m = hm[1];
-        }
-        TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
-            pickedEnd = String.format(Locale.US, "%02d:%02d", hh, mm);
-            if (pickedStart == null) {
-                pickedStart = timeOf((minOf(pickedEnd) + 1440 - 60) % 1440);
-            }
-            updateTimeLabels();
-        }, h, m, true);
-        d.show();
-        d.setButton(DialogInterface.BUTTON_NEUTRAL, "不设置", (dlg, which) -> {
-            pickedEnd = null;
-            updateTimeLabels();
-        });
-    }
-
-    private void updateTimeLabels() {
-        startBtn.setText(pickedStart == null ? "不设置" : pickedStart);
-        endBtn.setText(pickedEnd == null ? "不设置" : pickedEnd);
-        if (pickedStart == null) {
-            durHint.setText("未设置时间，将出现在「未定时」里");
-            return;
-        }
-        int d = durationMinutes();
-        StringBuilder sb = new StringBuilder("时长 ");
-        if (d >= 60) {
-            sb.append(d / 60).append(" 小时");
-            if (d % 60 > 0) sb.append(" ").append(d % 60).append(" 分");
-        } else {
-            sb.append(d).append(" 分钟");
-        }
-        if (pickedEnd != null && minOf(pickedEnd) <= minOf(pickedStart)) {
-            sb.append("（次日 ").append(pickedEnd).append("）");
-        }
-        durHint.setText(sb.toString());
-    }
-
-    private int durationMinutes() {
-        if (pickedStart == null) return 0;
-        if (pickedEnd == null) return 60;
-        int d = (minOf(pickedEnd) - minOf(pickedStart) + 1440) % 1440;
-        return d == 0 ? 60 : d;
+    /** ⚠️ 字段名 duration（服务端字段），不是 dur。这里没有结束时间 → 发 null */
+    private JSONObject createOp(String t, String date, String tm, String calId)
+            throws Exception {
+        JSONObject op = new JSONObject();
+        op.put("entity", "task");
+        op.put("entityId", "@new");
+        op.put("calId", calId);
+        JSONObject fields = new JSONObject();
+        fields.put("title", t);
+        fields.put("date", date);
+        fields.put("time", tm == null ? JSONObject.NULL : tm);
+        fields.put("duration", JSONObject.NULL);
+        fields.put("done", false);
+        fields.put("doneAt", JSONObject.NULL);
+        fields.put("repeat", buildRepeat());
+        fields.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
+        op.put("fields", fields);
+        return op;
     }
 
     /** 默认集：从现有任务里借一个 calId（快照一定带） */
@@ -375,13 +415,7 @@ public class CreateTaskActivity extends Activity {
         return "";
     }
 
-    /**
-     * 入队等下次补发。
-     *
-     * @param localId 乐观更新时那条占位的 id —— 补发成功后要靠它把占位换成
-     *                服务端的真 id，所以必须一起存进队列
-     */
-    private void enqueueCreate(String t, String date, String tm, int dur, String localId) {
+    private void enqueueCreate(String t, String date, String tm, String localId) {
         try {
             JSONObject op = new JSONObject();
             op.put("kind", "create");
@@ -389,7 +423,7 @@ public class CreateTaskActivity extends Activity {
             op.put("title", t);
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);
-            op.put("duration", dur);
+            op.put("duration", JSONObject.NULL);
             op.put("repeat", buildRepeat());
             op.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
             WidgetPrefs.enqueuePending(this, op);
@@ -399,9 +433,11 @@ public class CreateTaskActivity extends Activity {
 
     /* ==================== 小工具 ==================== */
 
-    private static int minOf(String hm) {
-        int i = hm.indexOf(':');
-        return Integer.parseInt(hm.substring(0, i)) * 60 + Integer.parseInt(hm.substring(i + 1));
+    private static String todayIso() {
+        return String.format(Locale.US, "%04d-%02d-%02d",
+                Calendar.getInstance().get(Calendar.YEAR),
+                Calendar.getInstance().get(Calendar.MONTH) + 1,
+                Calendar.getInstance().get(Calendar.DAY_OF_MONTH));
     }
 
     private static int[] hhmm(String hm) {
@@ -410,11 +446,6 @@ public class CreateTaskActivity extends Activity {
                 Integer.parseInt(hm.substring(0, i)),
                 Integer.parseInt(hm.substring(i + 1))
         };
-    }
-
-    private static String timeOf(int minutes) {
-        int m = ((minutes % 1440) + 1440) % 1440;
-        return String.format(Locale.US, "%02d:%02d", m / 60, m % 60);
     }
 
     /** "yyyy-MM-dd" → {y, m, d}；解析不了返回 null */

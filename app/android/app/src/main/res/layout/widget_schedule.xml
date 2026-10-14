@@ -240,13 +240,6 @@
                     android:layout_height="match_parent"
                     android:orientation="vertical" />
 
-                <!-- 「现在」红线：夹在网格和任务之间，不挡卡片点击 -->
-                <LinearLayout
-                    android:id="@+id/tl_now"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:orientation="vertical" />
-
                 <!-- 任务层。**没有 paddingLeft** —— 未定时卡在顶行也是从
                      marginLeft=1dp 起排，两边靠同一个 1dp 对齐（用户要求）。 -->
                 <LinearLayout

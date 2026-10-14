@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 「现在」那一根红线。位置由代码用前置占位条顶出来。 -->
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/tl_nowline"
-    android:layout_width="match_parent"
-    android:layout_height="1dp"
-    android:background="@drawable/widget_now_line"
-    android:text="" />
