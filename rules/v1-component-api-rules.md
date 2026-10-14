@@ -13,8 +13,8 @@
 
 > **现状**：本册写的是**目标架构**（外观集中进 kit + 组件层用 CSS Modules）。当前项目用
 > **全局 CSS（`styles/`）+ Tailwind 工具类 + CSS 变量**，尚未引入 CSS Modules。
-> 已落地：S1（`Btn` cva）· S3（`MiniIconBtn` tone）· S5（`api-scan.mjs`）。
-> 挂起：S6（拆 `state.css`）· S7（`ui/<组>` 迁移）——纯搬文件，收益配不上风险。
+> 已落地：S1（`Btn` cva）· S3（`MiniIconBtn` tone）· S5（`api-scan.mjs`）· S6（`state.css` R3 白名单清单）。
+> 不修：S7（`ui/<组>` + `.module.css`）—— `.module.css` 与探针的全局类名断言硬冲突、目录重组无收益（见 plan §4）。
 > 硬不变量（`api-scan.mjs` 锁）：`domain/` `views/` 零外观类；调用方外观类只减不增。
 
 **判据（怎么判成没成）**：

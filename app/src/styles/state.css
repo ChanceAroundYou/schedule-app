@@ -1,0 +1,29 @@
+/*
+ * state.css —— 状态类协议白名单（第 1 册 R3）
+ *
+ * 「状态类」是**跨文件契约**，不是样式：由 JS / dndkit / 数据在运行时写进
+ * classList（或条件 className），多个组件靠「这个类出现了」来联动。所以：
+ *
+ *   ① 它们**必须留在全局层**（本文件），**不进 CSS Module** —— 进 module 会被
+ *      改写成哈希名，协议当场断（`.drawer.open` 变成 `.drawer_open_1a2b`，
+ *      探针与别的组件都找不到它）。
+ *   ② `views/` 之外**不得新增**状态类。要加，先在这里登记一行「谁有权写」。
+ *   ③ 状态类总是**复合**出现（`base.state`，如 `.task-row.done`），不单飞；
+ *      各 `base.state` 的**样式规则**就近留在它 base 所在的分组文件
+ *      （lists / calendar / overlays / shell / quick-add），本文件只登记协议，
+ *      不搬规则 —— 搬了是纯换宿主、零收益，还会打乱 cascade 顺序。
+ *
+ * 登记（2026-10-14 核对）：
+ *
+ *   类            谁有权写                                        出现处
+ *   ------------  --------------------------------------------  ----------------------
+ *   .done        数据（`t.done`）→ views 条件 className          TaskRow / WeekView
+ *   .today       数据（`date === today`）→ views                 WeekView / MonthView / DayGrid
+ *   .busy        数据（该时段已排满）→ views                     MonthView
+ *   .open        JS 状态（展开/收起）→ 条件 className            drawer / fast-add / search-slot / cal-menu / wp-row
+ *   .sheet-open  JS 状态 → `document.body.classList`（锁滚动）   shell/Shell.tsx
+ *   .dragging    dnd-kit（`isDragging`）                         sortable / NavCard
+ *   .drag-land   dnd-kit（`isOver`，落点虚影）                   NavCard
+ *
+ * 新增状态类：加一行上表 + 在 base 所在分组文件写 `base.state` 规则。别在别处散写。
+ */

@@ -85,8 +85,8 @@ ui/
 | S3 | `MiniIconBtn` `danger`/`primary` → `tone` | `ui/kit/IconBtn.tsx` | ✅ 已做（88296f4） |
 | S4 | `Dropdown`（选项 `role="option"`，改 `Btn` 毁 A11y，不改） | `ui/kit/Dropdown.tsx` | ✅ no-op（A11y 挡住 + 已合规） |
 | S5 | 新增 `api-scan.mjs`，锁 R4（ratchet） | `tests/api-scan.mjs` | ✅ 已做（c2ccb48） |
-| S6 | 全局层拆出 `state.css` | `styles/*` | ⏸ 挂起（状态类在分组文件非 tokens/responsive，纯搬文件零收益） |
-| S7 | `ui/<组>` 目录迁移（overlays / shell / kit） | 多文件 | ⏸ 挂起（高风险纯重构，plan 冻结 lists/calendar） |
+| S6 | 全局层 `state.css`（R3 状态类白名单） | `styles/state.css` | ✅ 已做（登记 7 个状态类 + 谁有权写；`base.state` 规则**不搬**——纯换宿主零收益 + cascade 顺序风险） |
+| S7 | `ui/<组>` 目录迁移 + `.module.css` | 多文件 | ⛔ 不做（见 §4：`.module.css` 与探针硬冲突；目录重组无收益） |
 
 **每步做完必须**：
 ```bash
@@ -94,6 +94,30 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 ```
 
 **收尾**（踩坑 40）：`pkill -x chrome` 确认归零；`ss -ltnp` 查残留服务并 `kill`。
+
+---
+
+## 4. verify（2026-10-14）—— S6 落地，S7 有据不修
+
+**S6 落地**：`styles/state.css` 建成 R3 状态类**白名单清单**（登记 7 个状态类 + 谁有权写：
+`.done`/`.today`/`.busy` 数据驱动、`.open`/`.sheet-open` JS 状态、`.dragging`/`.drag-land` dnd-kit），
+在 `tailwind.css` 里 `overlays` 之后、`responsive` 之前 import。`base.state` 的**样式规则不搬**：
+它们散在 7 个分组文件、且 cascade 顺序是 `tokens→shell→calendar→lists→quick-add→overlays→responsive`，
+搬进一处是纯换宿主、零收益，还会打乱等特异度规则的先后 —— R3 要的是「集中列一份清单」，清单已列。
+
+**S7 有据不修**（两条硬理由，非偷懒）：
+
+1. **`.module.css` 与探针硬冲突。** `browser-smoke.mjs` 400+ 断言里几百处按**全局类名**选元素
+   （`.when-pop`×22 · `.fast-fab`×21 · `.fast-add.open`×21 · `.drawer.open`×12 · `.task-el` …）。
+   CSS Module 把类名改写成哈希（`.when-pop`→`.whenPop_1a2b`），这些断言**当场全红**；要保住
+   「探针不回归」就得把探针也重写一遍 —— 那已不是「纯搬文件」，是重写测试层。
+2. **目录重组无收益。** `ui/` 现状按 **feature** 分组（`drawer/` 把 Drawer+DrawerFields+RepeatPop+
+   ConflictBox 放一起、`shell/` `kit/` 已就位），比 plan 设想的「按样式组」更内聚；把 RepeatPop 从
+   `drawer/` 挪去 `overlays/` 是拆散内聚组件。plan 的 `overlays/shell/lists/calendar/kit` 是纸面理想，
+   对不上真实代码。
+
+> 结论：v1 判据 1（外观归属被 api-scan 锁）+ 判据 2（kit 走 variant/tone，S1/S3）已绿；
+> S6 补上 R3 清单；S7 的两半各有硬约束挡着，**不修是对的**，不是没做完。
 
 ---
 
