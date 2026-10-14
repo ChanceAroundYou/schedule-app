@@ -815,8 +815,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     op.put("fields", fields);
                     ops.put(op);
                 } else if ("edit".equals(kind)) {
-                    // 编辑弹框存下的改动：标题 / 起止时间（= time + duration），
-                    // 可选连带「完成」状态
+                    // 编辑弹框存下的改动。2026-10-14（第十一轮）起**只带改动过的字段**
+                    // （repeat 尤其不能无脑下发，否则会把 App 里的细节覆盖成简化档），
+                    // 所以这里按白名单「有什么带什么」，不再无条件塞 title/time。
                     WTask t = snap.taskById(p.optString("taskId"));
                     if (t == null) return;
                     touchedTasks.add(t.id);
@@ -825,21 +826,15 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     op.put("entityId", t.id);
                     op.put("calId", t.calId);
                     JSONObject fields = new JSONObject();
-                    fields.put("title", p.optString("title"));
-                    // 日期可改了（2026-10-14）。老队列里没有这个键 → 不下发，
-                    // 免得把日期写成空串
-                    if (p.has("date") && !p.isNull("date")) {
-                        fields.put("date", p.optString("date"));
+                    String[] keys = {"title", "date", "time", "duration", "done", "repeat", "reminder"};
+                    for (String k : keys) {
+                        if (p.has(k)) fields.put(k, p.get(k));
                     }
-                    fields.put("time", p.isNull("time") ? JSONObject.NULL : p.optString("time"));
-                    // ⚠️ 字段名是 **duration**，不是 dur（服务端与 App 都读 duration）
-                    fields.put("duration", p.optInt("duration", 0));
-                    // done 为 null = 「这次没动完成状态」，别把它当成 false 下发
-                    if (!p.isNull("done")) {
-                        boolean d = p.optBoolean("done");
-                        fields.put("done", d);
+                    if (!fields.has("doneAt") && fields.has("done")) {
+                        boolean d = fields.optBoolean("done");
                         fields.put("doneAt", d ? System.currentTimeMillis() : JSONObject.NULL);
                     }
+                    if (fields.length() == 0) return;   // 空编辑，跳过
                     op.put("fields", fields);
                     ops.put(op);
                 } else if ("delete".equals(kind)) {

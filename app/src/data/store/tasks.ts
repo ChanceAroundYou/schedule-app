@@ -8,7 +8,8 @@ import type { Task } from '../../domain/types.ts';
 import {
   makeTask, nextOrder, trashedTasks, trashedHabits,
 } from '../../domain/model.ts';
-import { seriesRootOf, instanceId, repeatNext, toRepeat } from '../../domain/repeat.ts';
+import { seriesRootOf, instanceId, repeatNext, repeatAdvance, toRepeat } from '../../domain/repeat.ts';
+import type { RepeatRule } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { state, dataOf } from './core.ts';
 import { commit, commitMany, type Change } from './commit.ts';
@@ -42,7 +43,83 @@ export function addTask(d: TaskDraft): string {
   if (t.repeat.unit !== 'none') t.seriesId = t.id;
 
   commitMany([{ entity: 'task', id: t.id, fields: dataOf(t) }]);
+  // 新建的重复任务：顺手把未来几次也生成出来（用户 2026-10-14 要求）
+  if (t.repeat.unit !== 'none') ensureRepeatOccurrences();
   return t.id;
+}
+
+/** 预生成未来几次重复实例 */
+export const REPEAT_LOOKAHEAD = 4;
+
+/**
+ * 给所有「重复且未完成」的任务补齐未来 N 次实例（真的写进库）。
+ *
+ * 背景：App 原本是**完成即派生**（勾掉这一次才产生下一次），所以在「下周三」
+ * 看不到这条任务。用户 2026-10-14 选择「预生成若干次」，于是这里按**确定性
+ * 实例 id**（`seriesId#日期`）把后续几次建出来 —— id 确定性保证多设备 / 反复
+ * 调用都能收敛（已存在就跳过）。
+ *
+ * 幂等：每次都先查 id 在不在。可以挂在同步之后反复调，不会重复建。
+ * 只补**今天及以后**的发生日，不去把过去的历史补出来（那只会污染列表）。
+ */
+export function ensureRepeatOccurrences(): void {
+  const items: Change[] = [];
+  const now = Date.now();
+  const today = D.today();
+
+  for (const t of Object.values(state.tasks)) {
+    if (!t || t.deleted || t.done) continue;
+    const root = seriesRootOf(t);
+    if (!root) continue;
+    const r = t.repeat;
+    if (!r || r.unit === 'none') continue;
+
+    // 先把游标推到「今天或之后」 —— 过去的发生日不补
+    let cursor = t.date || today;
+    let seq = t.repeatSeq || 0;
+    let reached = false;
+    for (let guard = 0; guard < 800; guard++) {
+      const nxt = nextOccurrence(r, cursor, seq);
+      if (!nxt) break;
+      cursor = nxt;
+      seq += 1;
+      if (nxt >= today) { reached = true; break; }
+    }
+    if (!reached) continue;
+
+    // 从第一个「今天及以后」的发生日开始，连做 N 个
+    for (let i = 0; i < REPEAT_LOOKAHEAD; i++) {
+      const id = instanceId(root, cursor);
+      if (!state.tasks[id]) {
+        const occ = makeTask({
+          id, calId: t.calId, title: t.title, note: t.note,
+          date: cursor, time: t.time, duration: t.duration,
+          repeat: r, repeatSeq: seq, seriesId: root,
+          order: null, ord: null, createdAt: now, source: t.source ?? null,
+        });
+        occ.reminder = t.reminder ?? null;
+        state.tasks[id] = occ;
+        items.push({ entity: 'task', id, calId: t.calId, fields: dataOf(occ) });
+      }
+      const nxt = nextOccurrence(r, cursor, seq);
+      if (!nxt) break;
+      cursor = nxt;
+      seq += 1;
+    }
+  }
+  if (items.length) commitMany(items);
+}
+
+/** base 之后的下一次发生日（含结束条件判断）。seq = 已推进的次数 */
+function nextOccurrence(rule: RepeatRule, base: string, seq: number): string | null {
+  const next = repeatAdvance(rule, base);
+  if (!next) return null;
+  const end = rule.end;
+  if (end) {
+    if (end.type === 'date' && end.date && next > end.date) return null;
+    if (end.type === 'count' && seq + 1 > (end.count || 0)) return null;
+  }
+  return next;
 }
 
 /**
@@ -99,6 +176,8 @@ export function patchTask(id: string, fields: Partial<Task>): void {
     next.order = nextOrder(state, (fields.date ?? null) as string | null);
   }
   commit('task', id, next);
+  // 改了重复规则 → 重新补齐未来实例（幂等）
+  if ('repeat' in fields) ensureRepeatOccurrences();
 }
 
 export function deleteTask(id: string, from = '任务列表'): void {

@@ -2,12 +2,14 @@
 <!--
   任务**编辑 / 删除**弹框。
 
-  2026-10-14（第十轮）：
-  · **整体缩小**：272 → **240dp**，内边距 16/14 → 14/12，行高 38 → 34dp。
-  · **圆圈与垃圾桶统一**：两者都 22dp、同一套描边（见 ic_check_off / ic_trash）。
-  · **任务名那行留白收紧**：上边距 12 → 6dp，字号 17 → 16sp。
-  · 时间仍是「开始 至 结束」—— 「时间段」就设在这里（新建弹窗只设开始时间）。
-  · 保存 = 关窗即存；删除 = 右上垃圾桶（见 TaskDetailActivity）。
+  2026-10-14（第十一轮）：**字段结构与「新建任务」完全对齐** ——
+  用户指出：新建弹窗的逻辑没有贯穿到「点开已有任务」这边。
+    · 行2 任务名 / 行3 日期 / 行4 开始时间 / 行5 时长 / 行6 重复 / 行7 提醒
+    · **时间只设开始** —— 不再有「几号 至 几号」。一整天的时间段改用
+      **「时长」** 一行表达（15/30/45/60/90/120/180 分 或 不设置）。
+    · 重复 / 提醒 会显示当前值（如「重复：每周三」），点开可改。
+  行1 仍是 [完成圆圈] …… [垃圾桶]（两者同尺寸同风格）。
+  保存 = 关窗即存；删除 = 右上垃圾桶。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="240dp"
@@ -19,7 +21,7 @@
     android:paddingRight="14dp"
     android:paddingBottom="12dp">
 
-    <!-- ===== 行1：完成圆圈（左）· 垃圾桶（右），同 22dp / 同风格 ===== -->
+    <!-- ===== 行1：完成圆圈 / 垃圾桶（同 22dp、同风格） ===== -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="22dp"
@@ -46,7 +48,7 @@
             android:src="@drawable/ic_trash" />
     </LinearLayout>
 
-    <!-- ===== 行2：任务名（居中，留白收紧） ===== -->
+    <!-- ===== 行2：任务名（居中） ===== -->
     <EditText
         android:id="@+id/d_title"
         android:layout_width="match_parent"
@@ -63,7 +65,6 @@
         android:textSize="16sp"
         android:textStyle="bold" />
 
-    <!-- 细分隔线 -->
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
@@ -71,79 +72,87 @@
         android:layout_marginBottom="8dp"
         android:background="#E4EFE8" />
 
-    <!-- ===== 行3：日期（居中） ===== -->
+    <!-- ===== 行3：日期 ===== -->
     <Button
         android:id="@+id/d_date"
         style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
+        android:layout_height="32dp"
         android:background="@drawable/dialog_field"
-        android:gravity="center"
+        android:gravity="center_vertical"
         android:minHeight="0dp"
         android:minWidth="0dp"
         android:paddingLeft="10dp"
         android:paddingRight="10dp"
-        android:text="2026-10-13 周二"
+        android:text="日期：—"
         android:textColor="#1B3A2A"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 
-    <!-- ===== 行4：起止时间（居中）。「时间段」在这里设 ===== -->
-    <LinearLayout
+    <!-- ===== 行4：开始时间（只有开始） ===== -->
+    <Button
+        android:id="@+id/d_start"
+        style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
+        android:layout_height="32dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="开始时间：不设置"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
 
-        <Button
-            android:id="@+id/d_start"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/dialog_field"
-            android:gravity="center"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:paddingLeft="6dp"
-            android:paddingRight="6dp"
-            android:text="不设置"
-            android:textColor="#1B3A2A"
-            android:textSize="13sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_marginLeft="8dp"
-            android:layout_marginRight="8dp"
-            android:gravity="center"
-            android:text="至"
-            android:textColor="#8AA294"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/d_end"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/dialog_field"
-            android:gravity="center"
-            android:minHeight="0dp"
-            android:minWidth="0dp"
-            android:paddingLeft="6dp"
-            android:paddingRight="6dp"
-            android:text="不设置"
-            android:textColor="#1B3A2A"
-            android:textSize="13sp" />
-    </LinearLayout>
-
-    <!-- 时长 / 状态提示（居中） -->
-    <TextView
-        android:id="@+id/d_durhint"
+    <!-- ===== 行5：时长（替代原来的「至结束」） ===== -->
+    <Button
+        android:id="@+id/d_duration"
+        style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="center"
-        android:textColor="#8AA294"
-        android:textSize="10sp" />
+        android:layout_height="32dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="时长：不设置"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
+
+    <!-- ===== 行6：重复 ===== -->
+    <Button
+        android:id="@+id/d_repeat"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="重复：不重复"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
+
+    <!-- ===== 行7：提醒 ===== -->
+    <Button
+        android:id="@+id/d_remind"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="提醒：不提醒"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
 </LinearLayout>

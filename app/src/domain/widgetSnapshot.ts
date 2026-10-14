@@ -44,6 +44,11 @@ export interface SnapshotTask {
    * 所以原生写上去能正常同步。
    */
   reminder?: string | null;
+  /**
+   * 原始重复规则。小组件的「编辑任务」弹窗要显示「重复：每周三」，
+   * 也必须能原样回写（只带标签的话会把 weekdays/end 这些细节丢掉）。
+   */
+  repeat?: unknown;
 }
 
 export interface SnapshotHabit {
@@ -104,6 +109,7 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       title: t.title,
       done: t.done,
       reminder: t.reminder ?? null,
+      repeat: t.repeat ?? null,
     }))
     // 排序：日期 → 时间（**未定时的排在最后**，跟 App 里「未定时区在最上方
     // 但属于同一段」的语义不同：这里是列表，未定时没有时刻就没有位置）

@@ -5,6 +5,7 @@ import type { Entity, Habit, Project, Task } from '../../domain/types.ts';
 import { hydrateTask, hydrateHabit, hydrateProject } from '../../domain/model.ts';
 import { state, rawBucket, emit } from './core.ts';
 import { persist } from './persist.ts';
+import { ensureRepeatOccurrences } from './tasks.ts';
 
 /** 服务器发来的一条字段变更。快照也先摊平成这个形状，走同一条合并路径。 */
 export interface RemoteChange {
@@ -53,6 +54,9 @@ export function applyRemote(changes: RemoteChange[]): boolean {
     for (const j of Object.values(state.projects)) hydrateProject(j);
     persist();
     emit();
+    // 同步进来的数据里可能有**重复任务**（包括小组件新建的）→
+    // 补齐未来几次实例（幂等，已存在就跳过）。
+    ensureRepeatOccurrences();
   }
   return touched;
 }

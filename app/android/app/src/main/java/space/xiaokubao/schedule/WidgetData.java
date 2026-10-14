@@ -26,9 +26,16 @@ class WTask {
     final boolean done;
     /** 提醒时刻 "HH:mm"（同一天）。null = 不提醒。由 ReminderScheduler 排闹钟 */
     final String reminder;
+    /**
+     * 原始重复规则（RepeatRule 的 JSON）。null = 没有重复。
+     *
+     * 2026-10-14：编辑弹窗要显示「重复：每周三」，所以把整个对象带过来 ——
+     * 只带个标签字符串的话，改完再写回去就把 App 里设的细节（weekdays/end）丢了。
+     */
+    final org.json.JSONObject repeat;
 
     WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
-          String reminder) {
+          String reminder, org.json.JSONObject repeat) {
         this.id = id;
         this.calId = calId;
         this.date = date;
@@ -37,6 +44,7 @@ class WTask {
         this.title = title;
         this.done = done;
         this.reminder = reminder;
+        this.repeat = repeat;
     }
 
     /** 一天内排序用：未定时的排在最后（跟 App 的列表语义一致） */
@@ -116,7 +124,8 @@ class WidgetSnapshot {
                         t.optInt("dur"),
                         t.optString("title"),
                         t.optBoolean("done"),
-                        t.isNull("reminder") ? null : t.optString("reminder", null)));
+                        t.isNull("reminder") ? null : t.optString("reminder", null),
+                        t.optJSONObject("repeat")));
             }
         }
         JSONArray hs = o.optJSONArray("habits");
