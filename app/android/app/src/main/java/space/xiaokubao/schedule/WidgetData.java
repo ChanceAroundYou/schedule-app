@@ -24,8 +24,11 @@ class WTask {
     final int dur;
     final String title;
     final boolean done;
+    /** 提醒时刻 "HH:mm"（同一天）。null = 不提醒。由 ReminderScheduler 排闹钟 */
+    final String reminder;
 
-    WTask(String id, String calId, String date, String time, int dur, String title, boolean done) {
+    WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
+          String reminder) {
         this.id = id;
         this.calId = calId;
         this.date = date;
@@ -33,6 +36,7 @@ class WTask {
         this.dur = dur;
         this.title = title;
         this.done = done;
+        this.reminder = reminder;
     }
 
     /** 一天内排序用：未定时的排在最后（跟 App 的列表语义一致） */
@@ -111,7 +115,8 @@ class WidgetSnapshot {
                         t.isNull("time") ? null : t.optString("time", null),
                         t.optInt("dur"),
                         t.optString("title"),
-                        t.optBoolean("done")));
+                        t.optBoolean("done"),
+                        t.isNull("reminder") ? null : t.optString("reminder", null)));
             }
         }
         JSONArray hs = o.optJSONArray("habits");

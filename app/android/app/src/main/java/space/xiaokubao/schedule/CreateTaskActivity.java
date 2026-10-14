@@ -1,6 +1,7 @@
 package space.xiaokubao.schedule;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.content.DialogInterface;
@@ -47,10 +48,20 @@ public class CreateTaskActivity extends Activity {
     private String pickedStart = null;
     /** 选中的结束时间，null = 不设置 */
     private String pickedEnd = null;
+    /** 重复单位：none / day / week / month / year（简化档位） */
+    private String repeatUnit = "none";
+    /** 提醒时刻 HH:mm，null = 不提醒（写在任务 reminder 字段上） */
+    private String pickedRemind = null;
     private Button dateBtn;
+    private Button repeatBtn;
+    private Button remindBtn;
     private Button startBtn;
     private Button endBtn;
     private TextView durHint;
+
+    /** 重复档位的显示名，下标与 REPEAT_VALUES 对齐 */
+    private static final String[] REPEAT_LABELS = {"不重复", "每天", "每周", "每月", "每年"};
+    private static final String[] REPEAT_VALUES = {"none", "day", "week", "month", "year"};
 
     @Override
     protected void onCreate(Bundle b) {
@@ -71,6 +82,8 @@ public class CreateTaskActivity extends Activity {
             if (imm != null) imm.showSoftInput(title, InputMethodManager.SHOW_IMPLICIT);
         });
         dateBtn = findViewById(R.id.c_date);
+        repeatBtn = findViewById(R.id.c_repeat);
+        remindBtn = findViewById(R.id.c_remind);
         startBtn = findViewById(R.id.c_start);
         endBtn = findViewById(R.id.c_end);
         durHint = findViewById(R.id.c_durhint);
@@ -78,8 +91,12 @@ public class CreateTaskActivity extends Activity {
         Button cancel = findViewById(R.id.c_cancel);
 
         updateDateLabel();
+        updateRepeatLabel();
+        updateRemindLabel();
         updateTimeLabels();
         dateBtn.setOnClickListener(v -> pickDate());
+        repeatBtn.setOnClickListener(v -> pickRepeat());
+        remindBtn.setOnClickListener(v -> pickRemind());
         startBtn.setOnClickListener(v -> pickStart());
         endBtn.setOnClickListener(v -> pickEnd());
 
@@ -101,6 +118,8 @@ public class CreateTaskActivity extends Activity {
                 f.put("dur", dur);
                 f.put("done", false);
                 f.put("calId", calId);
+                f.put("repeat", buildRepeat());
+                f.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
                 WidgetPrefs.patchEntity(this, "tasks", localId, f, true);
             } catch (Exception ignored) {
             }
@@ -166,6 +185,8 @@ public class CreateTaskActivity extends Activity {
         fields.put("duration", dur);
         fields.put("done", false);
         fields.put("doneAt", JSONObject.NULL);
+        fields.put("repeat", buildRepeat());
+        fields.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
         op.put("fields", fields);
         return op;
     }
@@ -191,6 +212,87 @@ public class CreateTaskActivity extends Activity {
         dateBtn.setText(pickedDate == null
                 ? "不设置日期"
                 : pickedDate + " " + weekdayOf(pickedDate));
+    }
+
+    /* ==================== 重复 / 提醒 ==================== */
+
+    /** 重复：单选 不重复 / 每天 / 每周 / 每月 / 每年 */
+    private void pickRepeat() {
+        int cur = 0;
+        for (int i = 0; i < REPEAT_VALUES.length; i++) {
+            if (REPEAT_VALUES[i].equals(repeatUnit)) { cur = i; break; }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("重复")
+                .setSingleChoiceItems(REPEAT_LABELS, cur, (dlg, which) -> {
+                    repeatUnit = REPEAT_VALUES[which];
+                    updateRepeatLabel();
+                    dlg.dismiss();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void updateRepeatLabel() {
+        if (repeatBtn == null) return;
+        for (int i = 0; i < REPEAT_VALUES.length; i++) {
+            if (REPEAT_VALUES[i].equals(repeatUnit)) {
+                repeatBtn.setText(REPEAT_LABELS[i]);
+                return;
+            }
+        }
+        repeatBtn.setText("不重复");
+    }
+
+    /** 提醒：选 HH:mm（同一天）。「不设置」清空。 */
+    private void pickRemind() {
+        int h = 9, m = 0;
+        if (pickedRemind != null) {
+            int[] hm = hhmm(pickedRemind);
+            h = hm[0];
+            m = hm[1];
+        }
+        TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
+            pickedRemind = String.format(Locale.US, "%02d:%02d", hh, mm);
+            updateRemindLabel();
+        }, h, m, true);
+        d.show();
+        d.setButton(DialogInterface.BUTTON_NEUTRAL, "不提醒", (dlg, which) -> {
+            pickedRemind = null;
+            updateRemindLabel();
+        });
+    }
+
+    private void updateRemindLabel() {
+        if (remindBtn == null) return;
+        remindBtn.setText(pickedRemind == null ? "不提醒" : "提醒 " + pickedRemind);
+    }
+
+    /**
+     * 拼一份标准 RepeatRule（和 App 的 domain/types/RepeatRule.ts 同形）。
+     *
+     * 小部件只做**简化档位**（n 恒为 1），但写出来的必须是合法规则，
+     * App 打开后能继续细化：
+     *   · week  → weekdays = [任务日期那天的星期]（App 用 0=周日…6=周六）
+     *   · month → monthday = 任务日期那天的几号
+     *   · year  → yearMonth + monthday
+     */
+    private JSONObject buildRepeat() throws Exception {
+        JSONObject r = new JSONObject();
+        r.put("unit", repeatUnit);
+        r.put("n", 1);
+        JSONArray wd = new JSONArray();
+        Calendar cal = Calendar.getInstance();
+        int[] ymd = ymdOf(pickedDate);
+        if (ymd != null) cal.set(ymd[0], ymd[1] - 1, ymd[2]);
+        if ("week".equals(repeatUnit)) {
+            wd.put(cal.get(Calendar.DAY_OF_WEEK) - 1);   // Calendar: 1=周日 → App: 0=周日
+        }
+        r.put("weekdays", wd);
+        r.put("monthday", cal.get(Calendar.DAY_OF_MONTH));
+        r.put("yearMonth", cal.get(Calendar.MONTH) + 1);
+        r.put("end", JSONObject.NULL);
+        return r;
     }
 
     /* ==================== 时间 ==================== */
@@ -288,6 +390,8 @@ public class CreateTaskActivity extends Activity {
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);
             op.put("duration", dur);
+            op.put("repeat", buildRepeat());
+            op.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
             WidgetPrefs.enqueuePending(this, op);
         } catch (Exception ignored) {
         }

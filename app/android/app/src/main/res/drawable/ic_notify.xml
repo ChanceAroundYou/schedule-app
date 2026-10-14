@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知栏小图标。必须是**纯白 + 透明**（系统按 alpha 当遮罩渲染），
+     带颜色会被压成灰块。画一个小铃铛。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,22 a2.2,2.2 0 0 0 2.2,-2.2 h-4.4 a2.2,2.2 0 0 0 2.2,2.2 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,11 a6,6 0 0 0 -4.5,-5.8 V4 a1.5,1.5 0 0 0 -3,0 v1.2 A6,6 0 0 0 6,11 v5.2 l-1.5,1.6 a0.8,0.8 0 0 0 0.6,1.35 h13.8 a0.8,0.8 0 0 0 0.6,-1.35 L18,16.2 z" />
+</vector>

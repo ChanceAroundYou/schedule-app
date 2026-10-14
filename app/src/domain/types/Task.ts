@@ -12,6 +12,14 @@ export interface Task extends SyncMeta {
   date: string | null;
   /** null = 未定时，落在时间轴上方的全天区 */
   time: string | null;
+  /**
+   * 提醒时刻 "HH:mm"（**同一天**）。null / 缺失 = 不提醒。
+   *
+   * 2026-10-14 新增。小组件的「新建任务」可以设置它，到点由小组件的通知负责
+   * （`ReminderScheduler` / `ReminderReceiver`）。与 `projectId` 一样是
+   * **可选字段**：旧数据 / 旧 op 缺了它一律按「不提醒」处理，零迁移。
+   */
+  reminder?: string | null;
   /** 分钟数。null = 有开始时间但不设置结束时间（默认一小时卡高） */
   duration: number | null;
   done: boolean;

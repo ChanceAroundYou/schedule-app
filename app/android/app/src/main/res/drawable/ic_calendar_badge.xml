@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  左上角「当天日期」徽标：一个**黑白日历**轮廓，中间留白给日期数字
+  （数字由 ScheduleWidgetProvider 写进覆盖的 tv_logo_day）。
+
+  2026-10-14（第九轮）：用户说左上角光一个数字太素，要「日历小图标 + 中间
+  写着当天日期」；**不要有多余颜色**，所以整条都是中性深灰 #333333，不上主绿。
+
+  几何：外框 y 4..20，头部横线 y 9.5，数字区 = y 9.5..20。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 两个挂钩 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#333333"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M8,3.2 v3.4 M16,3.2 v3.4" />
+    <!-- 外框 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#333333"
+        android:strokeWidth="1.5"
+        android:strokeLineJoin="round"
+        android:pathData="M4,6.2 h16 a1.6,1.6 0 0 1 1.6,1.6 v10.6 a1.6,1.6 0 0 1 -1.6,1.6 h-16 a1.6,1.6 0 0 1 -1.6,-1.6 v-10.6 a1.6,1.6 0 0 1 1.6,-1.6 z" />
+    <!-- 头部横线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#333333"
+        android:strokeWidth="1.5"
+        android:pathData="M2.4,9.8 h19.2" />
+</vector>

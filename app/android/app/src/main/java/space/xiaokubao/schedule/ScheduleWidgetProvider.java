@@ -137,6 +137,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     /** 广播给所有实例重画 */
     static void refresh(Context c) {
+        // 提醒闹钟跟着数据走：刷新一次就整体重排（新建 / 编辑 / 删除 / 勾完成
+        // 都会走到这里，见 ReminderScheduler 的说明）。
+        ReminderScheduler.reschedule(c);
+
         AppWidgetManager mgr = AppWidgetManager.getInstance(c);
         int[] ids = mgr.getAppWidgetIds(new android.content.ComponentName(c, ScheduleWidgetProvider.class));
         if (ids == null || ids.length == 0) return;
@@ -163,9 +167,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         String monday = mondayOf(day);
         v.setTextViewText(R.id.tv_month, monthTitle(day));
-        // 左上角标识 = **当天日期数字**（黑白、无彩色）。用户 2026-10-14：
-        // 不要 logo 了，直接显示今天几号，一眼看到；点一下仍回今天。
-        v.setTextViewText(R.id.iv_logo, dayOfMonth(today));
+        // 左上角徽标 = **黑白日历 + 当天日期数字**。用户 2026-10-14：
+        // 光一个数字太素，要日历小图标、中间写着今天几号；点一下仍回今天。
+        v.setTextViewText(R.id.tv_logo_day, dayOfMonth(today));
 
         /* ---- 日期条：选中日所在的那一周 ---- */
         v.removeAllViews(R.id.date_strip);

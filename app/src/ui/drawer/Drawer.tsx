@@ -29,7 +29,7 @@ import { repeatLabel, toRepeat } from '../../domain/repeat.ts';
 import { IconBtn, Input } from '../kit.tsx';
 import { ConflictBox } from './ConflictBox.tsx';
 import { useDrawer } from './useDrawer.ts';
-import { CalProjRow, DateTimeRow, NoteRow } from './DrawerFields.tsx';
+import { CalProjRow, DateTimeRow, NoteRow, ReminderRow } from './DrawerFields.tsx';
 import { RepeatPop } from './RepeatPop.tsx';
 
 export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onDelete, onDismissConflict }: {
@@ -145,6 +145,9 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
           </div>
 
           <NoteRow fid={fid} note={s.note} onPatch={(v) => { if (v !== (task.note || '')) patch({ note: v }); }} />
+
+          {/* 提醒：与小组件同一个字段（reminder = "HH:mm"） */}
+          <ReminderRow task={task} onPatch={onPatch} />
         </div>
       </aside>
 

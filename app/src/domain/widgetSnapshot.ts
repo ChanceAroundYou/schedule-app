@@ -36,6 +36,14 @@ export interface SnapshotTask {
   dur: number | null;
   title: string;
   done: boolean;
+  /**
+   * 提醒时刻 "HH:mm"（同一天）。null = 不提醒。
+   *
+   * 2026-10-14 新增：原生侧 `ReminderScheduler` 靠它排闹钟、到点发通知。
+   * 它不是 App 的既有字段（App 里原本没有提醒概念），但服务端按字段名存，
+   * 所以原生写上去能正常同步。
+   */
+  reminder?: string | null;
 }
 
 export interface SnapshotHabit {
@@ -95,6 +103,7 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       dur: t.duration,
       title: t.title,
       done: t.done,
+      reminder: t.reminder ?? null,
     }))
     // 排序：日期 → 时间（**未定时的排在最后**，跟 App 里「未定时区在最上方
     // 但属于同一段」的语义不同：这里是列表，未定时没有时刻就没有位置）

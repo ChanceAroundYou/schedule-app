@@ -80,11 +80,7 @@
         </provider>
 
         <!--
-          APK 自更新：下载完成的广播。**必须在清单里注册，不能动态注册** ——
-          用户下到一半退出 App 也得能收到，不然那个包就白下了。
-          exported=false 就够：DownloadManager 用 setPackage() 定向发给当初
-          请求下载的那个包，不需要别的 App 也能触发。
-          逻辑见 AppUpdate.java。
+          APK 自更新：下载完成的广播。...
         -->
         <receiver
             android:name=".AppUpdate$DownloadReceiver"
@@ -93,11 +89,40 @@
                 <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
             </intent-filter>
         </receiver>
+
+        <!--
+          提醒。两个职责（见 ReminderReceiver）：
+            1. 到点发通知（AlarmManager 的 PendingIntent 打过来）
+            2. 开机 / 应用更新 / 改时间 / 换时区后**重排闹钟** ——
+               AlarmManager 的闹钟开机就没了，不重排等于提醒全失效。
+          exported="true"：BOOT_COMPLETED 等是**受保护的系统广播**，只有系统能发；
+          自定义的 ACTION_FIRE 走的是显式 Intent（component 已指定），导出与否无关。
+        -->
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 提醒通知（Android 13+ 需要运行时申请，见 MainActivity） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      精确闹钟。API 31+ 这是**特殊权限**，用户可在设置里关掉；
+      ReminderScheduler 拿不到时退化成不精确的 set()，仍然会响、只是可能晚几分钟。
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 开机后重排提醒 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!--
       APK 自更新：让系统安装器装我们下的包。Android 8+ 这是**特殊权限**，

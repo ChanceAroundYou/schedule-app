@@ -8,7 +8,13 @@
   字号固定 **9sp**（用户 2026-10-13：与打卡 / 任务卡统一；不再随行高变化）。
 
   2026-10-14（第八轮）：用户要求**数字左右留白一样**（原来右对齐 + 右 padding
-  2dp，左边空很多）。改成**水平居中** —— 左右自然等距。
+  2dp，左边空很多）。改成**水平居中**。
+
+  2026-10-14（第九轮）：居中之后**看上去还是偏右** —— 根因是刻度列前面还有
+  根布局的 **8dp paddingLeft**：数字在 16dp 列里是居中的，但「卡片左边缘 →
+  数字」= 8 + 3、「数字 → 竖分割线」= 3，所以左 11 / 右 3。
+  精确修法：给内容盒留 `paddingRight = 8dp`（= paddingLeft 的量），
+  使数字的**中心**落到「卡片左边缘 ↔ 分割线」这段的中点。
 
   用 TextView 而不是 `<View>`：View 不在 RemoteViews 白名单里。
 -->
@@ -16,9 +22,13 @@
     android:id="@+id/tl_hour"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:ellipsize="none"
+    android:fontFeatureSettings="tnum"
     android:gravity="top|center_horizontal"
+    android:includeFontPadding="false"
+    android:maxLines="1"
+    android:paddingRight="8dp"
+    android:singleLine="true"
     android:text="08"
     android:textColor="#A2B5A9"
-    android:textSize="9sp"
-    android:fontFeatureSettings="tnum"
-    android:includeFontPadding="false" />
+    android:textSize="9sp" />

@@ -15,6 +15,7 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
     note: partial.note || '',
     date,
     time: partial.time ?? null,
+    reminder: partial.reminder ?? null,
     duration: partial.duration ?? null,
     done: partial.done ?? false,
     doneAt: partial.doneAt ?? null,

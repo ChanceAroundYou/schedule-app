@@ -50,25 +50,31 @@
            （以前是 LinearLayout + weight，month 被左右挤得偏了）。
          · 箭头离月份**拉远**（marginLeft/Right 8 → 12dp），不挤在一起。
          · 右上「+」「⋯」都 28dp、同样 4dp padding —— 尺寸统一。
-         · 左上角原来的绿白 logo 换成**当天日期数字**（黑白、无彩色），
-             点一下仍回今天。数字由 ScheduleWidgetProvider 写进 iv_logo。 -->
+         · 左上角原来的绿白 logo 换成**当天日期徽标**：一个黑白日历轮廓 +
+             中间写着今天几号（见 ic_calendar_badge），点一下仍回今天。 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="32dp">
 
-        <TextView
+        <!-- 左上角：日历徽标 + 中间日期数字（数字由 provider 写 tv_logo_day） -->
+        <FrameLayout
             android:id="@+id/iv_logo"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
             android:layout_gravity="left|center_vertical"
-            android:gravity="center"
-            android:minWidth="26dp"
-            android:paddingLeft="2dp"
-            android:paddingRight="2dp"
-            android:text="14"
-            android:textColor="#333333"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+            android:background="@drawable/ic_calendar_badge">
+
+            <TextView
+                android:id="@+id/tv_logo_day"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:text="14"
+                android:textColor="#333333"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -169,8 +175,11 @@
             android:layout_height="15dp"
             android:orientation="horizontal">
 
+            <!-- 左上空白角 = 未定时的标记。宽度与左下刻度列（tl_scale）一致，
+                 否则十字的竖线上下错位。2026-10-14：16 → 20dp，
+                 配合刻度列加宽（见 widget_tl_hour 的说明）。 -->
             <TextView
-                android:layout_width="16dp"
+                android:layout_width="20dp"
                 android:layout_height="match_parent"
                 android:text="" />
 
@@ -203,9 +212,12 @@
             android:layout_weight="1"
             android:orientation="horizontal">
 
+            <!-- 刻度列。2026-10-14：16 → 20dp —— 给数字留出「中心落在
+                 卡片左边缘与分割线中点」所需的宽度（见 widget_tl_hour）。
+                 20dp - 8dp(paddingRight) = 12dp 内容盒，容得下两位数字。 -->
             <LinearLayout
                 android:id="@+id/tl_scale"
-                android:layout_width="16dp"
+                android:layout_width="20dp"
                 android:layout_height="match_parent"
                 android:orientation="vertical" />
 
