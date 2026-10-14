@@ -15,7 +15,7 @@ import type { RepeatRule } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { REPEAT_UNITS, toRepeat } from '../../domain/repeat.ts';
 import { DatePicker } from '../overlays/DatePicker.tsx';
-import { DayGrid } from '../DayGrid.tsx';
+import { DayGrid } from './DayGrid.tsx';
 import { Chips, Dropdown } from '../kit.tsx';
 
 /**

@@ -9,11 +9,11 @@
  * 填了就是手改覆盖 —— 空 vs 0 是两回事，所以用 `''` 而不是 0 表达「自动」。
  */
 import { useEffect, useId, useState } from 'react';
-import { Btn, Chips, Input, Sheet, SheetPicker, Textarea, toast, useConfirm } from './kit.tsx';
-import * as store from '../data/store.ts';
-import { STATUS_LABEL, roleOf } from '../domain/model.ts';
-import { canWrite } from '../domain/types.ts';
-import type { LocalState, ProjectStatus } from '../domain/types.ts';
+import { Btn, Chips, Input, Sheet, SheetPicker, Textarea, toast, useConfirm } from '../kit.tsx';
+import * as store from '../../data/store.ts';
+import { STATUS_LABEL, roleOf } from '../../domain/model.ts';
+import { canWrite } from '../../domain/types.ts';
+import type { LocalState, ProjectStatus } from '../../domain/types.ts';
 
 const STATUSES: ProjectStatus[] = ['active', 'waiting', 'paused', 'done'];
 

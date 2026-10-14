@@ -25,7 +25,7 @@ export function InboxView({ state }: { state: LocalState }) {
         items={list.map((t) => t.id)}
         entity="task"
         renderItem={(id) => <TaskRow task={state.tasks[id]} bare />}
-        className="group-items mc"
+        className="mc"
         scope="inbox"
       />
     </div>

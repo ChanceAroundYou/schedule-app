@@ -7,8 +7,8 @@
 
 import { useEffect, useState } from 'react';
 import { Bot, User } from 'lucide-react';
-import { api } from '../data/api.ts';
-import type { AiHistoryItem } from '../domain/ai.ts';
+import { api } from '../../data/api.ts';
+import type { AiHistoryItem } from '../../domain/ai.ts';
 
 export function AiHistory() {
   const [items, setItems] = useState<AiHistoryItem[]>([]);

@@ -21,9 +21,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { api } from '../../data/api.ts';
 import { chatStream } from '../aiClient.ts';
-import { AiSettingsSheet } from '../AiSettings.tsx';
-import { AiHistory } from '../AiHistory.tsx';
-import { AiMemory } from '../AiMemory.tsx';
+import { AiSettingsSheet } from './AiSettings.tsx';
+import { AiHistory } from './AiHistory.tsx';
+import { AiMemory } from './AiMemory.tsx';
 import { Btn, toast } from '../kit.tsx';
 import { useOverlayScrollbar } from '../scroll.ts';
 import {

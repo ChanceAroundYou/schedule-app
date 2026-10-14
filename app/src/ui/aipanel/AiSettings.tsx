@@ -16,9 +16,9 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { api } from '../data/api.ts';
-import { Btn, Input, Sheet, toast } from './kit.tsx';
-import type { AiSettings } from '../domain/ai.ts';
+import { api } from '../../data/api.ts';
+import { Btn, Input, Sheet, toast } from '../kit.tsx';
+import type { AiSettings } from '../../domain/ai.ts';
 
 export function AiSettingsSheet({ open, onClose, onSaved }: {
   open: boolean;

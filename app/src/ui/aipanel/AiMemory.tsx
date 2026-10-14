@@ -7,9 +7,9 @@
 
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { api } from '../data/api.ts';
-import type { AiAuthorizations, AiMemory } from '../domain/ai.ts';
-import { Dropdown, Input } from './kit.tsx';
+import { api } from '../../data/api.ts';
+import type { AiAuthorizations, AiMemory } from '../../domain/ai.ts';
+import { Dropdown, Input } from '../kit.tsx';
 
 const TYPE_LABEL: Record<string, string> = {
   preference: '偏好',

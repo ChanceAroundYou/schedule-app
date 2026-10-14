@@ -16,7 +16,7 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
 import type { Cal, Invite, Member } from '../../domain/types.ts';
 import { ROLE_LABEL, canManage } from '../../domain/types.ts';
 import { Btn, Field, InlineRename, MiniIconBtn, Row, useConfirm, toast } from '../kit.tsx';
-import { MembersSection } from '../Members.tsx';
+import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../../data/api.ts';
 import { cx } from '../cx.ts';
 import * as store from '../../data/store.ts';

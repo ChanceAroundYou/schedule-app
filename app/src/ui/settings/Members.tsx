@@ -16,12 +16,12 @@
 
 import { Crown, Eye, Pencil, Send, UserMinus, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import { api } from '../data/api.ts';
+import { api } from '../../data/api.ts';
 import {
   ASSIGNABLE_ROLES, ROLE_LABEL, canManage, type Invite, type Member, type Role,
-} from '../domain/types.ts';
-import { Dropdown, Field, Input, MiniIconBtn, toast, useConfirm } from './kit.tsx';
-import type { DropdownOption } from './kit.tsx';
+} from '../../domain/types.ts';
+import { Dropdown, Field, Input, MiniIconBtn, toast, useConfirm } from '../kit.tsx';
+import type { DropdownOption } from '../kit.tsx';
 
 interface MembersSectionProps {
   calId: string;

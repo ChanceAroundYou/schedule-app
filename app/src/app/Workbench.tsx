@@ -31,7 +31,7 @@ import { useConfirm } from '../ui/kit.tsx';
 import { DndProvider, useTimelineDrag } from '../ui/dndkit.tsx';
 import { Shell, Topbar, CalSubheader, QuickAdd } from '../ui/Shell.tsx';
 import { InviteSheet } from '../ui/Calendars.tsx';
-import { ProjectSheet } from '../ui/ProjectSheet.tsx';
+import { ProjectSheet } from '../ui/overlays/ProjectSheet.tsx';
 import { Drawer } from '../ui/Drawer.tsx';
 import { useViewLayout } from '../views/Calendar.tsx';
 import { useNav } from './useNav.ts';
