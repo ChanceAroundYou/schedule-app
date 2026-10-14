@@ -375,6 +375,15 @@ test('改名：创建者能改，可编辑成员不能', async () => {
   assert.strictEqual(empty.body.cal.name, '我的日程', '名字留空就给默认名');
 });
 
+test('路由层先挡：名字 / 权限的类型、长度、控制字符', async () => {
+  assert.strictEqual((await api('POST', '/api/cals', { token: dad.token, body: { name: 42 } })).status, 400, '名字不是文字');
+  assert.strictEqual((await api('POST', '/api/cals', { token: dad.token, body: { name: 'a'.repeat(41) } })).status, 400, '名字超长');
+  assert.strictEqual((await api('POST', '/api/cals', { token: dad.token, body: { name: '坏\n名字' } })).status, 400, '名字含控制字符');
+  assert.strictEqual((await api('PATCH', `/api/cals/${dad.calId}`, { token: dad.token, body: { name: null } })).status, 400, '改名不给名字');
+  assert.strictEqual((await api('PATCH', `/api/cals/${dad.calId}/members/${mom.userId}`, { token: dad.token, body: { role: 1 } })).status, 400, '权限不是文字');
+  assert.strictEqual((await api('POST', `/api/cals/${dad.calId}/invites`, { token: dad.token, body: { name: 7, role: 'editor' } })).status, 400, '用户名不是文字');
+});
+
 /* ------------------------------------------------------------ 同步语义 */
 
 test('cursor=0 拿快照，cursor>0 只拿增量', async () => {

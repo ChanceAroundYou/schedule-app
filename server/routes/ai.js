@@ -77,8 +77,9 @@ module.exports = {
         signal: ac.signal,
       });
     } catch (e) {
-      // runChat 自己会兜住上游错误并 emit error 事件，走到这里说明是更外层的意外
-      console.error('[ai/chat]', e && e.stack ? e.stack : e);
+      // runChat 自己会兜住上游错误并 emit error 事件，走到这里说明是更外层的意外。
+      // 只记 message 不记堆栈：同 router.js，堆栈可能带着库文件路径
+      console.error('[ai/chat]', e && e.message ? e.message : e);
       sendEvent(ctx.res, { type: 'error', message: '服务器内部错误', code: 'server' });
     } finally {
       endStream(ctx.res);
