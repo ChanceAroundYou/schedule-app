@@ -53,15 +53,15 @@ export function InviteSheet({ state, open, onClose }: {
   return (
     <Sheet open={open} onClose={onClose} title="邀请">
       {!state.invites.length && (
-        <div className="py-6 text-center text-[13px] text-[var(--text-3)]">没有待处理的邀请</div>
+        <div className="py-6 text-center text-[13px] inv-empty">没有待处理的邀请</div>
       )}
       <div className="flex flex-col gap-2">
         {state.invites.map((i) => (
-          <div key={i.id} className="rounded-[var(--r-lg)] border-[length:var(--border-w)] border-[var(--border)] p-3">
+          <div key={i.id} className="inv-card border-[length:var(--border-w)] p-3">
             <div className="text-[13.5px]">
               <b>{i.fromName || '有人'}</b> 邀请你加入「{i.calName}」
             </div>
-            <div className="mt-1 text-[12px] text-[var(--text-2)]">
+            <div className="mt-1 text-[12px] inv-meta">
               权限：{ROLE_LABEL[i.role]} —— {ROLE_HINT[i.role]}
             </div>
             <div className="mt-2.5 flex gap-2">

@@ -68,15 +68,15 @@ function Sidebar({ state, onNav }: {
       >
         <span className="ico">{def.icon}</span>
         <span className="label">{def.label}</span>
-        {b && <span className={'count' + (def.warn ? ' warn' : '')}>{b}</span>}
+        {b && <span className={"count" + (def.warn ? ' warn' : '')}>{b}</span>}
       </button>
     );
   };
 
   return (
     <aside className="sidebar osb" ref={osbSide}>
-      <div className="brand">
-        <div className="brand-logo"><CalendarCheck size={24} /></div>
+      <div className={"brand"}>
+        <div className={"brand-logo"}><CalendarCheck size={24} /></div>
         <div className="brand-name">日程清单</div>
       </div>
 
@@ -84,7 +84,7 @@ function Sidebar({ state, onNav }: {
           「底栏挑哪几项」抢位置。桌面在顶栏（CalMenu），移动端在「更多」里
           （CalSheet）—— 两处都见 Calendars.tsx。 */}
       <nav className="nav" id="nav">{main.map((k) => item(k))}</nav>
-      <nav className="nav nav-bottom" id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
+      <nav className={'nav ' + "nav-bottom"} id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
 
       <Pulse state={state} />
 
@@ -117,7 +117,7 @@ function Sidebar({ state, onNav }: {
             )}
           </div>
         )}
-        <div className="tip">数据已同步到服务器，本机也留了一份</div>
+        <div className={"tip"}>数据已同步到服务器，本机也留了一份</div>
       </div>
     </aside>
   );

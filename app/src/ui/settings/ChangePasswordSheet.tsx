@@ -60,7 +60,7 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
         </div>
 
         {err && (
-          <div role="alert" className="text-[12px] text-[var(--danger)]">{err}</div>
+          <div role="alert" className="text-[12px] cpw-err">{err}</div>
         )}
 
         <div className="drawer-foot">

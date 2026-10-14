@@ -26,7 +26,7 @@ export function TimePicker({ value, onChange }: { value: string | null; onChange
   return (
     <div className="tp">
       <button ref={anchor} type="button" aria-label={value ? `时间 ${value}` : '选择时间'} className={'tp-btn' + (value ? ' on' : '')} onClick={() => setOpen((v) => !v)}>
-        <span className="tp-label">{value || '选时间'}</span>
+        <span className={"tp-label"}>{value || '选时间'}</span>
         {value && <span className="tp-x" aria-label="清除时间" onClick={(e) => { e.stopPropagation(); onChange(null); }}>✕</span>}
       </button>
       {open && (

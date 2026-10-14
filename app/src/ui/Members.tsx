@@ -64,19 +64,19 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
   return (
     <>
       {/* 成员。标题走 kit 的 `Field` —— 原先这里把 Field 的标题样式
-          `mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--text-2)]`
+          `mb-1.5 flex items-center gap-1.5 text-[12px]`（含次级文字色）
           **逐字抄了两遍**（成员、邀请成员各一份），抄出来的第二套一定会漂。 */}
       <Field label={`成员（${members.length}）`} icon={<Users size={13} />}>
-        {/* 成员行**不带底色**。原先每行一个 `bg-[var(--panel-3)]` 的小框，
+        {/* 成员行**不带底色**。原先每行一个带面板底色的框，
             套在日程集卡这个大框里，再套一层输入框 —— 用户说「一层层大框套
             小框」。一行就是一行，靠行距分开够了。 */}
         <div className="flex flex-col gap-1.5">
           {members.map((m) => (
             <div key={m.id} className="flex h-[30px] items-center gap-2">
               <span className="shrink-0">
-                {canManage(m.role) ? <Crown size={14} className="text-[var(--primary)]" />
-                  : m.role === 'viewer' ? <Eye size={14} className="text-[var(--text-3)]" />
-                    : <Pencil size={14} className="text-[var(--text-3)]" />}
+                {canManage(m.role) ? <Crown size={14} className="mem-crown" />
+                  : m.role === 'viewer' ? <Eye size={14} className="mem-eye" />
+                    : <Pencil size={14} className="mem-pencil" />}
               </span>
               <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
 
@@ -110,7 +110,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                   </MiniIconBtn>
                 </>
               ) : (
-                <span className="text-[11.5px] text-[var(--text-3)]">{ROLE_LABEL[m.role]}</span>
+                <span className="text-[11.5px] mem-role">{ROLE_LABEL[m.role]}</span>
               )}
             </div>
           ))}
@@ -148,7 +148,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               {/* 右侧一律图标钮，和上面那些行的移出钮同一套 MiniIconBtn ——
                   只有「发出去」用主色，点之前就分得清是「邀请」还是「移出」。
                   主色走 `tone="primary"` **prop**：叠 `className` 会被基类的
-                  `text-[var(--text-3)]` 按生成顺序压掉（实测过，见 kit.tsx）。 */}
+                  次级文字色按生成顺序压掉（实测过，见 kit.tsx）。 */}
               <MiniIconBtn
                 label="发出邀请"
                 disabled={busy || !inviteName.trim()}
@@ -169,7 +169,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
         <div className="flex flex-col gap-1.5">
           {sent.map((i) => (
             <div key={i.id} className="flex h-[30px] items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text-3)]">
+              <span className="min-w-0 flex-1 truncate text-[12.5px] mem-sent">
                 {i.toName} · 等对方确认（{ROLE_LABEL[i.role]}）
               </span>
               <MiniIconBtn

@@ -98,6 +98,11 @@ body.sheet-open .tab:active { background: none; }
 }
 .more-sheet[hidden] { display: none; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
+/* 跨组共享的动画关键帧（原 quick-add.css）：fadeUp 被 shell/quick-add 的浮层用，
+   fastPop/fastPopOut 被下面 .fast-add 窄屏展开用。放全局，module 里 `animation:` 按字面名引用。 */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@keyframes fastPop { from { opacity: 0; transform: translateX(24px) scaleX(.5); } to { opacity: 1; transform: none; } }
+@keyframes fastPopOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(24px) scaleX(.5); } }
 .ms-grab { width: 36px; height: 4px; border-radius: var(--r-xs); background: var(--border); margin: 6px auto 14px; }
 .ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .ms-item {

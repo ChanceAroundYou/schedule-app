@@ -40,7 +40,7 @@ export function AppearanceTab({ state, theme }: {
               <span
                 data-accent={k}
                 data-theme={theme}
-                className="inline-block h-3 w-3 shrink-0 rounded-[var(--r-pill)]"
+                className="apptab-dot inline-block h-3 w-3 shrink-0"
                 style={{ background: 'var(--primary)' }}
               />
             )}

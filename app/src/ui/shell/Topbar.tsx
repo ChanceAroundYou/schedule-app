@@ -61,7 +61,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
           title={atToday ? '当前就在今天' : '跳回今天'}
           onClick={onToday}
         >今</Btn>
-        <div className="jump-wrap">
+        <div className={"jump-wrap"}>
           <Btn
             ref={jumpBtn}
             variant="normal"
@@ -71,7 +71,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
             aria-haspopup="dialog"
             onClick={() => setJump(!jump)}
           >
-            <span className="jb-ico"><CalendarDays size={13} /></span>
+            <span className={"jb-ico"}><CalendarDays size={13} /></span>
           </Btn>
           <JumpPop
             open={jump}
@@ -172,7 +172,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
             className={'search-slot' + (searchOpen ? ' open' : '') + (kw ? ' has-kw' : '')}
             ref={slotRef}
           >
-            <div className="search-slot-field">
+            <div className={"search-slot-field"}>
               <SearchInput kw={kw} setKw={setKw} />
             </div>
             {/* 这里不用 `IconBtn`：它要 `children`，而这个钮**故意没有图标**
@@ -184,7 +184,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
               aria-label="搜索任务"
               title="搜索任务"
               aria-expanded={searchOpen}
-              className="icon-btn search-toggle"
+              className={'icon-btn search-toggle'}
               onClick={() => setSearchOpen(!searchOpen)}
             />
           </div>

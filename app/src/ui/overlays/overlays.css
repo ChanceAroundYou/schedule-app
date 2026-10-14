@@ -1,0 +1,145 @@
+/* overlays.css —— 浮层通用样式组（第 1 册 R1：一个样式组一份 css）
+ *
+ * 从 styles/overlays.css 迁来。类分两档：
+ *   · local（默认）：单宿主、非探针、非状态、非跨组 → 哈希，组件走 `s.xxx`。
+ *   · ：被探针选中的业务根类（.mask/.drawer/.field/.repeat-pop）、
+ *     状态后缀（.show/.on/.cur/.has/.out/.open/.today）、跨组引用
+ *     （.jp-cell/.jp-head 属 shell 组、.dp-nav-btn 被 quick-add 的 RepeatPop 用）。
+ *     这些保持字面名不哈希 —— 探针选择器一个字不改，cascade 顺序不变。
+ *
+ * 归别组（本文件不定义）：.field-* / .check-* / .icon-btn → kit 组；.rp-* → quick-add 组。
+ */
+
+/* ================= 抽屉 ================= */
+
+.mask {
+  position: fixed; inset: 0; background: rgba(16, 24, 40, .34);
+  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40;
+}
+.mask.show { opacity: 1; pointer-events: auto; }
+
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 410px; max-width: 92vw;
+  background: var(--panel); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg); z-index: 50;
+  transform: translateX(100%); transition: transform .24s cubic-bezier(.3, .8, .3, 1);
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: none; }
+.drawer-head { display: flex; align-items: center; gap: 11px; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+.drawer-title { flex: 1; border: none; background: none; outline: none; font-size: 16.5px; font-weight: 650; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 14px; }
+
+/* ================= DatePicker ================= */
+
+.dp { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.dp-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 72px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.dp-btn:hover { background: var(--panel-3); color: var(--text); }
+.dp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.dp-label { flex: 1; text-align: left; }
+.dp-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.dp-x:hover { background: var(--panel-3); color: var(--text); }
+.dp-pop {
+  position: fixed; z-index: 70; width: 268px; padding: 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+}
+.dp-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dp-nav-btn {
+  width: 28px; height: 28px; border: none; background: none; color: var(--text-2);
+  font-size: 16px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center;
+  transition: background .14s, color .14s;
+}
+.dp-nav-btn:hover { background: var(--panel-3); color: var(--text); }
+.dp-nav-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.dp-week { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.dp-week span { text-align: center; font-size: 10.5px; color: var(--text-3); padding: 4px 0; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-cell {
+  height: 30px; border: 1px solid transparent; background: none; border-radius: var(--r-sm);
+  color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.dp-cell:hover { background: var(--panel-3); }
+.dp-cell.out { color: var(--text-3); opacity: .5; }
+.dp-cell.today { border-color: var(--primary); }
+.dp-pop .jp-head { margin: 0 0 6px; }
+.dp-pop .jp-cell { height: 30px; line-height: 28px; font-size: 12.5px; }
+.dp-pop .jp-cell.has { background: none; font-weight: 400; }
+.dp-pop .jp-cell.cur { background: var(--primary); color: var(--on-primary); }
+
+/* ================= TimePicker ================= */
+
+.tp { display: flex; flex-direction: column; gap: 8px; }
+.tp-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 96px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.tp-btn:hover { background: var(--panel-3); color: var(--text); }
+.tp-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.tp-label { flex: 1; text-align: left; }
+.tp-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.tp-x:hover { background: var(--panel-3); color: var(--text); }
+.tp-dial {
+  position: fixed; z-index: 70; width: auto; padding: 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  display: flex; justify-content: center;
+}
+
+/* ================= toast ================= */
+
+.toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(12px);
+  display: flex; align-items: center; gap: 16px;
+  background: var(--toast-bg); color: var(--toast-fg); padding: 11px 18px; border-radius: var(--r-md);
+  font-size: 13px; box-shadow: var(--shadow-lg);
+  opacity: 0; pointer-events: none; transition: all .22s cubic-bezier(.3, .8, .3, 1); z-index: 80;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.toast button { border: none; background: none; color: var(--toast-link); font-size: 13px; font-weight: 500; }
+
+/* ================= 重复入口按钮（抽屉里那一个） ================= */
+
+.rep-open {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; min-width: 72px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 13px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.rep-open:hover { background: var(--panel-3); color: var(--text); }
+.rep-open.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.rep-label { flex: 1; text-align: left; }
+.rep-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: none; color: var(--text-3); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.rep-x:hover { background: var(--panel-3); color: var(--text); }
+
+/* 重复浮层根（.repeat-pop）被探针选中 → :global；面板本体规则 */
+.repeat-pop {
+  position: fixed; z-index: 70; width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  padding: 10px 14px 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+}

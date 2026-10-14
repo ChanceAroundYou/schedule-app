@@ -60,28 +60,28 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
     // 用 auto 外边距而不是 justify/items-center —— 后者在内容比容器高时
     // 会把顶部裁掉且滚不上去，正是这里最怕的那种情况。
     // pb 里的 --kb 是 ui/hooks.ts 量的键盘高度（见那里的注释）。
-    <div className="fixed inset-0 flex flex-col overflow-y-auto bg-[var(--bg)]
+    <div className="auth-bg fixed inset-0 flex flex-col overflow-y-auto
                     p-6 pb-[calc(1.5rem+var(--kb,0px))]">
       <form
         onSubmit={submit}
-        className="mx-auto my-auto w-full max-w-sm rounded-[var(--r-xl)] bg-[var(--panel)]
-                   p-7 shadow-lg text-[var(--text)]"
+        className="auth-card mx-auto my-auto w-full max-w-sm
+                   p-7 shadow-lg"
       >
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[var(--r-xl)]
-                          bg-[linear-gradient(140deg,var(--primary),var(--purple))] text-[var(--on-primary)]">
+          <div className="auth-logo flex h-12 w-12 items-center justify-center
+                          bg-[linear-gradient(140deg,var(--primary),var(--purple))]">
             <CalendarCheck size={24} />
           </div>
           <div className="text-lg font-semibold">日程清单</div>
-          <div className="text-[13px] text-[var(--text-2)]">
+          <div className="auth-sub text-[13px]">
             {register ? '注册后自动建一个「我的日程」' : '登录以同步你的日程'}
           </div>
         </div>
 
-        <label htmlFor={fid + '-name'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">用户名</label>
+        <label htmlFor={fid + '-name'} className="auth-label mb-1 block text-[12.5px]">用户名</label>
         <Input
           id={fid + '-name'}
-          className="mb-3 rounded-[var(--r-sm)] bg-transparent"
+          className="auth-input mb-3 bg-transparent"
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoComplete="username"
@@ -89,18 +89,18 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           spellCheck={false}
         />
 
-        <label htmlFor={fid + '-pwd'} className="mb-1 block text-[12.5px] text-[var(--text-2)]">密码</label>
+        <label htmlFor={fid + '-pwd'} className="auth-label mb-1 block text-[12.5px]">密码</label>
         <Input
           id={fid + '-pwd'}
           type="password"
-          className="rounded-[var(--r-sm)] bg-transparent"
+          className="auth-input bg-transparent"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={register ? 'new-password' : 'current-password'}
         />
-        {register && <div className="mt-1 text-[11.5px] text-[var(--text-3)]">至少 6 位</div>}
+        {register && <div className="auth-hint mt-1 text-[11.5px]">至少 6 位</div>}
 
-        {err && <div className="mt-3 text-[12.5px] text-[var(--danger)]">{err}</div>}
+        {err && <div className="auth-err mt-3 text-[12.5px]">{err}</div>}
 
         <Btn variant="primary" type="submit" disabled={busy} className="mt-5 w-full">
           {busy ? <Loader2 size={15} className="animate-spin" />
@@ -108,12 +108,12 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           {busy ? '请稍候…' : register ? '注册并进入' : '登录'}
         </Btn>
 
-        <div className="mt-4 text-center text-[12.5px] text-[var(--text-2)]">
+        <div className="auth-foot mt-4 text-center text-[12.5px]">
           {register ? '已经有账户了？' : '还没有账户？'}
           <button
             type="button"
             onClick={() => swap(register ? 'login' : 'register')}
-            className="ml-1 font-medium text-[var(--primary)] hover:underline"
+            className="auth-link ml-1 font-medium hover:underline"
           >
             {register ? '去登录' : '注册一个'}
           </button>

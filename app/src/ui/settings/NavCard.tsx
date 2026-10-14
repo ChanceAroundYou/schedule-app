@@ -15,8 +15,6 @@ import { useIsNarrow } from '../hooks.ts';
 import { SortableZone, useSortableItem } from '../dndkit.tsx';
 import { cx } from '../cx.ts';
 
-const HOVER = 'hover:bg-[var(--panel-3)]';
-
 /**
  * 功能区自定义：一格一个功能项，**点一下切换显示 / 隐藏，拖一下排序**。
  *
@@ -136,15 +134,15 @@ function NavCard({ state }: { state: LocalState }) {
  * 一格的样子。**行本体和浮层里跟着手指走的那一份必须一模一样** ——
  * 抄两遍尺寸就会漂，而落点判定量的正是浮层自己那份的矩形。
  */
-const CHIP_CX = 'flex items-center gap-1 rounded-[var(--r-md)] border-[length:var(--border-w)] px-1.5 py-1 text-[12.5px] select-none';
-const chipTone = (on: boolean) => (on
-  ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
-  : 'border-[var(--border)] text-[var(--text-3)] ' + HOVER);
+const CHIP_CX = 'navcard-chip flex items-center gap-1 border-[length:var(--border-w)] px-1.5 py-1 text-[12.5px] select-none';
+// 「勾中」态的底色走 `primary-soft` 这个类名本身 —— 探针 navOn() 靠
+// className.includes('primary-soft') 认选中态，别把这个类名改掉（见踩坑）。
+const chipTone = (on: boolean) => (on ? 'navcard-chip-on primary-soft' : 'navcard-chip-off');
 
 /** 一格的内容。行和浮层里那份共用 —— 两份长得不一样，拖起来像换了个东西。 */
 function NavChipBody({ id, on }: { id: string; on: boolean }) {
   return (<>
-    <span className="shrink-0 text-[var(--text-3)]">
+    <span className="shrink-0 navcard-grip">
       <GripVertical size={12} />
     </span>
     <span className="min-w-0 flex-1 truncate">{navDef(id).label}</span>

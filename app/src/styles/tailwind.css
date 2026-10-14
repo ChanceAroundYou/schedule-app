@@ -14,11 +14,12 @@
  */
 @import "tailwindcss";
 @import "./tokens.css";
-@import "./shell.css";
+@import "../ui/shell/shell.css";
 @import "./calendar.css";
 @import "./lists.css";
-@import "./quick-add.css";
-@import "./overlays.css";
+@import "../ui/quick-add/quick-add.css";
+@import "../ui/kit/kit.css";
+@import "../ui/overlays/overlays.css";
 @import "./state.css";
 @import "./responsive.css";
 
@@ -467,3 +468,214 @@
   .pj-cols { grid-template-columns: 1fr; }
   .pj-bar { display: none; }
 }
+
+
+/* ================= S7 子步 D：新表面组件的语义外观类 =================
+   这些是原来散在各 .tsx 里的 rounded-[var()/bg-[var()/text-[var()/border-[var()
+   外观工具类，收进语义类（api-scan 调用方外观类清零）。 */
+
+/* ---- Auth ---- */
+.auth-bg {
+  background: var(--bg);
+}
+.auth-card {
+  border-radius: var(--r-xl);
+  background: var(--panel);
+  color: var(--text);
+}
+.auth-logo {
+  border-radius: var(--r-xl);
+  color: var(--on-primary);
+}
+.auth-sub {
+  color: var(--text-2);
+}
+.auth-label {
+  color: var(--text-2);
+}
+.auth-input {
+  border-radius: var(--r-sm);
+}
+.auth-hint {
+  color: var(--text-3);
+}
+.auth-err {
+  color: var(--danger);
+}
+.auth-foot {
+  color: var(--text-2);
+}
+.auth-link {
+  color: var(--primary);
+}
+
+/* ---- CalItem ---- */
+/* CalItem.tsx —— 语义外观类（S7：把 appearance 工具类从组件搬进来） */
+
+/* 标题行：圆角 + 底色（原 rounded-[var(--r-md)] bg-[var(--panel-3)]） */
+.ci-row {
+  border-radius: var(--r-md);
+  background: var(--panel-3);
+}
+
+/* 名称：选中态主色（原 text-[var(--primary)]） */
+.ci-name-active {
+  color: var(--primary);
+}
+
+/* 名称：未选中态（原 text-[var(--text-2)]） */
+.ci-name-idle {
+  color: var(--text-2);
+}
+
+/* 角色徽标：圆角 + 底色 + 文字色（原 rounded-[var(--r-xs)] bg-[var(--panel)] text-[var(--text-3)]） */
+.ci-role {
+  border-radius: var(--r-xs);
+  background: var(--panel);
+  color: var(--text-3);
+}
+
+/* 折叠箭头图标：文字色（原 text-[var(--text-3)]） */
+.ci-chevron {
+  color: var(--text-3);
+}
+
+/* 危险区分隔线：边框色（原 border-[var(--border)]，配 border-t-[length:var(--border-w)]） */
+.ci-danger {
+  border-color: var(--border);
+}
+
+/* 只读成员提示：文字色（原 text-[var(--text-3)]） */
+.ci-hint {
+  color: var(--text-3);
+}
+
+/* ---- CalRow ---- */
+/* CalRow.tsx 语义样式（S7 抽出的外观工具类） */
+.calrow-row {
+  border-radius: var(--r-md);
+}
+.calrow-row-on {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.calrow-row-off {
+  color: var(--text-3);
+}
+.calrow-row-off:hover {
+  background: var(--panel-3);
+  color: var(--text-2);
+}
+.calrow-chip {
+  border-radius: var(--r-xs);
+  background: var(--panel-3);
+  color: var(--text-3);
+}
+
+/* ---- NavCard ---- */
+/* NavCard.tsx 语义类（S7：外观工具类从 .tsx 收进这里） */
+
+/* 一格（行本体 + 浮层跟手那份共用 CHIP_CX）：圆角 */
+.navcard-chip {
+  border-radius: var(--r-md);
+}
+
+/* 勾上：描边 / 底色 / 字色都走主色（元素已有 border-[length:var(--border-w)] 定宽，这里只给色） */
+.navcard-chip-on {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+/* 「勾中」底色：类名就叫 primary-soft —— 探针 navOn() 靠 className 里含
+   `primary-soft` 认选中态，类名不能改（见 NavCard.tsx chipTone 那条注释）。 */
+.primary-soft { background: var(--primary-soft); }
+
+/* 未勾：装饰描边 + 弱字色，悬停浅底 */
+.navcard-chip-off {
+  border-color: var(--border);
+  color: var(--text-3);
+}
+.navcard-chip-off:hover {
+  background: var(--panel-3);
+}
+
+/* 拖拽把手图标 */
+.navcard-grip {
+  color: var(--text-3);
+}
+
+/* ---- SecurityTab ---- */
+/* SecurityTab 语义类（S7 外观迁移） */
+.sec-icon-on { color: var(--ok); }
+.sec-icon-off { color: var(--danger); }
+.sec-status-on { color: var(--ok); }
+.sec-status-off { color: var(--danger); }
+.sec-up-warn { color: var(--warn); }
+.sec-up-idle-icon { color: var(--text-3); }
+.sec-up-idle { color: var(--text-2); }
+
+/* ---- SettingsView ---- */
+/* SettingsView 语义外观类（S7 子步骤 D）—— 由 tailwind.css 合并方接管 */
+
+/* tab 栏容器：原 rounded-[var(--r-lg)] border-[var(--border)] bg-[var(--panel-3)] */
+.set-tabbar {
+  border-radius: var(--r-lg);
+  border-color: var(--border);
+  background: var(--panel-3);
+}
+
+/* tab 按钮（公共）：原 rounded-[var(--r-sm)] */
+.set-tab {
+  border-radius: var(--r-sm);
+}
+
+/* tab 按钮 · 选中：原 bg-[var(--primary)] text-[var(--on-primary)] */
+.set-tab-on {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* tab 按钮 · 未选中：原 text-[var(--text-2)] hover:bg-[var(--panel)] */
+.set-tab-off {
+  color: var(--text-2);
+}
+.set-tab-off:hover {
+  background: var(--panel);
+}
+
+/* ---- Members ---- */
+.mem-crown { color: var(--primary); }
+.mem-eye { color: var(--text-3); }
+.mem-pencil { color: var(--text-3); }
+.mem-role { color: var(--text-3); }
+.mem-sent { color: var(--text-3); }
+
+/* ---- InviteSheet ---- */
+.inv-empty {
+  color: var(--text-3);
+}
+.inv-card {
+  border-radius: var(--r-lg);
+  border-color: var(--border);
+}
+.inv-meta {
+  color: var(--text-2);
+}
+
+/* ---- Workbench ---- */
+/* Workbench 语义外观类（S7 子步骤 D） */
+.wb-err {
+  border-radius: var(--r-lg);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---- AppearanceTab ---- */
+.apptab-dot {
+  border-radius: var(--r-pill);
+}
+
+/* ---- CalsTab ---- */
+.caltab-to { color: var(--text-2); }
+
+/* ---- ChangePasswordSheet ---- */
+.cpw-err { color: var(--danger); }

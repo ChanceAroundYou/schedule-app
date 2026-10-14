@@ -57,7 +57,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
       {/* 页名「设置」归**顶栏**（见 Shell.tsx 的 title 分支）—— 页面里不写第二遍，
           两行都是「设置」看着像两个 header。这张 tab 栏是页内的分段开关。 */}
       <div className="mb-4">
-        <div className="flex gap-1 rounded-[var(--r-lg)] border-[length:var(--border-w)] border-[var(--border)] bg-[var(--panel-3)] p-1">
+        <div className="set-tabbar flex gap-1 border-[length:var(--border-w)] p-1">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -66,10 +66,10 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               aria-current={tab === t.key ? 'page' : undefined}
               onClick={() => setTab(t.key)}
               className={cx(
-                'flex-1 rounded-[var(--r-sm)] px-3 py-1.5 text-[13px] transition',
+                'set-tab flex-1 px-3 py-1.5 text-[13px] transition',
                 tab === t.key
-                  ? 'bg-[var(--primary)] text-[var(--on-primary)] font-medium'
-                  : 'text-[var(--text-2)] hover:bg-[var(--panel)]',
+                  ? 'set-tab-on font-medium'
+                  : 'set-tab-off',
               )}
             >
               {t.label}

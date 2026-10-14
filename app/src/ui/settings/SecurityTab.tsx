@@ -69,18 +69,18 @@ export function SecurityTab({ state, user, onExport, onImport, onLogout, onChang
           <Row>
             <span className="flex items-center gap-1.5 text-[12.5px]">
               {online
-                ? <Wifi size={13} className="text-[var(--ok)]" />
-                : <WifiOff size={13} className="text-[var(--danger)]" />}
-              <span className={online ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}>
+                ? <Wifi size={13} className="sec-icon-on" />
+                : <WifiOff size={13} className="sec-icon-off" />}
+              <span className={online ? 'sec-status-on' : 'sec-status-off'}>
                 {online ? '在线' : '离线'}
               </span>
             </span>
             <span className="flex items-center gap-1.5 text-[12.5px]">
               <CloudUpload
                 size={13}
-                className={state.outbox.length ? 'text-[var(--warn)]' : 'text-[var(--text-3)]'}
+                className={state.outbox.length ? 'sec-up-warn' : 'sec-up-idle-icon'}
               />
-              <span className={state.outbox.length ? 'text-[var(--warn)]' : 'text-[var(--text-2)]'}>
+              <span className={state.outbox.length ? 'sec-up-warn' : 'sec-up-idle'}>
                 {state.outbox.length ? `${state.outbox.length} 条待上传` : '没有待上传的改动'}
               </span>
             </span>

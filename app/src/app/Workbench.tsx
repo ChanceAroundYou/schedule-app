@@ -174,8 +174,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
             {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
                 时用户完全不知道为什么内容不变 */}
             {!!state.lastError && (
-              <div className="mx-4 mb-2 rounded-[var(--r-lg)] bg-[var(--danger-soft)]
-                              px-3 py-1.5 text-[12.5px] text-[var(--danger)]">
+              <div className="wb-err mx-4 mb-2 px-3 py-1.5 text-[12.5px]">
                 {state.lastError}
               </div>
             )}

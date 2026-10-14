@@ -43,7 +43,7 @@ function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
 
   return (
     <div className="jump-pop" ref={box}>
-      <div className="jp-row">
+      <div className={"jp-row"}>
         <Input
           type="text"
           value={text}

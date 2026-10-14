@@ -65,12 +65,12 @@ export function ClockBody({ value, face = FACE_POP, onChange, onMinutePick }: Cl
 
   return (
     <>
-      <div className="cp-tools">
+      <div className={"cp-tools"}>
         <button type="button" className={'cp-now' + (isNow ? ' on' : '')} onClick={now}>现在</button>
       </div>
-      <div className={'cp-face cp-' + mode} style={{ width: face + 'px', height: face + 'px' }}>
-        <i className="cp-hand" style={{ width: handLen + 'px', transform: `rotate(${ang}deg)` }} />
-        <button type="button" className={'cp-dot' + (isHour ? ' h' : ' m')} title={isHour ? '切到分钟' : '切到小时'} aria-label={isHour ? '切到分钟' : '切到小时'} onClick={() => setMode(isHour ? 'm' : 'h')}>{isHour ? '时' : '分'}</button>
+      <div className={'cp-face ' + (mode === 'h' ? "cp-h" : "cp-m")} style={{ width: face + 'px', height: face + 'px' }}>
+        <i className={"cp-hand"} style={{ width: handLen + 'px', transform: `rotate(${ang}deg)` }} />
+        <button type="button" className={'cp-dot' + (isHour ? ' h' : ' ' + "m")} title={isHour ? '切到分钟' : '切到小时'} aria-label={isHour ? '切到分钟' : '切到小时'} onClick={() => setMode(isHour ? 'm' : 'h')}>{isHour ? '时' : '分'}</button>
         {isHour ? <>{ring(R - RING_GAP, 'inner')}{ring(R, 'outer')}</> : ring(R, 'inner')}
       </div>
     </>

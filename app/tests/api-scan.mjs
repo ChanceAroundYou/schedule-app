@@ -13,13 +13,11 @@
  *      走 `SortableList` 的 `entity` prop（`ui/dnd/sortable.tsx` 自己 `reorder`），
  *      不在 views 里 import `reorder`/`commit` 那批。
  *
- * 为什么第 3 条是「只减不增」而不是「必须为零」：
- *   本项目既有的正确写法就是「调用方用 Tailwind 工具类 + CSS 变量」——
- *   CLAUDE.md 三、界面硬规则 里 `rounded-[var(--r-md)]` / `text-[var(--text-2)]`
- *   本身就是**推荐**写法，不是违规。把调用方一步清零等于重写整个 UI 层，
- *   不在第一册 S1–S7 的范围。所以这里锁的是「不许再往调用方**加**」：
- *   `CALLER_BASELINE` 是冻结的上限，要刻意新增就改这里的数字并写清理由——
- *   那等于承认 R4 又退了一步，得有人点头。
+ * 为什么第 3 条现在是「必须为零」：S7 子步 D 已把调用方（`ui/` 非 kit +
+ *   `app/` + 根）里散落的 `rounded-[var(` / `bg-[var(` / `text-[var(` /
+ *   `border-[var(` 外观工具类全部收进语义类（见 `tailwind.css` 末尾「S7 子步 D」
+ *   那一段）。`CALLER_BASELINE = 0` 是硬锁：再往调用方加一个就是 R4 退步，
+ *   得有人点头改这里的数字并写清理由。
  *
  * 外观类口径（与 plan 一致，四条轴）：`rounded-[var(` / `bg-[var(` /
  * `text-[var(` / `border-[var(`。`text-[13px]`（字号）/ `border-[length:var(…)]`
@@ -34,8 +32,8 @@ import { join } from 'node:path';
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const APPEARANCE = /\b(?:rounded|bg|text|border)-\[var\(/g;
 
-/** 调用方（`ui/` 非 kit + `app/` + 根）外观类的冻结上限。只减不增。 */
-const CALLER_BASELINE = 73;
+/** 调用方（`ui/` 非 kit + `app/` + 根）外观类的硬上限。S7 子步 D 清零后锁死为 0。 */
+const CALLER_BASELINE = 0;
 
 /** 递归收集 `dir` 下所有以 `exts` 结尾的文件 */
 function listFiles(dir, exts) {

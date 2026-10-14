@@ -1,0 +1,69 @@
+/* kit.css —— 通用表单 / 勾选 / 图标按钮样式组（第 1 册 R1：一个样式组一份 css）
+ *
+ * 从 styles/overlays.css 迁来。这些类**全是跨组共享**（.field-* 被 drawer 组的
+ * Drawer.tsx / DrawerFields.tsx 用、.check-* 被 drawer 组用、.icon-btn 被 drawer
+ * 与 shell 组的 Topbar 用），所以**全部 :global**，组件里保持裸串，探针选择器不改。
+ *
+ * ⚠️ `.time-row .tp`：TimePicker 根目前渲染的是裸串 "tp"（overlays 组
+ * 的 module 里 .tp 是 local），这条只能按字面名接住它 —— overlays 组若把
+ * TimePicker 改成 s.tp，这里要跟着改。
+ */
+
+/* ================= 勾选圈 ================= */
+
+.check-wrap { display: flex; }
+.check-wrap input { display: none; }
+.check-circle {
+  width: 20px; height: 20px; border: 2px solid var(--input); border-radius: 50%;
+  cursor: pointer; position: relative; flex: 0 0 20px;
+  transition: border-color .14s, background .14s, transform .12s;
+}
+.check-circle:hover { border-color: var(--primary); transform: scale(1.06); }
+.check-wrap input:checked + .check-circle { background: var(--primary); border-color: var(--primary); }
+.check-wrap input:checked + .check-circle::after {
+  content: ''; position: absolute; left: 6px; top: 2px;
+  width: 4px; height: 9px; border: solid var(--on-primary); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+
+/* ================= 图标按钮 ================= */
+
+.icon-btn { border: none; background: none; color: var(--text-3); font-size: 14px; padding: 5px; border-radius: var(--r-sm); transition: background .14s, color .14s; }
+.icon-btn:hover { color: var(--text); background: var(--panel-3); }
+
+/* ================= 字段行 ================= */
+
+/* 2026-10-12：margin-bottom 从 12px 增到 20px —— 行之间要看得清是两行 */
+.field-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+/* 字段**贴内容宽**，不等分（用户 2026-10-11：「时间和项目栏不应该等分，
+   而应该往那边贴，让移动端的时间即使有两格，也能放得下」）。原先
+   `.field { flex: 1 }` 把行对半切：日期那半空着，时间塞了开始–结束两个
+   按钮的那半不够用。现在每列只占自己内容的宽度；实在放不下时整行换行
+   （`flex-wrap`），两个时间按钮一起去占整行。
+   **日程集 / 项目那两个 `w-full` 下拉照样按内容收缩** —— 和抽屉里那个
+   「重复」按钮同一档，不再硬撑成半行宽。 */
+.field { flex: 0 0 auto; min-width: 0; margin-bottom: 12px; }
+.field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px; letter-spacing: .2px; }
+.field .sub { color: var(--text-3); }
+/* Field 组件的提示 / 错误行。hint 是格式示例那类常驻说明，
+   error 是校验失败 —— 有错误时顶掉提示，不同时出现。 */
+.field-hint { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
+.field-error { font-size: 11.5px; color: var(--danger); margin-top: 5px; }
+.field-inline { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+/* 输入框 / 文本域。**选择器必须覆盖所有 type** —— 原先只写了
+   [type="date"] / [type="time"]，于是 `.field` 里的 text / number / password
+   三个都是没样式的原生控件（系统灰边、不跟深色模式、没有圆角），而同一行
+   旁边的 textarea 是设计过的 —— 一个浮层里两种视觉。
+   勾选框除外：它们有自己的命中区与勾选圈，套上输入框的边框会变形。
+   数字与字号显式写上：原生 input 不总是继承父级的 color / font-size。 */
+.field input:not([type="checkbox"]):not([type="radio"]), .field textarea {
+  width: 100%; padding: 8px 10px; border: var(--border-w) solid var(--input);
+  border-radius: var(--r-md); background: var(--panel-2); outline: none;
+  color: var(--text); font-size: 13px;
+  transition: border-color .14s, background .14s;
+}
+.field-inline input[type="date"], .field-inline input[type="time"] { width: auto; flex: 1; min-width: 112px; }
+.field textarea { resize: vertical; line-height: 1.6; }
+.field input:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); }
+.time-row { display: flex; align-items: center; gap: 6px; }
+.time-row .tp { min-width: 0; }
+.time-sep { color: var(--text-3); font-size: 13px; }

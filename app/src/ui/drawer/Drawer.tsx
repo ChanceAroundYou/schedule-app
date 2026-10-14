@@ -99,7 +99,7 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
           </IconBtn>
         </div>
 
-        <div className="drawer-body osb" ref={osbBody}>
+        <div className={"drawer-body" + ' osb'} ref={osbBody}>
           <ConflictBox
             list={state.conflicts.filter((c) => c.entityId === task.id)}
             onDismiss={(field: string) => onDismissConflict(task.id, field)}
@@ -129,10 +129,10 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
               aria-labelledby={fid + '-rep-l'}
               onClick={() => setRepOpen(true)}
             >
-              <span className="rep-label">{repLabel}</span>
+              <span className={"rep-label"}>{repLabel}</span>
               {rep.unit !== 'none' && (
                 <span
-                  className="rep-x"
+                  className={"rep-x"}
                   aria-label="清除重复"
                   onClick={(e) => {
                     e.stopPropagation();

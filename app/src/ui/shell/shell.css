@@ -1,3 +1,24 @@
+/* shell.css —— 顶栏 / 侧栏 / 底栏 / 找日期 / 搜索（第 1 册 R1：一个样式组一份 css）
+ *
+ * 从 styles/shell.css 迁来。类分两档：
+ *   · local（默认）：单宿主、非探针、非状态、非跨组 → 哈希，组件走 `s.xxx`。
+ *     本组只有少数几条：.brand-* / .nav / .nav-bottom / .label / .count / .tip /
+ *     .side-more / .jump-wrap / .jb-ico / .jp-row / .search-slot-field / .search-toggle。
+ *   · ：探针选中的业务根类（.topbar/.sidebar/.tabbar/.nav-item/.cal-menu-btn/
+ *     .cal-menu-pop/.view-switch/.jump-pop/.more-sheet/.search-slot/.search-ico/
+ *     .clear-search/.sync-dot/.date-nav/.side-more-pop/.tab/.jp-bad/.cal-subhead）、
+ *     状态后缀（.active/.on/.open/.has-kw/.warn/.out/.today/.cur/.has/.lv2/.lv3/
+ *     .all-done）、跨组引用（.jp-* 被 overlays 的 DatePicker 与 quick-add 的
+ *     RepeatPop 引用；.btn/.icon-btn 属 kit 组；.ico 被探针选中）、
+ *     被 responsive.css 全局规则引用的类（.app/.main/.topbar-left/.topbar-right/
+ *     .view-title/.date-range/.ghost-btn/.sidebar-footer/.search-box/.ti/.tn/.tb）、
+ *     以及组内别的组件（Pulse.tsx 的 .side-pulse/.sp-*、CalMenu.tsx 的 .cal-menu）
+ *     仍按裸串引用的类。这些保持字面名不哈希 —— 探针选择器一个字不改，cascade 顺序不变。
+ *
+ * 归别组（本文件不定义）：.ms-* / .sheet-mask → responsive.css；.btn/.icon-btn → kit 组；
+ * .day-panel/.month-cell/.week-* → calendar 组；.mc → lists 组。
+ */
+
 .app { display: flex; height: 100vh; overflow: hidden; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
@@ -58,7 +79,7 @@
 .nav-item.active .count.warn { background: var(--danger); color: var(--on-primary); }
 .nav-bottom { margin-top: auto; }
 
-/* 今日进度 */
+/* 今日进度（Pulse.tsx 按裸串引用，本组内跨文件 → 不哈希） */
 .side-pulse {
   margin: 14px 0 2px; padding: 11px 13px;
   background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);

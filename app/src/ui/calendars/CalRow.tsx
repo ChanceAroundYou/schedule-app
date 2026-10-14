@@ -25,10 +25,10 @@ export function CalRow({ c, on }: { c: Cal; on: boolean }) {
       onClick={() => store.toggleCal(c.id)}
       aria-pressed={on}
       className={
-        'flex items-center gap-2 rounded-[var(--r-md)] px-3 py-1.5 text-left text-[13px] transition '
+        'flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition '
         + (on
-          ? 'bg-[var(--primary-soft)] font-medium text-[var(--primary)]'
-          : 'text-[var(--text-3)] hover:bg-[var(--panel-3)] hover:text-[var(--text-2)]')
+          ? 'calrow-row calrow-row-on font-medium'
+          : 'calrow-row calrow-row-off')
       }
     >
       {/* 勾选圈走 CheckBtn 那套（命中区 ≥24，视觉不变），见 views/parts.tsx。
@@ -37,7 +37,7 @@ export function CalRow({ c, on }: { c: Cal; on: boolean }) {
       <span className={'check-btn' + (on ? ' on' : '')} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
       {c.role !== 'owner' && (
-        <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel-3)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+        <span className="shrink-0 px-1.5 py-px text-[10.5px] calrow-chip">
           {ROLE_LABEL[c.role]}
         </span>
       )}

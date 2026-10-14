@@ -1,0 +1,240 @@
+/* quick-add.css —— 快速添加 + 日期时间面板 + 重复面板 样式组（第 1 册 R1）
+ *
+ * 从 styles/quick-add.css 全文 + styles/overlays.css 的 .rp-* 段迁来。类分两档：
+ *   · local（默认）：单宿主、非探针、非状态、非跨组 → 哈希，组件走 `s.xxx`。
+ *   · ：探针选中的业务根类（.fast-add/.fast-add-shell/.fast-clock/.fast-fab/
+ *     .when-pop/.wp-*、.cp-face/.cp-dot/.cp-num/.cp-now/.repeat-pop）、状态后缀
+ *     （.open/.closing/.on/.rp-month）、跨组引用（.fast-hint/.fast-save 被 responsive.css
+ *     用、.dp-nav-btn 属 overlays 组、.jp-cell/.jp-grid/.jp-head/.jp-nav 属 shell 组）。
+ *     这些保持字面名不哈希 —— 探针选择器一个字不改，cascade 顺序不变。
+ *
+ * 共享 @keyframes（fadeUp/fastPop/fastPopOut）被 shell、responsive 跨组引用，
+ * 放在全局 responsive.css（不进 module，避免被 scope 改名）。
+ */
+
+/* ================= 快速添加横条 ================= */
+
+.fast-add {
+  margin: 6px 22px 18px;
+  z-index: 100;
+}
+.fast-add-shell {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 16px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  transition: border-color .16s, box-shadow .16s;
+  transform-origin: calc(100% - 37px) center;
+}
+.fast-add:focus-within .fast-add-shell { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
+.fast-add:not(.open) .fast-add-shell { display: none; }
+
+.fast-add-body { flex: 1; }
+.fast-add textarea {
+  width: 100%; min-width: 140px; border: none; outline: none; background: none; box-shadow: none;
+  font: inherit; font-size: 13px; line-height: 1.35;
+  padding: 0; margin: 0; resize: none; overflow-y: auto;
+  height: calc(2 * 1.35em);
+}
+.fast-hint { font-size: 11px; color: var(--text-3); }
+
+.fast-side {
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+.fast-clock {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px;
+  border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
+  border-radius: var(--r-md); padding: 0 9px; font-size: 13px; line-height: 1;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.fast-clock:hover { border-color: var(--primary); color: var(--primary); }
+.fast-clock.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+
+.fast-save {
+  display: flex; align-items: center; justify-content: center;
+  height: 30px; padding: 0 10px;
+  border: var(--border-w) solid var(--primary); background: var(--primary);
+  color: var(--on-primary); border-radius: var(--r-md);
+  line-height: 1; font-weight: 600;
+  transition: filter .14s, background .14s, border-color .14s, color .14s;
+}
+.fast-save:hover:not(:disabled) { filter: brightness(1.06); }
+.fast-save:disabled { background: var(--panel-2); border-color: var(--border); color: var(--text-3); }
+
+.fc-when { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.05; }
+.fc-when .fc-d, .fc-when .fc-t {
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+
+/* 共享 @keyframes（fadeUp/fastPop/fastPopOut）在全局 responsive.css，见该文件。 */
+
+/* ================= 快速添加的圆钮（窄屏，在横条内） ================= */
+
+.fast-fab {
+  position: absolute; right: 13px; bottom: 18px;
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border: none; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary);
+  box-shadow: var(--shadow-lg);
+  transition: transform .16s, background .16s;
+}
+.fast-fab:hover { filter: brightness(1.06); }
+.fast-fab:active { transform: scale(.94); }
+.fast-fab.open {
+  background: var(--panel); color: var(--primary);
+  border: var(--border-w) solid var(--primary); box-shadow: var(--shadow);
+}
+.fast-fab.open:hover { filter: none; background: var(--primary-soft); }
+
+/* ================= 快速添加的「日期 + 时间」面板 ================= */
+
+.when-pop {
+  position: fixed; z-index: 70;
+  width: 268px; padding: 8px;
+  background: var(--panel); border: var(--border-w) solid var(--input);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: fadeUp .14s ease;
+}
+
+.wp-row {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  border-radius: var(--r-md); transition: background .14s;
+}
+.wp-head:hover, .wp-row.open { background: var(--panel-2); }
+.wp-head {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  padding: 7px 4px 7px 8px; border: none; border-radius: var(--r-md);
+  background: none; color: var(--text); font-size: 12.5px; text-align: left;
+}
+.wp-k { flex: 0 0 auto; color: var(--text-3); }
+.wp-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wp-v.none { font-weight: 400; color: var(--text-3); }
+
+.wp-cv {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  padding: 5px 6px; border: none; border-radius: var(--r-sm);
+  background: none; color: var(--text-3);
+  transition: transform .16s, color .14s;
+}
+.wp-cv:hover { color: var(--primary); }
+.wp-row.open .wp-cv { transform: rotate(180deg); }
+
+.wp-act {
+  flex: 0 0 auto; min-width: 44px;
+  padding: 5px 8px; border: none; border-radius: var(--r-sm);
+  background: none; color: var(--text-3); font-size: 11.5px;
+  transition: background .14s, color .14s;
+}
+.wp-act:hover { background: var(--panel-3); color: var(--primary); }
+
+.wp-body { padding: 0 8px 8px; animation: fadeUp .14s ease; border-top: 1px solid var(--border); }
+.wp-body .jp-head { margin: 6px 0; }
+
+/* 面板里那只表盘比抽屉里的小一号 */
+.wp-clock .cp-num { width: 23px; height: 23px; font-size: 10.5px; }
+.wp-clock .cp-ap { padding: 3px 13px; }
+.wp-clock .cp-now { padding: 3px 13px; font-size: 11px; }
+
+/* ================= 表盘（ClockBody） ================= */
+
+.cp-tools { display: flex; justify-content: center; margin: 8px 0; }
+.cp-face {
+  position: relative; width: 246px; height: 246px; margin: 0 auto;
+  border-radius: 50%; background: var(--panel-2); border: var(--border-w) solid var(--border);
+}
+.cp-face.cp-h { background: var(--panel-2); }
+.cp-face.cp-m { background: var(--panel-2); }
+.cp-hand {
+  position: absolute; left: 50%; top: 50%; margin-top: -0.5px; height: 1px;
+  background: var(--primary); transform-origin: left center; border-radius: var(--r-xs);
+  transition: transform .18s cubic-bezier(.3, .8, .3, 1);
+}
+.cp-dot {
+  position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+  margin: -13px 0 0 -13px; padding: 0;
+  border: none; border-radius: 50%;
+  background: var(--panel-3); color: var(--text-3);
+  font-size: 10.5px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.cp-dot:hover { background: var(--primary-soft); color: var(--primary); }
+.cp-dot.m { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-num {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 25px; height: 25px; padding: 0; border: none; border-radius: 50%;
+  background: none; color: var(--text-2); font-size: 11px; line-height: 1;
+  transition: background .14s, color .14s;
+}
+.cp-num.on { background: var(--primary); color: var(--on-primary); box-shadow: 0 2px 8px rgb(from var(--primary) r g b / .35); }
+
+.cp-now {
+  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  padding: 4px 16px;
+  border: none; border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text-2); font-size: 12px;
+  white-space: nowrap;
+  transition: background .14s, color .14s;
+}
+.cp-now:hover { background: var(--panel-3); color: var(--primary); }
+.cp-now.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cp-now.on:hover { background: var(--primary); color: var(--on-primary); }
+
+/* ================= 重复规则面板 ================= */
+
+.repeat-panel {
+  margin-top: 12px;
+}
+.rp-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.rp-row input[type="number"] {
+  padding: 6px 9px; border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
+  background: var(--panel-2); outline: none; font-size: 13px; color: var(--text);
+  transition: border-color .14s;
+}
+.rp-row input:focus { border-color: var(--primary); }
+.rp-preview { font-size: 12px; color: var(--primary); }
+
+/* 装着 .jp-grid 的那一行必须自己占满整宽 */
+.rp-row:has(> .jp-grid) { display: block; }
+
+.rp-day {
+  width: 32px; height: 32px; border: var(--border-w) solid var(--input); border-radius: 50%;
+  background: var(--panel-2); color: var(--text-2); font-size: 12px;
+  transition: border-color .14s, background .14s, color .14s;
+}
+.rp-day:hover { border-color: var(--primary); color: var(--primary); }
+.rp-day.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+
+.rp-month-label { font-size: 13px; color: var(--text); min-width: 40px; text-align: center; }
+
+/* ---- 重复面板：每 [n] [单位]（原 overlays.css .rp-* 段） ---- */
+
+.rp-every { flex: 0 0 auto; color: var(--text-2); font-size: 13px; }
+/* 两个数字框共用一条。选择器带 .repeat-pop 前缀（0,2,1），排在 .rp-row input[type=number]
+   （0,2,1）之后 —— 同特异度下后写的赢，rp-n 的 padding / border-radius 才盖得住。 */
+.repeat-pop input.rp-n,
+.repeat-pop input.rp-count {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-md);
+  background: var(--panel-2); outline: none;
+  color: var(--text); font-size: 13px; line-height: 1.5;
+  transition: border-color .14s, background .14s, box-shadow .14s;
+}
+.repeat-pop input.rp-n { width: 64px; }
+.repeat-pop input.rp-count { width: 56px; }
+.repeat-pop input.rp-n:focus,
+.repeat-pop input.rp-count:focus {
+  border-color: var(--primary); background: var(--panel);
+  box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md);
+}
+.rp-unit { flex: 1; min-width: 0; }
+.rp-unit button { width: 100%; }
+.rp-row .jp-cell { height: 32px; }
+/* 月 / 年的选中态：实心主色 + 白字（和日期浮层同一套） */
+.repeat-pop .jp-cell.cur { background: var(--primary); color: var(--on-primary); font-weight: 550; }
+.repeat-pop .jp-cell.cur::after { display: none; }
+/* 年份那一排的月份切换：两个箭头贴面板两侧 */
+.rp-row.rp-month { justify-content: space-between; }

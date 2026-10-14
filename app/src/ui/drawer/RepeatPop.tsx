@@ -60,7 +60,7 @@ export function RepeatPop({ rep, patch, next, last }: {
   return (
     <>
       <div className="rp-row">
-        <span className="rp-every">每</span>
+        <span className={"rp-every"}>每</span>
         <input
           type="number"
           min={1}
@@ -93,7 +93,7 @@ export function RepeatPop({ rep, patch, next, last }: {
             patch(next);
           }}
           label="重复单位"
-          className="rp-unit"
+          className={"rp-unit"}
           /* `size="sm"` → `h-[30px]`：跟这一排的数字框、下面那排 Chips 严格同高。
              默认的 `md` 走 Tailwind `h-9`，而本项目 `html { font-size: 14px }`
              让 1rem = 14px，`h-9` 实际是 31.5px —— 比 neighbor 高 1.5px。 */
@@ -106,7 +106,7 @@ export function RepeatPop({ rep, patch, next, last }: {
       </div>
 
       {unit === 'week' && (
-        <div className="rp-row rp-wd">
+        <div className={'rp-row' + ' rp-wd'}>
           {['一', '二', '三', '四', '五', '六', '日'].map((w, i) => {
             const v = i === 6 ? 0 : i + 1;
             const on = rep.weekdays.includes(v);
@@ -132,7 +132,7 @@ export function RepeatPop({ rep, patch, next, last }: {
 
       {unit === 'year' && (
         <>
-          <div className="rp-row rp-month">
+          <div className={'rp-row' + ' rp-month'}>
             <button className="dp-nav-btn" type="button" aria-label="上个月" onClick={() => patch({ yearMonth: (rep.yearMonth || 1) <= 1 ? 12 : (rep.yearMonth || 1) - 1 })}>
               <ChevronLeft size={14} />
             </button>
@@ -185,7 +185,7 @@ export function RepeatPop({ rep, patch, next, last }: {
       )}
 
       {unit !== 'none' && (
-        <div className="rp-preview">
+        <div className={"rp-preview"}>
           {next && <div>下一次：{D.fmtSmart(next)}</div>}
           {last && <div>最后一次：{D.fmtSmart(last)}</div>}
           {rep.end && !last && <div>已无后续</div>}

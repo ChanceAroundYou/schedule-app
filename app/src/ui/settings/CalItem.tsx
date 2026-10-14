@@ -121,7 +121,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
           所以展开 / 收起改由**最右边那个箭头**独家负责，它才是真的折叠开关，
           `aria-expanded` 也归它。 */}
       <div
-        className="flex h-[40px] items-center gap-2 rounded-[var(--r-md)] bg-[var(--panel-3)] pl-3 pr-2 transition hover:brightness-95"
+        className="ci-row flex h-[40px] items-center gap-2 pl-3 pr-2 transition hover:brightness-95"
       >
         {/* —— 名称区 + 操作区 ——
             InlineRename 左边是名称区、右边那固定 52px 是操作区：
@@ -152,13 +152,13 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
                换掉，星标和角色徽标自动隐藏，不用在外面再判一次 `editing`，
                也就不会出现「名字已经是输入框了，星标还杵在旁边」的错位。 */
             <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
-              <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium text-[var(--primary)]' : 'text-[var(--text-2)]')}>
+              <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium ci-name-active' : 'ci-name-idle')}>
                 {cal.name}
               </span>
               {/* 星标 = 默认日程集。传 `aria-pressed` 不传 `disabled`：它是显示状态
                   的标记，禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。
                   「选中变主色」走 `tone="primary"` **prop** —— 叠 `className` 会被
-                  基类的 `text-[var(--text-3)]` 按生成顺序压掉（实测过）。 */}
+                  基类的 `--text-3` 文字色按生成顺序压掉（实测过）。 */}
               <MiniIconBtn
                 label={isDefault ? '默认日程集' : '设为默认日程集'}
                 aria-pressed={isDefault}
@@ -172,7 +172,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
                 <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
               </MiniIconBtn>
               {cal.role !== 'owner' && (
-                <span className="shrink-0 rounded-[var(--r-xs)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] text-[var(--text-3)]">
+                <span className="ci-role shrink-0 px-1.5 py-px text-[10.5px]">
                   {ROLE_LABEL[cal.role]}
                 </span>
               )}
@@ -189,7 +189,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
           data-cal-item={cal.id}
           onClick={onToggle}
         >
-          <ChevronDown size={13} className={cx('shrink-0 text-[var(--text-3)] transition', open && 'rotate-180')} />
+          <ChevronDown size={13} className={cx('ci-chevron shrink-0 transition', open && 'rotate-180')} />
         </MiniIconBtn>
       </div>
 
@@ -225,7 +225,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
               那不是删集，是退掉一段关系，和「删除」不是一件事。
               和设置页别处的危险操作走同一个 variant，不再手写一套「红字 + hover 淡红底」。 */}
           {!manage && (
-            <div className="border-t-[length:var(--border-w)] border-[var(--border)] pt-3.5">
+            <div className="ci-danger border-t-[length:var(--border-w)] pt-3.5">
               <Field label="危险区">
                 <Row>
                   <Btn variant="danger" size="sm" onClick={() => void leave()}>
@@ -233,7 +233,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
                   </Btn>
                 </Row>
                 {mine === 'viewer' && (
-                  <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] text-[var(--text-3)]">
+                  <div className="ci-hint mt-1.5 flex items-start gap-1.5 text-[11.5px]">
                     <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                     <span>你是只读成员，改不了里面的内容。</span>
                   </div>

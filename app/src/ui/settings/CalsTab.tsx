@@ -50,7 +50,7 @@ function DayWindowCard({ ui }: { ui: LocalState['ui'] }) {
             options={HOUR_OPTIONS}
             onPick={(h) => store.setUi({ dayFrom: h })}
           />
-          <span className="text-[12.5px] text-[var(--text-2)]">到</span>
+          <span className="text-[12.5px] caltab-to">到</span>
           <Dropdown
             value={ui.dayTo}
             label="时间窗到几点结束"

@@ -149,8 +149,8 @@ export function WhenPop({
           data-layer={key}
           onClick={toggle}
         >
-          <span className="wp-k">{label}</span>
-          <span className={'wp-v' + (value ? '' : ' none')}>{value ? text : '未设置'}</span>
+          <span className={"wp-k"}>{label}</span>
+          <span className={'wp-v' + (value ? '' : ' ' + "none")}>{value ? text : '未设置'}</span>
         </button>
         {/* 「清空 / 跳过」在**箭头左边**（需求 6）：动作排在开合前面 */}
         <button className="wp-act" type="button" onClick={act.run}>{act.label}</button>
