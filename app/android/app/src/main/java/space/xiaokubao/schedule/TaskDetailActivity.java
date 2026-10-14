@@ -9,8 +9,8 @@ import android.content.DialogInterface;
 import android.os.Bundle;
 import android.view.Window;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -87,10 +87,15 @@ public class TaskDetailActivity extends Activity {
         startBtn = findViewById(R.id.d_start);
         endBtn = findViewById(R.id.d_end);
         durHint = findViewById(R.id.d_durhint);
-        CheckBox doneBox = findViewById(R.id.d_done);
+        // 完成勾选框是 **ImageView**（不是 CheckBox）—— CheckBox 会把方框
+        // 拉成长方形。ImageView 尺寸即正方形，这里自己换图。
+        ImageView doneBox = findViewById(R.id.d_done);
         pendingDone = found.done;
-        doneBox.setChecked(found.done);
-        doneBox.setOnCheckedChangeListener((v, checked) -> pendingDone = checked);
+        doneBox.setImageResource(found.done ? R.drawable.ic_check_on : R.drawable.ic_check_off);
+        doneBox.setOnClickListener(v -> {
+            pendingDone = !pendingDone;
+            doneBox.setImageResource(pendingDone ? R.drawable.ic_check_on : R.drawable.ic_check_off);
+        });
 
         titleBox.setText(found.title);
         titleBox.setSelection(found.title.length());

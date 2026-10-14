@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  弹框配色。跟小组件同一套绿（见 widget_task_bg / widget_habit_bg）。
+
+  ⚠️ 之前**没有**这个文件 —— styles.xml 里的 @color/colorPrimary 等是
+  capacitor-android 库带进来的。现在补上弹框自己的一组，浅色选择器要用。
+-->
+<resources>
+    <!-- 主绿：与小组件未完成态同一色系 -->
+    <color name="dialogGreen">#27795A</color>
+    <color name="dialogGreenDark">#1B3A2A</color>
+
+    <!-- 输入框底：极浅的绿灰白，不是纯灰（用户：不要灰色的调子） -->
+    <color name="dialogField">#F4FAF6</color>
+</resources>
