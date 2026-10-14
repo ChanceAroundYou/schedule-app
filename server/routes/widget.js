@@ -88,6 +88,15 @@ function widgetView(userId) {
       dur: typeof t.duration === 'number' ? t.duration : 0,
       title: typeof t.title === 'string' ? t.title : '',
       done: t.done === true,
+      // ⚠️ **repeat / reminder 必须带**（2026-10-14 补）。
+      // 小组件的编辑弹窗要显示「重复：每周三」「提醒：08:30」，而它的数据
+      // 全部来自这里的 widgetView —— 早先没带这两个字段，表现是：
+      //   · 小组件里改了重复 → 本地乐观改了，但 op 落地后按这个视图回写，
+      //     repeat 不在视图里 → **本地那份被抹掉**，看起来「改了存不住」；
+      //   · 小组件上给任务设了重复/提醒的任务，重新 bootstrap 后又变回没有。
+      // 服务端本来就是按字段名存的（sync.js 无字段白名单），所以只是漏带。
+      repeat: t.repeat == null ? null : t.repeat,
+      reminder: t.reminder == null ? null : t.reminder,
     });
   }
   tasks.sort((a, b) => (a.date + (a.time || 'zzzz')).localeCompare(b.date + (b.time || 'zzzz')));

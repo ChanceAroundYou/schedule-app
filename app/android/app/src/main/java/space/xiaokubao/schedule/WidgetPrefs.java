@@ -248,9 +248,26 @@ class WidgetPrefs {
                 for (int i = 0; i < dst.length(); i++) {
                     JSONObject e = dst.optJSONObject(i);
                     if (e != null && id.equals(e.optString("id"))) {
-                        // 整条换成服务端的（含 id 本身），本地那份可能带着
-                        // 乐观猜出来的 streak / doneAt，以服务端为准
-                        dst.put(i, new JSONObject(srv.toString()));
+                        // **逐字段覆盖**，不是整条替换。
+                        //
+                        // 2026-10-14：整条换掉时，凡是**服务端视图没带的字段**
+                        // 都会被抹掉 —— 小组件的编辑弹窗刚改了 repeat / reminder，
+                        // op 落地后拿服务端视图一回写，就因为视图里没有这两个字段
+                        // 而「改了存不住」。服务端现已带上它们（routes/widget.js），
+                        // 这里再逐字段合并兜一层：只覆盖服务端**明确给了**的键，
+                        // 其余保留本地那份。
+                        //
+                        // 服务端明确给 null 的（如 time:null）仍以 null 落进来，
+                        // 因为 names() 会带上这个键 —— 该清的还是会清。
+                        JSONObject merged = new JSONObject(e.toString());
+                        JSONArray names = srv.names();
+                        if (names != null) {
+                            for (int k = 0; k < names.length(); k++) {
+                                String key = names.getString(k);
+                                merged.put(key, srv.get(key));
+                            }
+                        }
+                        dst.put(i, merged);
                         break;
                     }
                 }
