@@ -82,6 +82,20 @@ function push(ops, cursor = 1, token = dad.token) {
   return api('POST', '/api/sync', { token, body: { cursor, ops } });
 }
 
+/**
+ * **本地**的 yyyy-MM-dd。
+ *
+ * ⚠️ 别用 `new Date().toISOString().slice(0, 10)` —— 那是 **UTC** 日期。
+ * 服务端的「今天」（serverToday / widgetView 的 today）用的是**本地**日期，
+ * 于是每天本地 00:00–08:00（UTC+8 就是 00:00–08:00）这段时间里，
+ * 两者会差一天，这条断言每天早上都红一次。踩过一次。
+ */
+function localDay(offsetDays = 0) {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  const p = (n) => (n < 10 ? '0' + n : '' + n);
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** 时间戳基准。用例里的 ts 都是相对它的偏移，写成 1000/2000 比一堆 17xxxxxxxxxxx 好读。 */
 const NOW = Date.now();
 const HOUR = 3600 * 1000;
@@ -828,8 +842,8 @@ test('小组件 bootstrap：未登录进不来，登录后返回快照形状', a
   assert.strictEqual(relogin.status, 200, JSON.stringify(relogin.body));
   dad.token = relogin.body.token;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const far = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+  const todayIso = localDay();
+  const far = localDay(60);
   await push([
     op('wt-in', { title: '窗口内的事', date: todayIso, time: '09:00', done: false }, 0, 'd1'),
     op('wt-out', { title: '窗口外的事', date: far, time: null }, 0, 'd1'),
@@ -850,7 +864,7 @@ test('小组件 bootstrap：未登录进不来，登录后返回快照形状', a
 });
 
 test('小组件 op：勾完成真的落库，@new 由服务端发 id', async () => {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localDay();
   await push([
     op('wt-t1', { title: '待勾的事', date: todayIso, time: '10:00', done: false }, 0, 'd1'),
   ], 1);
@@ -880,7 +894,7 @@ test('小组件 op：只读成员写不进去（权限没被绕开）', async ()
   // 最关键的一条：这个接口自己**不做**权限判断，全靠 applyOps。
   // 哪天有人图省事在这里直接写库，这条会红。
   const viewer = await registerUser('小组件观群员', 'widget-viewer-1');
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localDay();
   await push([
     op('wt-v1', { title: '群主的任务', date: todayIso, time: '08:00', done: false }, 0, 'd1'),
   ], 1);

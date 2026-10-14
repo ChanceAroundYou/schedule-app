@@ -95,14 +95,26 @@ function registerShell(): void {
 /**
  * 量一次系统栏占位并写进 CSS 变量（`--sat` 等）。
  *
- * **必须在第一次渲染之前量**：晚一步的话首帧是没内边距的，顶栏会先贴着
- * 状态栏画出来、再往下跳一段 —— 那一下子比一直没内边距还显眼。
+ * ⚠️ **绝不能 await 它再首屏渲染**（2026-10-14，用户报「整个 App 卡在开屏页
+ * 不能操作」时挖出来的）。
  *
- * 转屏 / 从后台回来都要重新量：折叠屏展开、横竖屏切换后系统栏高度会变，
- * 不重量就会留着上一次的旧值（横屏时状态栏更矮，那几像素就白给了）。
+ * 早先的写法是 `await applySafeAreaInsets()` 然后才 `createRoot().render()`，
+ * 理由是「晚一步首帧就没内边距，顶栏会先贴着状态栏画出来再跳一下」。
+ * 那个理由是假的，代价是真的：
+ *
+ *   插件调用要经 Capacitor 的桥。桥还没就绪时（冷启动那一刻很常见），
+ *   这次调用会在渲染进程里**同步阻塞**等原生回应 —— 原生那边收不到就永远
+ *   不回。于是：**首屏永远不画**，系统开屏一直挂着，用户点不动；
+ *   连 DevTools 的 `Runtime.evaluate` 都会超时（主线程被占死）。
+ *
+ * 关键点：**JS 的超时救不了同步阻塞**（线程被占住，定时器根本不跑），
+ * 所以唯一的办法就是**不让它挡在首屏前面**。安全区只是几个像素的内边距，
+ * 晚一帧补上最多是一次几乎看不出来的轻微位移；而卡住是「整个 App 报废」。
+ *
+ * 转屏 / 从后台回来仍要重量：折叠屏展开、横竖屏切换后系统栏高度会变。
  */
-async function watchSafeArea(): Promise<void> {
-  await applySafeAreaInsets();
+function watchSafeArea(): void {
+  void applySafeAreaInsets();
   window.addEventListener('resize', () => { void applySafeAreaInsets(); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void applySafeAreaInsets();
@@ -114,7 +126,7 @@ async function boot(): Promise<void> {
   if (reloading) return;
 
   registerShell();
-  await watchSafeArea();
+  watchSafeArea();          // 不 await：见上面那段，别挡首屏
 
   const el = document.getElementById('root');
   if (!el) throw new Error('#root 不存在');
