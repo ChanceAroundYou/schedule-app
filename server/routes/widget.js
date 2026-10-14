@@ -97,6 +97,13 @@ function widgetView(userId) {
       // 服务端本来就是按字段名存的（sync.js 无字段白名单），所以只是漏带。
       repeat: t.repeat == null ? null : t.repeat,
       reminder: t.reminder == null ? null : t.reminder,
+      /* repeatUntil：这个重复系列已经结束的那一天（不含）。2026-10-14 加。
+         原生侧 RepeatSpawn 补窗口时必须看它 —— 不带的话，一个「已结束」的系列
+         （根还活着、repeat 还在、结束日之后的实例都被删了）会被判定成
+         「窗口不足」而反复补齐，而 App 那边又按同一个标记把它们删掉，
+         两边乒乓不停，把 refresh 递归成主线程死循环（症状：App 卡在开屏页）。
+         跟 repeat / reminder 同理：字段按名字存在，服务端没有白名单。 */
+      repeatUntil: t.repeatUntil == null ? null : t.repeatUntil,
     });
   }
   tasks.sort((a, b) => (a.date + (a.time || 'zzzz')).localeCompare(b.date + (b.time || 'zzzz')));

@@ -86,6 +86,71 @@ function validateOp(op, now) {
  *   客户端据此把它们从发件箱里划掉。落败的字段会以对方的版本出现在本次
  *   响应附带拉取的 changes 里，客户端应用后自然收敛。
  */
+/**
+ * `repeatUntil` 的级联清理：把该系列在**结束日及以后**的实例标记删除。
+ *
+ * ## 为什么这件事必须由服务端做（2026-10-14 实测发现）
+ *
+ * 「从这次起往后全部」原本是发起端自己遍历**它手里的**实例去删的。问题在于
+ * 发起端只知道它看得见的那一部分：
+ *
+ *   · 小组件拿到的是「今天 ±45 天」的快照，而这个快照是**上次同步时的**；
+ *   · 同时 App 那边还在滚预生成窗口，会补出更远的实例。
+ *
+ * 实机验证就撞上了：小组件删掉了 10-16 起的实例，可 10-28 之后又冒出来 18 条
+ * —— 谁都没写错，合起来就是「删不干净」。而且客户端啥时候再同步是不确定的，
+ * 光靠「另一端下次同步时会自己清」不能保证收敛。
+ *
+ * 现在改成：**客户端只负责落标记**（root.repeatUntil = 结束日），服务端按标记
+ * 广播删除。所有端（含以后新加入的设备）都通过普通增量同步拿到同一结果，
+ * 不再依赖任何时序假设。
+ *
+ * 幂等：已经 deleted 的实例 `putField` 不会胜出 → 不记流水、重复调用无副作用。
+ */
+function cascadeRepeatUntil(terms, now) {
+  const SERVER_DEVICE = 'server';
+  const calIds = [...new Set(terms.map((t) => t.calId))];
+  const rows = db.allFields(calIds);
+
+  /** entity_id -> seriesId */
+  const seriesOf = new Map();
+  /** entity_id -> date */
+  const dateOf = new Map();
+  /** 已经删掉的，跳过 */
+  const gone = new Set();
+  for (const r of rows) {
+    if (r.entity !== 'task') continue;
+    if (r.field === 'seriesId') seriesOf.set(r.entity_id, safeParse(r.value));
+    else if (r.field === 'date') dateOf.set(r.entity_id, safeParse(r.value));
+    else if (r.field === 'deleted' && r.value === 'true') gone.add(r.entity_id);
+  }
+
+  const mark = (calId, id, field, json) => {
+    if (db.putField(calId, 'task', id, field, json, now, SERVER_DEVICE) > 0) {
+      db.appendChange(calId, 'task', id, field, json, now, SERVER_DEVICE);
+    }
+  };
+
+  for (const { seriesId, until, calId } of terms) {
+    // 客户端可能传 null（把标记撤掉）—— 那时没有要清的
+    if (typeof until !== 'string' || !until) continue;
+    /** 属于这个系列的所有 id（含系列根本身） */
+    const ids = new Set([seriesId]);
+    for (const [id, sid] of seriesOf) {
+      if (sid === seriesId) ids.add(id);
+    }
+    for (const id of ids) {
+      if (gone.has(id)) continue;
+      const d = dateOf.get(id);
+      // 没有日期的（待办箱那种）不属于「某一天的重复」，跳过
+      if (typeof d !== 'string' || d < until) continue;
+      mark(calId, id, 'deleted', 'true');
+      mark(calId, id, 'deletedAt', String(now));
+      gone.add(id);
+    }
+  }
+}
+
 function applyOps(userId, ops) {
   const applied = [];
   const rejected = [];
@@ -98,6 +163,8 @@ function applyOps(userId, ops) {
   }
 
   const now = Date.now();
+  /** 这一批里落下 repeatUntil 的系列（循环结束后统一级联清理） */
+  const terms = [];
   // 一批 op 往往集中在同一个集上，缓存一下别每条都查库。
   // 存的是「角色或 null」，null 也要缓存，否则被刷 id 时每次都查。
   const roleCache = new Map();
@@ -132,8 +199,16 @@ function applyOps(userId, ops) {
           db.appendChange(raw.calId, raw.entity, raw.entityId, field, json, ts, raw.deviceId);
         }
       }
+      /* 「从这次起往后全部」：客户端只落一个 repeatUntil 标记，**清理由服务端做**
+         （见 cascadeRepeatUntil 的说明）。先把这些系列记下来，循环结束后统一处理 ——
+         同一批里可能有多个系列，合并成一次扫描。 */
+      if (raw.entity === 'task' && Object.prototype.hasOwnProperty.call(raw.fields, 'repeatUntil')) {
+        terms.push({ seriesId: raw.entityId, until: raw.fields.repeatUntil, calId: raw.calId });
+      }
       applied.push(raw.opId);
     }
+
+    if (terms.length) cascadeRepeatUntil(terms, now);
   });
 
   return { applied, rejected };
