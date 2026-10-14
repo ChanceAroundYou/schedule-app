@@ -4,8 +4,8 @@
 
   2026-10-14 收紧凑（用户要求跟设置弹框一个密度）：
   · 286dp → **252dp**，内边距 14 → **12dp**，字号各降一档，行距收紧
-  · 底排由「删除 / 关闭 / 保存」→ **[完成|未完成] [保存] [删除]**；
-    去掉「关闭」，改成点弹框外部 / 返回键关闭
+  · **「完成」独立成左侧勾选框**（`d_done`，小方块 + 勾），不再和保存/删除并列；
+    底排只剩 **[保存] [删除]**；去掉「关闭」，点弹框外部 / 返回键关闭
   · **日期可编辑**（`d_date` 点了弹日历选择器）
 
   日期只显示「落到哪天」这个事实本身，不加任何说明性小字 —— 用户明确不要。
@@ -38,6 +38,25 @@
         android:textColor="#1B3A2A"
         android:textColorHint="#8AA294"
         android:textSize="13sp" />
+
+    <!-- 完成：独立成左侧勾选框，不再和保存/删除并列 -->
+    <LinearLayout
+        android:id="@+id/d_done_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <CheckBox
+            android:id="@+id/d_done"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:button="@drawable/checkbox_done"
+            android:text="完成"
+            android:textColor="#1B3A2A"
+            android:textSize="12sp" />
+    </LinearLayout>
 
     <!-- 日期：整行按钮，点了弹日历选择器 -->
     <Button
@@ -107,24 +126,12 @@
         android:background="#DCE9DF"
         android:text="" />
 
-    <!-- 底部三个按钮：完成/未完成 · 保存 · 删除 -->
+    <!-- 底部两个按钮：保存 · 删除（「完成」已移到上方左侧勾选框） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
         android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/d_toggle"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
-            android:text="完成"
-            android:textColor="#27795A"
-            android:textSize="12sp" />
 
         <Button
             android:id="@+id/d_save"

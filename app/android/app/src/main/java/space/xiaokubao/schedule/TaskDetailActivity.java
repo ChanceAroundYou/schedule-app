@@ -9,6 +9,7 @@ import android.content.DialogInterface;
 import android.os.Bundle;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 
@@ -25,7 +26,7 @@ import java.util.Locale;
  *  · 收紧凑（252dp / padding 12dp / 字号降档），跟设置弹框一个密度
  *  · **日期可编辑** —— 点了弹日历选择器（DatePickerDialog）。改完**留在当前
  *    日期**不跳走（用户选的），任务会从眼前消失，切过去才看得到。
- *  · 底排按钮变成 **[完成|未完成] [保存] [删除]**，去掉「关闭」；
+ *  · 底排只剩 **[保存] [删除]**；「完成」独立成左侧勾选框（d_done）
  *    关闭靠点弹框外部 / 返回键（setFinishOnTouchOutside）
  *  · 窗口背景换透明主题后，四个角的亮白小圆角消失（见 AppTheme.WidgetDialog）
  *
@@ -43,6 +44,8 @@ public class TaskDetailActivity extends Activity {
     }
 
     private WTask task;
+    /** 编辑中的「完成」状态（来自左侧勾选框，独立于保存/删除） */
+    private boolean pendingDone;
     /** 编辑中的日期（yyyy-MM-dd） */
     private String pickedDate;
     /** 编辑中的开始时间，null = 不设置 */
@@ -84,22 +87,21 @@ public class TaskDetailActivity extends Activity {
         startBtn = findViewById(R.id.d_start);
         endBtn = findViewById(R.id.d_end);
         durHint = findViewById(R.id.d_durhint);
-        Button toggle = findViewById(R.id.d_toggle);
+        CheckBox doneBox = findViewById(R.id.d_done);
+        pendingDone = found.done;
+        doneBox.setChecked(found.done);
+        doneBox.setOnCheckedChangeListener((v, checked) -> pendingDone = checked);
 
         titleBox.setText(found.title);
         titleBox.setSelection(found.title.length());
-        toggle.setText(found.done ? "未完成" : "完成");
         updateDateLabel();
         updateTimeLabels();
 
         dateBtn.setOnClickListener(v -> pickDate());
         startBtn.setOnClickListener(v -> pickStart());
         endBtn.setOnClickListener(v -> pickEnd());
-        // 「完成 / 未完成」会先把编辑框里的改动一起存下来 —— 否则用户改完标题
-        // 顺手点一下，改动就悄悄丢了
-        // 用字段 task 而不是局部量 found —— lambda 只捕获 effectively final 的局部量
-        toggle.setOnClickListener(v -> save(!task.done));
-        findViewById(R.id.d_save).setOnClickListener(v -> save(null));
+        // 「完成」已独立成左侧勾选框（pendingDone），保存时连同其它字段一起提交
+        findViewById(R.id.d_save).setOnClickListener(v -> save());
         findViewById(R.id.d_delete).setOnClickListener(v -> confirmDelete());
     }
 
@@ -212,16 +214,16 @@ public class TaskDetailActivity extends Activity {
      *   · 拒绝 → 同样换成服务端的值 = 回到真相，并提示用户
      *   · 问不出去 → 保留本地结果，入队等下次
      *
-     * @param doneOverride 非 null 时同时改「完成」状态；null 表示保持原样。
-     *                     和标题 / 日期 / 起止时间合成**一条** op 发出去，省一次往返。
+     * 「完成」状态来自左侧勾选框（{@link #pendingDone}），与标题 / 日期 / 起止时间
+     * 合成**一条** op 发出去，省一次往返。
      */
-    private void save(Boolean doneOverride) {
+    private void save() {
         final String newTitle = titleBox.getText().toString().trim();
         if (newTitle.isEmpty()) {
             titleBox.setError("总得写点什么");
             return;
         }
-        final boolean done = (doneOverride != null) ? doneOverride : task.done;
+        final boolean done = pendingDone;
         final String date = (pickedDate != null && !pickedDate.isEmpty()) ? pickedDate : task.date;
         final String tm = pickedStart;
         final int dur = durationMinutes();
@@ -234,28 +236,26 @@ public class TaskDetailActivity extends Activity {
             f.put("date", date);
             f.put("time", tm == null ? JSONObject.NULL : tm);
             f.put("duration", dur);
-            if (doneOverride != null) {
-                f.put("done", done);
-            }
+            f.put("done", done);
+            f.put("doneAt", done ? now : JSONObject.NULL);
             WidgetPrefs.patchEntity(this, "tasks", task.id, f, false);
         } catch (Exception ignored) {
         }
         ScheduleWidgetProvider.refresh(this);
 
         // ② 有票就直连（B 方案），否则入队等 App 启动后补发
-        sendEdit(newTitle, date, tm, dur, doneOverride, done, now);
+        sendEdit(newTitle, date, tm, dur, done, now);
         finish();
     }
 
-    private void sendEdit(String newTitle, String date, String tm, int dur, Boolean doneOverride,
-                          boolean done, long now) {
+    private void sendEdit(String newTitle, String date, String tm, int dur, boolean done, long now) {
         if (!WidgetPrefs.canDirect(this)) {
-            enqueueEdit(newTitle, date, tm, dur, doneOverride, done);
+            enqueueEdit(newTitle, date, tm, dur, done);
             return;
         }
         try {
             JSONArray ops = new JSONArray();
-            ops.put(editOp(newTitle, date, tm, dur, doneOverride, done, now));
+            ops.put(editOp(newTitle, date, tm, dur, done, now));
             WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                 @Override
                 public void onAccepted(JSONObject body) {
@@ -275,17 +275,17 @@ public class TaskDetailActivity extends Activity {
 
                 @Override
                 public void onUnreachable(String why) {
-                    enqueueEdit(newTitle, date, tm, dur, doneOverride, done);
+                    enqueueEdit(newTitle, date, tm, dur, done);
                 }
             });
         } catch (Exception e) {
-            enqueueEdit(newTitle, date, tm, dur, doneOverride, done);
+            enqueueEdit(newTitle, date, tm, dur, done);
         }
     }
 
     /** 拼一条编辑 op。时长字段名用 **duration**（服务端的字段），不是 dur */
     private JSONObject editOp(String newTitle, String date, String tm, int dur,
-                              Boolean doneOverride, boolean done, long now) throws Exception {
+                              boolean done, long now) throws Exception {
         JSONObject op = new JSONObject();
         op.put("entity", "task");
         op.put("entityId", task.id);
@@ -295,16 +295,13 @@ public class TaskDetailActivity extends Activity {
         fields.put("date", date);
         fields.put("time", tm == null ? JSONObject.NULL : tm);
         fields.put("duration", dur);
-        if (doneOverride != null) {
-            fields.put("done", done);
-            fields.put("doneAt", done ? now : JSONObject.NULL);
-        }
+        fields.put("done", done);
+        fields.put("doneAt", done ? now : JSONObject.NULL);
         op.put("fields", fields);
         return op;
     }
 
-    private void enqueueEdit(String newTitle, String date, String tm, int dur,
-                             Boolean doneOverride, boolean done) {
+    private void enqueueEdit(String newTitle, String date, String tm, int dur, boolean done) {
         try {
             JSONObject op = new JSONObject();
             op.put("kind", "edit");
@@ -313,8 +310,7 @@ public class TaskDetailActivity extends Activity {
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);
             op.put("duration", dur);
-            // null 表示「这次不改完成状态」—— 跟 false 是两回事，别混
-            op.put("done", doneOverride == null ? JSONObject.NULL : done);
+            op.put("done", done);
             WidgetPrefs.enqueuePending(this, op);
         } catch (Exception ignored) {
         }

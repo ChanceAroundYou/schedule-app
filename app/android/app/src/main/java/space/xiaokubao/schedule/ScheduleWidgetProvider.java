@@ -996,7 +996,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
-     * 标题只显示**月份**（如「10月」）。
+     * 标题只显示**月份**（如「十月」），数字用中文。
      *
      * 用户 2026-10-14：以前显示整周范围（「10月12日 – 18日」），太占地方、信息也
      * 多余 —— 桌面标题一行就那么点宽，月份足够表明「现在看的是哪个月」。
@@ -1005,7 +1005,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static String monthTitle(String day) {
         Calendar cal = Calendar.getInstance();
         cal.setTime(parse(day));
-        return (cal.get(Calendar.MONTH) + 1) + "月";
+        return cnMonth(cal.get(Calendar.MONTH) + 1);
+    }
+
+    /** 1→一月 … 12→十二月（阿拉伯数字换成中文） */
+    private static String cnMonth(int m) {
+        String[] cn = {"一月", "二月", "三月", "四月", "五月", "六月",
+                "七月", "八月", "九月", "十月", "十一月", "十二月"};
+        return (m >= 1 && m <= 12) ? cn[m - 1] : (m + "月");
     }
 
     private static String dayOfMonth(String iso) {
