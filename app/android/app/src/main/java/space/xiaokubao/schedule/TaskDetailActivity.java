@@ -369,6 +369,16 @@ public class TaskDetailActivity extends Activity {
         } catch (Exception ignored) {
         }
 
+        // 重复规则改了 → **当场派生后续几次**。只靠 App 那边的
+        // ensureRepeatOccurrences 不够：用户在小组件上改完就走，App 一直没开。
+        if (repeatCh) {
+            try {
+                RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(TaskDetailActivity.this),
+                        task.id, newTitle, task.calId, date, buildRepeat(), pickedRemind);
+            } catch (Exception ignored) {
+            }
+        }
+
         // ① 乐观更新本地快照 + 立刻重画
         try {
             WidgetPrefs.patchEntity(this, "tasks", task.id, patch, false);

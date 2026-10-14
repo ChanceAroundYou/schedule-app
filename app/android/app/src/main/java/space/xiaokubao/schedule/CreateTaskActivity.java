@@ -125,7 +125,7 @@ public class CreateTaskActivity extends Activity {
                 f.put("dur", JSONObject.NULL);       // 只设开始 → 时长不设（默认一小时）
                 f.put("done", false);
                 f.put("calId", calId);
-                f.put("repeat", buildRepeat());
+                f.put("repeat", buildRepeat(pickedDate));
                 f.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
                 WidgetPrefs.patchEntity(this, "tasks", localId, f, true);
             } catch (Exception ignored) {
@@ -142,9 +142,20 @@ public class CreateTaskActivity extends Activity {
                     WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                         @Override
                         public void onAccepted(JSONObject body) {
-                            WidgetPrefs.adoptCreated(CreateTaskActivity.this, body,
+                            String realId = WidgetPrefs.adoptCreated(CreateTaskActivity.this, body,
                                     localId, t, date, tm);
                             ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
+                            // 重复任务：**在原生侧直接**把后续几次建出来。
+                            // 只靠 App 那边的 ensureRepeatOccurrences 是不够的 ——
+                            // 用户在小组件上设完重复就走了 App，根本没打开，
+                            // 于是「设了重复但一条新任务都没有」。
+                            if (realId != null && !"none".equals(repeatUnit)) {
+                                try {
+                                    RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(CreateTaskActivity.this),
+                                            realId, t, calId, date, buildRepeat(pickedDate), pickedRemind);
+                                } catch (Exception ignored) {
+                                }
+                            }
                         }
 
                         @Override
@@ -324,11 +335,11 @@ public class CreateTaskActivity extends Activity {
      *   每月   → unit=month, monthday=任务那天几号
      *   每年   → unit=year,  yearMonth+monthday
      */
-    private JSONObject buildRepeat() throws Exception {
+    private JSONObject buildRepeat(String baseDate) throws Exception {
         String unit = repeatUnit;
         JSONArray wd = new JSONArray();
         Calendar cal = Calendar.getInstance();
-        int[] ymd = ymdOf(pickedDate);
+        int[] ymd = ymdOf(baseDate);
         if (ymd != null) cal.set(ymd[0], ymd[1] - 1, ymd[2]);
 
         if ("workday".equals(unit)) {
@@ -386,6 +397,99 @@ public class CreateTaskActivity extends Activity {
         remindBtn.setText("提醒：" + (pickedRemind == null ? "不提醒" : pickedRemind));
     }
 
+    /* ==================== 重复：在原生侧派生子任务 ==================== */
+
+    /** 预生成未来几次（与 App 的 REPEAT_LOOKAHEAD 保持一致） */
+    private static final int REPEAT_LOOKAHEAD = 4;
+
+    /**
+     * 重复任务建完之后，把后续几次**真的建出来**（本地先画 + 发 op）。
+     *
+     * id 用 `系列根id#发生日` —— 和 App 的 instanceId() 同一套派生规则，
+     * 两边算出来必然一致，同一次不会被建两遍。
+     *
+     * 结束条件：count 用满 / 到期日，就少建几条。
+     */
+    private void spawnOccurrences(String rootId, String title, String calId) {
+        try {
+            JSONArray ops = new JSONArray();
+            int made = 0;
+            Calendar cur = Calendar.getInstance();
+            int[] ymd = ymdOf(pickedDate);
+            if (ymd == null) return;
+            cur.set(ymd[0], ymd[1] - 1, ymd[2]);
+
+            for (int i = 0; i < REPEAT_LOOKAHEAD; i++) {
+                if ("count".equals(repeatEndType) && made + 1 >= Math.max(1, repeatCount)) break;
+                cur = advanceRepeat(cur);
+                if (cur == null) return;
+                String d = String.format(Locale.US, "%04d-%02d-%02d",
+                        cur.get(Calendar.YEAR), cur.get(Calendar.MONTH) + 1, cur.get(Calendar.DAY_OF_MONTH));
+                if ("date".equals(repeatEndType) && repeatEndDate != null && d.compareTo(repeatEndDate) > 0) break;
+
+                String oid = rootId + "#" + d;
+                JSONObject lf = new JSONObject();
+                lf.put("calId", calId);
+                lf.put("title", title);
+                lf.put("date", d);
+                lf.put("dur", JSONObject.NULL);
+                lf.put("done", false);
+                lf.put("repeat", buildRepeat(d));
+                lf.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
+                WidgetPrefs.patchEntity(this, "tasks", oid, lf, true);
+
+                JSONObject op = new JSONObject();
+                op.put("entity", "task");
+                op.put("entityId", oid);
+                op.put("calId", calId);
+                op.put("fields", lf);
+                ops.put(op);
+                made++;
+            }
+            if (made == 0) return;
+            ScheduleWidgetProvider.refresh(this);
+            if (WidgetPrefs.canDirect(this)) {
+                WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
+                    @Override public void onAccepted(JSONObject body) { }
+                    @Override public void onRejected(JSONObject body, String why) {
+                        // 派生的实例没被接受 → 撤掉本地占位，别留幽灵
+                        for (int i = 0; i < ops.length(); i++) {
+                            WidgetPrefs.removeEntity(CreateTaskActivity.this, "tasks",
+                                    ops.optJSONObject(i).optString("entityId"));
+                        }
+                        ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
+                    }
+                    @Override public void onUnreachable(String why) { }
+                });
+            }
+            // 离线时不入队：等 App 同步后由 ensureRepeatOccurrences 补齐，
+            // id 规则一致，不会重复。
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 按当前预设档推进一步。工作日要跳过周末。 */
+    private Calendar advanceRepeat(Calendar cur) {
+        Calendar c = (Calendar) cur.clone();
+        if ("day".equals(repeatUnit)) {
+            c.add(Calendar.DAY_OF_MONTH, 1);
+        } else if ("workday".equals(repeatUnit)) {
+            do {
+                c.add(Calendar.DAY_OF_MONTH, 1);
+            } while (c.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY
+                    || c.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY);
+        } else if ("week".equals(repeatUnit)) {
+            c.add(Calendar.WEEK_OF_YEAR, 1);
+        } else if ("month".equals(repeatUnit)) {
+            c.add(Calendar.MONTH, 1);
+        } else if ("year".equals(repeatUnit)) {
+            c.add(Calendar.YEAR, 1);
+        } else {
+            return null;
+        }
+        return c;
+    }
+
     /* ==================== 下发 ==================== */
 
     /** ⚠️ 字段名 duration（服务端字段），不是 dur。这里没有结束时间 → 发 null */
@@ -402,7 +506,7 @@ public class CreateTaskActivity extends Activity {
         fields.put("duration", JSONObject.NULL);
         fields.put("done", false);
         fields.put("doneAt", JSONObject.NULL);
-        fields.put("repeat", buildRepeat());
+        fields.put("repeat", buildRepeat(pickedDate));
         fields.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
         op.put("fields", fields);
         return op;
@@ -424,7 +528,7 @@ public class CreateTaskActivity extends Activity {
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);
             op.put("duration", JSONObject.NULL);
-            op.put("repeat", buildRepeat());
+            op.put("repeat", buildRepeat(pickedDate));
             op.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
             WidgetPrefs.enqueuePending(this, op);
         } catch (Exception ignored) {

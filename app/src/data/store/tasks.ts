@@ -71,6 +71,10 @@ export function ensureRepeatOccurrences(): void {
     if (!t || t.deleted || t.done) continue;
     const root = seriesRootOf(t);
     if (!root) continue;
+    // ⚠️ **只处理系列根**（2026-10-14 修）。已生成的实例自己也有 repeat、
+    // 也会算出 root —— 一并处理的话，每个实例又往后生成一批，
+    // 实测 4 条能膨胀成 8 条、且每调一次多一倍（无界增长）。
+    if (t.seriesId && t.seriesId !== t.id) continue;
     const r = t.repeat;
     if (!r || r.unit === 'none') continue;
 
