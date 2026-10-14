@@ -96,7 +96,11 @@
 
 .task-row {
   position: relative;
-  display: flex; align-items: center; gap: 10px;
+  /* **必须显式写 flex-direction: row**（2026-10-14）。这一行同时挂着 `.task-el`
+     —— 那是跨界面共用的行为标记，日历卡片那边给它写了 `flex-direction: column`
+     （勾选圈一行、时间一行）。这里不写死的话，那条同特异度的规则一旦排在前面
+     就会赢，整行变成竖排居中。见 calendar.css 那段大注释。 */
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
   padding: 11px 32px 11px 13px; margin-bottom: 7px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary); border-radius: var(--r-lg);

@@ -444,7 +444,8 @@
  * （`.task-el` 上的 HTML5 拖拽），所以给个抓手光标。
  */
 .pj-card {
-  display: flex; align-items: baseline; gap: 6px;
+  /* 同 .task-row：它也是 task-el 标记的成员，自己声明横向，别靠别人 */
+  display: flex; flex-direction: row; align-items: baseline; gap: 6px;
   padding: 6px 8px;
   border: var(--border-w) solid var(--border);
   border-radius: var(--r-md);

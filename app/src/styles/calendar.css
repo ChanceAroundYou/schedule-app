@@ -111,21 +111,37 @@
      · `.task-el--timed`  —— 按时间轴百分比定位（top/height/left/width）
      · `.task-el--untimed` —— 走未定时网格流（只控自身高度）
    底下这段是共用的视觉：底色、左边框、勾选圈那一行、第二行时间。
-   任何一种模式单独改样式都要问一句「另一种要不要跟着改」。 */
-.task-el {
+   任何一种模式单独改样式都要问一句「另一种要不要跟着改」。
+
+   ⚠️ **选择器必须写这两个修饰类，不能只写 `.task-el`**（2026-10-14 修的
+   大范围卡片退化）。`.task-el` 是**跨界面共用的行为标记**（dnd-kit 的
+   useDraggableEvent 认它、列表点击委托也认它），除了日历卡片，还挂在这些地方：
+
+     · `.task-row`   列表行（待办箱 / 今天 / 逾期 / 已完成）
+     · `.task-pill`  未定时小胶囊
+     · `.pj-card`    项目泳道里的卡片
+     · `.wk-event`   周视图事件
+
+   它们的「自己人」样式都在各自的文件里，**没人声明 flex-direction** ——
+   而这一段写的是 `flex-direction: column`（日历卡是「勾选圈+标题 / 时间」
+   上下两行）。同特异度下这一条只要排在那几个文件前面就赢，于是列表行变成
+   竖排居中、项目卡与胶囊跟着一起歪。日历卡片**永远**带上面两个修饰类之一，
+   所以把选择器收成这两个，就再也不会漏到别的界面去了。 */
+.task-el--timed, .task-el--untimed {
   border-radius: var(--r-sm); background: var(--primary-soft);
   border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary);
-  cursor: pointer; box-sizing: border-box;
+  cursor: pointer;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
      **过渡只有 box-shadow，没有 transform**：松手时 transform 从
      translate3d(x,y,0) 归零，有过渡就会看到弹跳（用户报「松开时跳一下」）。 */
   display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
-.task-el:hover { box-shadow: var(--shadow-md); z-index: 4; }
-.task-el.done { opacity: .5; }
-.task-el.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+.task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
+.task-el--timed.done, .task-el--untimed.done { opacity: .5; }
+.task-el--timed.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+/* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
 /* 定时卡片：绝对定位到时间轴上。**不许 overflow: hidden** ——
@@ -150,7 +166,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
 }
-.task-el.done .ev-time { text-decoration: none; }
+.task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { text-decoration: none; }
 /* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
   /* **把手只占一小条，其余全是拖动区**（2026-10-12 再定）
      —— 用户报「卡片高度比较窄的时候，上下两端覆盖整体拖拽」，又要求
@@ -171,13 +187,13 @@
   touch-action: none;
 }
 .ev-resize-top { top: 0; bottom: auto; }
-.task-el:hover .ev-resize { opacity: .85; }
+.task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .85; }
 .ev-resize::after {
   content: ''; width: 36px; height: 3px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .55);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
-.task-el.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
+.task-el--timed.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }
 /* 拖上沿 / 下沿拉伸时的浮标。**复用 `.tl-dur-tag`**（lists.css 第 341 行）——
    用户在 prompt-refine 要求「黑时间 tag 组件只有一个实例」。拖拽和拉伸共用
    同一条 CSS，模板字符串里的 class 名也是同一个。 */
@@ -348,7 +364,8 @@
 /* ================= 任务胶囊 / 列表行 ================= */
 
 .task-pill {
-  display: flex; align-items: center; gap: 5px;
+  /* 同 .task-row：它也是 task-el 标记的成员，自己声明横向，别靠别人 */
+  display: flex; flex-direction: row; align-items: center; gap: 5px;
   padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
   border: var(--border-w) solid var(--border); border-left: 3px solid var(--primary);
   font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
