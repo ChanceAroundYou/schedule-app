@@ -130,4 +130,4 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 | `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` | ⏸ 不改（选项 `role="option"`，改 `Btn` 毁 A11y） |
 | `ui/kit/{Dropdown,IconBtn,Btn}.tsx` | 收 `className` | 留布局类（见 2.1） | ✅ 已定（布局类白名单，Interpretation B） |
 | `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） | — 保留 |
-| `ui/settings/SettingsView.tsx:120` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]` | 归第 3 册 N5 |
+| `ui/settings/SettingsView.tsx` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]` | ✅ 已修（现为 `rounded-[var(--r-lg)]`/`rounded-[var(--r-sm)]`，归第 3 册 N5 一并清） |
