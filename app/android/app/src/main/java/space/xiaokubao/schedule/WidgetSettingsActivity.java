@@ -24,10 +24,12 @@ import java.util.Locale;
  *   · 立即刷新 —— 小组件平时只在系统愿意调 onUpdate 时才更新；用户在 App 里
  *     改完数据，桌面上可能还是旧的。这里给一个手动拉的入口。
  *
- * ⚠️ 透明度那条是**滑杆的样子、档位的里子**：RemoteViews 调不到
+ * ⚠️ 透明度那条是**真·连续**的滑杆：RemoteViews 调不到
  * {@code View.setAlpha}（没标 @RemotableViewMethod，反射会抛 ActionException），
- * 能安全改的只有 setBackgroundResource —— 所以底下是五张预置的 drawable，
- * 滑杆松手时吸附到最近的一张。看上去是连续拖动，实际只有五档。
+ * 能安全改的只有 setBackgroundResource —— 所以底下预先烤好了
+ * 40/42/…/100 共 31 张 drawable（每 2% 一张），进度变化时按最近偶数档
+ * 动态查资源名（见 ScheduleWidgetProvider.bgFor）。拖动过程是连续过渡的，
+ * 不是五档跳变。
  *
  * 同样用**对话框主题的 Activity** —— 观感是桌面弹出小卡片，不离开桌面。
  */

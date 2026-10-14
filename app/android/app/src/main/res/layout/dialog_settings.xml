@@ -78,10 +78,9 @@
         android:textSize="10sp" />
 
     <!-- ============ 底板透明度 ============
-         拖到最右 = 完全不透明，最左 = 最透。
-         ⚠️ 底下其实是**五档预置的 drawable**，只是把它包装成滑杆了：
-         RemoteViews 调不到 View.setAlpha（没标 @RemotableViewMethod），
-         透明度只能预先做成几档资源来切。滑杆松手时会吸附到最近的档位。 -->
+         拖到最右 = 完全不透明，最左 = 最透。连续可调（40%–100%）。
+         ⚠️ 实现上是预烤了 31 张 drawable（每 2% 一张），按最近偶数档动态切，
+         所以视觉上是平滑过渡，不是几档跳变。RemoteViews 不支持运行时 setAlpha。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
