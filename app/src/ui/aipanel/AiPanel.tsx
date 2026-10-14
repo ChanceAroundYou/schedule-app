@@ -67,6 +67,7 @@ export function AiPanel({ state, onConfirmed }: {
 
   const ctl = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   /* 浮条：消息列表会越聊越长 —— 见 ui/scroll.ts */
   const osbChat = useOverlayScrollbar<HTMLDivElement>(scroller);
   const seq = useRef(0);
@@ -108,10 +109,11 @@ export function AiPanel({ state, onConfirmed }: {
   const stop = useCallback(() => { ctl.current?.abort(); }, []);
 
   const send = useCallback(async (raw?: string) => {
-    const q = (raw ?? text).trim();
+    const q = (raw ?? textareaRef.current?.value ?? text).trim();
     if (!q || busy) return;
 
     setText('');
+    if (textareaRef.current) textareaRef.current.value = '';
     setBusy(true);
 
     const id = 'live' + (++seq.current);
@@ -293,6 +295,7 @@ export function AiPanel({ state, onConfirmed }: {
       </div>
 
       <AiCompose
+        ref={textareaRef}
         text={text}
         onChange={setText}
         onSend={() => void send()}
