@@ -206,6 +206,12 @@ public class TaskDetailActivity extends Activity {
     /**
      * 存下来并关掉。
      *
+     * **先本地改样式再发请求**：弹框一关桌面就得是新样子，不等服务端往返。
+     * 三种结局分别处理，见 {@link WidgetApi.OpCallback}：
+     *   · 接受 → 只把这一条换成服务端的值（不整表覆盖）
+     *   · 拒绝 → 同样换成服务端的值 = 回到真相，并提示用户
+     *   · 问不出去 → 保留本地结果，入队等下次
+     *
      * @param doneOverride 非 null 时同时改「完成」状态；null 表示保持原样。
      *                     和标题 / 日期 / 起止时间合成**一条** op 发出去，省一次往返。
      */
@@ -221,7 +227,7 @@ public class TaskDetailActivity extends Activity {
         final int dur = durationMinutes();
         final long now = System.currentTimeMillis();
 
-        // ① 乐观更新本地快照，弹框一关桌面就是新样子
+        // ① 乐观更新本地快照 + **立刻重画**，弹框一关桌面就是新样子
         try {
             JSONObject f = new JSONObject();
             f.put("title", newTitle);
@@ -250,15 +256,25 @@ public class TaskDetailActivity extends Activity {
         try {
             JSONArray ops = new JSONArray();
             ops.put(editOp(newTitle, date, tm, dur, doneOverride, done, now));
-            WidgetApi.op(this, ops, new WidgetApi.Callback() {
+            WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                 @Override
-                public void onOk(JSONObject body) {
-                    WidgetPrefs.replaceSnapshot(TaskDetailActivity.this, body);
+                public void onAccepted(JSONObject body) {
+                    // 只同步这一条 —— 整表替换会把还没发出去的乐观改动抹掉
+                    WidgetPrefs.mergeEntities(TaskDetailActivity.this, body, "tasks",
+                            java.util.Collections.singletonList(task.id));
                     ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
                 }
 
                 @Override
-                public void onFail(String why) {
+                public void onRejected(JSONObject body, String why) {
+                    WidgetPrefs.mergeEntities(TaskDetailActivity.this, body, "tasks",
+                            java.util.Collections.singletonList(task.id));
+                    ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
+                    Ui.toast(TaskDetailActivity.this, "这次修改服务端没有接受，已回到原样");
+                }
+
+                @Override
+                public void onUnreachable(String why) {
                     enqueueEdit(newTitle, date, tm, dur, doneOverride, done);
                 }
             });
@@ -349,15 +365,27 @@ public class TaskDetailActivity extends Activity {
             op.put("calId", task.calId);
             op.put("fields", fields);
             ops.put(op);
-            WidgetApi.op(this, ops, new WidgetApi.Callback() {
+            WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                 @Override
-                public void onOk(JSONObject body) {
-                    WidgetPrefs.replaceSnapshot(TaskDetailActivity.this, body);
+                public void onAccepted(JSONObject body) {
+                    // 服务端视图里已经没有这条了 → mergeEntities 什么都不做，
+                    // 本地那条墓碑正好留着，桌面继续保持「已删除」
+                    WidgetPrefs.mergeEntities(TaskDetailActivity.this, body, "tasks",
+                            java.util.Collections.singletonList(task.id));
                     ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
                 }
 
                 @Override
-                public void onFail(String why) {
+                public void onRejected(JSONObject body, String why) {
+                    // 删除被拒 → 服务端视图里这条还在，合并即等于**撤销删除**
+                    WidgetPrefs.mergeEntities(TaskDetailActivity.this, body, "tasks",
+                            java.util.Collections.singletonList(task.id));
+                    ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
+                    Ui.toast(TaskDetailActivity.this, "删除没有成功，服务端没有接受");
+                }
+
+                @Override
+                public void onUnreachable(String why) {
                     enqueueDelete(now);
                 }
             });

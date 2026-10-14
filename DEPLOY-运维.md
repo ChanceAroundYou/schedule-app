@@ -97,6 +97,27 @@ nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了�
 > 改了共享相关的东西（`lib/calendars.js`、`lib/invites.js`、`lib/sync.js` 的权限判断），
 > **必须跑 `smoke-share.mjs`** —— 单元测试只测各段逻辑，这条测的是它们串起来通不通。
 
+### 6.0 改了原生小组件 → 发 APK（自更新）
+
+网页改完刷新就生效，但**小组件、权限、图标在原生层，必须换 APK**。走自更新：
+
+```bash
+./deploy/publish-apk.sh "这次改了什么"      # 编译 → 签名 → 上传 → 写 version.json → 回读校验
+```
+
+脚本做四件事，见 `deploy/publish-apk.sh` 头部注释。要点：
+
+| | |
+|---|---|
+| **versionCode 必须手加** | 在 `app/android/app/build.gradle`。客户端只认「服务端大于自己才提示」，忘了加就永远收不到更新 |
+| **签名不可换** | keystore 在 `C:/Users/小哭包/.android/schedule-release.jks`，密码在 `app/android/keystore.properties`（**gitignore**）。换 keystore = 覆盖安装失败 = 用户卸载重装、数据重拉 |
+| **服务端目录** | `~/.local/share/schedule-apk/`（**本机磁盘**，不在 NAS 的工程目录里）。nginx 挂在 `/schedule/dl/`，`no-store` |
+| **上传用 ssh 管道** | 这台 Windows 上 `scp` 报 `pipe: Unknown error`，脚本里是 `ssh host "cat > 文件" < 本地文件` |
+
+> **首次从 debug 包切到 release 包要卸载一次。** 两者的签名不同，
+> `adb install -r` 会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。数据在服务器上，
+> 卸了重装、重新登录就回来了（小组件的票据要重新推一次）。
+
 ### 6.1 发布后验证
 
 ```bash
@@ -199,6 +220,7 @@ done
 | 新版前端有问题 | `rm -rf dist/* && cp -a legacy/dist/. dist/` —— 立刻退回旧版纯静态应用，刷新即生效 |
 | 新版后端有问题 | `systemctl --user stop schedule-backend`。页面还开得了，但登录不上、同步停摆（离线副本仍可看） |
 | 想临时下线整站 | `conf.d/home/schedule.conf` 改名 `.conf.disabled` → `nginx -t && reload` |
+| App 自更新发了坏包 | 把 `~/.local/share/schedule-apk/version.json` 改回上一个 versionCode（apk 文件留着），或直接删掉 version.json —— 客户端拉不到清单就静默不提示，已经装上的不受影响 |
 | nginx 整体起不来 | 恢复备份：`docker-compose.yml.bak-<时间戳>` 与 `conf.d/servers/home.conf.bak-<时间戳>`，再 `docker compose up -d` |
 
 > **退回旧版的注意事项**：旧版读的是 localStorage 的 `schedule-app-v1`，

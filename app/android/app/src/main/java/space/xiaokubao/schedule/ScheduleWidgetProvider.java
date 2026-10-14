@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.widget.RemoteViews;
@@ -29,6 +30,15 @@ import java.util.Locale;
  * 交互全部走广播回到这里处理（{@code PendingIntent.getBroadcast}），
  * 不启动 Activity —— 除了几个确实需要表单/表盘的地方（任务详情、新建、
  * 设置），那几个用对话框主题的 Activity，观感是弹窗而不是「打开 App」。
+ *
+ * **点击的交互模型：乐观更新。** 点下去的那一瞬间就改本地快照 + 重绘，
+ * 请求**并发**发出去，绝不拿网络往返的时间换界面的响应。三种结局：
+ *   · 服务端接受 → 只把碰到的这几条换成服务端的值，别的不动
+ *   · 服务端拒绝 → 同样换成服务端的值 = 回到它返回的真相，并提示用户
+ *   · 问不出去（离线/超时/票失效）→ 保留本地结果，入队等下次补发
+ * 实现散在 {@link #toggleHabit}、TaskDetailActivity、CreateTaskActivity 和
+ * {@link #flushPending}，共用的合并逻辑在 {@link WidgetPrefs#mergeEntities}，
+ * 三态回调在 {@link WidgetApi.OpCallback}。
  *
  * ⚠️ RemoteViews 的限制（踩过的坑，改之前先看）：
  *   1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
@@ -147,12 +157,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         String today = (snap.today != null && !snap.today.isEmpty())
                 ? snap.today : WidgetPrefs.today(c);
 
-        // 底板透明度：四档预置 drawable 里挑一张（原因见类注释第 4 条）
+        // 底板透明度：连续档位里挑一张（每 2% 一张，见 drawable/widget_bg_a*.xml）
         final int alpha = WidgetPrefs.alpha(c);
-        v.setInt(R.id.widget_root, "setBackgroundResource", bgFor(alpha));
+        v.setInt(R.id.widget_root, "setBackgroundResource", bgFor(c, alpha));
 
         String monday = mondayOf(day);
-        v.setTextViewText(R.id.tv_month, weekTitle(monday, addDays(monday, 6)));
+        v.setTextViewText(R.id.tv_month, monthTitle(day));
 
         /* ---- 日期条：选中日所在的那一周 ---- */
         v.removeAllViews(R.id.date_strip);
@@ -204,9 +214,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     }
                     WHabit h = snap.habits.get(k);
                     chip.setTextViewText(R.id.habit_chip, h.title);
+                    // 颜色变化**跟随日程**（用户 2026-10-14）：未完成=深色实心（主绿）+ 白字；
+                    // 完成=浅底 + 灰字。以前打卡是「完成变深」，跟下面任务卡正好相反，
+                    // 现在统一成「完成变淡」，一眼就能把两类「已完成」对上。
                     chip.setInt(R.id.habit_chip, "setBackgroundResource",
-                            h.done ? R.drawable.widget_habit_bg_done : R.drawable.widget_habit_bg);
-                    chip.setTextColor(R.id.habit_chip, h.done ? 0xFFFFFFFF : 0xFF1B3A2A);
+                            h.done ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
+                    chip.setTextColor(R.id.habit_chip, h.done ? 0xFF7E8F84 : 0xFFFFFFFF);
                     chip.setOnClickPendingIntent(R.id.habit_chip,
                             WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
                     row.addView(R.id.habit_row, chip);
@@ -581,11 +594,19 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     /**
      * 点打卡格。
      *
-     * **乐观更新 → 直连 → 失败入队**，三步：
-     *  ① 先改本地快照，桌面立刻变（几百毫秒的观感很重要）
-     *  ② 有票就直连服务器（B 方案）—— 这才是真正落库，权限与 LWW 都在
-     *     服务端 applyOps 里做，我们不多做一步判断
-     *  ③ 没票 / 断网 / 票失效 → 攒进待同步队列，等 App 下次启动推走
+     * **先本地改样式、再并发发请求**，三种结局分别处理：
+     *  ① 立刻改本地快照 + 重绘 —— 用户点下去那一瞬间桌面就得变，
+     *     不等服务端往返（走公网慢的时候能差好几秒）
+     *  ② 并发把 op 发出去
+     *  ③ 按结局收尾：
+     *     · 服务端**接受** → 只把这一条换成服务端的值，别的不动
+     *     · 服务端**拒绝** → 同样换成服务端的值 = 回到它返回的真相，并提示用户
+     *     · 问不出去（离线/超时/票失效）→ **保留本地结果**，入队等下次
+     *
+     * 为什么②③要分开：被拒和离线都长得像失败，但一个是有答案了（该回滚），
+     * 一个是还没答案（该保留 + 入队）。合成一个 onFail 就会把「服务端不答应」
+     * 当成「离线」，于是一条永远发不出去的 op 在队列里反复重发，桌面还一直
+     * 显示着一个服务端并不承认的状态。详见 {@link WidgetApi.OpCallback}。
      */
     private static void toggleHabit(Context c, String habitId) {
         WidgetSnapshot snap = WidgetPrefs.snapshot(c);
@@ -596,7 +617,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         final String today = (snap.today != null && !snap.today.isEmpty())
                 ? snap.today : WidgetPrefs.today(c);
 
-        // ① 乐观更新
+        // ① 乐观更新 + **立刻重绘**。以前只靠 onReceive 尾部那次 refresh，
+        //    虽然也来得及，但那是隐式的；点一下就变是这个功能的地基，
+        //    写在这儿才是明确的。
         try {
             JSONObject f = new JSONObject();
             f.put("done", on);
@@ -604,6 +627,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             WidgetPrefs.patchEntity(c, "habits", habitId, f, false);
         } catch (Exception ignored) {
         }
+        refresh(c);
 
         // ② 直连。**必须拿到完整的 log 表才敢写**：applyOps 是字段整值替换，
         //    手里没有原表就只能发一个空对象上去，那会把这个人过去所有打卡
@@ -630,15 +654,28 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             op.put("fields", fields);
             ops.put(op);
 
-            WidgetApi.op(c, ops, new WidgetApi.Callback() {
+            WidgetApi.op(c, ops, new WidgetApi.OpCallback() {
                 @Override
-                public void onOk(JSONObject body) {
-                    WidgetPrefs.replaceSnapshot(c, body);
+                public void onAccepted(JSONObject body) {
+                    // 只同步这一条：整表替换会把还没发出去的乐观改动抹掉
+                    // （见 WidgetPrefs.mergeEntities 的说明）
+                    WidgetPrefs.mergeEntities(c, body, "habits",
+                            java.util.Collections.singletonList(habitId));
                     refresh(c);
                 }
 
                 @Override
-                public void onFail(String why) {
+                public void onRejected(JSONObject body, String why) {
+                    // 服务端不答应 → 回到它返回的结果
+                    WidgetPrefs.mergeEntities(c, body, "habits",
+                            java.util.Collections.singletonList(habitId));
+                    refresh(c);
+                    Ui.toast(c, "这次打卡服务端没有接受");
+                }
+
+                @Override
+                public void onUnreachable(String why) {
+                    // 离线/问不出去 → 保留本地结果，入队等下次
                     enqueueHabit(c, habitId, today, on);
                 }
             });
@@ -749,6 +786,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         JSONArray ops = new JSONArray();
         String calFallback = snap.tasks.isEmpty() ? "" : snap.tasks.get(0).calId;
+        // 这批 op 碰到了哪些实体。回调里靠它们做**局部合并** —— 不能整表
+        // replaceSnapshot，那会把还没发出去的乐观改动从桌面上抹掉
+        // （见 WidgetPrefs.mergeEntities）。
+        // create 的真 id 要等服务端，所以另攒一份「占位 id + 匹配字段」。
+        final java.util.List<String> touchedTasks = new ArrayList<>();
+        final java.util.List<String> touchedHabits = new ArrayList<>();
+        final java.util.List<String[]> pendingCreates = new ArrayList<>();
         try {
             for (int i = 0; i < take; i++) {
                 JSONObject p = pending.get(i);
@@ -756,6 +800,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 if ("habit".equals(kind)) {
                     WHabit h = snap.habitById(p.optString("habitId"));
                     if (h == null || h.log == null) return;   // usablePrefix 已挡过，纯兜底
+                    touchedHabits.add(h.id);
                     JSONObject op = new JSONObject();
                     op.put("entity", "habit");
                     op.put("entityId", h.id);
@@ -773,6 +818,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 } else if ("task".equals(kind) || "toggle".equals(kind)) {
                     WTask t = snap.taskById(p.optString("taskId"));
                     if (t == null) return;   // 同上，兜底；别丢队列
+                    touchedTasks.add(t.id);
                     JSONObject op = new JSONObject();
                     op.put("entity", "task");
                     op.put("entityId", t.id);
@@ -787,6 +833,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     // 可选连带「完成」状态
                     WTask t = snap.taskById(p.optString("taskId"));
                     if (t == null) return;
+                    touchedTasks.add(t.id);
                     JSONObject op = new JSONObject();
                     op.put("entity", "task");
                     op.put("entityId", t.id);
@@ -812,9 +859,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 } else if ("delete".equals(kind)) {
                     // 删除不依赖本地快照里还有没有这条 —— 乐观删除之后
                     // taskById 就查不到了，但 calId 早就跟着队列存下来了
+                    String delId = p.optString("taskId");
+                    touchedTasks.add(delId);
                     JSONObject op = new JSONObject();
                     op.put("entity", "task");
-                    op.put("entityId", p.optString("taskId"));
+                    op.put("entityId", delId);
                     op.put("calId", p.optString("calId"));
                     JSONObject fields = new JSONObject();
                     fields.put("deleted", true);
@@ -822,6 +871,19 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     op.put("fields", fields);
                     ops.put(op);
                 } else if ("create".equals(kind)) {
+                    // 新建的真 id 只有服务端知道，先把占位 id 和匹配字段攒着，
+                    // 回调里用 adoptCreated 把占位换成服务端那条。
+                    // **localId 为空就跳过** —— 那是这次改造之前攒下的老队列，
+                    // 没有占位 id 可对，硬换会把服务端那条加成重复的一条。
+                    // 老占位留着，下次 bootstrap 会整体纠正。
+                    if (!p.optString("localId").isEmpty()) {
+                        pendingCreates.add(new String[]{
+                                p.optString("localId"),
+                                p.optString("title"),
+                                p.optString("date"),
+                                p.isNull("time") ? "" : p.optString("time"),
+                        });
+                    }
                     JSONObject op = new JSONObject();
                     op.put("entity", "task");
                     op.put("entityId", "@new");   // 服务端发真 id
@@ -849,19 +911,38 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             return;
         }
 
-        WidgetApi.op(c, ops, new WidgetApi.Callback() {
+        WidgetApi.op(c, ops, new WidgetApi.OpCallback() {
             @Override
-            public void onOk(JSONObject body) {
-                WidgetPrefs.replaceSnapshot(c, body);
+            public void onAccepted(JSONObject body) {
+                settle(body);
+            }
+
+            @Override
+            public void onRejected(JSONObject body, String why) {
+                // 服务端明确拒了这批 —— 原样重发一万次也不会成功，别留在队列里
+                // 反复重试。局部合并 = 把被拒的乐观改动回滚到服务端返回的真相。
+                Log.w("ScheduleWidget", "队列里一批 op 被服务端拒绝，已丢弃: " + why);
+                Ui.toast(c, "有条待同步的改动服务端没有接受，已回到服务端的结果");
+                settle(body);
+            }
+
+            @Override
+            public void onUnreachable(String why) {
+                // 问不出去：留在队列里，下次再试。不做重试 —— 网络不好时
+                // 重试只会更费电
+            }
+
+            /** 三种「有答案」的结局共用：合并 + 扣队列 + 重绘 + 接着发下一批 */
+            private void settle(JSONObject body) {
+                WidgetPrefs.mergeEntities(c, body, "tasks", touchedTasks);
+                WidgetPrefs.mergeEntities(c, body, "habits", touchedHabits);
+                for (String[] cr : pendingCreates) {
+                    WidgetPrefs.adoptCreated(c, body, cr[0], cr[1], cr[2], cr[3]);
+                }
                 WidgetPrefs.dropPending(c, take);   // 只扣掉真正发出去的这一批
                 refresh(c);
                 // 队列比一批长时接着发下一批
                 if (WidgetPrefs.hasPending(c)) flushPending(c);
-            }
-
-            @Override
-            public void onFail(String why) {
-                // 留在队列里，下次再试。不做重试 —— 网络不好时重试只会更费电
             }
         });
     }
@@ -870,15 +951,19 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     private static final String[] WD = {"一", "二", "三", "四", "五", "六", "日"};
 
-    /** 透明度档位 → 底板资源。五档：40% / 55% / 70% / 85% / 不透明 */
-    private static int bgFor(int alpha) {
-        switch (alpha) {
-            case 40: return R.drawable.widget_bg_a40;
-            case 55: return R.drawable.widget_bg_a55;
-            case 70: return R.drawable.widget_bg_a70;
-            case 85: return R.drawable.widget_bg_a85;
-            default: return R.drawable.widget_bg;
-        }
+    /**
+     * 透明度（任意 40–100 的整数）→ 底板资源。
+     *
+     * 以前只有 5 档预置 drawable，滑杆看着连续、其实只能吸附到 5 档。
+     * 2026-10-14：改成每 2% 一张（40/42/…/100，共 31 张，见 drawable/widget_bg_a*.xml），
+     * 这里把任意值吸附到最近的偶数档，再用资源名动态查到对应 drawable，
+     * 滑杆就能真正平滑过渡。
+     */
+    private static int bgFor(Context c, int alpha) {
+        int a = Math.max(40, Math.min(100, alpha));
+        int even = (a % 2 == 0) ? a : a + 1;
+        int id = c.getResources().getIdentifier("widget_bg_a" + even, "drawable", c.getPackageName());
+        return id != 0 ? id : R.drawable.widget_bg;
     }
 
     /** 把颜色按百分比调透明。用于能用纯色背景的地方（打卡条） */
@@ -916,18 +1001,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
     }
 
-    /** 标题显示**这一周**的范围，跟箭头按周翻保持一致（以前是「10月」） */
-    private static String weekTitle(String monday, String sunday) {
-        Calendar a = Calendar.getInstance();
-        a.setTime(parse(monday));
-        Calendar b = Calendar.getInstance();
-        b.setTime(parse(sunday));
-        int m1 = a.get(Calendar.MONTH) + 1;
-        int m2 = b.get(Calendar.MONTH) + 1;
-        int d1 = a.get(Calendar.DAY_OF_MONTH);
-        int d2 = b.get(Calendar.DAY_OF_MONTH);
-        if (m1 == m2) return m1 + "月" + d1 + "日 – " + d2 + "日";
-        return m1 + "月" + d1 + "日 – " + m2 + "月" + d2 + "日";
+    /**
+     * 标题只显示**月份**（如「10月」）。
+     *
+     * 用户 2026-10-14：以前显示整周范围（「10月12日 – 18日」），太占地方、信息也
+     * 多余 —— 桌面标题一行就那么点宽，月份足够表明「现在看的是哪个月」。
+     * 取**选中日**的月份（不是周一的），因为日期条高亮的是选中日，标题得跟它一致。
+     */
+    private static String monthTitle(String day) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(parse(day));
+        return (cal.get(Calendar.MONTH) + 1) + "月";
     }
 
     private static String dayOfMonth(String iso) {

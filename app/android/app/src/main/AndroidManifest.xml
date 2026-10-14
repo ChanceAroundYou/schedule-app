@@ -78,9 +78,31 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!--
+          APK 自更新：下载完成的广播。**必须在清单里注册，不能动态注册** ——
+          用户下到一半退出 App 也得能收到，不然那个包就白下了。
+          exported=false 就够：DownloadManager 用 setPackage() 定向发给当初
+          请求下载的那个包，不需要别的 App 也能触发。
+          逻辑见 AppUpdate.java。
+        -->
+        <receiver
+            android:name=".AppUpdate$DownloadReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      APK 自更新：让系统安装器装我们下的包。Android 8+ 这是**特殊权限**，
+      声明了还要用户在「设置 → 安装未知应用」里手动授一次；
+      AppUpdate.startDownload() 会在没授的时候先把用户送去那个设置页。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

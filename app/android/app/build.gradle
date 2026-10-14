@@ -1,5 +1,30 @@
 apply plugin: 'com.android.application'
 
+// ---- 签名 ----
+// release 用的固定 keystore：C:/Users/小哭包/.android/schedule-release.jks
+// 密码等放在 app/android/keystore.properties（**已 gitignore**，不进版本库）。
+// 换机器/重环境要把 .jks 和这个文件一起带走，否则只能用 debug 签名重装。
+//
+// ⚠️ 签名是**一次性决定、不可换**的：同包名不同签名 = 覆盖安装失败，
+// 只能卸载重装。所以别轻易重建 keystore，密码丢了的后果也一样。
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    // ⚠️ 必须用 withReader('UTF-8')，不能用 withInputStream。
+    // Properties.load(InputStream) 按 **ISO-8859-1** 读，而这个文件里
+    // storeFile 的路径含中文（C:/Users/小哭包/.android/…），按 ISO-8859-1
+    // 解 UTF-8 字节会变成乱码，报
+    // "Keystore file 'C:\Users\???.android\schedule-release.jks' not found"。
+    // load(Reader) 不做字节解码，字符由 Reader 给，所以指定 UTF-8 就对了。
+    keystorePropsFile.withReader('UTF-8') { keystoreProps.load(it) }
+}
+// 有没有配签名。**这个布尔量要在 signingConfigs{} 外面算好**：
+// 那个闭包的 delegate 是 AGP 的配置容器，里面写
+// `if (keystoreProps.containsKey('storeFile'))` 时 keystoreProps 会被当成
+// 「新建一个签名配置」—— 实测报
+// "Could not find method containsKey() on SigningConfig{name=keystoreProps}"。
+def hasReleaseKeystore = keystoreProps['storeFile'] != null
+
 android {
     namespace = "space.xiaokubao.schedule"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +32,14 @@ android {
         applicationId "space.xiaokubao.schedule"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // 版本号是「在线升级」的判断依据，**每次发版都要往上加 versionCode**。
+        // 客户端拿服务端 version.json 里的 versionCode 和自己的比，大于才提示更新。
+        versionCode 3
+        versionName "1.1"
+        // 自更新清单地址（nginx 的 /schedule/dl/）。**与前端打包时注入的
+        // VITE_API_BASE 同源** —— 换服务器/换域名时这两处要一起改。
+        // 见 AppUpdate.java。
+        buildConfigField "String", "UPDATE_BASE", "\"https://home.xiaokubao.space/schedule\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +47,35 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 生成 BuildConfig（自更新要用 UPDATE_BASE）。AGP 8 默认关闭，这里显式开。
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        // 固定 release keystore：C:/Users/小哭包/.android/schedule-release.jks
+        // 密码等在 app/android/keystore.properties（**已 gitignore**，不进版本库）。
+        // 换机器/重环境要把 .jks 和这个文件一起带走，否则只能用 debug 签名重装。
+        release {
+            // keystore.properties 不在时这四个都不赋值 —— release 构建退化成
+            // 未签名（装不上，但 assembleDebug 照常，不会把环境整个卡死）。
+            // release{} 里 delegate 是 SigningConfig 本身，引用 keystoreProps 安全。
+            if (keystoreProps['storeFile'] != null) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

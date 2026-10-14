@@ -39,9 +39,6 @@ public class WidgetSettingsActivity extends Activity {
         c.startActivity(i);
     }
 
-    /** 五档各自的说法，下标与 WidgetPrefs.ALPHAS 一一对应 */
-    private static final String[] ALPHA_NAMES = {"不透明", "微透", "半透明", "较透明", "很透明"};
-
     private Button startBtn;
     private Button endBtn;
     private TextView hint;
@@ -83,7 +80,8 @@ public class WidgetSettingsActivity extends Activity {
             @Override
             public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (!fromUser) return;      // refreshLabels() 里回写进度也会触发，别绕回来
-                WidgetPrefs.setAlpha(WidgetSettingsActivity.this, WidgetPrefs.ALPHAS[progress]);
+                // 连续：进度 0..60 直接映射到 40..100%，不再吸附到 5 档
+                WidgetPrefs.setAlpha(WidgetSettingsActivity.this, WidgetPrefs.MIN_ALPHA + progress);
                 refreshLabels();
                 ScheduleWidgetProvider.refresh(WidgetSettingsActivity.this);
             }
@@ -116,12 +114,9 @@ public class WidgetSettingsActivity extends Activity {
                 + "把组件拖大一些会更舒展。");
 
         int cur = WidgetPrefs.alpha(this);
-        int idx = 0;
-        for (int i = 0; i < WidgetPrefs.ALPHAS.length; i++) {
-            if (WidgetPrefs.ALPHAS[i] == cur) { idx = i; break; }
-        }
-        if (alphaBar.getProgress() != idx) alphaBar.setProgress(idx);
-        alphaLabel.setText(ALPHA_NAMES[Math.min(idx, ALPHA_NAMES.length - 1)]);
+        int prog = cur - WidgetPrefs.MIN_ALPHA;
+        if (alphaBar.getProgress() != prog) alphaBar.setProgress(prog);
+        alphaLabel.setText(cur + "%");
 
         long at = WidgetPrefs.snapshot(this).at;
         status.setText(at > 0 ? "数据更新于 " + clockOf(at) : "还没有同步过数据，打开 App 一次");

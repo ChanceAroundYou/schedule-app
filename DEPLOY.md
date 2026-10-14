@@ -35,13 +35,15 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 │   /etc/nginx/conf.d/home/*.conf      ← 由 server 块显式 include│
 │                                                              │
 │   /schedule/      → /data/schedule/dist/   静态，alias 直读    │
+│   /schedule/dl/   → /data/schedule-apk/    App 自更新的安装包   │
 │   /schedule/api/  → 127.0.0.1:25692        反代到后端          │
 └──────────────────────────────────────────────────────────────┘
-        ▲                                     ▲
-        │ /data/schedule（docker 挂载项目根）   │ 127.0.0.1:25692
-        │                                     │
- /home/xiaokubao/family/星星包/coding/日程管理   schedule-backend.service
- （= /mnt/fnos/family/…，SMB 挂在飞牛 NAS 上）  （systemctl --user）
+        ▲                       ▲                    ▲
+        │ /data/schedule        │ /data/schedule-apk │ 127.0.0.1:25692
+        │ （docker 挂载项目根）   │ （本机磁盘，非 NAS） │
+ /home/xiaokubao/family/星星包/coding/日程管理   ~/.local/share/schedule-apk
+ （= /mnt/fnos/family/…，SMB 挂在飞牛 NAS 上）  schedule-backend.service
+                                               （systemctl --user）
                                                │
                                                ▼
                         /home/xiaokubao/.local/share/schedule/schedule.db
@@ -88,6 +90,7 @@ systemctl --user start schedule-backend
 | `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码 + `dist/`（本项目仓库） |
 | `/home/xiaokubao/.local/share/schedule` | **运行时数据：SQLite 库 + 密钥** |
 | `/home/xiaokubao/.local/share/schedule-deps` | **后端依赖（112 MB）**，见 1.3 |
+| `/home/xiaokubao/.local/share/schedule-apk` | **App 自更新的安装包**（`schedule-<versionCode>.apk` + `version.json`），nginx 挂在 `/schedule/dl/`。同样不放工程目录 —— SMB 读大文件不可靠。发布见 `deploy/publish-apk.sh` |
 | `/home/xiaokubao/docker/nginx` | nginx 的 compose + `conf.d/` + `certs/` |
 
 > `/home/xiaokubao/family` 是指向 `/mnt/fnos/family` 的软链，同一份文件，

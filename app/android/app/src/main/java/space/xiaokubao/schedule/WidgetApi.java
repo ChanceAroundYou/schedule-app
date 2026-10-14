@@ -47,6 +47,25 @@ class WidgetApi {
         void onFail(String why);
     }
 
+    /**
+     * 写操作的回调 —— **三种结局分开报**，因为处理方式完全不同：
+     *
+     *   · {@link #onAccepted}  服务端认了（applied &gt; 0）
+     *   · {@link #onRejected}  服务端明确拒了（HTTP 200 但 applied == 0）
+     *   · {@link #onUnreachable} 根本没问出结果：断网、超时、非 2xx、票失效
+     *
+     * 为什么必须拆开：后两者都长着「失败的样子」，但一个是**已经有答案了**
+     * （服务端说不行，界面该回到它返回的真相），一个是**还没有答案**
+     * （界面该保留乐观结果、入队等下次）。以前合成一个 onFail，于是「被拒」
+     * 也被当成「离线」处理 —— 一条永远不可能成功的 op 在队列里反复重发，
+     * 桌面还一直显示着一个服务端并不承认的状态。
+     */
+    interface OpCallback {
+        void onAccepted(JSONObject body);
+        void onRejected(JSONObject body, String why);
+        void onUnreachable(String why);
+    }
+
     /** 拉一次数据。返回体就是快照形状，直接喂给 WidgetSnapshot.parse */
     static void bootstrap(Context c, Callback cb) {
         String token = WidgetPrefs.token(c);
@@ -66,21 +85,61 @@ class WidgetApi {
      *          "fields": { "done": true, "doneAt": 1699999999999 } }
      *        entityId 传 "@new" 时服务端发一个新 id（新建任务用）
      */
-    static void op(Context c, JSONArray ops, Callback cb) {
+    static void op(Context c, JSONArray ops, OpCallback cb) {
         String token = WidgetPrefs.token(c);
         if (token == null || token.isEmpty()) {
             Log.w(TAG, "op 跳过：本地还没有票（App 没登录过？）");
-            cb.onFail("no-token");
+            cb.onUnreachable("no-token");
             return;
         }
         try {
             JSONObject body = new JSONObject();
             body.put("deviceId", WidgetPrefs.deviceId(c));
             body.put("ops", ops);
-            request(c, "POST", "/api/widget/op", body, token, cb);
+            // op 的结局有三类，这里用老的二态 Callback 接住再分流
+            request(c, "POST", "/api/widget/op", body, token, new Callback() {
+                @Override
+                public void onOk(JSONObject resp) {
+                    route(cb, resp);
+                }
+
+                @Override
+                public void onFail(String why) {
+                    cb.onUnreachable(why);
+                }
+            });
         } catch (Exception e) {
-            cb.onFail("build-body: " + e.getMessage());
+            cb.onUnreachable("build-body: " + e.getMessage());
         }
+    }
+
+    /**
+     * 把一次 200 分成「接受」与「拒绝」。
+     *
+     * 服务端 `/api/widget/op` **永远是 200**：权限不够、实体不存在、时钟漂移
+     * 被 applyOps 拒掉，全都体现在 body 的 {@code applied: 0} + {@code rejected}
+     * 里，HTTP 状态码看不出任何区别。所以这里按 applied 分流。
+     *
+     * {@code applied} 键缺失（老服务端）时按接受算 —— 那时没有拒绝这个概念，
+     * 别把正常响应当成失败把界面回滚了。
+     */
+    private static void route(OpCallback cb, JSONObject resp) {
+        int applied = resp.optInt("applied", -1);
+        if (applied != 0) {
+            cb.onAccepted(resp);
+            return;
+        }
+        String why = "服务端没有接受这次修改";
+        JSONArray rejected = resp.optJSONArray("rejected");
+        if (rejected != null && rejected.length() > 0) {
+            JSONObject r0 = rejected.optJSONObject(0);
+            if (r0 != null) {
+                String reason = r0.optString("reason", "");
+                why = reason.isEmpty() ? why : "服务端拒绝：" + reason;
+            }
+        }
+        Log.w(TAG, "op 被拒绝（applied=0）: " + why);
+        cb.onRejected(resp, why);
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────

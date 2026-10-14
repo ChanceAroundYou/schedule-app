@@ -5,6 +5,8 @@ import android.app.TimePickerDialog;
 import android.content.DialogInterface;
 import android.os.Bundle;
 import android.view.Window;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -51,8 +53,18 @@ public class CreateTaskActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.dialog_create);
 
+        // 弹框一打开就把焦点给标题、并唤起软键盘 —— 用户点「+」后要**直接能打字**，
+        // 不要再手动点一下输入框才出键盘（2026-10-14）。
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+
         final String date = getIntent().getStringExtra("date");
         final EditText title = findViewById(R.id.c_title);
+        // 标题框立即拿到焦点并弹出键盘（见上方 setSoftInputMode），点「+」后直接能输入
+        title.requestFocus();
+        title.post(() -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(title, InputMethodManager.SHOW_IMPLICIT);
+        });
         startBtn = findViewById(R.id.c_start);
         endBtn = findViewById(R.id.c_end);
         durHint = findViewById(R.id.c_durhint);
@@ -70,7 +82,7 @@ public class CreateTaskActivity extends Activity {
             final int dur = durationMinutes();
             final String calId = defaultCalId(this);
 
-            // ① 乐观更新：本地造一条（id 是临时的，服务端返回真值后会整体覆盖）
+            // ① 乐观更新：本地造一条（id 是临时的，服务端返回真 id 后再换掉）
             final String localId = "t_local_" + System.currentTimeMillis();
             try {
                 JSONObject f = new JSONObject();
@@ -95,23 +107,36 @@ public class CreateTaskActivity extends Activity {
                 try {
                     JSONArray ops = new JSONArray();
                     ops.put(createOp(t, date, tm, dur, calId));
-                    WidgetApi.op(this, ops, new WidgetApi.Callback() {
+                    WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                         @Override
-                        public void onOk(JSONObject body) {
-                            WidgetPrefs.replaceSnapshot(CreateTaskActivity.this, body);
+                        public void onAccepted(JSONObject body) {
+                            // 把假 id 的占位换成服务端那条（真 id）。
+                            // **不能整表 replaceSnapshot** —— 那会把还没发出去
+                            // 的乐观改动一并抹掉，见 adoptCreated 的说明
+                            WidgetPrefs.adoptCreated(CreateTaskActivity.this, body,
+                                    localId, t, date, tm);
                             ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
                         }
 
                         @Override
-                        public void onFail(String why) {
-                            enqueueCreate(t, date, tm, dur);
+                        public void onRejected(JSONObject body, String why) {
+                            // 服务端不答应 → 撤掉占位，桌面回到真相
+                            WidgetPrefs.removeEntity(CreateTaskActivity.this, "tasks", localId);
+                            ScheduleWidgetProvider.refresh(CreateTaskActivity.this);
+                            Ui.toast(CreateTaskActivity.this, "新建没有成功，服务端没有接受");
+                        }
+
+                        @Override
+                        public void onUnreachable(String why) {
+                            // 离线/问不出去 → 保留本地那条，入队等下次
+                            enqueueCreate(t, date, tm, dur, localId);
                         }
                     });
                 } catch (Exception e) {
-                    enqueueCreate(t, date, tm, dur);
+                    enqueueCreate(t, date, tm, dur, localId);
                 }
             } else {
-                enqueueCreate(t, date, tm, dur);
+                enqueueCreate(t, date, tm, dur, localId);
             }
             finish();
         });
@@ -216,10 +241,17 @@ public class CreateTaskActivity extends Activity {
         return "";
     }
 
-    private void enqueueCreate(String t, String date, String tm, int dur) {
+    /**
+     * 入队等下次补发。
+     *
+     * @param localId 乐观更新时那条占位的 id —— 补发成功后要靠它把占位换成
+     *                服务端的真 id，所以必须一起存进队列
+     */
+    private void enqueueCreate(String t, String date, String tm, int dur, String localId) {
         try {
             JSONObject op = new JSONObject();
             op.put("kind", "create");
+            op.put("localId", localId);
             op.put("title", t);
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);

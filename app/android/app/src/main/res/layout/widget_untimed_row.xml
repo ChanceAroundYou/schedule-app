@@ -16,7 +16,7 @@
     android:ellipsize="end"
     android:gravity="center_vertical"
     android:maxLines="1"
-    android:paddingLeft="5dp"
+    android:paddingLeft="2dp"
     android:paddingRight="2dp"
     android:textColor="#1B3A2A"
     android:textSize="9sp" />

@@ -111,7 +111,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="0dp"
-        android:max="4"
+        android:max="60"
         android:progress="0"
         android:progressTint="#27795A"
         android:thumbTint="#27795A" />

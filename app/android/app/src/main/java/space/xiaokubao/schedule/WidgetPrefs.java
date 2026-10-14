@@ -45,14 +45,13 @@ class WidgetPrefs {
     static final int DEFAULT_END_HOUR = 20;
 
     /**
-     * 底板透明度（百分比）。**只能是这几档之一** —— 每档对应一份 drawable
-     * （原因见 drawable/widget_bg_a70.xml：RemoteViews 改不了 View 的 alpha）。
-     *
-     * 顺序 = 设置页滑杆**从左到右**的顺序：往右拉越透明（用户明确要的方向）。
-     * 五档是「拖动感」和「文件数量」的折中 —— 再多就得为每档养一份资源。
+     * 底板透明度（百分比）。范围 40–100 的**任意整数**都行 —— 滑杆连续拖动，
+     * 每个值都对应一张 drawable（每 2% 一张，见 ScheduleWidgetProvider.bgFor 和
+     * res/drawable/widget_bg_a*.xml）。往右拉越透明（用户明确要的方向）。
      */
     static final String KEY_ALPHA = "schedule_widget_alpha";
-    static final int[] ALPHAS = {100, 85, 70, 55, 40};
+    static final int MIN_ALPHA = 40;
+    static final int MAX_ALPHA = 100;
     static final int DEFAULT_ALPHA = 100;
 
     private static SharedPreferences sp(Context c) {
@@ -208,6 +207,127 @@ class WidgetPrefs {
         sp(c).edit().putString(KEY_SNAPSHOT, snap.toString()).apply();
     }
 
+    /* ── 服务端视图的「局部合并」 ─────────────────────────────────────── */
+
+    /**
+     * 拿服务端返回的视图，**只覆盖本地快照里指定的那几条实体**，其余一律保留。
+     *
+     * 为什么不能整表 {@link #replaceSnapshot}：服务端视图里当然没有我们
+     * **还没发出去**的乐观改动（刚点的打卡、刚建还没落库的任务）—— 整表覆盖
+     * 会把它们从桌面上抹掉，等对应的 op 落地才重新出现，表现是
+     * 「刚加的东西闪了一下没了」。只同步这一批 op 真正碰到的那几条，
+     * 别的保持本地观感，等队列清空、下次 bootstrap 再自然对齐。
+     *
+     * 两个方向都靠它：
+     *   · 服务端**接受**了 → 把这条换成服务端的值（顺带修掉乐观算错的 streak）
+     *   · 服务端**拒绝**了 → 同样换成服务端的值 = 回到它返回的真相
+     *
+     * 服务端视图里**找不到**这个 id 时什么都不做 —— 那说明这条在服务端已经
+     * 不存在（删除被接受），本地留着墓碑正好，别去动别的数据。
+     *
+     * @param entity "tasks" 或 "habits"
+     * @param ids    这批 op 碰到的实体 id
+     */
+    static void mergeEntities(Context c, JSONObject serverView, String entity,
+                              java.util.List<String> ids) {
+        if (serverView == null || ids == null || ids.isEmpty()) return;
+        String json = sp(c).getString(KEY_SNAPSHOT, null);
+        if (json == null) return;
+        try {
+            JSONObject local = new JSONObject(json);
+            JSONArray src = serverView.optJSONArray(entity);
+            JSONArray dst = local.optJSONArray(entity);
+            if (src == null || dst == null) return;
+            for (String id : ids) {
+                JSONObject srv = null;
+                for (int i = 0; i < src.length(); i++) {
+                    JSONObject e = src.optJSONObject(i);
+                    if (e != null && id.equals(e.optString("id"))) { srv = e; break; }
+                }
+                if (srv == null) continue;      // 服务端没有这条 = 已删除，保持本地
+                for (int i = 0; i < dst.length(); i++) {
+                    JSONObject e = dst.optJSONObject(i);
+                    if (e != null && id.equals(e.optString("id"))) {
+                        // 整条换成服务端的（含 id 本身），本地那份可能带着
+                        // 乐观猜出来的 streak / doneAt，以服务端为准
+                        dst.put(i, new JSONObject(srv.toString()));
+                        break;
+                    }
+                }
+            }
+            sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+        } catch (Exception ignored) {
+            // 合并失败不致命：下一个 bootstrap 会整体纠正
+        }
+    }
+
+    /**
+     * 新建任务的落地：把「假 id 占位」换成服务端返回的那条。
+     *
+     * 新建时本地先用 {@code t_local_xxx} 占位才能立刻画出来，服务端的真 id
+     * 要等它返回。按「标题 + 日期 + 时间」在服务端视图里找那条**本地还没有**
+     * 的任务来对接 —— 匹配不上就什么都不做（占位留着，下次 bootstrap 整体
+     * 纠正），也绝不能整表覆盖（理由同 {@link #mergeEntities}）。
+     */
+    static void adoptCreated(Context c, JSONObject serverView, String localId,
+                             String title, String date, String time) {
+        if (serverView == null) return;
+        String json = sp(c).getString(KEY_SNAPSHOT, null);
+        if (json == null) return;
+        try {
+            JSONObject local = new JSONObject(json);
+            JSONArray src = serverView.optJSONArray("tasks");
+            JSONArray dst = local.optJSONArray("tasks");
+            if (src == null || dst == null) return;
+
+            // ① 撤掉占位
+            for (int i = 0; i < dst.length(); i++) {
+                JSONObject e = dst.optJSONObject(i);
+                if (e != null && localId.equals(e.optString("id"))) { dst.remove(i); break; }
+            }
+            // ② 本地已有的 id —— 服务端多出来的那条才是刚建的
+            java.util.HashSet<String> have = new java.util.HashSet<>();
+            for (int i = 0; i < dst.length(); i++) {
+                JSONObject e = dst.optJSONObject(i);
+                if (e != null) have.add(e.optString("id"));
+            }
+            String t = time == null ? "" : time;
+            for (int i = 0; i < src.length(); i++) {
+                JSONObject e = src.optJSONObject(i);
+                if (e == null) continue;
+                if (have.contains(e.optString("id"))) continue;
+                if (!title.equals(e.optString("title"))) continue;
+                if (!date.equals(e.optString("date"))) continue;
+                String st = e.optString("time", "");
+                if (!t.equals(st == null ? "" : st)) continue;
+                dst.put(new JSONObject(e.toString()));
+                break;
+            }
+            sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 从本地快照里删掉一条。**新建被服务端拒绝时**用 —— 占位那条得撤掉，
+     * 否则桌面一直挂着一条服务端并不存在的任务。
+     */
+    static void removeEntity(Context c, String entity, String id) {
+        String json = sp(c).getString(KEY_SNAPSHOT, null);
+        if (json == null) return;
+        try {
+            JSONObject local = new JSONObject(json);
+            JSONArray arr = local.optJSONArray(entity);
+            if (arr == null) return;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject e = arr.optJSONObject(i);
+                if (e != null && id.equals(e.optString("id"))) { arr.remove(i); break; }
+            }
+            sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
     // ── 直连服务器要用的三样 ──────────────────────────────────────────────
 
     static String token(Context c) {
@@ -284,15 +404,9 @@ class WidgetPrefs {
         sp(c).edit().putInt(KEY_ALPHA, normalizeAlpha(pct)).apply();
     }
 
-    /** 吸附到最近的合法档位 —— 免得旧版本存下的值或手改的值画出四不像 */
+    /** 夹到合法区间 40–100 —— 免得旧版本存下的值或手改的值画出四不像 */
     private static int normalizeAlpha(int pct) {
-        int best = DEFAULT_ALPHA;
-        int diff = Integer.MAX_VALUE;
-        for (int a : ALPHAS) {
-            int d = Math.abs(a - pct);
-            if (d < diff) { diff = d; best = a; }
-        }
-        return best;
+        return Math.max(MIN_ALPHA, Math.min(MAX_ALPHA, pct));
     }
 
     private static int clampHour(int h) {
