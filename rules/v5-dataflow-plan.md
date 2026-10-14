@@ -17,8 +17,7 @@
 | 位置 | 现象 | 归属 |
 |---|---|---|
 | `views/` 受控 `Input onChange` ×N | 打字本地态，无 store 调用 | D2 特许，留 |
-| `Dropdown` 内部手写 `<button>` ×2 | 该走 `Btn` | 第 1 册 S4 修 |
-| `Sheet --kb` 兜底 | 运行时变量真默认值 | 第 3 册 N3 白名单，留 |
+| `Dropdown` 内部手写 `<button>` ×2 | 该走 `Btn` | 第 1 册 S4 修（选项 `role="option"`，改 `Btn` 毁 A11y，不改） |
 
 ## 2. verify（2026-10-14）
 

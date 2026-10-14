@@ -95,8 +95,8 @@ ui/
 
 ### 5.3 迁移期间的临时豁免
 
-`Dropdown` 当前收了 `className` / `menuClassName`，`Sheet` 收了 `--kb` 兜底。
-第一册修 `Dropdown`，`Sheet` 的 `--kb` 是运行时变量（键盘高度），扫描器已豁免，**不动**。
+`Dropdown` 当前收了 `className` / `menuClassName`（实测全是布局/定位类，见 2.1）。
+第一册修 `Dropdown`。
 
 ---
 
@@ -191,5 +191,4 @@ B/C **按组推进**（`overlays → quick-add → shell → kit`），每组改
 | `ui/kit/IconBtn.tsx` | `danger` / `primary` 两个布尔 | 合并为 `tone` prop | ✅ 已修（88296f4） |
 | `ui/kit/Dropdown.tsx:95-128` | 内部手写 2 处 `<button>` | 改走 `Btn` | ⏸ 不改（选项 `role="option"`，改 `Btn` 毁 A11y） |
 | `ui/kit/{Dropdown,IconBtn,Btn}.tsx` | 收 `className` | 留布局类（见 2.1） | ✅ 已定（布局类白名单，Interpretation B） |
-| `ui/kit/Sheet.tsx:48` | `pb-[var(--kb,0px)]` | **不动**（运行时变量，扫描器已豁免） | — 保留 |
 | `ui/settings/SettingsView.tsx` | `rounded-full`（Tailwind 自带） | 改 `rounded-[var(--r-pill)]` | ✅ 已修（现为 `rounded-[var(--r-lg)]`/`rounded-[var(--r-sm)]`，归第 3 册 N5 一并清） |
