@@ -24,5 +24,7 @@ export { Dropdown } from './Dropdown.tsx';
 export type { DropdownOption } from './Dropdown.tsx';
 export { Chips } from './Chips.tsx';
 export { SheetPicker } from './SheetPicker.tsx';
-export { Card, Field, Row } from './Card.tsx';
+export { Card } from './Card.tsx';
+export { Field } from './Field.tsx';
+export { Row } from './Row.tsx';
 export { InlineRename } from './InlineRename.tsx';

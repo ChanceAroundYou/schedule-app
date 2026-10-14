@@ -27,7 +27,7 @@
 
 ### N1 文件名 = 主导出名
 
-- `ui/kit/Foo.tsx` 导出 `Foo`（`Card.tsx` 导出 `Card/Field/Row` 是布局原语三件套，特许一组）。
+- `ui/kit/Foo.tsx` 导出 `Foo`（布局原语 `Card`/`Field`/`Row` 各一文件，一个文件一个导出）。
 - `domain/types/Foo.ts` 导出 `Foo` 类型；`domain/model/foo.ts` 按行为分组（`tasks.ts` 查任务、`habits.ts` 查打卡）。
 - 桶文件只 re-export，不写逻辑；新文件先查有无同类可复用（`rg` 一遍），再决定新建。
 - 测试文件 `test_<module>.py` / `*.test.ts` 镜像源码结构（沿用工程规范）。
