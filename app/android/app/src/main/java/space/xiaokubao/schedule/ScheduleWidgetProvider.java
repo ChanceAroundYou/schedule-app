@@ -219,7 +219,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     // 现在统一成「完成变淡」，一眼就能把两类「已完成」对上。
                     chip.setInt(R.id.habit_chip, "setBackgroundResource",
                             h.done ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
-                    chip.setTextColor(R.id.habit_chip, h.done ? 0xFF7E8F84 : 0xFFFFFFFF);
+                    chip.setTextColor(R.id.habit_chip, h.done ? 0xFF7E8F84 : 0xFF1B3A2A);
                     chip.setOnClickPendingIntent(R.id.habit_chip,
                             WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
                     row.addView(R.id.habit_row, chip);
@@ -520,7 +520,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // 未完成的打卡」同一色系（用户 2026-10-14：两类未完成要同色）。
             block.setInt(R.id.task_block, "setBackgroundResource",
                     R.drawable.widget_task_bg);
-            block.setTextColor(R.id.task_block, 0xFFFFFFFF);
+            block.setTextColor(R.id.task_block, 0xFF1B3A2A);
         }
         block.setOnClickPendingIntent(R.id.task_block,
                 WidgetIntent.of(c, ACTION_TASK, "t" + t.id).put(EXTRA_ID, t.id).build(c));
@@ -552,12 +552,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                         R.drawable.widget_task_bg_done);
                 r.setTextColor(R.id.untimed_row, 0xFF7E8F84);
             } else {
-                // 未完成：与未完成打卡同一主绿 + 白字（未完成的任务/打卡同色系）。
-                // ⚠️ 必须显式设底和字：widget_untimed_row.xml 的默认底是
-                // widget_task_bg（现为主绿）、默认字是深绿，不覆盖会「绿底深字」看不清。
+                // 未完成：与未完成打卡同一浅绿 + 深绿字（未完成的任务/打卡同色系）。
                 r.setInt(R.id.untimed_row, "setBackgroundResource",
                         R.drawable.widget_task_bg);
-                r.setTextColor(R.id.untimed_row, 0xFFFFFFFF);
+                r.setTextColor(R.id.untimed_row, 0xFF1B3A2A);
             }
             r.setOnClickPendingIntent(R.id.untimed_row,
                     WidgetIntent.of(c, ACTION_TASK, "u" + t.id).put(EXTRA_ID, t.id).build(c));

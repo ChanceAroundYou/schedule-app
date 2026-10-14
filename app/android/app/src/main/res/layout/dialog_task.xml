@@ -2,60 +2,63 @@
 <!--
   任务**编辑 / 删除**弹框。不用打开 App，就在桌面上改。
 
-  2026-10-14 收紧凑（用户要求跟设置弹框一个密度）：
-  · 286dp → **252dp**，内边距 14 → **12dp**，字号各降一档，行距收紧
-  · **「完成」独立成左侧勾选框**（`d_done`，小方块 + 勾），不再和保存/删除并列；
-    底排只剩 **[保存] [删除]**；去掉「关闭」，点弹框外部 / 返回键关闭
-  · **日期可编辑**（`d_date` 点了弹日历选择器）
+  2026-10-14（本轮）再压缩：
+  · 252dp → **232dp**，内边距 12 → **10dp**
+  · 「完成」不再显示文字 —— 改成一个**左侧的小方块勾选框**（d_done），
+    占满弹窗左侧这一列；勾选 = 主绿实心 + 白勾，未勾 = 空心方块。
+  · 标题输入框给**更多留白**（浅灰底 + 内边距 8/10），保存 / 删除按钮
+    **收紧**（最小高度 0、上下留白减小），整体更紧凑有效率。
+  · 底排只剩 **[保存] [删除]**；去掉「关闭」，点弹框外部 / 返回键关闭
+  · 日期可编辑（d_date 点了弹日历选择器）
 
-  日期只显示「落到哪天」这个事实本身，不加任何说明性小字 —— 用户明确不要。
+  日期只显示「落到哪天」这个事实本身，不加任何说明性小字。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="252dp"
+    android:layout_width="232dp"
     android:layout_height="wrap_content"
     android:background="@drawable/dialog_bg"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <TextView
         android:id="@+id/d_head"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
         android:text="编辑任务"
         android:textColor="#1B3A2A"
         android:textSize="13sp"
         android:textStyle="bold" />
 
-    <EditText
-        android:id="@+id/d_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="做什么"
-        android:inputType="text"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:textColor="#1B3A2A"
-        android:textColorHint="#8AA294"
-        android:textSize="13sp" />
-
-    <!-- 完成：独立成左侧勾选框，不再和保存/删除并列 -->
+    <!-- 标题行：左侧小方块勾选框 + 任务输入框（输入框留白加大） -->
     <LinearLayout
-        android:id="@+id/d_done_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <CheckBox
             android:id="@+id/d_done"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginRight="8dp"
             android:button="@drawable/checkbox_done"
-            android:text="完成"
+            android:text="" />
+
+        <EditText
+            android:id="@+id/d_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/widget_habit_bg"
+            android:hint="做什么"
+            android:inputType="text"
+            android:paddingLeft="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
             android:textColor="#1B3A2A"
-            android:textSize="12sp" />
+            android:textColorHint="#8AA294"
+            android:textSize="13sp" />
     </LinearLayout>
 
     <!-- 日期：整行按钮，点了弹日历选择器 -->
@@ -64,7 +67,7 @@
         style="?android:attr/borderlessButtonStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:background="@drawable/widget_habit_bg"
         android:text="2026-10-13"
         android:textColor="#1B3A2A"
@@ -74,7 +77,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -114,23 +117,23 @@
         android:id="@+id/d_durhint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="3dp"
         android:textColor="#8AA294"
         android:textSize="10sp" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="6dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp"
         android:background="#DCE9DF"
         android:text="" />
 
-    <!-- 底部两个按钮：保存 · 删除（「完成」已移到上方左侧勾选框） -->
+    <!-- 底部两个按钮：保存 · 删除（「完成」已移到上方左侧勾选框）。
+         收紧：最小高度 0、上下留白减小，不再那么空。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
         android:orientation="horizontal">
 
         <Button
@@ -140,8 +143,10 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:text="保存"
             android:textColor="#27795A"
             android:textSize="12sp"
@@ -154,8 +159,10 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:minWidth="0dp"
-            android:paddingLeft="0dp"
-            android:paddingRight="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:text="删除"
             android:textColor="#C0392B"
             android:textSize="12sp" />

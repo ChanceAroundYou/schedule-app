@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 打卡格：已打。主绿铺底 + 白字。圆角与未打态一致（5dp） -->
+<!--
+  打卡格：未打（进行中）。浅绿底，与「未完成任务」（widget_task_bg）同一浅绿，
+  圆角与已打态一致（5dp）。2026-10-14 本轮：深绿 #27795A 太重，深度大幅调浅。
+  白字已不可读，对应文字色在 ScheduleWidgetProvider 里改成深绿 #1B3A2A。
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#27795A" />
+    <solid android:color="#D0E9D7" />
     <corners android:radius="5dp" />
 </shape>
