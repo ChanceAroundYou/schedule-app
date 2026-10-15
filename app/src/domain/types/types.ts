@@ -25,5 +25,5 @@ export type { Role, Cal, Member, Invite } from './Cal.ts';
 export { canWrite, canManage, ROLE_LABEL, ROLES, ASSIGNABLE_ROLES, ROLE_HINT } from './Cal.ts';
 export type { Entity } from './Entity.ts';
 export type { Op, Rejected, Change, FieldConflict, SyncResponse } from './Op.ts';
-export type { ThemeMode, AccentKey, StyleKey, UiPrefs } from './UiPrefs.ts';
+export type { ThemeMode, AccentKey, StyleKey, UiPrefs, DraftSeed } from './UiPrefs.ts';
 export type { LocalState, PublicUser } from './LocalState.ts';

@@ -10,6 +10,7 @@ import { TaskPill } from '../parts.tsx';
 import { useDraggableEvent, useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
 import { pad2, hours24, type LayoutEvent } from './shared.ts';
+import { draftOn, NewCellSlot } from './NewCell.tsx';
 
 function weekEvents(state: LocalState, iso: string) {
   const slots: Slot<Task>[] = tasksOn(state, iso).filter((t) => t.time).map((t) => {
@@ -41,11 +42,21 @@ function WeekEvent({ e }: { e: LayoutEvent }) {
 
 function WeekColumn({ state, d, today }: { state: LocalState; d: string; today: string }) {
   const zone = useDroppableZone(`week:${d}`);
+  /* 周视图的高度是写死的像素（整天 DAY_H），所以草稿框也用 px 定位，
+     跟 `WeekEvent` 那套换算保持一致 —— 高度是一小时，即新任务的默认时长 */
+  const seed = draftOn(state.ui, `week:${d}`);
+  const min = seed?.time ? D.timeToMin(seed.time) : null;
   return (
     <div className={'week-col' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`week:${d}`} data-date={d}>
       {weekEvents(state, d).map((e) => (
         <WeekEvent key={e.item.id} e={e} />
       ))}
+      {min != null && (
+        <NewCellSlot
+          state={state} zoneId={`week:${d}`} className="new-cell--abs"
+          style={{ top: (min / 1440) * DAY_H, height: HOUR_H }}
+        />
+      )}
     </div>
   );
 }
@@ -58,6 +69,8 @@ function WunCell({ state, d, today }: { state: LocalState; d: string; today: str
       {un.length
         ? un.map((t) => <TaskPill key={t.id} task={t} />)
         : <span className="wun-empty" />}
+      {/* 点这一格的任何空位 → 未定时任务就建在这一天 */}
+      <NewCellSlot state={state} zoneId={`allday:${d}`} />
     </div>
   );
 }

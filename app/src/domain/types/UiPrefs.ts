@@ -4,6 +4,20 @@
 
 /** 深浅。`auto` = 跟随系统，实际生效的那一档由 ui/theme.ts 解析 */
 export type ThemeMode = 'auto' | 'light' | 'dark';
+
+/**
+ * 一个还没落成任务的草稿格子 —— `ui.draft` 的形状。
+ *
+ * 它只描述「在哪建」，不描述内容（内容在输入框里，还没交出来）：交出来的那一
+ * 刻才由 `store.addTask()` 变成真任务，这个对象随即清空。
+ */
+export interface DraftSeed {
+  /** 落在哪个区域。值就是 dnd 那边的 zone id —— 两边用同一套名字，不用对一次表 */
+  zone: string;
+  date: string;
+  /** 由格子位置算出来的时间。全天区与月视图不带时间，是 null */
+  time: string | null;
+}
 /** 色板。只改主色族，底色归深浅那一轴 —— 见 styles/tokens.css 的「色板轴」一段 */
 export type AccentKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate';
 /** 风格。几何（圆角 / 阴影）全在 CSS 里，TS 这边只有 label —— 见 styles/tokens.css 的「风格轴」 */
@@ -73,6 +87,23 @@ export interface UiPrefs {
    * 所以 normalizeUi 每次加载都把它清成 null —— 见 model/ui.ts。
    */
   sel: string[] | null;
+  /**
+   * 就地新建的草稿格子（2026-10-15）：点日程表上一个空格子时落在这里。
+   *
+   * **日期与时间由格子的位置决定** —— 点时间轴哪一刻就是那一整天里的那一刻，
+   * 点全天区或月视图某一格就是那一天、不带时间。视图照 `zone` 对号入座：
+   * 同一个日期在日视图里叫 `timeline:`、在周视图里叫 `week:`，前缀顺带把
+   * 「这个区域带不带时间」说清楚了（见 app/clickDispatch.ts 的 `openDraft`）。
+   *
+   * 为什么放在 `ui` 里、而不是某个视图自己的 `useState`：数据只能这么流。
+   * `views/` 下的组件只收 `state`、不接回调，而点击是由挂在 `#content` 上的
+   * **一个**监听器分派的（AGENTS.md「点击事件必须走委托」）—— 派发器往这里写、
+   * 视图从这里读，和其余交互走同一条路。
+   *
+   * **瞬时状态**：与 `sel` 同理，每次载入清空。跨会话留着只会让用户一打开
+   * 就看见上次没打完的一个空框，而它记的日期早过期了。
+   */
+  draft: DraftSeed | null;
   /** 当前选中的日程集。本地偏好，各设备可以看不同的集 */
   cal: string | null;
   /**

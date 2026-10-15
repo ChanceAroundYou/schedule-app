@@ -15,10 +15,10 @@
  *   1. `[data-act]`   行内动作（勾选、删除、还原…）
  *   2. `[data-jump]` / `[data-nav]` / `[data-jump-habits]` 跳转
  *   3. `.task-el`     点行 = 开抽屉
- *   4. `[data-drop]`  点日历空白 = 新建并直接打开抽屉
+ *   4. `[data-zone-id]` 点日历里的空格子 = 就地开一个输入框（见 openDraft）
  *
- * 第 4 步**必须排在第 3 步之后**：任务方块本身就长在落点区域里，顺序反了会把
- * 「点开某条任务」变成「新建一条空任务」，而且这条空任务还排在它前面。
+ * 第 4 步**必须排在第 3 步之后**：任务方块本身就长在那些区域里（`.task-el`），
+ * 顺序反了会把「点开某条任务」变成「新建一条空任务」，而且这条空任务还排在它前面。
  *
  * ## 新增一个动作
  *
@@ -215,26 +215,51 @@ export function makeOnChange() {
   };
 }
 
-/** 点日历空白 → 新建一条并直接打开抽屉。四种区域含义不同，不能统一处理 */
-function dropZone(zone: HTMLElement, e: React.MouseEvent, setOpenId: (id: string | null) => void): void {
-  const kind = zone.dataset.drop;
-  const date = zone.dataset.date || store.get().ui.cursor;
+/** 能开草稿框的区域前缀。改动这张表要连 `views/calendar/` 那几个 `NewCellSlot` 一起动 */
+const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day'];
 
-  if (kind === 'day' || kind === 'allday') {
-    // 全天区与月视图格子只给日期不给时间
-    setOpenId(store.addTask({ title: '', date, time: null }));
-    return;
-  }
-  if (kind === 'timeline' || kind === 'week') {
+/**
+ * 点日历上的空格子 → 在那个位置**就地开一个输入框**（日期与时间由格子决定）。
+ *
+ * ## 为什么不直接 `addTask` 再开抽屉
+ *
+ * 这是 2026-10-15 改的写法。老版本是「新建一个空任务 + 立刻弹抽屉」，两个毛病：
+ * 第一，**先造了一条垃圾** —— 抽屉一关（或 Esc）那条空任务就留在那儿了，得自己
+ * 再删一次；第二，「在哪一天几点」这种本该由**点的位置**说了算的事，被推给了抽屉
+ * 里的两个表单字段。现在是反过来：位置决定日期时间，抽屉是**事后再补给细节**的
+ * 地方（标题点进去看、加备注、设重复），不再承担「确定时空坐标」。
+ *
+ * ## 四种区域前缀的来历
+ *
+ * zone id 本来是给 dnd 用的（`useDroppableZone`），这里**复用同一套名字** ——
+ * 拖拽落下与点击开框认的是同一个「这是哪一块」的答案，两边各起一套名字迟早漂。
+ * 前缀同时也表达了「这一区带不带时间」：带时间的两区要拿 pointer 的纵坐标换算，
+ * 不带时间的两区有日期就够了。
+ */
+function openDraft(zone: HTMLElement, e: React.MouseEvent): void {
+  const zid = zone.dataset.zoneId || '';
+  const kind = zid.slice(0, zid.indexOf(':'));
+  /* `data-zone-id` 不是日历专用的：项目泳道的每一列（`proj:<id>:<column>`）
+     也用它做拖放的落点。点到那里不该开出个草稿框 —— 那儿的 columns 既不是日期
+     也不是时刻。所以按前缀白名单过滤，而不是「有 data-zone-id 就算」。 */
+  if (!DRAFT_KINDS.includes(kind)) return;
+
+  const date = zone.dataset.date || store.get().ui.cursor;
+  let time: string | null = null;
+
+  if (kind === 'timeline') {
+    /* 日视图时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——
+       实测高度 + 窗内换算，见 domain/layout.ts 的 yToMin（顺带对齐 15 分钟）。 */
     const r = zone.getBoundingClientRect();
-    /* 时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——
-       实测高度 + 窗内换算，见 domain/layout.ts 的 yToMin。
-       周视图是固定 DAY_H，才用那一套公式。 */
-    const min = kind === 'timeline'
-      ? yToMin(e.clientY - r.top, r.height, domWindow(zone))
-      : Math.max(0, Math.min(1425, Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15));
-    setOpenId(store.addTask({ title: '', date, time: D.minToTime(min) }));
+    time = D.minToTime(yToMin(e.clientY - r.top, r.height, domWindow(zone)));
+  } else if (kind === 'week') {
+    const r = zone.getBoundingClientRect();
+    const min = Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15;
+    time = D.minToTime(Math.max(0, Math.min(1425, min)));
   }
+  // 'allday'（全天区）与 'day'（月视图格子）不带时间 —— 只落在那一天
+
+  store.setUi({ draft: { zone: zid, date, time } });
 }
 
 export function makeOnClick(deps: ClickDeps) {
@@ -279,8 +304,10 @@ export function makeOnClick(deps: ClickDeps) {
     if (row?.dataset.id && !row.classList.contains('habit-row')) { deps.setOpenId(row.dataset.id); return; }
     // 打卡条上的条目点标题不做任何事（点勾是打卡，长按改期）
 
-    // 4) 点日历空白
-    const zone = el.closest<HTMLElement>('[data-drop]');
-    if (zone) dropZone(zone, e, deps.setOpenId);
+    /* 4) 点日历里的空格子 → 就地开一个输入框。
+       这一层必须排在第 3 步之后**：任务卡片本身就长在这些区域里（`.task-el`），
+       顺序反了会把「点开某条任务」变成「又开一个草稿框」。 */
+    const zone = el.closest<HTMLElement>('[data-zone-id]');
+    if (zone) openDraft(zone, e);
   };
 }

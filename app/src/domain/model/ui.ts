@@ -82,6 +82,8 @@ export function defaultUi(): UiPrefs {
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     sel: null,
+    // 就地新建的草稿格。瞬时状态，同上
+    draft: null,
     cal: null,
     // 侧栏「显示哪几个集」。空数组只有 normalizeUi 的坏值回落才会真的出现 ——
     // store.toggleCal() 保证至少留一个勾着的（见 types.ts 的注释）
@@ -126,6 +128,10 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
      不这么做的话，用户上次关页面时停在多选态，下次一打开 App 就莫名其妙
      处在多选里，而且还带着一堆可能已经过期的任务 id。 */
   ui.sel = null;
+  /* 草稿格同样是**瞬时状态**（2026-10-15）：一个输入框赖在下一次会话的日程表
+     上，用户第一眼看见的是「上次没打完的半句话」而不是今天要做的事；
+     它记的日期多半也已经过期。 */
+  ui.draft = null;
   /* 时间窗：只认 0–24 的整数小时，且至少留 MIN_SPAN 小时。
      写坏的值（字符串、NaN、to ≤ from）一律回落成整天 —— 归一化的职责是
      「认得的值原样保留，不认得的打回默认」，不是替用户猜一个好看的窗。 */
