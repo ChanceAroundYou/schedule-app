@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  弹框里的**输入框 / 按钮**底。
+
+  2026-10-14：原来是直接复用 widget_habit_bg（**灰绿 #E9EDEA**，那是「已完成」的
+  颜色），用户看着觉得「一片灰」。这里换成极浅的绿白 #F4FAF6 + 一圈更浅的描边，
+  跟弹框底板 #F1F8F3 有细微层次，但整体不再是灰调。
+
+  padding 写进 drawable 里没用（Button/EditText 会覆盖），所以内边距仍在布局里调。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/dialogField" />
+    <corners android:radius="8dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#DFEEE5" />
+</shape>

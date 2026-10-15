@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动器图标背景层：取 app/public/icon.svg 的渐变（#27795A → #3F7D8C）。
+  全幅不带圆角 —— 自适应图标的形状由系统裁（圆形/方圆角/Squircle），
+  自己画圆角会和系统遮罩打架，边缘露出一圈底色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportHeight="108"
+    android:viewportWidth="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="108"
+                android:endY="108"
+                android:startX="0"
+                android:startY="0"
+                android:type="linear">
+                <item
+                    android:color="#27795A"
+                    android:offset="0.0" />
+                <item
+                    android:color="#3F7D8C"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

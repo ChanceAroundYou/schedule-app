@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日程小组件布局。
+
+  ⚠️ RemoteViews 的限制（改之前先看）：
+  1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
+     用 ScrollView 之类**不是「滚不动」，而是 launcher inflate 时直接抛异常**，
+     整个组件变成一块「载入窗口小部件时出现问题」的空板，应用侧零日志。
+  2. 子视图白名单里**没有裸 `<View>`**，占位条 / 分隔线一律用空 TextView。
+  3. 不能测量宽高 → 「自适应」只能自己算。
+  4. 接不到手势。
+  5. `setViewLayoutHeight` 是 API 31（Android 12）起才有的 —— 时间轴靠它
+     把每个元素的高度钉死。
+
+  ≡≡ 结构（2026-10-13 定）≡≡
+
+  head 行 / 日期条 / 打卡区 → 尺寸固定，不随组件缩放。
+
+  然后是一个**十字面板**（未定时与已定时是同一条面板的四格）：
+
+       ┌──────┼────────────────────────────┐
+       │ 空白 │ [未1][未2][未3][未4][未5]+N │ ← 顶行（常驻）
+       ├──────┼────────────────────────────┤ ← 横分割线
+       │  08  │────── 小时细线 ────────────│
+       │  09  │  ██████                    │ ← 右下：主体
+       └──────┴────────────────────────────┘
+        刻度列      竖分割线 + 主体
+
+  · 左上空白角 = 「未定时」的标记，不写字，**永远常驻**
+  · 竖分割线**贯穿顶行和底行** —— 2026-10-13 用户指出「似乎没有探出头」，
+    以前只有下半截，十字是缺一半的。现在顶行也放一条，左右两格才真的分开。
+  · 刻度列 22dp → **16dp**（用户：给时间区留的太多了）
+  · 未定时卡与下方任务卡**左边缘对齐**（去掉 tl_tasks 的 paddingLeft；
+    两处卡片都靠 marginLeft=1dp 起排）
+  · 细线只画在右下主体里 —— 这是**结构保证**的（它是 tl_frame 的子视图）
+  · 竖 / 横分割线与右下的小时线颜色不同，两者一眼可分
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- ============ head：月份真正居中 + 左上角当天日期 ============
+         2026-10-14（第八轮）：
+         · 用 **FrameLayout** 布局 —— 中间那组「‹ 十月 ›」用 layout_gravity=center
+           钉死在**整个组件的中轴**上，不再受左边 logo / 右边图标宽度影响
+           （以前是 LinearLayout + weight，month 被左右挤得偏了）。
+         · 箭头离月份**拉远**（marginLeft/Right 8 → 12dp），不挤在一起。
+         · 右上「+」「⋯」都 28dp、同样 4dp padding —— 尺寸统一。
+         · 左上角原来的绿白 logo 换成**当天日期徽标**：一个黑白日历轮廓 +
+             中间写着今天几号（见 ic_calendar_badge），点一下仍回今天。 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="32dp">
+
+        <!-- 左上角：日历徽标 + 中间日期数字（数字由 provider 写 tv_logo_day） -->
+        <FrameLayout
+            android:id="@+id/iv_logo"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="left|center_vertical"
+            android:background="@drawable/ic_calendar_badge">
+
+            <TextView
+                android:id="@+id/tv_logo_day"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:text="14"
+                android:textColor="#333333"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/btn_prev_month"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="上一周"
+                android:padding="4dp"
+                android:src="@drawable/ic_chevron_left" />
+
+            <TextView
+                android:id="@+id/tv_month"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="12dp"
+                android:layout_marginRight="12dp"
+                android:gravity="center"
+                android:text="十月"
+                android:textColor="#1B3A2A"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/btn_next_month"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="下一周"
+                android:padding="4dp"
+                android:src="@drawable/ic_chevron_right" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="right|center_vertical"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/btn_add"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:contentDescription="新建任务"
+                android:padding="4dp"
+                android:src="@drawable/ic_plus" />
+
+            <ImageView
+                android:id="@+id/btn_settings"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:contentDescription="小组件设置"
+                android:padding="4dp"
+                android:src="@drawable/ic_more" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- ============ 日期条（一周七天，选哪天就只看哪天）============ -->
+    <LinearLayout
+        android:id="@+id/date_strip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal" />
+
+    <!-- ============ 打卡区 ============
+         上下对称：容器 padding 2dp + 每格上下各 1dp margin = 上 3 / 下 3。
+         （以前格子只有 marginTop、没有 marginBottom，导致上 5 下 3。） -->
+    <LinearLayout
+        android:id="@+id/habit_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:background="#E7F3EA"
+        android:orientation="vertical"
+        android:padding="2dp"
+        android:visibility="gone" />
+
+    <!-- ============ 十字面板 ============ -->
+    <LinearLayout
+        android:id="@+id/panel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="2dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- 顶行：左空白角（= 未定时的标记）+ 竖分割线 + 右未定时横条。
+             常驻，高度固定。竖分割线在这一行也要有 —— 否则「十字」只有下半截，
+             左上空白角和右上未定时条分不开（用户 2026-10-13 指出）。 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="15dp"
+            android:orientation="horizontal">
+
+            <!-- 左上空白角 = 未定时的标记。宽度与左下刻度列（tl_scale）一致，
+                 否则十字的竖线上下错位。2026-10-14：16 → 20dp，
+                 配合刻度列加宽（见 widget_tl_hour 的说明）。 -->
+            <TextView
+                android:layout_width="20dp"
+                android:layout_height="match_parent"
+                android:text="" />
+
+            <TextView
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#C6DCCF"
+                android:text="" />
+
+            <LinearLayout
+                android:id="@+id/untimed_bar"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </LinearLayout>
+
+        <!-- 横分割线（十字线之一） -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#C6DCCF"
+            android:text="" />
+
+        <!-- 底行：刻度列 + 竖分割线 + 主体 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+
+            <!-- 刻度列。2026-10-14：16 → 20dp —— 给数字留出「中心落在
+                 卡片左边缘与分割线中点」所需的宽度（见 widget_tl_hour）。
+                 20dp - 8dp(paddingRight) = 12dp 内容盒，容得下两位数字。 -->
+            <LinearLayout
+                android:id="@+id/tl_scale"
+                android:layout_width="20dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical" />
+
+            <!-- 竖分割线（十字线之一） -->
+            <TextView
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#C6DCCF"
+                android:text="" />
+
+            <FrameLayout
+                android:id="@+id/tl_frame"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1">
+
+                <LinearLayout
+                    android:id="@+id/tl_grid"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical" />
+
+                <!-- 任务层。**没有 paddingLeft** —— 未定时卡在顶行也是从
+                     marginLeft=1dp 起排，两边靠同一个 1dp 对齐（用户要求）。 -->
+                <LinearLayout
+                    android:id="@+id/tl_tasks"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 底部状态 -->
+    <TextView
+        android:id="@+id/tv_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="#6B8574"
+        android:textSize="9sp"
+        android:visibility="gone" />
+</LinearLayout>

@@ -15,6 +15,7 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
     note: partial.note || '',
     date,
     time: partial.time ?? null,
+    reminder: partial.reminder ?? null,
     duration: partial.duration ?? null,
     done: partial.done ?? false,
     doneAt: partial.doneAt ?? null,
@@ -25,6 +26,8 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
     ord: partial.ord ?? null,
     createdAt: partial.createdAt || Date.now(),
     source: partial.source ?? null,
+    skipped: partial.skipped ?? false,
+    repeatUntil: partial.repeatUntil ?? null,
     _ts: partial._ts || {},
     _dev: partial._dev || {},
   };

@@ -139,9 +139,15 @@
 
 /* ================= 顶栏 ================= */
 
+/* 顶栏的内边距要**额外加上系统栏的占位**（2026-10-14）。
+   安卓 15+ 强制 edge-to-edge，内容一直铺到状态栏底下 —— 不加的话
+   左边那个「待办箱」正好和手机自己的时间叠在一起。
+   `--sat / --sal / --sar` 由原生侧量好写进来（见 data/widget.ts 的
+   applySafeAreaInsets），网页版里它们不存在 → 兜底 0px，和改动前完全一致。 */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px; border-bottom: 1px solid var(--border);
+  padding: calc(14px + var(--sat, 0px)) calc(22px + var(--sar, 0px)) 14px calc(22px + var(--sal, 0px));
+  border-bottom: 1px solid var(--border);
   background: var(--panel); gap: 16px;
 }
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; }

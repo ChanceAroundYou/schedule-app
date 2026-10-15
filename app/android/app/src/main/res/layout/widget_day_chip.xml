@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日期条上的一格。
+
+  **选中高亮只包日期数字，不包星期**（用户 2026-10-14 第八轮）：
+  星期几（一二三四五六日）是固定的，翻上/下周都一样，用颜色圈它没意义；
+  圈只该套住会变的「几号」。
+
+  结构：外层 FrameLayout 只负责等分占位；里面竖直排「星期（无底）」+
+  「日期（正圆底 + 数字）」。圆是一个**固定 22dp × 22dp 的 FrameLayout**，
+  宽高相等 → 永远是正圆。
+
+  2026-10-14：星期 8 → 9sp、日期 11 → 12sp，行距略放大（用户要求），
+  但仍明显小于标题。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/chip_root"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <!-- 星期：始终无底，选中时只换字色（不再变白） -->
+        <TextView
+            android:id="@+id/chip_wd"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="一"
+            android:textColor="#6B8574"
+            android:textSize="9sp" />
+
+        <!-- 日期：圆形高亮只作用于这一格 -->
+        <FrameLayout
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/chip_circle"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/chip_date"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:gravity="center"
+                android:text="12"
+                android:textColor="#1B3A2A"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+    </LinearLayout>
+</FrameLayout>

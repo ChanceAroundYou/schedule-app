@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日程小组件的元信息。
+
+  **下限锁死 4×4**（用户 2026-10-13 明确）：minResizeWidth/Height 从 180dp
+  抬到 250dp，与 minWidth/minHeight 齐平 —— 用户不能再把它拖得比 4×4 更小。
+  因为时间轴现在是「按组件高度把 8–22 全塞进去」，太小了行高会压到没法看，
+  与其让它显示成一条糊掉的线，不如直接不许拖到那么小。
+
+  顶部（月份行 / 日期条）尺寸固定、不随组件缩放，所以组件越高，
+  多出来的高度**全部给时间轴**。
+
+  updatePeriodMillis 给 30 分钟（Android 允许的最小值）。**别指望它**：
+  Android 12+ 起它是不精确闹钟，实际可能 ±1 小时，ColorOS 还会更懒。
+  真正的刷新靠 App 数据变化时主动发广播（见 WidgetBridge.java）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_schedule"
+    android:minWidth="250dp"
+    android:minHeight="250dp"
+    android:minResizeWidth="250dp"
+    android:minResizeHeight="250dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_schedule"
+    android:targetCellWidth="4"
+    android:targetCellHeight="4" />

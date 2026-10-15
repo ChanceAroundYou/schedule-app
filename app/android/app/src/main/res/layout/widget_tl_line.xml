@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  十字面板右下主体里的**小时细线**。
+  高度由代码钉死（和刻度列同一公式），保持占位作用。
+
+  2026-10-14（第八轮）：用户要求**去掉每小时横线** —— 横线太多、页面显乱。
+  这里只把背景去掉，元素仍保留（代码靠 setViewLayoutHeight 用它撑出每格的
+  高度，删掉元素会让网格层塌掉）。去掉后网格层变成一组隐形占位条。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tl_line"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="" />

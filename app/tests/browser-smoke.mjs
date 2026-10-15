@@ -3013,8 +3013,10 @@ try {
 
   /* 抽屉里的时间选择器（TimePicker）：一个按钮 + 一个表盘面板。
      **没有快捷格**（2026-10-09 精简）—— 日期选一次，时间选两次（开始、结束）。 */
+  // 只查「时间」字段里的控件：提醒也复用 TimePicker，不能让它改变这里的语义。
+  const timePickerButtons = `.drawer .time-row .tp-btn`;
   // 点开始时间的按钮，打开表盘
-  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-btn')][0]`);
+  await clickEl(page, `[...document.querySelectorAll(${JSON.stringify(timePickerButtons)})][0]`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '表盘打开了', 8000);
   const dialSize = await evalJs(page, `
     const f = document.querySelector('.drawer .tp-dial .cp-face').getBoundingClientRect();
@@ -3043,10 +3045,10 @@ try {
   `);
   ok(dialTime === '15:00', '表盘选 15:00 落盘，实际 ' + JSON.stringify(dialTime));
 
-  // 结束时间行出现了（因为开始时间已设）
-  await waitFor(page, `document.querySelectorAll('.drawer .tp-btn').length === 2 ? 1 : null`, '第二个时间选择框出现', 8000);
+  // 结束时间行出现了（因为开始时间已设）。提醒是另一字段，不能参与这个断言。
+  await waitFor(page, `document.querySelectorAll(${JSON.stringify(timePickerButtons)}).length === 2 ? 1 : null`, '第二个时间选择框出现', 8000);
   // 点结束时间的按钮，打开表盘
-  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-btn')][1]`);
+  await clickEl(page, `[...document.querySelectorAll(${JSON.stringify(timePickerButtons)})][1]`);
   await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '结束时间表盘打开了', 8000);
   await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num.cp-outer')].find((b) => b.textContent.trim() === '18')`);
   await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '0')`);
@@ -3062,7 +3064,7 @@ try {
   // 清除开始时间 → duration 也清掉（2026-10-13「duration 可为空」）：
   // 旧行为是回到默认 60，但那意味着「没有结束时间」仍被表达成一小时。
   // 新语义是 duration = null：没设结束时间就是不设，不是「设成一小时」。
-  await clickEl(page, `[...document.querySelectorAll('.drawer .tp-x')][0]`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .time-row .tp-x')][0]`);
   await waitFor(page, `
     (() => {
       const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- ============ 桌面小组件 ============ -->
+
+        <!--
+          日程小组件。**exported 必须显式写**（Android 12+ 有 intent-filter 时强制）。
+          写 false：AppWidgetManager 走的是绑定而不是普通广播，别的 App 也不需要
+          直接给我们发 APPWIDGET_UPDATE。这是 AS 生成模板的默认值。
+        -->
+        <receiver
+            android:name=".ScheduleWidgetProvider"
+            android:label="日程"
+            android:icon="@drawable/ic_widget_logo"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/schedule_widget_info" />
+        </receiver>
+
+        <!--
+          两个弹框。**对话框主题**：观感是桌面上的小卡片，不是「打开 App」。
+          excludeFromRecents + noHistory 让它们不进最近任务、返回即消失。
+        -->
+        <activity
+            android:name=".TaskDetailActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.WidgetDialog"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".CreateTaskActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.WidgetDialog"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".WidgetSettingsActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.WidgetDialog"
+            android:windowSoftInputMode="adjustResize" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+
+        <!--
+          APK 自更新：下载完成的广播。...
+        -->
+        <receiver
+            android:name=".AppUpdate$DownloadReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          提醒。两个职责（见 ReminderReceiver）：
+            1. 到点发通知（AlarmManager 的 PendingIntent 打过来）
+            2. 开机 / 应用更新 / 改时间 / 换时区后**重排闹钟** ——
+               AlarmManager 的闹钟开机就没了，不重排等于提醒全失效。
+          exported="true"：BOOT_COMPLETED 等是**受保护的系统广播**，只有系统能发；
+          自定义的 ACTION_FIRE 走的是显式 Intent（component 已指定），导出与否无关。
+        -->
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 提醒通知（Android 13+ 需要运行时申请，见 MainActivity） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      精确闹钟。API 31+ 这是**特殊权限**，用户可在设置里关掉；
+      ReminderScheduler 拿不到时退化成不精确的 set()，仍然会响、只是可能晚几分钟。
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 开机后重排提醒 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      APK 自更新：让系统安装器装我们下的包。Android 8+ 这是**特殊权限**，
+      声明了还要用户在「设置 → 安装未知应用」里手动授一次；
+      AppUpdate.startDownload() 会在没授的时候先把用户送去那个设置页。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>

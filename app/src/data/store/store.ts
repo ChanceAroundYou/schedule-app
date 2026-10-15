@@ -28,11 +28,15 @@ export { persist, flushPersist, load, resetLocal } from './persist.ts';
 export { commitMany, commit, type Change } from './commit.ts';
 export { setCals, setInvites, setActiveCal, toggleCal, shownCals } from './cals.ts';
 export { addConflicts, dismissConflict } from './conflicts.ts';
-export { setUi, setSyncing, setError, setClockBlocked } from './ui.ts';
+export { setUi, setSyncing, setError, setClockBlocked,
+  selStart, selCancel, selToggle, selAll } from './ui.ts';
 export { applyRemote, flattenSnapshot, type RemoteChange } from './remote.ts';
 export { setCursor, ackOps } from './sync-state.ts';
 export {
-  addTask, toggleTask, patchTask, deleteTask, restoreTask, purgeTask, emptyTrash,
+  addTask, toggleTask, patchTask, deleteTask, deleteOne, deleteSeriesFrom,
+  seriesEndOf, restoreTask, purgeTask, emptyTrash,
+  batchSetDone, batchDelete,
+  ensureRepeatOccurrences, enforceRepeatUntil, REPEAT_LOOKAHEAD,
   setTaskProject, setTaskDoing, type TaskDraft,
 } from './tasks.ts';
 export { addHabit, toggleHabit, deleteHabit, restoreHabit } from './habits.ts';

@@ -15,10 +15,14 @@ const auth = require('./auth');
 const cals = require('./cals');
 const sync = require('./sync');
 const ai = require('./ai');
+const widget = require('./widget');
 
 const handlers = {};
 
-for (const [group, mod] of [['auth', auth], ['cals', cals], ['sync', sync], ['ai', ai]]) {
+// widget 是给桌面小组件（原生侧）用的两个接口，独立成组：
+// 它跑在 Java/HttpURLConnection 上，没有 localStorage、跑不了同步引擎，
+// 不能直接复用 /api/sync 那套游标+outbox 语义。
+for (const [group, mod] of [['auth', auth], ['cals', cals], ['sync', sync], ['ai', ai], ['widget', widget]]) {
   for (const key of Object.keys(mod)) {
     if (handlers[key]) {
       throw new Error(`路由重复：${key}（${group} 组与前面某一组撞了）`);

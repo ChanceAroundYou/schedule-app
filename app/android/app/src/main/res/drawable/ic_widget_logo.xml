@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ic_widget_logo —— 应用标识，从 app/public/icon.svg 移植
+
+  小组件要用同一个标识（参考图左上角那个），所以没有另画，而是把既有的
+  icon.svg 翻成 VectorDrawable。**改标识请改 app/public/icon.svg 之后同步这里**，
+  两处不一致就是「桌面一个样、设置页另一个样」。
+
+  渐变在 VectorDrawable 里要套一层 aapt:attr —— 直接写 android:fillColor
+  不接受 <gradient>。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+
+    <!-- 圆角底板：绿 → 青，跟 icon.svg 的 linearGradient 同向 -->
+    <path android:pathData="M9,0h14c4.97,0 9,4.03 9,9v14c0,4.97 -4.03,9 -9,9H9c-4.97,0 -9,-4.03 -9,-9V9C0,4.03 4.03,0 9,0z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="32"
+                android:endY="32">
+                <item android:offset="0" android:color="#27795A" />
+                <item android:offset="1" android:color="#3F7D8C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 白色日历 + 勾（原图 translate(4 4)） -->
+    <group
+        android:translateX="4"
+        android:translateY="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <path
+            android:pathData="M8,2v3"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+        <path
+            android:pathData="M16,2v3"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+        <path
+            android:pathData="M3,3h18v18H3z"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+        <path
+            android:pathData="M3,9h18"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+        <path
+            android:pathData="M9,15l2,2l4,-4"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+    </group>
+</vector>

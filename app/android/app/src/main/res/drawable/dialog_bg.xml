@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  三个**弹框**的底板。
+
+  为什么不直接复用 widget_bg：那是**小组件自己**的底板（20dp 圆角），
+  而弹框要更方一点（用户 2026-10-14：编辑弹窗「圆角较大」）。两者分开，
+  改弹框外形不会连小组件一起改。
+
+  ⚠️ 光改这里还不够：Activity 的**窗口背景**（Theme.AppCompat.Dialog 默认的
+  浅色小圆角矩形）会在这一圈圆角外面露出来，形成「四个亮白小圆角」。
+  所以三个弹框都换成了 windowBackground=透明 的 AppTheme.WidgetDialog。
+
+  2026-10-14（第四轮）：底色 #F1F8F3 → **纯白 #FFFFFF**。原来那点绿和输入框
+  的颜色太接近，整块糊在一起；纯白打底、输入框用极浅绿，层次立刻清楚。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners android:radius="16dp" />
+    <stroke android:width="1dp" android:color="#DFEEE5" />
+</shape>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  删除**重复任务**时的「删哪些」弹框（2026-10-14）。
+
+  ⚠️ 为什么不用 `AlertDialog.Builder.setItems()`（本来那么写的，用户报「弹出来
+  只有取消、没有任何选项」）：平台那个列表和 `setMessage()` 是**互斥渲染**的，
+  一起用的时候选项那一块根本不出现。与其去猜各家 ROM 的 AlertController
+  实现，不如自己画一个 —— 而且这样还能给每个选项配一句说明，
+  比光秃秃一个词清楚得多（「只删这一次」下面写清「明天的下一次照常出现」）。
+
+  外形与 dialog_task / dialog_create 完全一致：240dp、dialog_bg 圆角、
+  选项行用 dialog_field 底。**不新增 drawable** —— 底板和行底都是现成的。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="240dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/dialog_bg"
+    android:orientation="vertical"
+    android:paddingLeft="14dp"
+    android:paddingTop="12dp"
+    android:paddingRight="14dp"
+    android:paddingBottom="12dp">
+
+    <!-- ===== 标题：这是重复任务 ===== -->
+    <TextView
+        android:id="@+id/dr_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="这是重复任务"
+        android:textColor="#1B3A2A"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/dr_sub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="要删掉哪些？"
+        android:textColor="#7E8F84"
+        android:textSize="11sp" />
+
+    <!-- ===== 选项一：只删这一次 ===== -->
+    <!-- LinearLayout 而不是 Button：这里要**两行**（主文案 + 说明），
+         Button 的多行排版在各版本上不一致，自己排更稳。
+         foreground 给点击反馈，背景仍是 dialog_field 的圆角底。 -->
+    <LinearLayout
+        android:id="@+id/dr_one"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="9dp"
+        android:background="@drawable/dialog_field"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?android:attr/selectableItemBackground"
+        android:orientation="vertical"
+        android:paddingLeft="10dp"
+        android:paddingTop="7dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="7dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="只删这一次"
+            android:textColor="#1B3A2A"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/dr_one_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="保留重复，下一次照常出现"
+            android:textColor="#7E8F84"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- ===== 选项二：从这次起往后全部 ===== -->
+    <LinearLayout
+        android:id="@+id/dr_series"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/dialog_field"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?android:attr/selectableItemBackground"
+        android:orientation="vertical"
+        android:paddingLeft="10dp"
+        android:paddingTop="7dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="7dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="从这次起往后全部"
+            android:textColor="#1B3A2A"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/dr_series_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="这天及之后都不再出现"
+            android:textColor="#7E8F84"
+            android:textSize="10sp" />
+    </LinearLayout>
+</LinearLayout>

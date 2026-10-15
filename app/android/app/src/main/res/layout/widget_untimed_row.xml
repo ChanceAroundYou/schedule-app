@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  未定时横条里的一张卡。宽度等分（weight=1），多个任务就均分这一行。
+  左边缘用 marginLeft=1dp 起排 —— 与下方任务卡（marginLeft 也是 1dp）对齐
+  （用户 2026-10-13：未定时卡的行首应与下面的任务卡竖直方向对齐）。
+  字号 9sp，与主体其它文字统一。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/untimed_row"
+    android:layout_width="0dp"
+    android:layout_height="15dp"
+    android:layout_marginLeft="1dp"
+    android:layout_marginRight="1dp"
+    android:layout_weight="1"
+    android:background="@drawable/widget_task_bg"
+    android:ellipsize="end"
+    android:gravity="center_vertical"
+    android:maxLines="1"
+    android:paddingLeft="2dp"
+    android:paddingRight="2dp"
+    android:textColor="#1B3A2A"
+    android:textSize="9sp" />

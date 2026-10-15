@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <!-- Customize your theme here. -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+    </style>
+
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+    </style>
+
+    <!--
+      三个「桌面弹框」（任务编辑 / 新建任务 / 小组件设置）用的主题。
+
+      **windowBackground 必须透明**：Theme.AppCompat.Dialog 默认给窗口铺了一张
+      浅色小圆角矩形，而弹框布局自己的背景（@drawable/dialog_bg）圆角更大，
+      于是窗口背景会在大圆角外面露出四个亮白色的小圆角 —— 用户 2026-10-14
+      报的「四边四个亮白色的较小圆角区域」就是它。透明之后只剩一层边界。
+    -->
+    <style name="AppTheme.WidgetDialog" parent="Theme.AppCompat.Light.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <!--
+          日期 / 时间 / 确认框选择器的主题。**必须是 Light**：原来这里没写，
+          它们各自 fall back 到 Theme.AppCompat.Dialog（**深色**变体），于是
+          用户明明是浅色系统，点开日历和时钟却是黑的（2026-10-14 报）。
+          三个都显式指到下面这个浅色主题，跟弹框本体保持同一套配色。
+        -->
+        <item name="android:datePickerDialogTheme">@style/AppTheme.Picker</item>
+        <item name="android:timePickerDialogTheme">@style/AppTheme.Picker</item>
+        <item name="android:alertDialogTheme">@style/AppTheme.Picker</item>
+    </style>
+
+    <!-- 浅色选择器：白底 + 主绿点缀，跟小组件同一套绿。 -->
+    <style name="AppTheme.Picker" parent="Theme.AppCompat.Light.Dialog">
+        <item name="colorPrimary">@color/dialogGreen</item>
+        <item name="colorPrimaryDark">@color/dialogGreenDark</item>
+        <item name="colorAccent">@color/dialogGreen</item>
+        <item name="android:textColorPrimary">#1B3A2A</item>
+    </style>
+</resources>

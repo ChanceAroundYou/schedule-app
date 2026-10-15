@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件底板 . 74% 不透明（连续档位之一，由滑杆平滑选到）。
+     说明见 widget_bg_a70.xml：RemoteViews 调不到 setAlpha，透明度只能预置成
+     多张资源来切；这一组每 2% 一张，滑杆就能真正平滑过渡。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#BDF1F8F3" />
+    <corners android:radius="20dp" />
+    <stroke android:width="1dp" android:color="#BDD5E7DA" />
+</shape>

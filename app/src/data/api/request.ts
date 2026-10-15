@@ -6,6 +6,16 @@ import type { Op } from '../../domain/types.ts';
 import { getToken, setToken } from './token.ts';
 import { ApiError } from './error.ts';
 
+/**
+ * 接口基址。**默认是 `.`** —— 也就是拼出 `./api/…`，跟网页版完全一致。
+ *
+ * 只有在**打包成 App 时**才需要覆盖它：Capacitor 应用的源是
+ * `https://{uuid}.androidplatform.net/`，不是 `/schedule/`，相对路径会指到
+ * App 自己的域上去（那里没有后端）。打包时注入 `VITE_API_BASE`
+ * 指到线上站点即可。
+ */
+export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) || '.';
+
 async function req<T>(
   method: string, path: string, body?: unknown,
   opts: { keepTokenOn401?: boolean } = {},
@@ -17,7 +27,7 @@ async function req<T>(
 
   let res: Response;
   try {
-    res = await fetch('./api/' + path, {
+    res = await fetch(API_BASE + '/api/' + path, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

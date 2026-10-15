@@ -516,7 +516,10 @@ test('泳道之间挪卡：done 那一列走 toggleTask，重复任务照样推�
   store.toggleTask(root);
   assert.equal(store.get().tasks[root].done, true);
   const spawned = Object.values(store.get().tasks).filter((t) => t.seriesId === root && t.id !== root);
-  assert.equal(spawned.length, 1, '重复系列必须派出下一次');
+  // 2026-10-14 起：重复任务在**创建时就预生成未来几次**（见 ensureRepeatOccurrences），
+  // 所以这里不止 1 条。关键断言是「下次还在」且「派生的都是未完成态」。
+  assert.ok(spawned.length >= 1, '重复系列必须还有下一次（预生成的未来实例）');
+  assert.ok(spawned.every((t) => !t.done), '派生的实例都应是未完成态');
 });
 
 test('快照摊平认得 project 桶，缺省时也不炸', () => {

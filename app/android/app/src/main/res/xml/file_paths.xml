@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="my_images" path="." />
+    <cache-path name="my_cache_images" path="." />
+    <!--
+      APK 自更新：下完的安装包先拷到 filesDir/update/ 再交给系统安装器。
+      为什么不用外部目录那个：部分 OEM 的 Package Installer 读不了
+      /Android/data/<pkg>/files/… 下的 uri（即使走了 FileProvider），
+      内部存储一定读得到。见 AppUpdate.java 类注释第 2 条。
+    -->
+    <files-path name="app_update" path="update/" />
+</paths>

@@ -96,7 +96,11 @@
 
 .task-row {
   position: relative;
-  display: flex; align-items: center; gap: 10px;
+  /* **必须显式写 flex-direction: row**（2026-10-14）。这一行同时挂着 `.task-el`
+     —— 那是跨界面共用的行为标记，日历卡片那边给它写了 `flex-direction: column`
+     （勾选圈一行、时间一行）。这里不写死的话，那条同特异度的规则一旦排在前面
+     就会赢，整行变成竖排居中。见 calendar.css 那段大注释。 */
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
   padding: 11px 32px 11px 13px; margin-bottom: 7px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-left: 3px solid var(--primary); border-radius: var(--r-lg);
@@ -348,3 +352,74 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   pointer-events: none; line-height: 1.4;
 }
 
+
+/* ==========================================================================
+   多选（批量管理）—— 逾期 / 待办箱 / 已完成，2026-10-14
+   ==========================================================================
+
+   入口是列表顶部那个「选择」按钮，**不是长按**：触屏上「按住 480ms」
+   已经被拖拽排序占用（dnd-kit 的 TouchSensor delay），而那三个列表都开着
+   拖拽。同一个手势不能既拖又选 —— 硬凑的话拖拽浮层会先抬起来。
+
+   视觉上刻意保持「轻」：工具栏只是一行文字按钮，选中行只染左侧竖条和底色，
+   不画描边、不加粗 —— 多选是临时状态，不该把列表本身的样子改掉。 */
+
+.sel-bar {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; padding: 2px 2px 8px;
+  min-height: 30px;
+}
+/* 多选态整条变成一个浅底色条：一眼能看出「现在点行不是打开，是选中」 */
+.sel-bar.on {
+  justify-content: space-between;
+  background: var(--primary-pale);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 5px 8px 5px 11px;
+  margin-bottom: 8px;
+}
+.sel-count { font-size: 12px; color: var(--text-2); }
+.sel-actions { display: flex; align-items: center; gap: 2px; }
+
+.sel-btn {
+  font: inherit; font-size: 12.5px;
+  padding: 4px 9px; border-radius: var(--r-md);
+  border: none; background: none; color: var(--primary); cursor: pointer;
+  transition: background .14s, opacity .14s;
+}
+.sel-btn:hover { background: var(--primary-soft); }
+.sel-btn.primary { font-weight: 600; }
+.sel-btn.danger { color: var(--danger); }
+.sel-btn.danger:hover { background: var(--danger-soft); }
+.sel-btn:disabled { color: var(--text-3); opacity: .5; cursor: default; background: none; }
+
+/* 选择圈。几何与 .check-btn 完全一致（18px、1.5px 描边、24px 命中区）——
+   两个圈在列表里是**同一个位置**的两种状态，差一个像素都会让进出多选时
+   整行抖一下。呼应 .check-btn 的 ::before 命中区写法。 */
+.sel-dot {
+  width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
+  border: 1.5px solid var(--input); border-radius: 50%;
+  background: none; position: relative;
+  transition: border-color .14s, background .14s, transform .12s;
+}
+.sel-dot:hover { border-color: var(--primary); transform: scale(1.08); }
+.sel-dot.on { background: var(--primary); border-color: var(--primary); }
+/* 勾的居中规则同 .check-btn.on::after —— 必须按中心对，不能钉左上角 */
+.sel-dot.on::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.sel-dot::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 24px; height: 24px; transform: translate(-50%, -50%);
+}
+
+/* 选中行：只染左侧竖条 + 底色，不动字号字重 —— 列表密度不因多选而变 */
+.task-row.sel-on {
+  border-left-color: var(--primary);
+  background: var(--primary-pale);
+}
+/* 多选态下不显示那个「›」角标：这时候点行是选中，不是打开详情 */
+.task-row.sel-mode::after { content: none; }
+.task-row.sel-mode.done { opacity: 1; }

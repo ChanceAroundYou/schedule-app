@@ -81,6 +81,7 @@ export function defaultUi(): UiPrefs {
     defaultCal: null,
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
+    sel: null,
     cal: null,
     // 侧栏「显示哪几个集」。空数组只有 normalizeUi 的坏值回落才会真的出现 ——
     // store.toggleCal() 保证至少留一个勾着的（见 types.ts 的注释）
@@ -117,6 +118,10 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   if (!Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
   else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', 'week', 'month'].includes(ui.view)) ui.view = 'day';
+  /* 多选是**瞬时状态**，每次加载都清掉（2026-10-14）。
+     不这么做的话，用户上次关页面时停在多选态，下次一打开 App 就莫名其妙
+     处在多选里，而且还带着一堆可能已经过期的任务 id。 */
+  ui.sel = null;
   normalizeDayWindow(ui);
   if (!ui.cursor) ui.cursor = D.today();
   if (ui.nav === 'notes') ui.nav = 'today';

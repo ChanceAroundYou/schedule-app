@@ -8,6 +8,7 @@ import * as D from '../../domain/date.ts';
 import { doneTasks } from '../../domain/model.ts';
 import { Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
+import { SelBar } from './SelBar.tsx';
 
 export function DoneView({ state }: { state: LocalState }) {
   const list = doneTasks(state);
@@ -22,8 +23,11 @@ export function DoneView({ state }: { state: LocalState }) {
     groups.get(d)!.push(t);
   }
 
+  const sel = state.ui.sel;
+  const ids = list.map((t) => t.id);
   return (
     <div className="list-view">
+      <SelBar kind="done" sel={sel} ids={ids} />
       {[...groups.keys()].sort().reverse().map((d) => (
         <div className="list-group" key={d}>
           <div className="group-title">
@@ -34,7 +38,9 @@ export function DoneView({ state }: { state: LocalState }) {
           <SortableList
             items={groups.get(d)!.map((t) => t.id)}
             entity="task"
-            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
+            renderItem={(id) => (
+              <TaskRow task={state.tasks[id]} showDoneAt sel={sel === null ? null : sel.includes(id)} />
+            )}
             className="mc"
             scope={'done:' + d}
           />

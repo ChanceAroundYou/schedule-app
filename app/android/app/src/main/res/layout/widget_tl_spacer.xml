@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  纯占位条：用一个高度精确的空 TextView 把后面的东西顶到正确的纵向位置。
+  只能是 TextView —— RemoteViews 白名单里没有裸 `<View>`。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tl_spacer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="" />

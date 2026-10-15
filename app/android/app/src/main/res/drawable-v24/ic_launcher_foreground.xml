@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动器图标前景层：app/public/icon.svg 里的白色日历（描边风格）。
+
+  ── 坐标换算（重要，之前这里算错导致图标「歪」）────────────────────
+  源 SVG：32×32 视口，`<g transform="translate(4 4)">` 内是 24 坐标系，
+  日历主体 rect x=3 y=3 w=18 h=18 rx=2（即 3..21，中心 (12,12)）。
+
+  Android 自适应图标：画布 108×108，但**可见区域只有中间的 72dp**
+  （AdaptiveIconDrawable 会把图层按 1.5 倍绘制，外层 18dp 被遮罩裁掉）。
+  所以不能让「SVG 的 32 对应 108」，必须让「SVG 的 32（含 rx=9 圆角，
+  会被系统遮罩代替）对应可见的 72」。
+
+    比例 s = 72 / 32 = 2.25
+    映射 canvas = 54 + (canvas_svg - 16) × 2.25
+               = 54 + (local + 4 - 16) × 2.25
+               = 27 + 2.25 × local
+
+  即 group scale = 2.25、translate = 27。这样主体外缘（含描边）
+  = (18 + 2.6) × 2.25 ≈ 46.4 画布单位 = 可见区 72 的 64%，
+  与 SVG 里 20/32 = 62.5% 的观感一致，四周留白均匀、不再偏移。
+
+  反例：早先写的 scale=2.583 / translate=23 是按「108 全可见」算的，
+  会把日历放大到可见区的 81%（几乎顶满），且整体右下偏 2.6 单位。
+──────────────────────────────────────────────────────────────────
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportHeight="108"
+    android:viewportWidth="108">
+    <group
+        android:scaleX="2.25"
+        android:scaleY="2.25"
+        android:translateX="27"
+        android:translateY="27">
+        <!-- 挂环 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,2v3"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="2.6" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M16,2v3"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="2.6" />
+        <!-- 主体：rx=2 的 18×18 圆角矩形，中心 (12,12)。
+             VectorDrawable 无 rect 元素，用弧线手写；起点 (5,3)、h14 才能
+             让四角圆心落在 (5,5)/(19,5)/(19,19)/(5,19)，整体 3..21。 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M5,3h14a2,2 0 0 1 2,2v14a2,2 0 0 1 -2,2h-14a2,2 0 0 1 -2,-2v-14a2,2 0 0 1 2,-2z"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="2.6" />
+        <!-- 表头分隔线 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M3,9h18"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="2.6" />
+        <!-- 对勾 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M9,15l2,2l4,-4"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="2.6" />
+    </group>
+</vector>

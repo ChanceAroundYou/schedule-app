@@ -8,6 +8,7 @@ import * as store from './data/store.ts';
 import { ApiError, api, getCachedUser, getToken, setCachedUser, setToken } from './data/api.ts';
 import * as engine from './sync/engine.ts';
 import { readLegacy } from './data/legacy.ts';
+import { clearWidgetAuth, pushWidgetAuth } from './data/widget.ts';
 import * as T from './ui/theme.ts';
 import { ConfirmProvider, ToastHost } from './ui/kit.tsx';
 import { Auth } from './ui/Auth.tsx';
@@ -30,6 +31,8 @@ export default function App() {
     let alive = true;
     (async () => {
       if (getToken()) {
+        // App 重装/升级后原生侧那份票会丢，这里补推一次，让小组件恢复直连
+        void pushWidgetAuth(getToken() as string);
         try {
           await engine.bootstrap();
           engine.start();
@@ -81,6 +84,9 @@ export default function App() {
           setToken(null);
           setCachedUser(null);
           setUser(null);
+          // 顺手把原生侧那份票也清掉 —— 否则小组件还拿着旧票直连，
+          // 而服务端已经把它作废了（logout 会吊销 jti）
+          void clearWidgetAuth();
           // 退登录**不清本地数据** —— 清了就是「换个账户登录顺手把没同步的改动删了」
           void legacyLeft;
         }}

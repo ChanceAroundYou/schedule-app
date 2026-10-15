@@ -16,7 +16,7 @@
 const http = require('node:http');
 
 const { handlers } = require('./routes');
-const { send, readBody, currentUser } = require('./http');
+const { send, readBody, currentUser, applyCors, preflight } = require('./http');
 
 /** 把 '/api/cals/:calId/members' 编译成正则 + 参数名。静态段要转义。 */
 function compile(pattern) {
@@ -76,6 +76,11 @@ function createServer() {
 
     // 规范化：末尾斜杠统一去掉
     if (pathname.length > 1 && pathname.endsWith('/')) pathname = pathname.slice(0, -1);
+
+    // CORS 要在**任何响应之前**处理：预检不进路由，正常请求先记下来源，
+    // 让后面的 send() 把头带上
+    if (preflight(req, res)) return undefined;
+    applyCors(req, res);
 
     const route = matchRoute(req.method, pathname);
     if (!route) return send(res, 404, { error: '接口不存在' });

@@ -5,6 +5,7 @@ import type { Entity, Habit, Project, Task } from '../../domain/types.ts';
 import { hydrateTask, hydrateHabit, hydrateProject } from '../../domain/model.ts';
 import { state, rawBucket, emit } from './core.ts';
 import { persist } from './persist.ts';
+import { ensureRepeatOccurrences } from './tasks.ts';
 
 /** 服务器发来的一条字段变更。快照也先摊平成这个形状，走同一条合并路径。 */
 export interface RemoteChange {
@@ -54,6 +55,19 @@ export function applyRemote(changes: RemoteChange[]): boolean {
     persist();
     emit();
   }
+
+  /* 补齐重复任务的未来实例。
+   *
+   * ⚠️ 2026-10-14：从 `if (touched)` 里挪了出来。原来只在「远端有变更」时才补，
+   * 于是「日期翻过去了但没人动任何数据」这种情况永远不补 —— 表现就是用户说的
+   * 「每天重复只重复几天就断了」。窗口补齐必须与「有没有变更」无关：
+   * 每轮同步都补一次（幂等，已有实例会跳过），这样每次打开 App / 切回前台
+   * 都会把窗口推到未来 REPEAT_LOOKAHEAD 次。
+   *
+   * 注意 commitMany 会往 outbox 里塞 op，所以它必须在 touched 分支**之后** ——
+   * 那批 op 由本轮之后的 push 推给服务端，不要混进本次的落地判断里。 */
+  ensureRepeatOccurrences();
+
   return touched;
 }
 

@@ -116,6 +116,25 @@ function RepeatRow({ repLabel, onOpen }: { repLabel: string; onOpen: () => void 
   );
 }
 
+/** 提醒那一行。值形如 "HH:mm"（同一天），null = 不提醒。
+ *
+ *  2026-10-14 新增：小组件也能设提醒，到点由小组件的通知负责；这里让 App
+ *  也能看到 / 编辑同一个字段，两端口径一致。复用 TimePicker（自带清除 ✕）。 */
+function ReminderRow({ task, onPatch }: {
+  task: Task;
+  onPatch: (id: string, fields: Partial<Task>) => void;
+}) {
+  return (
+    <div className="field">
+      <span className="flabel">提醒</span>
+      <TimePicker
+        value={task.reminder ?? null}
+        onChange={(v) => onPatch(task.id, { reminder: v })}
+      />
+    </div>
+  );
+}
+
 /** 备注那一行。placeholder 只作格式示例，不算名字 —— 名字是上面那个 `<label>`。 */
 function NoteRow({ fid, note, onPatch }: { fid: string; note: string; onPatch: (v: string) => void }) {
   return (
@@ -132,4 +151,4 @@ function NoteRow({ fid, note, onPatch }: { fid: string; note: string; onPatch: (
   );
 }
 
-export { CalProjRow, DateTimeRow, RepeatRow, NoteRow };
+export { CalProjRow, DateTimeRow, RepeatRow, ReminderRow, NoteRow };
