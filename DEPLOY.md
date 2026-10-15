@@ -4,7 +4,7 @@
 `/schedule/api/`，后端是宿主机上的 systemd user 服务（Node 22，只听 127.0.0.1:25692）。
 命令都在这台机器上实测过，路径照抄即可。
 
-改路由、改缓存策略之前先读「四、conf 要点」和「七、环境踩坑」——那几条每条都是踩坑换来的。
+改路由、改缓存策略之前先读「conf 要点」和「排障 · 环境踩坑」——那几条每条都是踩坑换来的。
 
 ---
 
@@ -88,7 +88,112 @@ ln -s ~/.local/schedule/deps/node_modules ./node_modules   # 每份 checkout 都
 
 ---
 
-## 二、发布
+## 二、双端开发与生产锁定
+
+**两侧都在推进开发，两边都能看到同一个仓库** —— 所以「哪份代码是线上跑的」
+不能靠记忆，得靠结构保证。
+
+```text
+Windows 本机    C:\Users\小哭包\coding\schedule-wt        分支 dev   → github/dev
+ubuntu 工程目录 /mnt/fnos/family/星星包/coding/日程管理     分支 main  → origin/main
+        │                                                    │
+        └──────────── 同一个 upstream ───────────────────────┘
+                  github.com/ChanceAroundYou/schedule-app
+                                  │
+                     只有 publish-*.sh --approve 能写
+                                  ▼
+        生产  ubuntu:~/.local/schedule/{web,app}   （服务器本机磁盘）
+```
+
+| | Windows 本机 | ubuntu 工程目录 |
+|---|---|---|
+| 路径 | `C:\Users\小哭包\coding\schedule-wt` | `/mnt/fnos/family/星星包/coding/日程管理` |
+| 分支 | **`dev`** | **`main`** |
+| remote 名 | `github` | `origin` |
+| 上游 | `github/dev` | `origin/main`（同一个仓库，名字不同而已） |
+| 生产可读性 | 写不到 `~/.local/schedule/` | 同样写不到（不在容器挂载里） |
+
+三条约定：
+
+1. **两侧各推各的分支，互不干扰。** dev ↔ main 的合流**由你手动做**，没有自动同步、
+   没有 CI。合的时候冲突先摆出来给你挑，不替你选。
+2. **生产不开独立分支。** 线上跑哪个版本记在 `~/.local/schedule/state/*.version`
+   里（含 commit sha 和来源分支），追溯靠它，不靠分支。
+3. **发布必须你授权。** 两个脚本默认 dry-run，见下。
+
+### 生产锁定是怎么成立的
+
+四道，从强到弱：
+
+| 层 | 保证 |
+|---|---|
+| 物理隔离 | 生产在服务器本机磁盘 `~/.local/schedule/`，不是 SMB 共享目录 —— 两侧工作区**都写不到**，别的设备也碰不到 |
+| 容器隔离 | 工程目录不挂进 nginx 容器，`/schedule/server/server.js` 返回 404 |
+| 唯一写入口 | 只有 `deploy/publish-web.sh` / `publish-server.sh` 会写生产，且**默认 dry-run**（退出码 1 = 未授权） |
+| 可追溯 | 发布前体检分支/HEAD/工作区状态；发布后写 `state/*.version` |
+
+### 发布授权流程
+
+```bash
+# 1. 先提交 + 推送（闸门会查这两项）
+git add -A && git commit && git push
+
+# 2. dry-run —— 只打印「要发什么 / 来源分支哪个提交 / 发到哪」，一个字节都不写
+./deploy/publish-web.sh
+./deploy/publish-server.sh
+
+# 3. 确认上面都对，才授权
+./deploy/publish-web.sh --approve
+./deploy/publish-server.sh --approve
+```
+
+| 参数 | 作用 |
+|---|---|
+| _（不带）_ | **dry-run**：只看不写，退出码 **1**（不是 0 —— 这样 `a.sh && b.sh` 漏写 `--approve` 会当场停住，不会一路跑到发布） |
+| `--approve` | 真的发布 |
+| `--force` | 忽略内容指纹，强制重发一遍 |
+| `--skip-build` | 仅 web：不重新构建，用现有 `dist/` |
+| `--rollback` | 回滚到上一份备份（**也要 `--approve`**） |
+| `--allow-dirty` | 逃生口：允许带着未提交改动发布 |
+| `--allow-unpushed` | 逃生口：允许带着未推送的提交发布 |
+
+⚠️ 两个逃生口意味着「线上跑的版本**对不上仓库里任何提交**」—— 排障时
+`state/*.version` 里那个 commit 会误导你。救急才用，用完尽快补提交推送。
+
+### 线上现在跑的是什么
+
+```bash
+ssh ubuntu 'cat ~/.local/schedule/state/*.version'
+```
+
+```text
+target=web
+version=2.0.1
+commit=1c7155c
+branch=dev
+published_at=2026-10-15T13:40:12+0800
+published_from=小哭包家的笔记本
+```
+
+> ⚠️ 刻意**不放在 `web/` 里**：那是 nginx 站点根，放进去就等于在
+> `https://…/schedule/VERSION` 上公开版本号和 commit sha。`state/` 不在任何
+> 容器挂载里，外面读不到。
+
+### 分支现状（2026-10-15）
+
+`dev` 与 `main` 是**分叉的**，没有收敛：
+
+| | 提交 |
+|---|---|
+| `dev` 独有（3） | `17c0d54` 启动卡死修复、`9137f68`、`18ac4e7` 版本号 2.0.1 |
+| `dev` 缺的（8） | `89d0e67` repeatUntil 级联清理由服务端做、`cb72cb8` AI 中文 IME 组字防截断、`a6ca5ec`/`a1366d2`/`11f81a1` 后端 B7/B9 校验与兜底、`6057066`…`5ad4681` 几个 merge |
+
+两边都改过 **repeatUntil 级联**，合的时候大概率冲突 —— 冲突时先摆差异，不替你挑。
+`main` 上的改动来自 ubuntu 侧，我不动它。
+
+---
+
+## 三、发布
 
 ```bash
 ./deploy/publish-web.sh        # 前端：构建 → 上传 → 备份 → 切换 → 回读校验
@@ -129,7 +234,7 @@ ln -s ~/.local/schedule/deps/node_modules ./node_modules   # 每份 checkout 都
 
 ---
 
-## 三、改配置怎么生效
+## 四、改配置怎么生效
 
 **nginx**：
 
@@ -175,7 +280,7 @@ systemctl --user daemon-reload && systemctl --user restart schedule-backend
 
 ---
 
-## 四、conf 要点
+## 五、conf 要点
 
 完整内容见 `deploy/schedule.conf`（七十来行）。骨架：
 
@@ -248,7 +353,7 @@ systemd timer 里都没有），换证书就是覆盖四个 pem 然后 `nginx -t
 
 ---
 
-## 五、发布后验证
+## 六、发布后验证
 
 ```bash
 B=https://home.xiaokubao.space/schedule
@@ -287,7 +392,7 @@ systemctl --user start schedule-backend
 
 ---
 
-## 六、回滚
+## 七、回滚
 
 | 故障 | 动作 |
 |---|---|
@@ -302,7 +407,7 @@ systemctl --user start schedule-backend
 
 ---
 
-## 七、排障
+## 八、排障
 
 | 现象 | 查什么 |
 |---|---|
@@ -337,7 +442,7 @@ systemctl --user start schedule-backend
 
 ---
 
-## 八、相关文档
+## 九、相关文档
 
 | 文件 | 内容 |
 |---|---|

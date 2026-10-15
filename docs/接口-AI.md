@@ -120,7 +120,7 @@
 > `proxy_read_timeout 30s` 会让上游静默超过 30 秒的那一轮直接 504
 > （建块时实测：30.03s 就 504，改 300s 后 35s 正常）。默认开着的
 > `proxy_buffering` 也一并关掉 —— 那条在本机量不出差别，是标准写法的预防。
-> 见 [DEPLOY.md](../DEPLOY.md)「四、conf 要点」里的 SSE 那一节，那里把「实测过的」和「照惯例写的」分开列了。
+> 见 [DEPLOY.md](../DEPLOY.md)「conf 要点」里的 SSE 那一节，那里把「实测过的」和「照惯例写的」分开列了。
 
 ### `POST /api/ai/confirm`
 

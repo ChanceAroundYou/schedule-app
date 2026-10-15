@@ -319,3 +319,11 @@ REST，不走 LWW**（它们是「关系」不是「字段」）。**LWW 是逐�
 8. **写完新组件顺手跑 `contrast.mjs` + `color-scan.mjs`**（各几秒）—— 它们是「令牌三条」
    唯一的自动守卫。端到端交互没有自动化覆盖，改完手工走一遍。
 9. **发布走 `deploy/publish-*.sh`，不要手动覆盖线上目录**（见 [DEPLOY.md](DEPLOY.md)）。
+10. **生产目录只由发布脚本写入，而且发布必须用户授权** —— 脚本默认 dry-run，
+    只有 `--approve` 才动 `~/.local/schedule/`。**不要替用户加 `--approve`**，
+    也不要用 `--allow-dirty` / `--allow-unpushed` 绕过体检来「让发布成功」。
+    用户没说「发」就只跑 dry-run，把摘要给他看。
+11. **双端开发：Windows 在 `dev`，ubuntu 工程目录在 `main`，两侧各推各的。**
+    合流由用户手动做 —— 冲突时**报告差异，不要替他选一边**。
+    尤其别动 ubuntu 那份工作区（`main` 分支及其未提交改动）。
+    完整约定见 [DEPLOY.md](DEPLOY.md)「二、双端开发与生产锁定」。

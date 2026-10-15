@@ -2,18 +2,24 @@
 #
 # 发布**后端**到服务器。
 #
-#   ./deploy/publish-server.sh             # 内容有变才发布；无变更直接跳过
-#   ./deploy/publish-server.sh --force     # 不看指纹，强制发布一遍
-#   ./deploy/publish-server.sh --rollback  # 回滚到上一份备份
+#   ./deploy/publish-server.sh                  # dry-run（只看不发布）
+#   ./deploy/publish-server.sh --approve        # 真的发布
+#   ./deploy/publish-server.sh --approve --force        # 不看指纹，强制重发
+#   ./deploy/publish-server.sh --approve --rollback     # 回滚到上一份备份
 #
-# 做六件事：
+# ⚠️ **默认 dry-run**：不加 --approve 就只打印「要发什么、发到哪、来源分支是
+#    哪个提交」，**绝不写生产**（不上传、不备份、不重启）。双端开发下生产
+#    锁定的那道闸门，见 deploy/preflight.sh。
+#
+# 做七件事：
 #   1. 打包 server/（剔除 data / *.bak / .claude / .omc / tests/），算内容指纹
 #   2. 跟远端现有的 server/ 比指纹 —— **一样就什么都不做**（省掉上传、
 #      备份、重启，后端不用白断一次）
-#   3. 传到远端临时目录
-#   4. 现有版本整份备份成 app.bak-<时间>，保留最近 3 份
-#   5. 换掉 server/ 内容 + **按需补 node_modules 软链**（只在它没了/断了时）
-#   6. systemctl --user restart + 探活 /api/health + 看最近日志
+#   3. 前置校验 + 授权：分支 / HEAD / 干净 / 已推送
+#   4. 传到远端临时目录
+#   5. 现有版本整份备份成 app.bak-<时间>，保留最近 3 份
+#   6. 换掉 server/ 内容 + **按需补 node_modules 软链**（只在它没了/断了时）
+#   7. systemctl --user restart + 探活 /api/health + 写 state/app.version
 #
 # ⚠️ **三个必须知道的坑**（2026-10-15 从 SMB 工程目录挪过来时踩的）：
 #
@@ -36,7 +42,7 @@
 #
 # 以前服务直接跑 SMB 工程目录里的代码（WorkingDirectory 指向 /mnt/fnos/...），
 # 那份目录是你在别的设备也在动的活工作区 —— 别人改一下、线上就跟着变。
-# 现在跑的是本机磁盘 ~/.local/schedule/app/ 那份拷贝。
+# 现在跑的是服务器本机磁盘 ~/.local/schedule/app/ 那份拷贝。
 
 set -euo pipefail
 
@@ -47,11 +53,12 @@ SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
 REMOTE_APP='~/.local/schedule/app'
 KEEP=3
 
-FORCE=0
-for a in "$@"; do case "$a" in --force) FORCE=1;; esac; done
-
 say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
+
+# shellcheck source=preflight.sh
+source "$ROOT/deploy/preflight.sh"
+pf_parse_args "$@"
 
 # server/ 的**内容**指纹：逐文件 sha256 再汇总。只看内容、不看 mtime，
 # 所以「重新打包了一遍但代码没动」也算一致。
@@ -68,6 +75,9 @@ if [ "${1:-}" = "--rollback" ]; then
   say "回滚：列出备份"
   LAST="$("$SSH" "$SSH_HOST" "ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | tail -1")"
   [ -n "$LAST" ] || die "没有找到任何备份（$REMOTE_APP.bak-*）"
+  pf_gather
+  pf_print_summary "$REMOTE_APP" "动作=回滚到 $LAST"
+  pf_approve_or_exit
   printf '  回滚到：%s\n' "$LAST"
   "$SSH" "$SSH_HOST" "set -e
 export XDG_RUNTIME_DIR=/run/user/\$(id -u)
@@ -79,13 +89,14 @@ if [ -e $REMOTE_APP/node_modules ]; then echo '    依赖软链 ok'; else ln -sf
 systemctl --user restart schedule-backend
 sleep 3
 systemctl --user is-active schedule-backend"
+  pf_write_version app "" "rollback to $(basename "$LAST")"
   say "回滚完成，探活（探的是服务器上的 127.0.0.1，不是本机）"
   "$SSH" "$SSH_HOST" "curl -s --noproxy '*' http://127.0.0.1:25692/api/health"
   exit 0
 fi
 
 # ---------------------------------------------------------------- 打包
-say "1/6 打包 server/（剔除 data / *.bak / .claude / .omc / tests）"
+say "1/7 打包 server/（剔除 data / *.bak / .claude / .omc / tests）"
 cd "$ROOT"
 [ -d server ] || die "找不到 server/ —— 在仓库根目录跑这个脚本"
 rm -rf /tmp/schedule-server-stage
@@ -99,33 +110,50 @@ printf '  打包内容：\n'
 ls /tmp/schedule-server-stage/server | sed 's/^/    /'
 
 # ---------------------------------------------------------------- 指纹比对
-say "2/6 跟远端比内容指纹"
+say "2/7 跟远端比内容指纹"
 LOCAL_FP="$(cd /tmp/schedule-server-stage && eval "$FP_CMD")"
 REMOTE_FP="$("$SSH" "$SSH_HOST" "cd $REMOTE_APP 2>/dev/null && $FP_CMD" || true)"
 printf '  本地 %s\n  远端 %s\n' "${LOCAL_FP:-<空>}" "${REMOTE_FP:-<空>}"
 
-if [ "$FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
-  say "无变更 → 跳过发布（不上传、不备份、不重启）"
+SKIP=0
+if [ "$PF_FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
+  SKIP=1
+else
+  [ "$PF_FORCE" = "1" ] && printf '  --force：跳过比对，照发\n'
+fi
+
+# ---------------------------------------------------------------- 授权闸门
+pf_gather
+if [ "$SKIP" = "1" ]; then
+  say "无变更 → 不上传 / 不备份 / 不重启"
+  pf_print_summary "$REMOTE_APP" "内容指纹一致，本次不会改动生产"
+else
+  say "3/7 前置校验 + 授权"
+  pf_gate "$REMOTE_APP" \
+    "内容指纹  远端与本地不同，将整份替换 server/" \
+    "副作用    会 systemctl --user restart schedule-backend（后端中断几秒）"
+fi
+
+if [ "$SKIP" = "1" ]; then
   "$SSH" "$SSH_HOST" "set -e
 export XDG_RUNTIME_DIR=/run/user/\$(id -u)
 printf '  服务状态  %s\\n' \"\$(systemctl --user is-active schedule-backend)\"
-if [ -e $REMOTE_APP/node_modules ]; then echo '  依赖软链  ok'; else echo '  依赖软链  断了，补一条'; ln -sfn ../deps/node_modules $REMOTE_APP/node_modules; fi
+if [ -e $REMOTE_APP/node_modules ]; then echo '  依赖软链  ok'; else echo '  ⚠️ 依赖软链缺失/悬空（本次无变更，不会改生产）'; fi
 printf '  /api/health -> %s\\n' \"\$(curl -s --noproxy '*' http://127.0.0.1:25692/api/health)\""
   rm -f /tmp/schedule-server.tgz
   rm -rf /tmp/schedule-server-stage
-  printf '\n  要强制重发一遍：./deploy/publish-server.sh --force\n'
+  printf '\n  要强制重发一遍：./deploy/publish-server.sh --approve --force\n'
   exit 0
 fi
-[ "$FORCE" = "1" ] && printf '  --force：跳过比对，照发\n'
 
 # ---------------------------------------------------------------- 上传
-say "3/6 传到远端临时目录"
+say "4/7 传到远端临时目录"
 "$SSH" "$SSH_HOST" "rm -rf $REMOTE_APP.new && mkdir -p $REMOTE_APP.new"
 tar -czf - -C /tmp/schedule-server-stage server \
   | "$SSH" "$SSH_HOST" "tar -xzf - -C $REMOTE_APP.new && echo '    解包 ok'"
 
 # ---------------------------------------------------------------- 备份 + 切换
-say "4/6 备份现有版本 → 切换"
+say "5/7 备份现有版本 → 切换"
 TS="$(date +%m%d-%H%M%S)"
 "$SSH" "$SSH_HOST" "set -e
 mkdir -p $REMOTE_APP
@@ -147,7 +175,7 @@ ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | head -n -$KEEP | while read -r d; 
 echo '    软链：'; ls -l $REMOTE_APP/node_modules | sed 's/^/    /'"
 
 # ---------------------------------------------------------------- 重启
-say "5/6 重启后端"
+say "6/7 重启后端"
 "$SSH" "$SSH_HOST" "set -e
 export XDG_RUNTIME_DIR=/run/user/\$(id -u)
 systemctl --user daemon-reload
@@ -156,13 +184,14 @@ sleep 3
 systemctl --user is-active schedule-backend"
 
 # ---------------------------------------------------------------- 校验
-say "6/6 探活 + 看日志"
+say "7/7 探活 + 看日志"
 HEALTH="$("$SSH" "$SSH_HOST" "curl -s --noproxy '*' http://127.0.0.1:25692/api/health" || true)"
 printf '  /api/health -> %s\n' "$HEALTH"
 printf '%s' "$HEALTH" | grep -q '"ok":true' || die "后端没起来，看日志：journalctl --user -u schedule-backend -n 50"
 "$SSH" "$SSH_HOST" "journalctl --user -u schedule-backend -n 6 --no-pager | sed 's/^/    /'"
 
+pf_write_version app
 rm -f /tmp/schedule-server.tgz
 rm -rf /tmp/schedule-server-stage
 say "发布完成"
-printf '  回滚：./deploy/publish-server.sh --rollback\n'
+printf '  回滚：./deploy/publish-server.sh --approve --rollback\n'
