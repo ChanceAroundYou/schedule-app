@@ -67,14 +67,15 @@ DELETE /api/invites/:inviteId               撤回
 旧版的 `schedule-app-v1` **不删**（第一次登录时读一次导入，之后不再碰），
 留作回滚时还能找回旧数据。
 
-### 5.3 「刷新即生效」的前提
+### 5.3 「刷新即生效」的前提（2026-10-15 改写）
 
-nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了：
+线上读的是 `~/.local/share/schedule-web/`（本机磁盘），**不是工程里的 `dist/`**：
 
-- **只对 `dist/` 生效。** 改完源码必须 `npm run build`，否则页面纹丝不动。
+- **改完源码要发布**，`npm run build` 只产出本地 `dist/`。发布走
+  `./deploy/publish-web.sh`（构建 → 上传 → 备份 → 切换 → 回读校验）。
 - **Service Worker 可能挡着**（旧版那一个），见 4.3。
-- **SMB 有写入延迟。** `npm run build` 会先清空 `dist/` 再写，
-  一般不会碰到；真碰到了等几秒重跑。
+- ⚠️ **发布脚本只换目录内容，不换目录本身** —— Docker bind mount 认 inode，
+  `mv` 掉目录会让 nginx 直接 403 且不自愈。见 `DEPLOY.md` 1.4。
 
 ---
 
@@ -86,13 +87,16 @@ nginx 直挂 `dist/`，**没有上传步骤**。但前端现在**有构建**了�
 1. 改代码（前端在 app/，后端在 server/）
 2. cd app && npm test && npm run typecheck        # 有改后端就加 node server/tests/api.test.js
                                                   # 改了共享/权限再加 node server/tests/smoke-share.mjs
-3. cd app && npm run build                        # 前端产物 → ../dist/
-4. 改了后端才需要：systemctl --user restart schedule-backend
+3. ./deploy/publish-web.sh                        # 前端：构建 + 发布（含备份与回读校验）
+4. ./deploy/publish-server.sh                     # 改了后端才需要（含 restart 与探活）
 5. 刷新页面
 ```
 
-**没有部署脚本。** 账本那个七步的 `deploy.sh` 是给「有镜像、有健康检查」的项目用的，
-本项目没有镜像、没有容器（后端是宿主机上的 systemd 服务），不需要那一套。
+两个脚本都支持 `--rollback`，从同层的 `.bak-*` 拷回去（本机磁盘，秒级）。
+
+> 以前「没有部署脚本」是真的 —— nginx 直挂 SMB 工程目录的 `dist/`，build 即上线。
+> 2026-10-15 改掉了：线上产物搬到 `~/.local/share/`，发布变成显式动作，
+> 有备份、有校验、有回滚。理由见 `DEPLOY.md` 1.4。
 
 > 改了共享相关的东西（`lib/calendars.js`、`lib/invites.js`、`lib/sync.js` 的权限判断），
 > **必须跑 `smoke-share.mjs`** —— 单元测试只测各段逻辑，这条测的是它们串起来通不通。
@@ -213,12 +217,12 @@ done
 
 ## 七、回滚
 
-新版整个走的是 `/schedule/`，**没有第二套路径并存**，所以回滚是「换掉 dist/ 的内容」。
+新版整个走的是 `/schedule/`，**没有第二套路径并存**，所以回滚是「换掉线上目录的内容」。
 
 | 故障 | 回滚动作 |
 |---|---|
-| 新版前端有问题 | `rm -rf dist/* && cp -a legacy/dist/. dist/` —— 立刻退回旧版纯静态应用，刷新即生效 |
-| 新版后端有问题 | `systemctl --user stop schedule-backend`。页面还开得了，但登录不上、同步停摆（离线副本仍可看） |
+| 新版前端有问题 | `./deploy/publish-web.sh --rollback` —— 从 `schedule-web.bak-<版本>-<时间>` 拷回去（保留最近 3 份）。⚠️ 别 `mv` 目录本身，见 `DEPLOY.md` 1.4 |
+| 新版后端有问题 | `./deploy/publish-server.sh --rollback`，或者干脆 `systemctl --user stop schedule-backend`（页面还开得了，但登录不上、同步停摆，离线副本仍可看） |
 | 想临时下线整站 | `conf.d/home/schedule.conf` 改名 `.conf.disabled` → `nginx -t && reload` |
 | App 自更新发了坏包 | 把 `~/.local/share/schedule-apk/version.json` 改回上一个 versionCode（apk 文件留着），或直接删掉 version.json —— 客户端拉不到清单就静默不提示，已经装上的不受影响 |
 | nginx 整体起不来 | 恢复备份：`docker-compose.yml.bak-<时间戳>` 与 `conf.d/servers/home.conf.bak-<时间戳>`，再 `docker compose up -d` |

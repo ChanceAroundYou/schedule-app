@@ -34,16 +34,16 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 │   /etc/nginx/conf.d/servers/*.conf   ← 只有这些被自动 include   │
 │   /etc/nginx/conf.d/home/*.conf      ← 由 server 块显式 include│
 │                                                              │
-│   /schedule/      → /data/schedule/dist/   静态，alias 直读    │
+│   /schedule/      → /data/schedule-web/    静态 alias，只读挂载 │
 │   /schedule/dl/   → /data/schedule-apk/    App 自更新的安装包   │
 │   /schedule/api/  → 127.0.0.1:25692        反代到后端          │
 └──────────────────────────────────────────────────────────────┘
         ▲                       ▲                    ▲
-        │ /data/schedule        │ /data/schedule-apk │ 127.0.0.1:25692
-        │ （docker 挂载项目根）   │ （本机磁盘，非 NAS） │
- /home/xiaokubao/family/星星包/coding/日程管理   ~/.local/share/schedule-apk
- （= /mnt/fnos/family/…，SMB 挂在飞牛 NAS 上）  schedule-backend.service
-                                               （systemctl --user）
+        │ /data/schedule-web    │ /data/schedule-apk │ 127.0.0.1:25692
+        │ （本机磁盘，只读）      │ （本机磁盘，非 NAS） │
+   ~/.local/share/schedule-web  ~/.local/share/schedule-apk
+   ⚠️ 工程目录**不再挂进容器**    schedule-backend.service
+   （2026-10-15 改，见 1.4）      （跑 ~/.local/share/schedule-app）
                                                │
                                                ▼
                         /home/xiaokubao/.local/share/schedule/schedule.db
@@ -57,8 +57,13 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 | 是什么 | Vite 构建产物 | Node 22 + node:sqlite，**只引 AI 那一组依赖**（见 1.3） |
 | 谁在伺服 | nginx（容器） | systemd user 服务 |
 | 端口 | 无（nginx 直读文件） | 127.0.0.1:25692 |
-| 改完怎么生效 | `npm run build`，刷新即生效 | `systemctl --user restart schedule-backend` |
+| 改完怎么生效 | **`./deploy/publish-web.sh`**（构建 → 上传 → 备份 → 切换 → 回读校验） | **`./deploy/publish-server.sh`**（拷代码 → 备份 → restart → 探活） |
 | 挂了会怎样 | 白屏 | 页面能开，接口全 404，登录不上 |
+
+> ⚠️ **`npm run build` 不等于上线**。工程里的 `dist/` 只是本地产物
+> （`browser-cards.mjs` 那种探针要用），线上读的是
+> `~/.local/share/schedule-web/`，发布必须显式跑 `publish-web.sh`。
+> 2026-10-15 之前 nginx 直接读 SMB 工程目录里的 `dist/`，构建即部署 —— 已改掉，见 1.4。
 
 **后端只监听 127.0.0.1**，不直接对外，所以不用自己做 TLS；
 外网访问一律经 nginx 的 `/schedule/api/` 反代进来。
@@ -87,7 +92,9 @@ systemctl --user start schedule-backend
 
 | 路径（宿主机） | 内容 |
 |---|---|
-| `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码 + `dist/`（本项目仓库） |
+| `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码（本项目仓库）。**2026-10-15 起线上不再读它** —— 它是 SMB 上的活工作区，只是源码 |
+| `/home/xiaokubao/.local/share/schedule-web` | **前端线上产物** = `dist/` 的拷贝，nginx alias 到它。发布见 `deploy/publish-web.sh` |
+| `/home/xiaokubao/.local/share/schedule-app` | **后端线上代码** = `server/` 的拷贝 + `node_modules` 软链。systemd 的 WorkingDirectory。发布见 `deploy/publish-server.sh` |
 | `/home/xiaokubao/.local/share/schedule` | **运行时数据：SQLite 库 + 密钥** |
 | `/home/xiaokubao/.local/share/schedule-deps` | **后端依赖（112 MB）**，见 1.3 |
 | `/home/xiaokubao/.local/share/schedule-apk` | **App 自更新的安装包**（`schedule-<versionCode>.apk` + `version.json`），nginx 挂在 `/schedule/dl/`。同样不放工程目录 —— SMB 读大文件不可靠。发布见 `deploy/publish-apk.sh` |
@@ -136,6 +143,36 @@ node --input-type=module -e "import('@earendil-works/pi-ai/api/openai-completion
 | 版本写法 | 精确版本（`1.0.4`），**不用 `^`** | 两个包都还没到 1.x 的稳定期，API 会动 |
 | 调用点 | 只在 `server/lib/ai/chat.mjs` | 升版时只改这一个文件 |
 
+### 1.4 线上产物不放工程目录（2026-10-15 改）
+
+**以前**：nginx 把整个 SMB 工程目录挂成 `/data/schedule`，alias 指向它的
+`dist/`。于是「本地 `npm run build` 覆盖 SMB 那份 `dist/`」**就等于上线** ——
+构建产物落在多设备共享的源码目录里，没有发布动作、没有备份、没有回滚，
+而且那份目录你在别的设备上也一直在动（fn-sync 在跑、SMB 丢过文件）。
+后端更直接：systemd 的 `WorkingDirectory` 就指着工程目录，别人改一下线上就跟着变。
+
+**现在**：前端产物（`schedule-web`）与后端代码（`schedule-app`）都放本机磁盘
+`~/.local/share/` 下，跟 `schedule-apk` / `schedule-deps` 同级；
+**工程目录不再挂进 nginx 容器**。发布是显式动作，走 `deploy/publish-*.sh`。
+
+```bash
+./deploy/publish-web.sh      # 前端：构建 → 上传 → 备份 → 切换 → 回读校验
+./deploy/publish-server.sh   # 后端：拷代码 → 备份 → restart → 探活
+# 两者都支持 --rollback，从同层的 .bak-* 拷回去（本机磁盘，秒级）
+```
+
+⚠️ **发布只换目录里的东西，绝不 `mv` 目录本身。** Docker 的 bind mount
+认的是 **inode**：目录被 mv 走、新目录 mv 上来之后，容器里那个挂载点还指着
+旧 inode（已经被删了），nginx 立刻 403
+`directory index of "/data/schedule-web/" is forbidden`，**重启容器前不会自愈**
+（2026-10-15 实测踩过一次）。所以两个脚本都是「传到临时目录 → 清空目标内容
+→ 拷进去」，目标目录的 inode 从建好那天起就不变。
+
+⚠️ `schedule-app/node_modules` **必须**是软链到 `../schedule-deps/node_modules`：
+Node 从 `server/` 往上找依赖靠它，缺了服务崩在
+`require('@earendil-works/pi-ai')`，而 systemd 会不停重启 —— 看起来像「后端抽风」。
+`publish-server.sh` 每次都会重建这条软链。
+
 ---
 
 ---
@@ -145,22 +182,28 @@ node --input-type=module -e "import('@earendil-works/pi-ai/api/openai-completion
 ### 2.1 只改前端
 
 ```bash
-cd /mnt/fnos/family/星星包/coding/日程管理/app
-npm run build          # 产物直接写进 ../dist/
+cd app && npm run build     # 只是产出本地 dist/，**不等于上线**
+./deploy/publish-web.sh     # 构建 → 上传 → 备份 → 切换 → 回读校验
 ```
 
-就这一步。`dist/` 是 NAS 共享目录，nginx 直接读它，**不需要重启任何服务**。
-刷新页面即生效（`index.html` 是 `no-cache`，`assets/` 带内容哈希可以长缓存）。
+脚本会：留一份 `schedule-web.bak-<版本>-<时间>`（保留最近 3 份）、比对线上
+`index.html` 引用的资源哈希与本地是否一致、逐个 curl 资源确认 200。
+**回滚：`./deploy/publish-web.sh --rollback`**（从备份拷回去，本机磁盘，秒级）。
+
+> 刷新生效靠缓存头：`index.html` 是 `no-cache`，`assets/` 带内容哈希长缓存
+> （见 `deploy/schedule.conf`）。
 
 ### 2.2 改了后端
 
 ```bash
-cd /mnt/fnos/family/星星包/coding/日程管理
 node server/tests/api.test.js          # 先跑测试
 node server/tests/migration.test.js    # 动过 db.js 就一定跑这个
-systemctl --user restart schedule-backend
-journalctl --user -u schedule-backend -f   # 看有没有起来
+./deploy/publish-server.sh             # 拷代码 → 备份 → restart → 探活
 ```
+
+脚本会重建 `schedule-app/node_modules` 那条软链、**restart 后探 `/api/health`**
+（探不到就报错退出）、并把最近 6 行日志打给你。
+**回滚：`./deploy/publish-server.sh --rollback`。**
 
 > **依赖变了要另外做**（新增/升级 `package.json` 里那组），见 1.3 ——
 > 装完不用重装服务，`restart` 一次就够。

@@ -31,17 +31,21 @@ location ^~ /schedule/legacy/       { return 404 "not found"; }
 location ^~ /schedule/.             { return 404 "not found"; }   # 点开头的内务
 
 location ^~ /schedule/assets/ {                           # 带哈希，可以长缓存
-    alias /data/schedule/dist/assets/;
+    alias /data/schedule-web/assets/;
     expires 1y;
     add_header Cache-Control "public, immutable";
 }
 
 location ^~ /schedule/ {                                  # 应用本体
-    alias /data/schedule/dist/;
+    alias /data/schedule-web/;
     index index.html;
     add_header Cache-Control "no-cache";
 }
 ```
+
+> 2026-10-15 之前这两个 alias 指向 `/data/schedule/dist/`（＝ SMB 工程目录里
+> 的构建产物），**本地 build 一下就等于上线**。现在指向 `/data/schedule-web/`，
+> 那是本机磁盘上的发布目录，只有 `deploy/publish-web.sh` 会动它。
 
 ### 六条要记住的
 
@@ -57,8 +61,9 @@ location ^~ /schedule/ {                                  # 应用本体
    那是死代码，而且看起来还挺像在防护。前缀匹配是字面量，`/schedule/.`
    能覆盖 `.git/` `.omc/` `.claude/` `.workbuddy/` `.mindfs/` 全部。
 
-4. **用 `alias` 不用 `root`。** 项目根是**整个**挂到 `/data/schedule` 的，
-   `root` 会把 `/schedule/` 拼成 `/data/schedule/schedule/`。
+4. **用 `alias` 不用 `root`。** 挂进来的是 `~/.local/share/schedule-web`，
+   `root` 会把 `/schedule/` 拼成 `/data/schedule-web/schedule/`。
+   （2026-10-15 之前挂的是整个工程目录 `/data/schedule`，同一个道理。）
 
 5. **只对外提供 `dist/`。** 顺带一提：`alias …/dist/` 本身就已经隔离了源码
    （`/schedule/app/x` 会去找 `dist/app/x`，不存在就是 404）。那一串 404 是

@@ -33,9 +33,14 @@ Type=simple
 # 升级 node 时改这一行，然后 systemctl --user restart schedule-backend。
 ExecStart=/home/xiaokubao/.nvm/versions/node/v22.22.3/bin/node server/server.js
 
-# NAS 上那份是软链进来的（/home/xiaokubao/family → /mnt/fnos/family），
-# 两个路径都通，用软链这条和别的服务保持一致。
-WorkingDirectory=/home/xiaokubao/family/星星包/coding/日程管理
+# ⚠️ 2026-10-15 改：**跑的是 ~/.local/share/schedule-app/server 那份拷贝**，
+#    不再是 SMB 上的工程目录。工程目录是你在别的设备也在动的活工作区，
+#    服务直接从那儿读代码的后果是「别人改一下、线上就变」，而且 SMB 丢过文件。
+#    发布走 deploy/publish-server.sh（拷代码 → 备份 → restart），没有回滚不了的风险。
+#
+#    这个目录下必须有一条 `node_modules -> ../schedule-deps/node_modules` 软链：
+#    Node 从 server/ 往上找依赖就靠它，少了直接崩在 require('@earendil-works/pi-ai')。
+WorkingDirectory=/home/xiaokubao/.local/share/schedule-app
 
 # ⚠️ 数据落在**本机磁盘**，不在工程目录里。
 #    工程目录挂在 NAS 的 SMB 共享上，SQLite 的文件锁在 CIFS 上不可靠，
