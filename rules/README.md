@@ -47,6 +47,7 @@
 | **7. 测试** | 三层测试、扫描器矩阵、隔离收尾 | `v7-testing-rules.md` | —（纪律式，无 plan） |
 | **8. 交互与无障碍** | a11y、浮层、键盘、动效、文案 | `v8-a11y-rules.md` | `v8-a11y-plan.md` |
 | **9. 后端接口** | 路由、鉴权、同步、AI 三段、SQL 绑定、校验分层、日志 | `v9-backend-rules.md` | `v9-backend-plan.md` |
+| **10. Android 桌面小组件** | 共享语义、单一权威、RemoteViews 例外 | `v10-widget-rules.md` | `v10-widget-plan.md` |
 
 ### 每册判据（怎么判成没成）
 
