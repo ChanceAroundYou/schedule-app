@@ -12,8 +12,9 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { commitDraftTask, setDraftNull } from '../../ui/newCell.ts';
 import type { DraftSeed, LocalState } from '../../domain/types.ts';
-import * as store from '../../data/store.ts';
+
 
 /**
  * 这个区域的草稿 —— 不是它名下的那个就不渲染。
@@ -49,13 +50,13 @@ export function NewCellSlot({
       className={className}
       style={style}
       onCommit={(title) => {
-        store.addTask({ title, date: seed.date, time: seed.time });
-        store.setUi({ draft: null });
+        commitDraftTask(title, seed);
+        setDraftNull();
         /* 不开抽屉：那条卡片已经竖在刚才那个位置上了，看得见就等于建好了。
            想补详细内容、设重复，再点它一次 —— 抽屉是「补细节」的地方，
            不承担「确定日期时间」。 */
       }}
-      onCancel={() => store.setUi({ draft: null })}
+      onCancel={() => setDraftNull()}
     />
   );
 }
