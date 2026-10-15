@@ -57,7 +57,7 @@
 调用方想要别的样子就改 kit 或派生，不散写。
 
 调用方（`ui/` 非 kit、`app/`）**可以**用 Tailwind 工具类 + CSS 变量——这是本项目的
-既有正确写法（CLAUDE.md 三、界面硬规则 里 `rounded-[var(--r-md)]` 就是推荐写法），
+既有正确写法（`AGENTS.md` 三、界面硬规则里 `rounded-[var(--r-md)]` 就是推荐写法），
 **但只减不增**：`tests/api-scan.mjs` 的 ratchet 锁着调用方外观类总数不许涨。
 
 **两条硬锁**（`api-scan.mjs` 强制，出现即失败）：
@@ -191,7 +191,7 @@ const iconBtnVariants = cva(cx(BTN_BASE, 'rounded-[var(--r-pill)]'), { variants:
 | 文件 | 内容 | 为什么留在全局 |
 |---|---|---|
 | `tokens.css` | `:root` 变量集 | 全项目引用，下沉到组文件会断 |
-| `responsive.css` | `@media` / `prefers-reduced-motion` / `:focus-visible` | **跨切面轴**，不属于任何单个组件；CLAUDE.md 明写必须压过 Tailwind `@layer` |
+| `responsive.css` | `@media` / `prefers-reduced-motion` / `:focus-visible` | **跨切面轴**，不属于任何单个组件；`AGENTS.md` 明写必须压过 Tailwind `@layer` |
 | `state.css` | R3 状态类白名单 | 跨组件协议，留全局 |
 
 其余 `shell.css` `calendar.css` `lists.css` `quick-add.css` `overlays.css` 里**只服务 `ui/**`** 的部分，下沉到 `ui/<组>/<组>.css`（S7 已做）。

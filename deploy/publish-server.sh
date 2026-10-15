@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+#
+# 发布**后端**到服务器。
+#
+#   ./deploy/publish-server.sh             # 内容有变才发布；无变更直接跳过
+#   ./deploy/publish-server.sh --force     # 不看指纹，强制发布一遍
+#   ./deploy/publish-server.sh --rollback  # 回滚到上一份备份
+#
+# 做六件事：
+#   1. 打包 server/（剔除 data / *.bak / .claude / .omc / tests/），算内容指纹
+#   2. 跟远端现有的 server/ 比指纹 —— **一样就什么都不做**（省掉上传、
+#      备份、重启，后端不用白断一次）
+#   3. 传到远端临时目录
+#   4. 现有版本整份备份成 app.bak-<时间>，保留最近 3 份
+#   5. 换掉 server/ 内容 + **按需补 node_modules 软链**（只在它没了/断了时）
+#   6. systemctl --user restart + 探活 /api/health + 看最近日志
+#
+# ⚠️ **三个必须知道的坑**（2026-10-15 从 SMB 工程目录挪过来时踩的）：
+#
+#   1. `node_modules` **是软链，不是重装依赖**。依赖本体在 ~/.local/schedule/deps
+#      （112 MB，只在 deploy/install-deps.sh 里装一次），app/node_modules 只是
+#      一条指向 ../deps/node_modules 的软链 —— Node 从 server/ 往上找依赖靠它。
+#      软链没了服务会崩在 `require('@earendil-works/pi-ai')`，而 restart 之后
+#      systemd 会不停重启，看起来像「后端抽风」。
+#      所以脚本只在 `[ ! -e node_modules ]` 时才重建它（**-e 对悬空软链是假**，
+#      正好覆盖「链还在、指向的目标没了」这种情况）。平时不动它。
+#
+#   2. **只换目录里的东西，绝不 mv 目录本身** —— 与 publish-web.sh 同一个坑：
+#      Docker 的 bind mount 认 inode，目录被 mv 走之后容器里那个挂载点就废了
+#      （/data/schedule-app 也挂进了 nginx，虽然线上不读它，但排障时会对不上
+#      版本）。实测中过一次 403，重启容器才恢复。
+#
+#   3. **数据不在被发布的目录里**：SQLite 库和密钥在 ~/.local/schedule/data/
+#      （unit 的 SCHEDULE_DATA_DIR），跟代码目录分开。所以拷代码、换目录
+#      **不会动到数据**，回滚也只需拷回代码。
+#
+# 以前服务直接跑 SMB 工程目录里的代码（WorkingDirectory 指向 /mnt/fnos/...），
+# 那份目录是你在别的设备也在动的活工作区 —— 别人改一下、线上就跟着变。
+# 现在跑的是本机磁盘 ~/.local/schedule/app/ 那份拷贝。
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+SSH_HOST="${SSH_HOST:-ubuntu}"
+SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
+REMOTE_APP='~/.local/schedule/app'
+KEEP=3
+
+FORCE=0
+for a in "$@"; do case "$a" in --force) FORCE=1;; esac; done
+
+say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
+die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
+
+# server/ 的**内容**指纹：逐文件 sha256 再汇总。只看内容、不看 mtime，
+# 所以「重新打包了一遍但代码没动」也算一致。
+#
+# ⚠️ 中间那道 `sed 's/\*//g' | tr -s ' '` 是必需的，别删：
+#    Git Bash 的 sha256sum 走**二进制**模式，输出 `HASH *路径`（一个空格 + 星号）；
+#    Linux 上是文本模式，输出 `HASH  路径`（两个空格）。两边算同一批文件会得出
+#    不同的汇总值，于是指纹永远对不上、跳过逻辑形同虚设（实测踩到过）。
+#    抹掉星号 + 压掉连续空格后两边才一致。
+FP_CMD="find server -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sed 's/\*//g' | tr -s ' ' | sha256sum | cut -c1-16"
+
+# ---------------------------------------------------------------- 回滚
+if [ "${1:-}" = "--rollback" ]; then
+  say "回滚：列出备份"
+  LAST="$("$SSH" "$SSH_HOST" "ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | tail -1")"
+  [ -n "$LAST" ] || die "没有找到任何备份（$REMOTE_APP.bak-*）"
+  printf '  回滚到：%s\n' "$LAST"
+  "$SSH" "$SSH_HOST" "set -e
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+mkdir -p $REMOTE_APP
+cp -r $REMOTE_APP $REMOTE_APP.bak-rollback-\$(date +%m%d-%H%M%S)
+rm -rf $REMOTE_APP/server
+cp -r $LAST/server $REMOTE_APP/server
+if [ -e $REMOTE_APP/node_modules ]; then echo '    依赖软链 ok'; else ln -sfn ../deps/node_modules $REMOTE_APP/node_modules; fi
+systemctl --user restart schedule-backend
+sleep 3
+systemctl --user is-active schedule-backend"
+  say "回滚完成，探活（探的是服务器上的 127.0.0.1，不是本机）"
+  "$SSH" "$SSH_HOST" "curl -s --noproxy '*' http://127.0.0.1:25692/api/health"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- 打包
+say "1/6 打包 server/（剔除 data / *.bak / .claude / .omc / tests）"
+cd "$ROOT"
+[ -d server ] || die "找不到 server/ —— 在仓库根目录跑这个脚本"
+rm -rf /tmp/schedule-server-stage
+mkdir -p /tmp/schedule-server-stage
+tar -czf /tmp/schedule-server.tgz \
+  --exclude='server/data' --exclude='server/tests' \
+  --exclude='.claude' --exclude='.omc' --exclude='*.bak*' \
+  server
+tar -xzf /tmp/schedule-server.tgz -C /tmp/schedule-server-stage
+printf '  打包内容：\n'
+ls /tmp/schedule-server-stage/server | sed 's/^/    /'
+
+# ---------------------------------------------------------------- 指纹比对
+say "2/6 跟远端比内容指纹"
+LOCAL_FP="$(cd /tmp/schedule-server-stage && eval "$FP_CMD")"
+REMOTE_FP="$("$SSH" "$SSH_HOST" "cd $REMOTE_APP 2>/dev/null && $FP_CMD" || true)"
+printf '  本地 %s\n  远端 %s\n' "${LOCAL_FP:-<空>}" "${REMOTE_FP:-<空>}"
+
+if [ "$FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
+  say "无变更 → 跳过发布（不上传、不备份、不重启）"
+  "$SSH" "$SSH_HOST" "set -e
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+printf '  服务状态  %s\\n' \"\$(systemctl --user is-active schedule-backend)\"
+if [ -e $REMOTE_APP/node_modules ]; then echo '  依赖软链  ok'; else echo '  依赖软链  断了，补一条'; ln -sfn ../deps/node_modules $REMOTE_APP/node_modules; fi
+printf '  /api/health -> %s\\n' \"\$(curl -s --noproxy '*' http://127.0.0.1:25692/api/health)\""
+  rm -f /tmp/schedule-server.tgz
+  rm -rf /tmp/schedule-server-stage
+  printf '\n  要强制重发一遍：./deploy/publish-server.sh --force\n'
+  exit 0
+fi
+[ "$FORCE" = "1" ] && printf '  --force：跳过比对，照发\n'
+
+# ---------------------------------------------------------------- 上传
+say "3/6 传到远端临时目录"
+"$SSH" "$SSH_HOST" "rm -rf $REMOTE_APP.new && mkdir -p $REMOTE_APP.new"
+tar -czf - -C /tmp/schedule-server-stage server \
+  | "$SSH" "$SSH_HOST" "tar -xzf - -C $REMOTE_APP.new && echo '    解包 ok'"
+
+# ---------------------------------------------------------------- 备份 + 切换
+say "4/6 备份现有版本 → 切换"
+TS="$(date +%m%d-%H%M%S)"
+"$SSH" "$SSH_HOST" "set -e
+mkdir -p $REMOTE_APP
+if [ -f $REMOTE_APP/server/server.js ]; then
+  cp -r $REMOTE_APP $REMOTE_APP.bak-$TS
+  echo \"    已备份 app.bak-$TS\"
+fi
+rm -rf $REMOTE_APP/server
+cp -r $REMOTE_APP.new/server $REMOTE_APP/server
+rm -rf $REMOTE_APP.new
+# ⚠️ 这条软链是命根子，但**平时不动** —— 只有不存在或悬空时才重建
+if [ -e $REMOTE_APP/node_modules ]; then
+  echo '    依赖软链已存在，跳过'
+else
+  ln -sfn ../deps/node_modules $REMOTE_APP/node_modules
+  echo '    依赖软链缺失/悬空，已重建'
+fi
+ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | head -n -$KEEP | while read -r d; do rm -rf \"\$d\"; echo \"    清掉旧备份 \$(basename \$d)\"; done
+echo '    软链：'; ls -l $REMOTE_APP/node_modules | sed 's/^/    /'"
+
+# ---------------------------------------------------------------- 重启
+say "5/6 重启后端"
+"$SSH" "$SSH_HOST" "set -e
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+systemctl --user daemon-reload
+systemctl --user restart schedule-backend
+sleep 3
+systemctl --user is-active schedule-backend"
+
+# ---------------------------------------------------------------- 校验
+say "6/6 探活 + 看日志"
+HEALTH="$("$SSH" "$SSH_HOST" "curl -s --noproxy '*' http://127.0.0.1:25692/api/health" || true)"
+printf '  /api/health -> %s\n' "$HEALTH"
+printf '%s' "$HEALTH" | grep -q '"ok":true' || die "后端没起来，看日志：journalctl --user -u schedule-backend -n 50"
+"$SSH" "$SSH_HOST" "journalctl --user -u schedule-backend -n 6 --no-pager | sed 's/^/    /'"
+
+rm -f /tmp/schedule-server.tgz
+rm -rf /tmp/schedule-server-stage
+say "发布完成"
+printf '  回滚：./deploy/publish-server.sh --rollback\n'

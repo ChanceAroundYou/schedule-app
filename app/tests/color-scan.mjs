@@ -208,7 +208,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   // 扫描 .tsx 文件里 Tailwind **自带**的写死圆角类。
-  // 项目约定（CLAUDE.md 三、令牌三条）：圆角一律走 var(--r-xs/sm/md/lg/xl/pill)，
+  // 项目约定（AGENTS.md「三、界面硬规则 · 令牌三条」）：圆角一律走 var(--r-xs/sm/md/lg/xl/pill)，
   // 写死的像素在切 flat / notion 时原地不动、不报错——正是这个脚本要防的静默漂移。
   // 豁免 `rounded-[var(--r-…)]`（那是走令牌的写法）；`rounded-[2px]` 这类写死值照抓。
   let roundCount = 0;

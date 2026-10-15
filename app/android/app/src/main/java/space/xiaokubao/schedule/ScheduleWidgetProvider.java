@@ -139,8 +139,35 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static long lastFlushAt = 0;
     private static final long FLUSH_MIN_GAP_MS = 60_000;
 
+    /**
+     * 重入保护：已经在刷就别再进一次。
+     *
+     * 2026-10-14（用户报「整个 App 卡在开屏页不能操作」时加）：`refresh` 里会调
+     * `RepeatSpawn.refillAll`，而 `spawn` 补完实例后**又直接调 refresh** ——
+     * 普通 Java 调用，不是广播，所以它是在**当前线程（主线程）上递归**的。
+     *
+     * 平时靠 `spawn` 里的 `if (made == 0) return;` 自终止：第二轮补不出新东西
+     * 就收手。但只要存在「补得出来、转头又被别处删掉」的系列
+     * （比如已结束的系列），每一轮都 `made > 0` → 无限递归 → 主线程被钉死、
+     * WebView 永远画不出首屏，连 DevTools 求值都超时。
+     *
+     * 所以这里加一道**结构性**的保险：不管数据什么样，刷新最多嵌套一层。
+     * 数据层面的判据（`repeatUntil`）是另一道，两道都要有。
+     */
+    private static boolean refreshing = false;
+
     /** 广播给所有实例重画 */
     static void refresh(Context c) {
+        if (refreshing) return;      // 已经在刷里了，别递归
+        refreshing = true;
+        try {
+            doRefresh(c);
+        } finally {
+            refreshing = false;
+        }
+    }
+
+    private static void doRefresh(Context c) {
         // 提醒闹钟跟着数据走：刷新一次就整体重排（新建 / 编辑 / 删除 / 勾完成
         // 都会走到这里，见 ReminderScheduler 的说明）。
         ReminderScheduler.reschedule(c);

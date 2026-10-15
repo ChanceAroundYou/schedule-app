@@ -2,7 +2,7 @@
 
 > 状态：**长期规则**（实施另见 `v5-dataflow-plan.md`）
 > 依据：`app/clickDispatch.ts`、`data/store/commit.ts`、`ui/hooks/store.ts`、
-> `CLAUDE.md` 一、结构 + 二、不变量、`docs/重构路线*.md`
+> `AGENTS.md` 一、结构 + 二、不变量、`docs/架构决策.md`
 > 不变量：**外部 import 路径一律不变**；`domain/` 保持零 React / DOM / 网络；本册只定流向，不动逻辑。
 
 ---

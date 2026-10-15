@@ -1,7 +1,7 @@
 # 编码规范第 8 册 · 交互与无障碍
 
 > 状态：**长期规则**（实施另见 `v8-a11y-plan.md`）
-> 依据：`docs/界面约定-无障碍.md`、`CLAUDE.md` 三、界面硬规则、
+> 依据：`docs/界面约定-无障碍.md`、`AGENTS.md` 三、界面硬规则、
 > `ui/hooks/overlay.ts`（useOutsideClose/useEscape/useFocusTrap）、
 > `ui/hooks/modalFocus.ts`、`app/tests/browser-smoke.mjs`（`a11y()`/`nameOf()`）
 > 不变量：本册只定交互与无障碍规矩，不动视觉（视觉归第 1 册）。

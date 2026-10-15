@@ -1,0 +1,32 @@
+version: "3.0"
+services:
+        nginx:
+                restart: always
+                network_mode: "host"
+                image: fholzer/nginx-brotli:v1.29
+                container_name: nginx
+                #ports:
+                #        - 80:80
+                #        - 9080:9080
+                volumes:
+                        - nginx:/etc/nginx
+                        - ./conf.d:/etc/nginx/conf.d
+                        - ./certs:/etc/letsencrypt:ro
+                        - ../web/web/dist:/data/index/web/dist
+                        - /home/xiaokubao/family/星星包/coding/个人账本:/data/balancebook
+                        # ---- 日程清单 ----
+                        # 2026-10-15 起**不再挂工程目录**。以前挂的是
+                        #   /home/xiaokubao/family/星星包/coding/日程管理:/data/schedule
+                        # 那份在 SMB 上，既是源码又是你在别的设备动的活工作区；
+                        # nginx 直接读它的 dist/ 等于「本地 build 一下就上线」，
+                        # 没有发布动作、没有备份、没有回滚。
+                        # 现在只挂三个**只读**运行时目录，都在本机磁盘
+                        # ~/.local/schedule/ 下（web / app / apk；data 是数据库、
+                        # deps 是依赖，都不进容器）。
+                        # 发布见 deploy/publish-web.sh（前端）与 publish-server.sh（后端）。
+                        - /home/xiaokubao/.local/schedule/web:/data/schedule-web:ro
+                        - /home/xiaokubao/.local/schedule/app:/data/schedule-app:ro
+                        # App 自更新的安装包目录（本机磁盘，**不是** NAS 上的工程目录）
+                        - /home/xiaokubao/.local/schedule/apk:/data/schedule-apk:ro
+volumes:
+        nginx:

@@ -8,7 +8,7 @@
 # 做四件事：
 #   1. assembleRelease（用 keystore.properties 里的固定 keystore 签名）
 #   2. 从 APK 里读 versionCode / versionName（不信 build.gradle，信产物本身）
-#   3. scp 到服务器 ~/.local/share/schedule-apk/schedule-<versionCode>.apk，
+#   3. scp 到服务器 ~/.local/schedule/apk/schedule-<versionCode>.apk，
 #      连同算好的 sha256 一起写进 version.json
 #   4. curl 回读校验，确认客户端真能拿到
 #
@@ -20,7 +20,7 @@
 # ⚠️ 签名不可换：换 keystore = 覆盖安装失败 = 用户必须卸载重装（数据丢）。
 #    keystore 在 C:/Users/小哭包/.android/schedule-release.jks，**要备份**。
 #
-# 对应服务端目录：/home/xiaokubao/.local/share/schedule-apk（本机磁盘，不是 NAS）
+# 对应服务端目录：/home/xiaokubao/.local/schedule/apk（本机磁盘，不是 NAS）
 # nginx 位置：/schedule/dl/，见 deploy/schedule.conf
 
 set -euo pipefail
@@ -37,7 +37,7 @@ SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版 ssh 不读 ~/.ssh/config
 # 里的 Host 别名（`ssh ubuntu` 会退化成用本机名当用户名，然后 publickey 失败）
 SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
-REMOTE_DIR='~/.local/share/schedule-apk'
+REMOTE_DIR='~/.local/schedule/apk'
 BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule/dl}"
 
 NOTES="${1:-$(date +%Y-%m-%d 发布)}"

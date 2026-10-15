@@ -3,7 +3,7 @@
  *
  * **共享的单位是集，不是任务**（像相册）：没有「把这一条任务分享给某人」。
  * 所以这一组里所有的「谁能改」都问同一句 —— `db.roleOf(calId, me.user.id)`，
- * 之后一律转给 `calendars.canWrite / canManage`（那三个入口，见 CLAUDE.md 二）。
+ * 之后一律转给 `calendars.canWrite / canManage`（那三个入口，见 AGENTS.md「二、不变量 · 权限」）。
  *
  * **别在别处写 `role === 'owner'`。** 这里也只写 `canManage(role)`。
  *

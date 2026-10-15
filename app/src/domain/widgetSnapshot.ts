@@ -54,6 +54,14 @@ export interface SnapshotTask {
    */
   deleted?: boolean;
   /**
+   * 重复系列的结束日（不含）。「从这次起往后全部」写在这。
+   *
+   * 补齐窗口时必须跳过带它的根 —— 那个系列已经结束了，补出来的实例马上会被
+   * App 按同一个标记删掉，于是「补 → 删 → 再补」永远停不下来，
+   * 把小组件的 refresh 递归成主线程死循环。详见下面序列化处的那段。
+   */
+  repeatUntil?: string | null;
+  /**
    * 原始重复规则。小组件的「编辑任务」弹窗要显示「重复：每周三」，
    * 也必须能原样回写（只带标签的话会把 weekdays/end 这些细节丢掉）。
    */
@@ -123,6 +131,16 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       // 「跳过已删的」，缺了它就会给每个实例重复派生、或给回收站里的任务续命。
       seriesId: t.seriesId ?? null,
       deleted: t.deleted === true,
+      /* repeatUntil：这个系列已经结束的那一天（不含）。
+       *
+       * ⚠️ **必须带上**（2026-10-14 修，用户报「整个 App 卡在开屏页不能操作」）。
+       * 原生侧 RepeatSpawn 只看 repeat：根还活着、repeat 还有规则、而结束日之后的
+       * 实例都被删了 → 它认定「窗口不足」→ 补 → App 按 repeatUntil 又删 →
+       * 下一轮再补…于是 `refresh → refillAll → spawn → refresh` 在主线程上
+       * 无限递归（spawn 结尾会直接调 refresh，是普通 Java 调用不是广播），
+       * 主线程被钉死、WebView 永远画不出首屏。
+       * 带上这个字段，refillAll 就能认出一个已结束的系列并跳过它。 */
+      repeatUntil: t.repeatUntil ?? null,
     }))
     // 排序：日期 → 时间（**未定时的排在最后**，跟 App 里「未定时区在最上方
     // 但属于同一段」的语义不同：这里是列表，未定时没有时刻就没有位置）

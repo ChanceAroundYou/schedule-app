@@ -1,9 +1,9 @@
 # 日程清单后端 —— Node 22 + node:sqlite，监听 127.0.0.1:25692。
 #
 # ⚠️ **不再是零依赖。** AI 那一组（@earendil-works/pi-*）是唯一允许的例外，
-#    见 CLAUDE.md 六、1。依赖装在**本机磁盘**上，靠工程根目录一个软链接指过去：
+#    见 AGENTS.md 五、第 1 条。依赖装在**本机磁盘**上，靠工程根目录一个软链接指过去：
 #
-#      node_modules -> /home/xiaokubao/.local/share/schedule-deps/node_modules
+#      node_modules -> /home/xiaokubao/.local/schedule/deps/node_modules
 #
 #    所以这份 checkout 必须先补上那个链接，服务才 import 得到 pi。
 #    没补的话服务**照样起得来**（ai/index.js 是惰性 import）—— 只是 AI 页会报
@@ -33,14 +33,19 @@ Type=simple
 # 升级 node 时改这一行，然后 systemctl --user restart schedule-backend。
 ExecStart=/home/xiaokubao/.nvm/versions/node/v22.22.3/bin/node server/server.js
 
-# NAS 上那份是软链进来的（/home/xiaokubao/family → /mnt/fnos/family），
-# 两个路径都通，用软链这条和别的服务保持一致。
-WorkingDirectory=/home/xiaokubao/family/星星包/coding/日程管理
+# ⚠️ 2026-10-15 改：**跑的是 ~/.local/schedule/app/server 那份拷贝**，
+#    不再是 SMB 上的工程目录。工程目录是你在别的设备也在动的活工作区，
+#    服务直接从那儿读代码的后果是「别人改一下、线上就变」，而且 SMB 丢过文件。
+#    发布走 deploy/publish-server.sh（拷代码 → 备份 → restart），没有回滚不了的风险。
+#
+#    这个目录下必须有一条 `node_modules -> ../schedule-deps/node_modules` 软链：
+#    Node 从 server/ 往上找依赖就靠它，少了直接崩在 require('@earendil-works/pi-ai')。
+WorkingDirectory=/home/xiaokubao/.local/schedule/app
 
 # ⚠️ 数据落在**本机磁盘**，不在工程目录里。
 #    工程目录挂在 NAS 的 SMB 共享上，SQLite 的文件锁在 CIFS 上不可靠，
 #    库写坏了是不可恢复的。备份就是拷这一个目录。
-Environment=SCHEDULE_DATA_DIR=/home/xiaokubao/.local/share/schedule
+Environment=SCHEDULE_DATA_DIR=/home/xiaokubao/.local/schedule/data
 Environment=NODE_ENV=production
 Environment=PATH=/home/xiaokubao/.nvm/versions/node/v22.22.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 

@@ -140,6 +140,15 @@ final class RepeatSpawn {
             java.util.Set<String> roots = new java.util.LinkedHashSet<>();
             for (WTask t : snap.tasks) {
                 if (t == null || t.done || t.deleted) continue;
+                /* ⚠️ **已结束的系列直接跳过**（2026-10-14，用户报「App 卡在开屏页」）。
+                 * 判据是根上的 `repeatUntil`（由「从这次起往后全部」写下）。
+                 * 不跳的话：对一个已结束的系列，窗口永远是「不足」的
+                 * （它结束日之后的实例都被删了）→ 这里补 → App 按同一个标记又删 →
+                 * 下一轮再补。而 spawn 结尾会直接调 refresh（普通 Java 调用），
+                 * 于是 refresh → refillAll → spawn → refresh 在主线程上无限递归，
+                 * 首屏永远画不出来。
+                 * 老快照没这个键 → null → 照旧补，向后兼容。 */
+                if (t.repeatUntil != null && !t.repeatUntil.isEmpty()) continue;
                 JSONObject r = t.repeat;
                 if (r == null || "none".equals(r.optString("unit", "none"))) continue;
                 // 只处理系列根：实例自己也有 repeat，处理它会重复派生

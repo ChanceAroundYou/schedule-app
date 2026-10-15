@@ -84,7 +84,7 @@ ui/
 3. **`ui/` 非 kit + `app/` 调用方外观类只减不增**（R4 方向）—— ratchet，baseline 73，涨即失败
 
 > 为什么第 3 条是 ratchet 不是清零：调用方用 Tailwind 工具类 + CSS 变量本就是本项目的
-> 正确写法（见 CLAUDE.md 三、界面硬规则），一步清零 = 重写整个 UI 层，不在本册范围。
+> 正确写法（见 `AGENTS.md` 三、界面硬规则），一步清零 = 重写整个 UI 层，不在本册范围。
 > 「kit 无 className」也不锁：kit 保留 `className`（布局类，见 2.1），外观走 variant/tone。
 
 ### 5.2 现有扫描器保持
