@@ -99,7 +99,11 @@ function serveDist() {
       return;
     }
     let p = path.join(DIST, decodeURIComponent(req.url.split('?')[0]));
-    if (p.endsWith('/')) p += 'index.html';
+    /* **Windows 检测**：path.join 在 Windows 上把分隔符统一成反斜杠，根路径
+       join 完是 `…\dist\` —— 只判 '/' 永远不命中，于是根路径 404、页面整个
+       不加载。症状是探针卡在「等 Service Worker 接管」，跟 Chrome / SW 一点
+       关系都没有（2026-10-15 用 CDP 现场取证定位到的：body 是 "not found"）。 */
+    if (process.platform === 'win32' ? p.endsWith('\\') : p.endsWith('/')) p += 'index.html';
     if (!p.startsWith(DIST) || !existsSync(p) || statSync(p).isDirectory()) {
       res.writeHead(404); res.end('not found'); return;
     }
@@ -1845,26 +1849,60 @@ try {
   // 这里只验**接线**（哪一端改 time、哪一端只改 duration），不含算法 ——
   // 15 分钟一档、上沿固定底边那些在 domain.test.ts 的 nudgeEdge 用例里锁着。
 
-  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
-  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
-  // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
-  await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
-  // 从**日程页**快速添加，不走 quickAdd 那个 helper：它的等条件是
-  // 「[data-scope="inbox"] 里多出一行」，而这一条**有日期**、根本不在待办箱。
-  // 而日期这一项必须由页面自己给：待办箱的 defaultDate 是 null，加出来的是
-  // 「有时间、没日期」的任务，哪个日视图都不会把它画上时间轴（下方就会一直
-  // 等不到方块）。日程页的 defaultDate 是 ui.cursor，正好是今天。
+  // 先造这一节的对象：一条**定时任务**（time + duration 都有）。
+  //
+  // 2026-10-15 起快速添加不再解析自然语言（「9:00 … 8小时」那条路连
+  // domain/parse/ 一起删了），时长也只能在抽屉里设（DateTimeRow 的结束
+  // 时间是唯一入口）—— 所以这里走真实 UI 分两步：
+  //   ① 「今天」页快速添加造一条（该页 defaultDate = 今天，无时间）；
+  //   ② 在列表里点它开抽屉，拨盘设开始 09:00、结束 10:00 → duration = 60。
+  // 为什么在「今天」页造而不是日程页：日程页新建的未定时任务进未定时区，
+  // 那区只画前 6 条（DayView 的 UNTIMED_MAX），这一条未必露得出来；
+  // 今天列表全量展示，点哪条都不会落空。
+  await evalJs(page, `document.querySelector('[data-nav="today"]').click(); return true;`);
   await evalJs(page, `
     const inp = document.querySelector('.fast-add textarea');
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    // **必须带时长**（「8小时」）：2026-10-13 起 duration 可空，新建任务
-    // 默认 duration: null = 没有结束时间 → 卡片不渲染上下把手，这一节
-    // 就没有对象可测。带一个时长进去，卡片才有 resizable。
-    set.call(inp, '9:00 微调试试 8小时');
+    set.call(inp, '微调试试');
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return true;
   `);
+  await waitFor(page, `
+    [...document.querySelectorAll('.task-row')].some((e) => e.textContent.includes('微调试试')) ? 1 : null
+  `, '今天列表里出现新任务', 8000);
+  await clickEl(page, `
+    [...document.querySelectorAll('.task-row')].find((e) => e.textContent.includes('微调试试'))
+  `);
+  await waitFor(page, `!!document.querySelector('.drawer.open .drawer-title')`, '抽屉打开', 8000);
+  /* 拨盘驱动与后面「二十一」节同一套写法：先小时后分钟，选完分钟表盘自己收起。
+     小时 9 / 10 都在内圈（0–11），分钟 0 在分钟圈（0,5,…55 里的 0）。 */
+  const tpBtn = '.drawer .time-row .tp-btn';
+  await clickEl(page, `[...document.querySelectorAll(${JSON.stringify(tpBtn)})][0]`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '开始时间表盘打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num.cp-inner')].find((b) => b.textContent.trim() === '9')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '0')`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
+  await waitFor(page, `document.querySelectorAll(${JSON.stringify(tpBtn)}).length === 2 ? 1 : null`, '结束时间选择框出现', 8000);
+  await clickEl(page, `[...document.querySelectorAll(${JSON.stringify(tpBtn)})][1]`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? 1 : null`, '结束时间表盘打开', 8000);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num.cp-inner')].find((b) => b.textContent.trim() === '10')`);
+  await clickEl(page, `[...document.querySelectorAll('.drawer .cp-num')].find((b) => b.textContent.trim() === '0')`);
+  await waitFor(page, `document.querySelector('.drawer .tp-dial') ? null : 1`, '选完分钟表盘收起', 8000);
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.title === '微调试试');
+      return t && t.time === '09:00' && t.duration === 60 ? 1 : null;
+    })()
+  `, '新任务落盘（09:00 起、60 分钟）', 8000);
+  await clickEl(page, `document.querySelector('.drawer.open .drawer-head [aria-label="完成"]')`);
+  await waitFor(page, `document.querySelector('.drawer.open') ? null : 1`, '抽屉关上', 8000);
+
+  await evalJs(page, `document.querySelector('[data-nav="calendar"]').click(); return true;`);
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
+  await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
   const block = await waitFor(page, `
     (() => {
       const e = [...document.querySelectorAll('.task-el--timed')].find((x) => x.textContent.includes('微调试试'));
