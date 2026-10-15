@@ -1,7 +1,7 @@
 # 日程清单后端 —— Node 22 + node:sqlite，监听 127.0.0.1:25692。
 #
 # ⚠️ **不再是零依赖。** AI 那一组（@earendil-works/pi-*）是唯一允许的例外，
-#    见 CLAUDE.md 六、1。依赖装在**本机磁盘**上，靠工程根目录一个软链接指过去：
+#    见 AGENTS.md 五、第 1 条。依赖装在**本机磁盘**上，靠工程根目录一个软链接指过去：
 #
 #      node_modules -> /home/xiaokubao/.local/schedule/deps/node_modules
 #

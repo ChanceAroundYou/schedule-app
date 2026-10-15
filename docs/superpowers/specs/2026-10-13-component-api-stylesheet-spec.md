@@ -153,7 +153,7 @@ const iconBtnVariants = cva(cx(BTN_BASE, 'rounded-[var(--r-pill)]'), { variants:
 | 文件 | 内容 | 为什么留在全局 |
 |---|---|---|
 | `tokens.css` | `:root` 变量集 | 全项目引用，下沉到 module 会断 |
-| `responsive.css` | `@media` / `prefers-reduced-motion` / `:focus-visible` | **跨切面轴**，不属于任何单个组件；CLAUDE.md 明写必须压过 Tailwind `@layer` |
+| `responsive.css` | `@media` / `prefers-reduced-motion` / `:focus-visible` | **跨切面轴**，不属于任何单个组件；AGENTS.md 明写必须压过 Tailwind `@layer` |
 | `state.css`（新增） | R3 状态类白名单 | 跨组件协议，进 module 会被改写名 |
 
 其余 `shell.css` `calendar.css` `lists.css` `quick-add.css` `overlays.css` 里**只服务 `ui/**`** 的部分，下沉到 `ui/<组>/<组>.module.css`。

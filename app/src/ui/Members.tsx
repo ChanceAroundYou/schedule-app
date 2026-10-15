@@ -122,7 +122,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
               <Input
                 value={inviteName}
                 /* placeholder 只给格式示例，**不当可访问名字** —— 名字走下面的
-                   `aria-label`（见 CLAUDE.md 三、无障碍 1）。
+                   `aria-label`（见 AGENTS.md「三、界面硬规则 · 无障碍」第 1 条）。
                    **必须带上「邀请」三个字**（用户 2026-10-09 明确要求）：这一行
                    是成员列表的最后一行，前面几行都是「谁有权看」，孤零零一个
                    「输入用户名」读不出是在邀请谁 —— 而 `aria-label` 是读屏才

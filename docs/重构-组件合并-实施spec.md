@@ -257,7 +257,7 @@ useEscape(open, () => setOpen(false));
 ## 5. `SettingsView.tsx:120` 的写死圆角
 
 ### 现状
-`ui/settings/SettingsView.tsx:120`：`className="inline-block h-3 w-3 shrink-0 rounded-full"` —— Tailwind 自带 `rounded-full`，写死像素，切 flat / notion 原地不动。**全仓唯一一处**（CLAUDE.md 三、令牌三条禁的就是它）。
+`ui/settings/SettingsView.tsx:120`：`className="inline-block h-3 w-3 shrink-0 rounded-full"` —— Tailwind 自带 `rounded-full`，写死像素，切 flat / notion 原地不动。**全仓唯一一处**（AGENTS.md 三、令牌三条禁的就是它）。
 
 ### 改动
 `rounded-full` → `rounded-[var(--r-pill)]`（`--r-pill: 999px` 已在 `tokens.css:58`）。
