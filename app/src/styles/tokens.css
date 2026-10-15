@@ -80,6 +80,15 @@
      中性色在六个风格轴上都不用改，深浅色两档也自动跟着走。 */
   --drag-shadow: 0 8px 20px rgba(38, 32, 24, .16);
   --wide: 920px;
+
+  /* 系统栏安全区（全面屏）。**网页版恒为 0**：安卓上 `env(safe-area-inset-*)` 实测
+     也是 0 且 `StatusBar.setOverlaysWebView` 在 Android 15+ 是空操作，所以只能由
+     原生侧 `WidgetBridge.insets()` 量完写进 :root（见 data/widget.ts）。
+     这里声明 0 是**默认值而不是兜底值** —— 没有原生注入时（浏览器 / 非全面屏）
+     语义上就是 0px 遮挡，不是「名字写错了将就一下」。写了它 `contrast.mjs`
+     才不会把这四个当成未定义变量；真写错成 `--st` 照样会被抓出来。
+     用侧见 styles/shell.css（顶栏）与 responsive.css（底栏 / .main）。 */
+  --sat: 0px; --sab: 0px; --sal: 0px; --sar: 0px;
 }
 
 [data-theme="dark"] {

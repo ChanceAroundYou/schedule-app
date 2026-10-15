@@ -73,8 +73,9 @@ cat 本地文件 | ssh ubuntu "cat > 目标路径"
 > `Emulation.setDeviceMetricsOverride` 也不行，它会触发完整重排、
 > 之后合成事件不再进处理器。
 
-**新版没有窄屏 / 触屏的自动化覆盖** —— `app/tests/smoke.mjs` 只跑一个
-1440×900 的桌面视口，≤900px 的标签栏、长按操作层只能手工在真机上看。
+**新版没有窄屏 / 触屏的自动化覆盖** —— ≤900px 的标签栏、长按操作层只能手工在
+真机上看。（原先 `app/tests/smoke.mjs` 只跑一个 1440×900 的桌面视口，
+2026-10-15 已连同 `browser-smoke.mjs` 一起删掉。）
 其余测试坑见 [docs/踩坑.md](docs/踩坑.md) 第 33 条。
 
 ---

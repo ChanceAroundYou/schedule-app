@@ -174,10 +174,11 @@ cd app && npm run build && npm run preview   # :5199，同样代理 /api
 ### 测试
 
 ```bash
-cd app && npm test                        # 前端单元测试：node --test，110 条
+cd app && npm test                        # 前端单元测试：node --test
 cd app && npm run typecheck
-cd app && node tests/contrast.mjs         # 配色 / 描边对比度
-node server/tests/api.test.js             # 后端接口测试：46 条
+cd app && node tests/contrast.mjs         # 配色 / 描边对比度 + 令牌名 / 兜底值（72 对）
+cd app && node tests/color-scan.mjs       # 写死色值 / 圆角 / 原生 select
+node server/tests/api.test.js             # 后端接口测试
 node server/tests/migration.test.js       # schema 迁移：8 条
 node --test server/tests/ai.test.js       # AI 层：18 条（假模型，不联网）
 ```
@@ -190,27 +191,18 @@ node --test server/tests/ai.test.js       # AI 层：18 条（假模型，不联
 # 两个人共享一个日程集的完整流程：起临时后端，全是真请求
 node server/tests/smoke-share.mjs
 
-# 真实 Chrome 走一遍新界面：注册 → 切日程集 → 改名 → 收邀请 → 接受
-# → 触屏长按拖拽 / 鼠标拖拽 → 断网还能打开
-cd app && npm run build && node tests/browser-smoke.mjs
+# 真实 Chrome 量卡片几何（.task-el 那一族被五种界面共用，最容易互相踩）
+cd app && npm run build && node tests/browser-cards.mjs
 ```
 
-> `browser-smoke.mjs` **自己搭静态服务和临时后端**，不碰线上库。
-> 别改用 `npm run preview` —— 它的 `/api` 代理写死指向 25692，那是线上后端，
-> 探针会往生产库里写账号。
+> `browser-cards.mjs` **要求 dist 是同源构建**（`npm run build`，别带
+> `VITE_API_BASE`）—— 它直接伺服 `dist/`，带线上基址的构建会去连真服务器。
+> 它只量布局，不写库。
 
-旧的 `app/tests/smoke.mjs` 打的是**已经部署的那份**：
-
-```bash
-node server/server.js                                   # 终端 1
-cd app && npm run preview                               # 终端 2
-node app/tests/smoke.mjs                                # 终端 3
-BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可以直接打线上
-```
-
-> **它会在那个服务器上注册一个新账户。** 打线上跑完记得清库（见
-> [DEPLOY-运维.md](DEPLOY-运维.md)「发布流程」）。注册是开放的，所以多出来的账户
-> 不会挡住谁，但留着也是垃圾。
+> 2026-10-15 删掉了 `browser-smoke.mjs` / `browser-dayview.mjs` / `smoke.mjs`：
+> 前两个卡在等 Service Worker 上（跑不完），第三个打的是**已部署的那份**
+> 而且会在那个服务器上注册新账户。**端到端交互现在没有自动化覆盖** ——
+> 发布前在真机 / 浏览器上手工走一遍。
 
 ---
 
@@ -226,7 +218,7 @@ BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs   # 也可�
 │   ├── src/views/     纯展示（日 · 周 · 月 + 六个列表页）
 │   ├── src/styles/    语义样式模块（tokens / shell / calendar / lists / quick-add / overlays / responsive）+ tailwind.css
 │   ├── public/        icon.svg / manifest.json / sw.js（离线外壳）
-│   └── tests/         browser-smoke.mjs（真实 Chrome）· smoke.mjs（旧的）
+│   └── tests/         contrast.mjs · color-scan.mjs · browser-cards.mjs
 ├── server/       后端（Node 22，**只引 AI 那一组依赖**）
 │   ├── server.js      路由 + 鉴权中间件
 │   ├── lib/           db · auth · calendars（**权限唯一实现处**）· invites ·

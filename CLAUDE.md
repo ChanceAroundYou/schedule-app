@@ -288,7 +288,8 @@ Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**（写死的像素�
 
 > **`placeholder` 不算名字** —— 它输入后就没了。这一条踩过：探针本来接受
 > placeholder，于是管理浮层那个「名字」框**整整一轮没被任何断言看过**。
-> 现在 `browser-smoke.mjs` 的 `nameOf()` 明确不接受 placeholder，别再加回去。
+> 这条规矩是踩出来的，**不随探针存废**（`browser-smoke.mjs` 2026-10-15 已删）：
+> 以后再写探针，取可访问名字的函数也**不许接受 placeholder**，别再加回去。
 > `placeholder` 只给格式示例（如「10月15日」「学英语」），**不当可访问名字**。
 
 **2. 勾选圈一律走 `views/parts.tsx` 的 `<CheckBtn>`。** 六个调用点原先各写一遍，

@@ -57,7 +57,7 @@ export function DeleteRepeatSheet({ open, title, date, onChoose }: Props) {
         </>
       }
     >
-      <div className="space-y-3 text-[13px] leading-relaxed text-[var(--ink-2)]">
+      <div className="space-y-3 text-[13px] leading-relaxed text-[var(--text-2)]">
         <p>
           「{title}」是重复任务（{when}）。要删掉哪些？
         </p>
@@ -73,7 +73,7 @@ export function DeleteRepeatSheet({ open, title, date, onChoose }: Props) {
             onClick={() => onChoose('series')}
           />
         </div>
-        <p className="pt-1 text-[11px] text-[var(--ink-3)]">
+        <p className="pt-1 text-[11px] text-[var(--text-3)]">
           删除的任务可以在「回收站」里找回。
         </p>
       </div>
@@ -88,11 +88,12 @@ function ChoiceRow({ title, hint, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className="block w-full rounded-lg border border-[var(--line)] bg-[var(--surface)]
-                 px-3 py-2.5 text-left active:bg-[var(--surface-2)]"
+      className="block w-full rounded-[var(--r-md)] border-[length:var(--border-w)]
+                 border-[var(--border)] bg-[var(--panel-2)]
+                 px-3 py-2.5 text-left active:bg-[var(--panel-3)]"
     >
-      <div className="text-[13px] font-medium text-[var(--ink)]">{title}</div>
-      <div className="mt-0.5 text-[11px] text-[var(--ink-3)]">{hint}</div>
+      <div className="text-[13px] font-medium text-[var(--text)]">{title}</div>
+      <div className="mt-0.5 text-[11px] text-[var(--text-3)]">{hint}</div>
     </button>
   );
 }

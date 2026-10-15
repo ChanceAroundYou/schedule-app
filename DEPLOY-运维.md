@@ -162,26 +162,26 @@ curl -sk -o /dev/null -w '%{http_code} -> %{redirect_url}\n' $B
 
 ### 6.2 端到端冒烟
 
-比上面那一堆 curl 有用得多 —— 它真的开浏览器注册、建任务、勾选、刷新、确认同步。
+比上面那一堆 curl 有用得多 —— 它真的开浏览器注册、建任务、勾选、刷新。
 
-**优先跑这两个，它们在临时目录里起自己的后端，不碰线上库：**
+**这个还在，它在临时目录里起自己的后端，不碰线上库：**
 
 ```bash
 cd /mnt/fnos/family/星星包/coding/日程管理
 node server/tests/smoke-share.mjs            # 两个用户共享一个日程集的完整流程
-cd app && npm run build && node tests/browser-smoke.mjs   # 真实 Chrome 走一遍界面
 ```
 
-旧的 `app/tests/smoke.mjs` 打的是**已部署的那份**：
+界面那一侧只剩**静态 / 几何**探针（2026-10-15 删掉了 `browser-smoke.mjs`
+与 `browser-dayview.mjs`，它们卡在等 Service Worker 上跑不完）：
 
 ```bash
-BASE=https://home.xiaokubao.space/schedule/ node app/tests/smoke.mjs
+cd app && npm run build && node tests/browser-cards.mjs   # 卡片几何（dist 要同源构建）
+cd app && node tests/contrast.mjs && node tests/color-scan.mjs
 ```
 
-⚠️ **它会在那个服务器上注册一个新账户。** 注册现在是开放的，所以多出来的
-账户不会挡住谁 —— 但线上真有你在用的账户时，**别再拿它打线上**：
-起个本机后端（`SCHEDULE_DATA_DIR=/tmp/x node server/server.js`）+ 前端 preview
-跑，一样能验。
+> 交互（注册 → 建任务 → 拖拽 → 同步）**没有自动化覆盖了** —— 发布前在真机或
+> 浏览器上手工走一遍。原先那个 `app/tests/smoke.mjs` 打的是已部署的那份，
+> 而且会在那个服务器上注册新账户，也已经删掉。
 
 确实要把库清空重来时（**会删掉所有真实用户和他们的日程**）：
 
