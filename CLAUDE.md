@@ -52,7 +52,7 @@
 **只有 `dist/` 会被 nginx 伺服**，源码 / `server/` / `legacy/` / 文档一律 404。
 
 **三层状态别混**：领域模型（`state.tasks` / `state.habits`，**按 id 索引的对象**，不是数组）
-→ localStorage `schedule-app-v4`（离线副本）→ SQLite `~/.local/share/schedule/schedule.db`
+→ localStorage `schedule-app-v4`（离线副本）→ SQLite `~/.local/schedule/data/schedule.db`
 （**权威**）。排查「数据不对」**先看服务器**，浏览器那份只是副本。
 
 它是**唯一知道「全部状态」的地方**，所以这几样必须有全局视野的东西都放这儿：
@@ -72,7 +72,7 @@
 |---|---|---|
 | 领域模型 | `state.tasks` / `state.habits`（**按 id 索引的对象**，不是数组） | ← |
 | 本地存储 | localStorage `schedule-app-v4` | 离线副本 |
-| 服务端 | SQLite `~/.local/share/schedule/schedule.db` | **权威** |
+| 服务端 | SQLite `~/.local/schedule/data/schedule.db` | **权威** |
 
 > 排查「数据不对」**先看服务器**。浏览器那份只是副本。
 
@@ -93,7 +93,7 @@ cd app && npm run build          # tsc -b && vite build → ../dist/
 目录起的。
 `node_modules` 在 `.gitignore` 里，**每份 checkout 都得自己补一次**（缺了它 AI 页报
 「依赖没装好」，但服务照常起得来）：
-`ln -s /home/xiaokubao/.local/share/schedule-deps/node_modules ./node_modules`
+`ln -s /home/xiaokubao/.local/schedule/deps/node_modules ./node_modules`
 
 **`App.tsx` 为什么这么大**：它是**唯一知道「全部状态」的地方** —— 渲染调度、**点击事件
 委托**（`#content` 上挂一个 `onClick`，靠 `data-act` / `data-nav` / `data-jump` 分派）、

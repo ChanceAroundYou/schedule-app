@@ -94,7 +94,7 @@ cat 本地文件 | ssh ubuntu "cat > 目标路径"
 | 白屏 + 资源 404 | 访问的是 `/schedule` 而不是 `/schedule/`，相对路径解析到了站点根 |
 | 还是一年前的旧界面 | 旧版 Service Worker 没清掉。强刷，或 DevTools → Application → Service Workers 里 Unregister |
 | 两台设备数据不一致 | 顶栏右侧的同步图标还在转？转 → 还在推；不转 → 看后端日志。逐字段 LWW，同一字段才是「后改的赢」 |
-| 数据不对 / 像丢了几条 | **先看服务器库**（浏览器那份只是副本）。`sqlite3 ~/.local/share/schedule/schedule.db '.tables'` |
+| 数据不对 / 像丢了几条 | **先看服务器库**（浏览器那份只是副本）。`sqlite3 ~/.local/schedule/data/schedule.db '.tables'` |
 | 所有人都掉登录了 | `secret.key` 被换掉 / 删了。数据不受影响，重新登录即可 |
 | 后端起不来，日志里 EADDRINUSE | 有个手动起的 `node server.js` 还占着 25692。`ss -lptn 'sport = :25692'` |
 | `sync-dist.mjs` | **这个脚本已经没有了**（旧版纯静态时代的东西）。前端现在是 `npm run build` |

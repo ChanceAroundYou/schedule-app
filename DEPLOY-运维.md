@@ -58,7 +58,7 @@ DELETE /api/invites/:inviteId               撤回
 |---|---|---|
 | 真相在哪 | 浏览器 localStorage | 服务器 SQLite |
 | 换设备 | 导出 / 导入 JSON | 登录同一个账户 |
-| 备份 | 手动导 JSON | 拷 `/home/xiaokubao/.local/share/schedule` |
+| 备份 | 手动导 JSON | 拷 `/home/xiaokubao/.local/schedule/data` |
 | 服务器上有没有用户数据 | **没有** | **有**（这是最大的变化） |
 
 浏览器那份（`schedule-app-v4`）是**离线副本**，不是真相 —— 排查「数据不对」时
@@ -69,7 +69,7 @@ DELETE /api/invites/:inviteId               撤回
 
 ### 5.3 「刷新即生效」的前提（2026-10-15 改写）
 
-线上读的是 `~/.local/share/schedule-web/`（本机磁盘），**不是工程里的 `dist/`**：
+线上读的是 `~/.local/schedule/web/`（本机磁盘），**不是工程里的 `dist/`**：
 
 - **改完源码要发布**，`npm run build` 只产出本地 `dist/`。发布走
   `./deploy/publish-web.sh`（构建 → 上传 → 备份 → 切换 → 回读校验）。
@@ -115,7 +115,7 @@ DELETE /api/invites/:inviteId               撤回
 |---|---|
 | **versionCode 必须手加** | 在 `app/android/app/build.gradle`。客户端只认「服务端大于自己才提示」，忘了加就永远收不到更新 |
 | **签名不可换** | keystore 在 `C:/Users/小哭包/.android/schedule-release.jks`，密码在 `app/android/keystore.properties`（**gitignore**）。换 keystore = 覆盖安装失败 = 用户卸载重装、数据重拉 |
-| **服务端目录** | `~/.local/share/schedule-apk/`（**本机磁盘**，不在 NAS 的工程目录里）。nginx 挂在 `/schedule/dl/`，`no-store` |
+| **服务端目录** | `~/.local/schedule/apk/`（**本机磁盘**，不在 NAS 的工程目录里）。nginx 挂在 `/schedule/dl/`，`no-store` |
 | **上传用 ssh 管道** | 这台 Windows 上 `scp` 报 `pipe: Unknown error`，脚本里是 `ssh host "cat > 文件" < 本地文件` |
 
 > **首次从 debug 包切到 release 包要卸载一次。** 两者的签名不同，
@@ -193,7 +193,7 @@ cd app && node tests/contrast.mjs && node tests/color-scan.mjs
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 systemctl --user stop schedule-backend
-rm -rf ~/.local/share/schedule && mkdir -p ~/.local/share/schedule
+rm -rf ~/.local/schedule/data && mkdir -p ~/.local/schedule/data
 systemctl --user start schedule-backend
 curl -s $B/api/health              # 要看到 {"ok":true,...}
 ```
@@ -221,10 +221,10 @@ done
 
 | 故障 | 回滚动作 |
 |---|---|
-| 新版前端有问题 | `./deploy/publish-web.sh --rollback` —— 从 `schedule-web.bak-<版本>-<时间>` 拷回去（保留最近 3 份）。⚠️ 别 `mv` 目录本身，见 `DEPLOY.md` 1.4 |
+| 新版前端有问题 | `./deploy/publish-web.sh --rollback` —— 从 `web.bak-<版本>-<时间>` 拷回去（保留最近 3 份）。⚠️ 别 `mv` 目录本身，见 `DEPLOY.md` 1.4 |
 | 新版后端有问题 | `./deploy/publish-server.sh --rollback`，或者干脆 `systemctl --user stop schedule-backend`（页面还开得了，但登录不上、同步停摆，离线副本仍可看） |
 | 想临时下线整站 | `conf.d/home/schedule.conf` 改名 `.conf.disabled` → `nginx -t && reload` |
-| App 自更新发了坏包 | 把 `~/.local/share/schedule-apk/version.json` 改回上一个 versionCode（apk 文件留着），或直接删掉 version.json —— 客户端拉不到清单就静默不提示，已经装上的不受影响 |
+| App 自更新发了坏包 | 把 `~/.local/schedule/apk/version.json` 改回上一个 versionCode（apk 文件留着），或直接删掉 version.json —— 客户端拉不到清单就静默不提示，已经装上的不受影响 |
 | nginx 整体起不来 | 恢复备份：`docker-compose.yml.bak-<时间戳>` 与 `conf.d/servers/home.conf.bak-<时间戳>`，再 `docker compose up -d` |
 
 > **退回旧版的注意事项**：旧版读的是 localStorage 的 `schedule-app-v1`，

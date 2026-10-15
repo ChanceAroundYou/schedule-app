@@ -41,12 +41,12 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
         ▲                       ▲                    ▲
         │ /data/schedule-web    │ /data/schedule-apk │ 127.0.0.1:25692
         │ （本机磁盘，只读）      │ （本机磁盘，非 NAS） │
-   ~/.local/share/schedule-web  ~/.local/share/schedule-apk
+   ~/.local/schedule/web  ~/.local/schedule/apk
    ⚠️ 工程目录**不再挂进容器**    schedule-backend.service
-   （2026-10-15 改，见 1.4）      （跑 ~/.local/share/schedule-app）
+   （2026-10-15 改，见 1.4）      （跑 ~/.local/schedule/app）
                                                │
                                                ▼
-                        /home/xiaokubao/.local/share/schedule/schedule.db
+                        /home/xiaokubao/.local/schedule/data/schedule.db
                         ⚠️ 本机磁盘，不在 NAS 上（原因见 1.2）
 ```
 
@@ -62,7 +62,7 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 
 > ⚠️ **`npm run build` 不等于上线**。工程里的 `dist/` 只是本地产物
 > （`browser-cards.mjs` 那种探针要用），线上读的是
-> `~/.local/share/schedule-web/`，发布必须显式跑 `publish-web.sh`。
+> `~/.local/schedule/web/`，发布必须显式跑 `publish-web.sh`。
 > 2026-10-15 之前 nginx 直接读 SMB 工程目录里的 `dist/`，构建即部署 —— 已改掉，见 1.4。
 
 **后端只监听 127.0.0.1**，不直接对外，所以不用自己做 TLS；
@@ -74,7 +74,7 @@ Cloudflare 隧道（home-xiaokubao，在路由器上）→ CF ingress 分流
 **SQLite 的文件锁在 CIFS 上不可靠**，写了坏页是不可恢复的。所以：
 
 ```bash
-SCHEDULE_DATA_DIR=/home/xiaokubao/.local/share/schedule
+SCHEDULE_DATA_DIR=/home/xiaokubao/.local/schedule/data
 ```
 
 这个目录里就三样：`schedule.db`（+ `-wal` / `-shm`）、`secret.key`（令牌签名密钥，0600）。
@@ -83,7 +83,7 @@ SCHEDULE_DATA_DIR=/home/xiaokubao/.local/share/schedule
 
 ```bash
 systemctl --user stop schedule-backend     # 先停，WAL 才会干净落盘
-cp -a ~/.local/share/schedule ~/schedule-backup-$(date +%Y%m%d)
+cp -a ~/.local/schedule/data ~/schedule-backup-$(date +%Y%m%d)
 systemctl --user start schedule-backend
 ```
 
@@ -93,11 +93,11 @@ systemctl --user start schedule-backend
 | 路径（宿主机） | 内容 |
 |---|---|
 | `/mnt/fnos/family/星星包/coding/日程管理` | 全部源码（本项目仓库）。**2026-10-15 起线上不再读它** —— 它是 SMB 上的活工作区，只是源码 |
-| `/home/xiaokubao/.local/share/schedule-web` | **前端线上产物** = `dist/` 的拷贝，nginx alias 到它。发布见 `deploy/publish-web.sh` |
-| `/home/xiaokubao/.local/share/schedule-app` | **后端线上代码** = `server/` 的拷贝 + `node_modules` 软链。systemd 的 WorkingDirectory。发布见 `deploy/publish-server.sh` |
-| `/home/xiaokubao/.local/share/schedule` | **运行时数据：SQLite 库 + 密钥** |
-| `/home/xiaokubao/.local/share/schedule-deps` | **后端依赖（112 MB）**，见 1.3 |
-| `/home/xiaokubao/.local/share/schedule-apk` | **App 自更新的安装包**（`schedule-<versionCode>.apk` + `version.json`），nginx 挂在 `/schedule/dl/`。同样不放工程目录 —— SMB 读大文件不可靠。发布见 `deploy/publish-apk.sh` |
+| `/home/xiaokubao/.local/schedule/web` | **前端线上产物** = `dist/` 的拷贝，nginx alias 到它。发布见 `deploy/publish-web.sh` |
+| `/home/xiaokubao/.local/schedule/app` | **后端线上代码** = `server/` 的拷贝 + `node_modules` 软链。systemd 的 WorkingDirectory。发布见 `deploy/publish-server.sh` |
+| `/home/xiaokubao/.local/schedule/data` | **运行时数据：SQLite 库 + 密钥** |
+| `/home/xiaokubao/.local/schedule/deps` | **后端依赖（112 MB）**，见 1.3 |
+| `/home/xiaokubao/.local/schedule/apk` | **App 自更新的安装包**（`schedule-<versionCode>.apk` + `version.json`），nginx 挂在 `/schedule/dl/`。同样不放工程目录 —— SMB 读大文件不可靠。发布见 `deploy/publish-apk.sh` |
 | `/home/xiaokubao/docker/nginx` | nginx 的 compose + `conf.d/` + `certs/` |
 
 > `/home/xiaokubao/family` 是指向 `/mnt/fnos/family` 的软链，同一份文件，
@@ -115,10 +115,10 @@ systemctl --user start schedule-backend
 
 ```bash
 # 首次安装（或换机器）
-mkdir -p ~/.local/share/schedule-deps
-npm install --prefix ~/.local/share/schedule-deps \
+mkdir -p ~/.local/schedule/deps
+npm install --prefix ~/.local/schedule/deps \
     @earendil-works/pi-agent-core@1.0.4 @earendil-works/pi-ai@1.0.4
-ln -s ~/.local/share/schedule-deps/node_modules <工程根>/node_modules
+ln -s ~/.local/schedule/deps/node_modules <工程根>/node_modules
 
 # 核对：应当打印出 pi-ai 子路径 ✓
 #（别去 resolve package.json —— pi-ai 的 exports 没导出它，会报
@@ -151,8 +151,18 @@ node --input-type=module -e "import('@earendil-works/pi-ai/api/openai-completion
 而且那份目录你在别的设备上也一直在动（fn-sync 在跑、SMB 丢过文件）。
 后端更直接：systemd 的 `WorkingDirectory` 就指着工程目录，别人改一下线上就跟着变。
 
-**现在**：前端产物（`schedule-web`）与后端代码（`schedule-app`）都放本机磁盘
-`~/.local/share/` 下，跟 `schedule-apk` / `schedule-deps` 同级；
+**现在**：线上这套东西**全部收在一个目录 `~/.local/schedule/` 下**，不再散在
+`~/.local/share/` 里跟别的应用混着：
+
+```text
+~/.local/schedule/
+├── web/    前端线上产物（dist/ 的拷贝）      → 容器 /data/schedule-web:ro
+├── app/    后端线上代码（server/ 的拷贝）    → 容器 /data/schedule-app:ro
+├── data/   SQLite 库 + secret.key           （不进容器）
+├── deps/   后端依赖 112 MB                  （不进容器；app/node_modules 软链到它）
+└── apk/    App 自更新安装包 + version.json   → 容器 /data/schedule-apk:ro
+```
+
 **工程目录不再挂进 nginx 容器**。发布是显式动作，走 `deploy/publish-*.sh`。
 
 ```bash
@@ -168,10 +178,28 @@ node --input-type=module -e "import('@earendil-works/pi-ai/api/openai-completion
 （2026-10-15 实测踩过一次）。所以两个脚本都是「传到临时目录 → 清空目标内容
 → 拷进去」，目标目录的 inode 从建好那天起就不变。
 
-⚠️ `schedule-app/node_modules` **必须**是软链到 `../schedule-deps/node_modules`：
+### 1.5 两个发布脚本都会先比指纹，没变就不动
+
+`publish-web.sh` / `publish-server.sh` 在上传之前先算一遍**内容指纹**
+（逐文件 sha256 再汇总，只看内容不看 mtime），跟线上那份比：
+
+```text
+指纹一致 → 打印「无变更 → 跳过」，只做一次回读/探活，退出
+指纹不同 → 上传 → 备份 → 切换 → 重启 → 校验
+```
+
+所以**重跑脚本是安全的**，不会白备份一轮、也不会让后端白断一次。
+要强制重发（比如线上那份被手动改坏了、想覆盖回去）就加 `--force`。
+
+⚠️ 指纹命令里那道 `sed 's/\*//g' | tr -s ' '` **别删**：
+Git Bash 的 `sha256sum` 走二进制模式输出 `HASH *路径`，Linux 上是文本模式
+输出 `HASH  路径`，不归一化的话两边永远对不上、跳过逻辑形同虚设。
+
+⚠️ `schedule/app/node_modules` **必须**是软链到 `../deps/node_modules`：
 Node 从 `server/` 往上找依赖靠它，缺了服务崩在
 `require('@earendil-works/pi-ai')`，而 systemd 会不停重启 —— 看起来像「后端抽风」。
-`publish-server.sh` 每次都会重建这条软链。
+但它**不是重装依赖**：本体是 `~/.local/schedule/deps`（112 MB，只在
+`deploy/install-deps.sh` 装一次），脚本只在 `[ ! -e node_modules ]` 时补一条链。
 
 ---
 
@@ -186,7 +214,7 @@ cd app && npm run build     # 只是产出本地 dist/，**不等于上线**
 ./deploy/publish-web.sh     # 构建 → 上传 → 备份 → 切换 → 回读校验
 ```
 
-脚本会：留一份 `schedule-web.bak-<版本>-<时间>`（保留最近 3 份）、比对线上
+脚本会：留一份 `web.bak-<版本>-<时间>`（保留最近 3 份）、比对线上
 `index.html` 引用的资源哈希与本地是否一致、逐个 curl 资源确认 200。
 **回滚：`./deploy/publish-web.sh --rollback`**（从备份拷回去，本机磁盘，秒级）。
 
@@ -214,7 +242,7 @@ node server/tests/migration.test.js    # 动过 db.js 就一定跑这个
 >
 > ```bash
 > systemctl --user stop schedule-backend
-> cp -a ~/.local/share/schedule ~/schedule-backup-$(date +%Y%m%d)   # 见 1.2
+> cp -a ~/.local/schedule/data ~/schedule-backup-$(date +%Y%m%d)   # 见 1.2
 > systemctl --user start schedule-backend
 > journalctl --user -u schedule-backend -n 30     # 迁移失败会 throw，服务起不来
 > ```

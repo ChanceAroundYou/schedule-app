@@ -122,7 +122,7 @@
 
 ## 数据在哪（重要）
 
-**数据在服务器上**：`/home/xiaokubao/.local/share/schedule/schedule.db`（SQLite）。
+**数据在服务器上**：`/home/xiaokubao/.local/schedule/data/schedule.db`（SQLite）。
 登录同一个账户，手机和电脑看到的是同一份数据，改了自动同步。
 
 浏览器 localStorage 里**也留一份**（key `schedule-app-v4`），作用是：

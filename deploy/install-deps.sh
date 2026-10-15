@@ -19,7 +19,7 @@
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DEPS=${SCHEDULE_DEPS_DIR:-$HOME/.local/share/schedule-deps}
+DEPS=${SCHEDULE_DEPS_DIR:-$HOME/.local/schedule/deps}
 
 mkdir -p "$DEPS"
 cp "$ROOT/package.json" "$DEPS/package.json"

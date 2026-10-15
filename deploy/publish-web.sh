@@ -2,21 +2,23 @@
 #
 # 发布**网页版**前端到服务器。
 #
-#   ./deploy/publish-web.sh              # 构建 + 发布
+#   ./deploy/publish-web.sh              # 构建 + 发布（无变更则只校验、不重发）
 #   ./deploy/publish-web.sh --skip-build # 已有 dist/，只发布（dist 必须是同源构建）
+#   ./deploy/publish-web.sh --force      # 不看指纹，强制重发
 #   ./deploy/publish-web.sh --rollback   # 回滚到上一份备份
 #
-# 做四件事：
+# 做五件事：
 #   1. 本地 `npm run build`（**同源**，不带 VITE_API_BASE —— 那是 APK 用的）
-#   2. tar 管道传到远端**临时目录**（不是直接盖当前版本，避免传一半被读到）
-#   3. 现有版本整份备份成 schedule-web.bak-<版本>-<时间>，保留最近 3 份
-#   4. mv 到位 + 回读校验：线上 index.html 引用的资源哈希必须和本地 dist 一致
+#   2. 跟线上的 web/ 比内容指纹 —— **一样就不上传、不备份、不切换**
+#   3. tar 管道传到远端**临时目录**（不是直接盖当前版本，避免传一半被读到）
+#   4. 现有版本整份备份成 web.bak-<版本>-<时间>，保留最近 3 份
+#   5. 换掉目录内容 + 回读校验：线上 index.html 引用的资源哈希必须和本地一致
 #
 # ⚠️ **为什么要有这个脚本**（2026-10-15）：
 # 以前 nginx 把整个 SMB 工程目录挂成 /data/schedule、alias 指向它的 dist/，
 # 于是「本地 build 一下覆盖 SMB 那份」**就等于上线** —— 构建产物落在多设备共享
 # 的源码目录里，没有发布动作、没有备份、没有回滚，而且那份目录你在别的设备
-# 上也一直在动。现在前端产物在本机磁盘 ~/.local/share/schedule-web/，
+# 上也一直在动。现在前端产物在本机磁盘 ~/.local/schedule/web/，
 # 工程里的 dist/ 只是本地产物，**发布必须显式跑这个脚本**。
 #
 # 回滚不用 git：备份就在同层目录，本机磁盘，拷回去是秒级。
@@ -29,12 +31,22 @@ APP="$ROOT/app"
 SSH_HOST="${SSH_HOST:-ubuntu}"
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版不读 ~/.ssh/config 里的别名
 SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
-REMOTE_WEB='~/.local/share/schedule-web'
+REMOTE_WEB='~/.local/schedule/web'
 BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule}"
 KEEP=3
 
+FORCE=0
+for a in "$@"; do case "$a" in --force) FORCE=1;; esac; done
+
 say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
+
+# dist 的**内容**指纹：逐文件 sha256 再汇总。只看内容、不看 mtime。
+#
+# ⚠️ 中间那道 `sed 's/\*//g' | tr -s ' '` 是必需的，别删：Git Bash 的 sha256sum
+#    走二进制模式输出 `HASH *路径`，Linux 上是文本模式输出 `HASH  路径`，
+#    不归一化的话两边永远对不上（publish-server.sh 里踩过）。
+FP_CMD="find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sed 's/\*//g' | tr -s ' ' | sha256sum | cut -c1-16"
 
 # ---------------------------------------------------------------- 回滚
 if [ "${1:-}" = "--rollback" ]; then
@@ -55,9 +67,9 @@ fi
 
 # ---------------------------------------------------------------- 构建
 if [ "${1:-}" = "--skip-build" ]; then
-  say "1/4 跳过构建（--skip-build），用现有 dist/"
+  say "1/5 跳过构建（--skip-build），用现有 dist/"
 else
-  say "1/4 本地构建（同源，不带 VITE_API_BASE）"
+  say "1/5 本地构建（同源，不带 VITE_API_BASE）"
   cd "$APP"
   npm run build
 fi
@@ -72,13 +84,27 @@ VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$A
 [ -n "$VERSION" ] || VERSION="unknown"
 TS="$(date +%m%d-%H%M%S)"
 
+# ---------------------------------------------------------------- 指纹比对
+say "2/5 跟线上比内容指纹"
+LOCAL_FP="$(cd dist && eval "$FP_CMD")"
+REMOTE_FP="$("$SSH" "$SSH_HOST" "cd $REMOTE_WEB 2>/dev/null && $FP_CMD" || true)"
+printf '  本地 %s\n  线上 %s\n' "${LOCAL_FP:-<空>}" "${REMOTE_FP:-<空>}"
+SKIP=0
+if [ "$FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
+  say "无变更 → 跳过上传 / 备份 / 切换，只做回读校验"
+  SKIP=1
+else
+  [ "$FORCE" = "1" ] && printf '  --force：跳过比对，照发\n'
+fi
+
 # ---------------------------------------------------------------- 上传
-say "2/4 传到远端临时目录"
+if [ "$SKIP" = "0" ]; then
+say "3/5 传到远端临时目录"
 "$SSH" "$SSH_HOST" "rm -rf $REMOTE_WEB.new && mkdir -p $REMOTE_WEB.new"
 tar -czf - -C dist . | "$SSH" "$SSH_HOST" "tar -xzf - -C $REMOTE_WEB.new && echo '    解包 ok'"
 
 # ---------------------------------------------------------------- 备份 + 切换
-say "3/4 备份现有版本 → 切换"
+say "4/5 备份现有版本 → 切换"
 # ⚠️ **只换目录里的东西，绝不 mv 目录本身**（2026-10-15 实测踩的）：
 # Docker 的 bind mount 认的是 **inode**。把目录 mv 走、再把新目录 mv 上来，
 # 容器里那个挂载点还指着旧 inode —— 而旧目录已经被删了，于是 nginx 立刻 403
@@ -88,7 +114,7 @@ say "3/4 备份现有版本 → 切换"
 mkdir -p $REMOTE_WEB
 if [ -f $REMOTE_WEB/index.html ]; then
   cp -r $REMOTE_WEB $REMOTE_WEB.bak-$VERSION-$TS
-  echo \"    已备份 schedule-web.bak-$VERSION-$TS\"
+  echo \"    已备份 web.bak-$VERSION-$TS\"
 fi
 rm -rf $REMOTE_WEB/*
 cp -r $REMOTE_WEB.new/. $REMOTE_WEB/
@@ -96,9 +122,10 @@ rm -rf $REMOTE_WEB.new
 # 只留最近 $KEEP 份
 ls -1d $REMOTE_WEB.bak-* 2>/dev/null | sort | head -n -$KEEP | while read -r d; do rm -rf \"\$d\"; echo \"    清掉旧备份 \$(basename \$d)\"; done
 ls -1d $REMOTE_WEB.bak-* 2>/dev/null | sed 's/^/    /' || true"
+fi
 
 # ---------------------------------------------------------------- 校验
-say "4/4 回读校验"
+say "5/5 回读校验"
 LOCAL_HASHES="$(grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' dist/index.html | sort)"
 printf '  本地 index.html 引用：\n%s\n' "$(printf '%s' "$LOCAL_HASHES" | sed 's/^/    /')"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' "$BASE_URL/")"

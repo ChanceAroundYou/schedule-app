@@ -61,7 +61,7 @@ location ^~ /schedule/ {                                  # 应用本体
    那是死代码，而且看起来还挺像在防护。前缀匹配是字面量，`/schedule/.`
    能覆盖 `.git/` `.omc/` `.claude/` `.workbuddy/` `.mindfs/` 全部。
 
-4. **用 `alias` 不用 `root`。** 挂进来的是 `~/.local/share/schedule-web`，
+4. **用 `alias` 不用 `root`。** 挂进来的是 `~/.local/schedule/web`，
    `root` 会把 `/schedule/` 拼成 `/data/schedule-web/schedule/`。
    （2026-10-15 之前挂的是整个工程目录 `/data/schedule`，同一个道理。）
 
