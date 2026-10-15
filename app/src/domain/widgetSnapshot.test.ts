@@ -144,6 +144,20 @@ test('快照带版本号与生成时刻', () => {
   assert.equal(snap.to, '2026-11-08');
 });
 
+test('详细内容随任务一起发给小组件 —— 桌面靠它在标题下多出一行', () => {
+  const t = makeTask({ title: '交房租', date: T, time: '09:00', calId: 'c1' });
+  t.note = '房东说转账备注里要写门牌号，别写昵称';
+  const snap = buildWidgetSnapshot(state([t]), T);
+  assert.equal(snap.tasks[0].note, '房东说转账备注里要写门牌号，别写昵称');
+
+  /* 原生侧 `WTask` 对这个键做的是 `optString`（没有就 ""），所以序列化出去的
+     那一份必须**真的是空串**，不能是 undefined —— 后者会被 JSON.stringify
+     整个丢掉，虽然结果一样是「读不到」，但那是靠巧合通过，换了写法就断。 */
+  const bare = makeTask({ title: '买牛奶', date: T, calId: 'c1' });
+  const raw = JSON.parse(serializeWidgetSnapshot(state([bare])));
+  assert.equal(raw.tasks[0].note, '', '没有详细内容时必须是空串');
+});
+
 test('每条任务都带 id —— 小组件要靠它勾选 / 改期', () => {
   const t = makeTask({ title: '带 id', date: T, time: '09:00' });
   const snap = buildWidgetSnapshot(state([t]), T);

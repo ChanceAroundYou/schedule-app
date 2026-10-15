@@ -52,7 +52,7 @@ export function NewCellSlot({
         store.addTask({ title, date: seed.date, time: seed.time });
         store.setUi({ draft: null });
         /* 不开抽屉：那条卡片已经竖在刚才那个位置上了，看得见就等于建好了。
-           想补备注、设重复，再点它一次 —— 抽屉是「补细节」的地方，
+           想补详细内容、设重复，再点它一次 —— 抽屉是「补细节」的地方，
            不承担「确定日期时间」。 */
       }}
       onCancel={() => store.setUi({ draft: null })}

@@ -35,6 +35,13 @@ export interface SnapshotTask {
   time: string | null;
   dur: number | null;
   title: string;
+  /**
+   * 任务的**详细内容**（与 App 抽屉里那一格是同一个字段）。
+   *
+   * null / 空串 = 只有标题，小组件上不再多出一行。2026-10-15 加：
+   * 用户要在桌面上就能看出「这条还有别的话要说」。
+   */
+  note: string;
   done: boolean;
   /**
    * 提醒时刻 "HH:mm"（同一天）。null = 不提醒。
@@ -124,6 +131,7 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       time: t.time,
       dur: t.duration,
       title: t.title,
+      note: t.note || '',
       done: t.done,
       reminder: t.reminder ?? null,
       repeat: t.repeat ?? null,

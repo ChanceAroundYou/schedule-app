@@ -12,8 +12,13 @@
 - `domain/` 纯度：**已验纯净**（零 React/DOM/网络 import，可在 Capacitor 与 Node 跑）。
 - `views/` 回调：**已验 0 处** `onX` props；行内按钮只写 `data-act` + `data-id`。
 - 委托链：`#content` 上一个 `onClick`（`clickDispatch.ts`），四步从具体到笼统
-  `[data-act]` → `[data-jump]/[data-nav]/[data-jump-habits]` → `.task-el`（开抽屉）→ `[data-drop]`（空白新建）；
+  `[data-act]` → `[data-jump]/[data-nav]/[data-jump-habits]` → `.task-el`（开抽屉）→
+  `[data-zone-id]`（点日历空格子 → 就地在那个位置开一个输入框）；
   另有一个 `onChange`（`next-project` 这类输入控件，change≠click）。
+  最后一步落的是 `ui.draft`（瞬时状态），视图照它渲染 —— 派发器写、视图读，
+  和其余交互走同一条路（2026-10-15：这一步原本找 `[data-drop]` 并直接 `addTask`
+  开抽屉，因为 dnd-kit 那次重构把视图上的 `data-drop` 换成了 `data-zone-id`，
+  而消费者没跟着改，退化成「点了没反应」）。
 - 状态分叉：`useStoreState()` 拿全量，`useScopedState()` 按 `ui.cals`（勾选集）过滤出
   `tasks/habits/projects` 子集；今天/逾期/待办箱/垃圾箱用全量，日程/打卡/已完成/项目用 scoped；
   侧栏徽标与顶栏一律全量口径。

@@ -38,9 +38,10 @@ final class RepeatSpawn {
      * @param baseDate 本次发生日 yyyy-MM-dd（往后从它开始推）
      * @param rule     RepeatRule 对象（unit/n/weekdays/monthday/end）
      * @param reminder 提醒 HH:mm 或 null
+     * @param note     详细内容（随标题一起派生给后面几次）。null / 空串 = 不写
      */
     static void spawn(ContextWrapper ctx, String rootId, String title, String calId,
-                      String baseDate, JSONObject rule, String reminder) {
+                      String baseDate, JSONObject rule, String reminder, String note) {
         if (ctx == null || rootId == null || rule == null) return;
         String unit = rule.optString("unit", "none");
         if ("none".equals(unit)) return;
@@ -80,6 +81,10 @@ final class RepeatSpawn {
                 f.put("doneAt", JSONObject.NULL);
                 f.put("repeat", rule);
                 f.put("reminder", reminder == null ? JSONObject.NULL : reminder);
+                /* 详细内容跟着派生 —— 重复任务是同一件事重复发生，正文没道理
+                   只有头一次有。空就不写：写了空串反而会在将来变成一条
+                   「把内容改成空」的改动。 */
+                if (note != null && !note.isEmpty()) f.put("note", note);
                 // ⚠️ seriesId 必须写：refillAll 靠它区分「系列根」与「实例」。
                 // 缺了它，下次扫描会把每个实例都当成一个新的系列根再派生一批。
                 f.put("seriesId", rootId);
@@ -166,7 +171,7 @@ final class RepeatSpawn {
                 // ensureRepeatOccurrences 的注释）。
                 String from = furthestDate(snap, root);
                 spawn(new ContextWrapper(c), rootId, root.title, root.calId,
-                        from != null ? from : root.date, root.repeat, root.reminder);
+                        from != null ? from : root.date, root.repeat, root.reminder, root.note);
             }
         } catch (Exception ignored) {
         }

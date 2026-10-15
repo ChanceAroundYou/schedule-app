@@ -5,13 +5,13 @@
  * onSave，只有 onChange / onBlur，一律落在 `patch` / `setEnd` 上。
  *
  * 四行排布（2026-10-11）：日期+时间一行、日程集+项目一行、重复一行、
- * 备注一行。原先六个字段各占一整行，抽屉要滚很久才够到备注。
+ * 详细内容一行。原先六个字段各占一整行，抽屉要滚很久才够到底。
  */
 
 import type { Project, Task } from '../../domain/types.ts';
 import { DatePicker } from '../DatePicker.tsx';
 import { TimePicker } from '../TimePicker.tsx';
-import { Dropdown, Input } from '../kit.tsx';
+import { Dropdown, Textarea } from '../kit.tsx';
 
 /** 日历集 / 项目那一行的两个下拉。**项目和日程集用同一个简单下拉框**
  *  （2026-10-11）：原先项目走 SheetPicker（弹一整张 Sheet），两个并排放着时
@@ -101,7 +101,7 @@ function DateTimeRow({ task, endTime, onPatch, setEnd }: {
 }
 
 /** 重复那一行：**一个按钮开一个浮层**。原先是 chips + 一整个面板摊在抽屉里 ——
- *  展开之后比「项目」和「备注」加起来还长。 */
+ *  展开之后比「项目」和「详细内容」加起来还长。 */
 function RepeatRow({ repLabel, onOpen }: { repLabel: string; onOpen: () => void }) {
   return (
     <div className="field">
@@ -135,15 +135,25 @@ function ReminderRow({ task, onPatch }: {
   );
 }
 
-/** 备注那一行。placeholder 只作格式示例，不算名字 —— 名字是上面那个 `<label>`。 */
+/**
+ * 详细内容那一行（2026-10-15）。
+ *
+ * 任务是「一个标题 + 可选的整段内容」：标题是给它一个名字，这一格才是放正文的
+ * 地方 —— 注意事项、清单、一段原话。所以它是**多行、自动长高**的 `<textarea>`，
+ * 不是单行输入框：单行框写长内容会横向滚着看不见头，那等于把功能做废了。
+ * 抽屉里它独占一行（不与其他字段并排），因为它是唯一可能写很长的字段。
+ *
+ * 字段名仍然是 `note`（服务端按字段名存，改名等于做一次数据迁移），
+ * **只有界面上叫它「详细内容」** —— 用户的口径是「标题 + 详细内容」。
+ */
 function NoteRow({ fid, note, onPatch }: { fid: string; note: string; onPatch: (v: string) => void }) {
   return (
     <div className="field">
-      <label htmlFor={fid + '-note'}>备注</label>
-      <Input
+      <label htmlFor={fid + '-note'}>详细内容</label>
+      <Textarea
         id={fid + '-note'}
-        type="text"
-        placeholder="补充说明…"
+        rows={3}
+        placeholder="补充说明、注意事项…"
         value={note}
         onChange={(e) => onPatch(e.target.value)}
       />

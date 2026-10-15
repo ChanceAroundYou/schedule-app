@@ -63,7 +63,7 @@ export function actionText(name: string, args?: Record<string, unknown>): string
 /** 字段名的中文。只列界面上画得出来的那几个 */
 const FIELD_CN: Record<string, string> = {
   title: '标题',
-  note: '备注',
+  note: '详细内容',
   date: '日期',
   time: '时间',
   duration: '时长',

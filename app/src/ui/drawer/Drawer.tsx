@@ -19,7 +19,7 @@
  *
  * 拆分（桶文件，import 路径不变）：
  *   useDrawer.ts      状态 + 四处 effect + 删除确认
- *   DrawerFields.tsx  字段行（日期时间 / 日程集项目 / 重复按钮 / 备注 / 元信息）
+ *   DrawerFields.tsx  字段行（日期时间 / 日程集项目 / 重复按钮 / 详细内容 / 元信息）
  *   RepeatPop.tsx     重复复合浮层
  */
 
@@ -121,7 +121,7 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
           <div className="field">
             <span className="flabel" id={fid + '-rep-l'}>重复</span>
             {/* 一个按钮开一个浮层。原先是 chips + 一整个面板摊在抽屉里 ——
-                展开之后比「项目」和「备注」加起来还长。 */}
+                展开之后比「项目」和「详细内容」加起来还长。 */}
             <button
               ref={repAnchor}
               type="button"

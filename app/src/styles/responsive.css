@@ -229,7 +229,7 @@ body.sheet-open .tab:active { background: none; }
 
   /* 任务抽屉：从底部整块弹出。**高度按内容走**（2026-10-12）——
      用户报「移动端下有大量空白」：写死 88dvh，四行字段只占三百来像素，
-     剩下两百多像素是空的。改 height:auto，max-height 兜底防长备注撑爆。 */
+     剩下两百多像素是空的。改 height:auto，max-height 兜底防长内容撑爆。 */
   .drawer {
     top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
     height: auto; max-height: 88dvh;

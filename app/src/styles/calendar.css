@@ -166,6 +166,14 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
 }
+/* 详细内容的摘要。**比时间行再淡一档**：那一行是「几点几分」这种硬信息，
+   这一行是备注。同一张卡上两行的尺寸完全一致，只有深浅不同 —— 层级靠灰度，
+   不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。 */
+.ev-note {
+  font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
+  opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 21px;
+}
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { text-decoration: none; }
 /* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
   /* **把手只占一小条，其余全是拖动区**（2026-10-12 再定）

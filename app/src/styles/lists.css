@@ -118,6 +118,10 @@
 /* .dragging 的样式统一放在文件后面的「让位拖放」一节里，避免两处定义互相覆盖 */
 .row-main { flex: 1; min-width: 0; }
 .row-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 详细内容的摘要预览。**单行截断**，完整内容在抽屉里 —— 列表是扫读的地方，
+   不是为了读长文。颜色比元信息那行还淡一档：它跟「18:30」这类硬信息不是
+   一个层级，扫的时候应该先看时间与日期。 */
+.row-note { font-size: 11.5px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); margin-top: 3px; flex-wrap: wrap; }
 .row-meta .dot { color: var(--border); }
 .m-time { color: var(--primary); font-variant-numeric: tabular-nums; }

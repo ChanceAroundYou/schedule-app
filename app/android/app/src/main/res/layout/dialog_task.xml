@@ -10,6 +10,10 @@
     · 重复 / 提醒 会显示当前值（如「重复：每周三」），点开可改。
   行1 仍是 [完成圆圈] …… [垃圾桶]（两者同尺寸同风格）。
   保存 = 关窗即存；删除 = 右上垃圾桶。
+
+  2026-10-15（第十二轮）：加**最后一行「详细内容」** —— 桌面小组件的任务卡
+  第二行就是它（截断版），点开这里看全文 / 改写。放在最后是因为它是唯一
+  可能写很长的字段，独占一行且不挤压上面那些固定高度的按钮行。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="240dp"
@@ -154,5 +158,25 @@
         android:paddingRight="10dp"
         android:text="提醒：不提醒"
         android:textColor="#1B3A2A"
+        android:textSize="12sp" />
+
+    <!-- ===== 行8：详细内容（多行，自动长高，最多 4 行内部滚动） ===== -->
+    <EditText
+        android:id="@+id/d_note"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="top"
+        android:hint="详细内容"
+        android:inputType="textMultiLine"
+        android:lines="3"
+        android:maxLines="4"
+        android:paddingLeft="10dp"
+        android:paddingTop="7dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="7dp"
+        android:textColor="#1B3A2A"
+        android:textColorHint="#9BB3A5"
         android:textSize="12sp" />
 </LinearLayout>

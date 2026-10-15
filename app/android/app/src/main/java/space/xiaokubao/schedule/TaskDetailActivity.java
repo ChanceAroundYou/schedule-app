@@ -64,6 +64,8 @@ public class TaskDetailActivity extends Activity {
     private String repeatEndDate;
 
     private EditText titleBox;
+    /** 详细内容。与上面对应的 {@code note} 字段；空串 = 这条只有标题 */
+    private EditText noteBox;
     private Button dateBtn;
     private Button startBtn;
     private Button durationBtn;
@@ -102,6 +104,7 @@ public class TaskDetailActivity extends Activity {
         readEndOf(found.repeat);
 
         titleBox = findViewById(R.id.d_title);
+        noteBox = findViewById(R.id.d_note);
         dateBtn = findViewById(R.id.d_date);
         startBtn = findViewById(R.id.d_start);
         durationBtn = findViewById(R.id.d_duration);
@@ -118,6 +121,10 @@ public class TaskDetailActivity extends Activity {
 
         titleBox.setText(found.title);
         titleBox.setSelection(found.title.length());
+        /* 老快照没有 note 字段 → WTask 里兜成 ""，这里拿到的一定不是 null。
+           光标放末尾：改的人是来续写的，放到开头会把光标塞在第一行的行首。 */
+        noteBox.setText(found.note == null ? "" : found.note);
+        noteBox.setSelection(noteBox.getText().length());
         updateDateLabel();
         updateStartLabel();
         updateDurationLabel();
@@ -352,8 +359,13 @@ public class TaskDetailActivity extends Activity {
         boolean doneCh = done != task.done;
         boolean repeatCh = repeatTouched;
         boolean remindCh = !eqStr(pickedRemind, task.reminder);
+        // 详细内容：**不做 trim 之外的加工** —— 这里是让人写正文的地方，
+        // 空行、缩进都是内容。trim 掉头尾是为了「随手敲了个换行」不至于变成一条改动。
+        final String newNote = noteBox.getText().toString().trim();
+        boolean noteCh = !eqStr(newNote, task.note == null ? "" : task.note);
 
-        if (!titleCh && !dateCh && !timeCh && !durCh && !doneCh && !repeatCh && !remindCh) return;
+        if (!titleCh && !dateCh && !timeCh && !durCh && !doneCh && !repeatCh && !remindCh
+                && !noteCh) return;
 
         final long now = System.currentTimeMillis();
         final JSONObject patch = new JSONObject();
@@ -368,6 +380,9 @@ public class TaskDetailActivity extends Activity {
             }
             if (repeatCh) patch.put("repeat", buildRepeat());
             if (remindCh) patch.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
+            // note 始终是字符串（清空也写 ""，不写 null）—— App 的 note 字段
+            // type 是 string，写成 JSON null 会让反序列化那边拿到 null 而不是空串。
+            if (noteCh) patch.put("note", newNote);
         } catch (Exception ignored) {
         }
 
@@ -376,7 +391,7 @@ public class TaskDetailActivity extends Activity {
         if (repeatCh) {
             try {
                 RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(TaskDetailActivity.this),
-                        task.id, newTitle, task.calId, date, buildRepeat(), pickedRemind);
+                        task.id, newTitle, task.calId, date, buildRepeat(), pickedRemind, newNote);
             } catch (Exception ignored) {
             }
         }

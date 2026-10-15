@@ -39,7 +39,7 @@ const UNTIMED_MAX = 6;
  * 决定，有没有第二行时间由 `timeText` 决定，其余完全一致。
  */
 function TaskCard({
-  t, cls, style, timeText, title, resizable,
+  t, cls, style, timeText, noteText, title, resizable,
 }: {
   t: Task;
   /** 模式与状态类（定时 / 未定时 / done / live）—— 由父级按数据拼 */
@@ -48,6 +48,8 @@ function TaskCard({
   style: CSSProperties;
   /** 第二行的时间段文案。未定时传 null —— 它没有时间 */
   timeText: string | null;
+  /** 详细内容的摘要。同 timedText 的门道：位置不够就传 null */
+  noteText: string | null;
   title: string;
   /** 上下沿的拖拽把手。未定时卡片没有起止时间，给不了 */
   resizable: boolean;
@@ -69,6 +71,7 @@ function TaskCard({
         <span className="ev-title">{t.title}</span>
       </div>
       {timeText && <span className="ev-time">{timeText}</span>}
+      {noteText && <span className="ev-note">{noteText}</span>}
       {resizable && (
         <>
           <span
@@ -108,6 +111,10 @@ function TimedCard({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isT
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       style={{ top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `${w}%` }}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
+      /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
+         同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，
+         那不如不写。完整内容仍在抽屉里。 */
+      noteText={roomy && t.note ? t.note : null}
       title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
       resizable={hasEnd}
     />
@@ -209,6 +216,9 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
                 cls={'task-el task-el--untimed' + (t.done ? ' done' : '')}
                 style={cardStyle}
                 timeText={null}
+                /* 未定时卡是一行高度的小药丸，塞不进第二行 ——
+                   它的详细内容只在列表与抽屉里露面 */
+                noteText={null}
                 title={t.title}
                 resizable={false}
               />
