@@ -11,6 +11,11 @@
   · paddingLeft 1dp → **5dp** —— 用户反馈「文本离竖线太近」，要拉开一点。
     竖条宽 2dp，留 3dp 间隔。
   · 字号固定 9sp，不随块高变化。
+
+  2026-10-15：**最多两行** —— 第一行「时段 + 标题」，第二行是这条任务的
+  **详细内容**（App 抽屉里那一格），超出末尾截断。
+  ⚠️ 由代码按块高决定是否真的给第二行（见 NOTE_LINE_MIN_DP）：这里放开到
+  maxLines=2，只是**允许**，矮块不会走到两行。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/task_block"
@@ -21,7 +26,7 @@
     android:background="@drawable/widget_task_bg"
     android:ellipsize="end"
     android:gravity="center_vertical"
-    android:maxLines="1"
+    android:maxLines="2"
     android:paddingLeft="2dp"
     android:paddingTop="1dp"
     android:paddingRight="2dp"

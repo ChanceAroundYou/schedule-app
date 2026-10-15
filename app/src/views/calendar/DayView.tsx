@@ -20,13 +20,14 @@
  */
 
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import type { LocalState, Task } from '../../domain/types.ts';
+import type { DraftSeed, LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, type DayWindow, type Slot } from '../../domain/layout.ts';
 import { tasksOn } from '../../domain/model.ts';
 import { CheckBtn } from '../parts.tsx';
 import { useClampedDraggableEvent, useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { pad2, hours24, type LayoutEvent } from './shared.ts';
+import { draftOn, NewCellSlot } from './NewCell.tsx';
 
 /** 未定时区最多露几卡。两行 × 三列 = 6 —— 用户 2026-10-11 定的格子。
  *  超出的一律不渲染：区域高度**固定两块**，多渲染只会溢出到时间轴上盖住它。
@@ -38,7 +39,7 @@ const UNTIMED_MAX = 6;
  * 决定，有没有第二行时间由 `timeText` 决定，其余完全一致。
  */
 function TaskCard({
-  t, cls, style, timeText, title, resizable,
+  t, cls, style, timeText, noteText, title, resizable,
 }: {
   t: Task;
   /** 模式与状态类（定时 / 未定时 / done / live）—— 由父级按数据拼 */
@@ -47,6 +48,8 @@ function TaskCard({
   style: CSSProperties;
   /** 第二行的时间段文案。未定时传 null —— 它没有时间 */
   timeText: string | null;
+  /** 详细内容的摘要。同 timedText 的门道：位置不够就传 null */
+  noteText: string | null;
   title: string;
   /** 上下沿的拖拽把手。未定时卡片没有起止时间，给不了 */
   resizable: boolean;
@@ -68,6 +71,7 @@ function TaskCard({
         <span className="ev-title">{t.title}</span>
       </div>
       {timeText && <span className="ev-time">{timeText}</span>}
+      {noteText && <span className="ev-note">{noteText}</span>}
       {resizable && (
         <>
           <span
@@ -107,10 +111,29 @@ function TimedCard({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isT
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       style={{ top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `${w}%` }}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
+      /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
+         同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，
+         那不如不写。完整内容仍在抽屉里。 */
+      noteText={roomy && t.note ? t.note : null}
       title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
       resizable={hasEnd}
     />
   );
+}
+
+/**
+ * 草稿框在时间轴上的位置 —— **高度给的是默认时长那一段**（`D.durOf(null)` 是
+ * 60 分钟），所以「框占多大，回车之后那条任务就正好占多大」，所见即所得。
+ *
+ * 起点同样是百分比：时间轴的高度由容器说了算（锁单屏），写 px 会一缩放就错位。
+ * 分钟已经在点击那一刻对齐到 15 分钟了（`yToMin`），这里不再取整 ——
+ * 二次取整会让框与真正的那条卡差出半格。
+ */
+function draftBox(seed: DraftSeed, win: DayWindow): CSSProperties {
+  const min = D.timeToMin(seed.time) ?? win.from;
+  const top = minToPct(Math.max(win.from, Math.min(win.to, min)), win) ?? 0;
+  const h = Math.min(D.durOf(null), win.to - min);
+  return { top: top + '%', height: Math.max(1.2, (h / spanOf(win)) * 100) + '%' };
 }
 
 export function DayView({ state, iso }: { state: LocalState; iso: string }) {
@@ -134,6 +157,10 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const timelineZone = useDroppableZone(`timeline:${iso}`);
   const alldayZone = useDroppableZone(`allday:${iso}`);
   const { activeId } = useDragSession();
+
+  /* 就地新建的草稿落在哪一区 —— 两区的 zone id 不同，天然互斥 */
+  const draftTl = draftOn(state.ui, `timeline:${iso}`);
+  const draftAllday = draftOn(state.ui, `allday:${iso}`);
 
   /* 只画窗内的小时线。`h * HOUR_H` 那套写死的像素在锁定单屏之后必错。
      **按「每小时多少像素」定疏密**：同样 24 小时，大屏每小时 27px、
@@ -189,12 +216,19 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
                 cls={'task-el task-el--untimed' + (t.done ? ' done' : '')}
                 style={cardStyle}
                 timeText={null}
+                /* 未定时卡是一行高度的小药丸，塞不进第二行 ——
+                   它的详细内容只在列表与抽屉里露面 */
+                noteText={null}
                 title={t.title}
                 resizable={false}
               />
             ))}
+            {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
+            <NewCellSlot state={state} zoneId={`allday:${iso}`} />
             {!!hidden && <div className="zone-more">还有 {hidden} 个未定时间的任务</div>}
-            {!allday.length && <div className="zone-empty">没有未定时间的任务</div>}
+            {/* 空提示与草稿框不同时出现：正要往这里建东西的时候，
+                「没有未定时间的任务」这句话是句废话 */}
+            {!allday.length && !draftAllday && <div className="zone-empty">没有未定时间的任务</div>}
           </div>
         </div>
 
@@ -242,6 +276,14 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
               <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} isDragSrc={activeId === e.item.id} />
             ))}
           </div>
+
+          {/* 草稿框挂在卡片层之后 —— 同 z 序下后来者在上，省掉一层 z-index */}
+          {draftTl && (
+            <NewCellSlot
+              state={state} zoneId={`timeline:${iso}`}
+              className="new-cell--abs" style={draftBox(draftTl, win)}
+            />
+          )}
         </div>
         </div>
       </div>

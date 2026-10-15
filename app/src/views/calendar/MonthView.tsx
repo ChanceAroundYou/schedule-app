@@ -7,6 +7,7 @@ import * as D from '../../domain/date.ts';
 import { dayLoad, tasksOn } from '../../domain/model.ts';
 import { TaskPill, loadLevel } from '../parts.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
+import { NewCellSlot } from './NewCell.tsx';
 
 const MONTH_CELL_MAX = 8;
 
@@ -47,6 +48,8 @@ function MonthCell({ state, d, curMonth, today }: { state: LocalState; d: string
             还有 {more} 项 ›
           </div>
         )}
+        {/* 点这一格的任何空位 → 任务就建在这一天（月视图不带时间） */}
+        <NewCellSlot state={state} zoneId={`day:${d}`} />
       </div>
     </div>
   );

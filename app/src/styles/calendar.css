@@ -166,6 +166,14 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
 }
+/* 详细内容的摘要。**比时间行再淡一档**：那一行是「几点几分」这种硬信息，
+   这一行是备注。同一张卡上两行的尺寸完全一致，只有深浅不同 —— 层级靠灰度，
+   不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。 */
+.ev-note {
+  font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
+  opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 21px;
+}
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { text-decoration: none; }
 /* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
   /* **把手只占一小条，其余全是拖动区**（2026-10-12 再定）
@@ -360,6 +368,29 @@
   cursor: pointer; transition: color .12s;
 }
 .cell-more:hover { color: var(--primary); }
+
+/* ================= 就地新建：点空格子冒出来的那个框 =================
+   日 / 周 / 月三视图共用 `views/calendar/NewCell.tsx` 出的这一个 `<textarea>`，
+   样式也只有一个。**几何不写在这里** —— 由各自的父级从 `style` 传进来，因为
+   三处分母不同：日视图是时间轴百分比、周视图是整天像素、月视图与全天区
+   干脆跟着各自的网格流走。
+
+   ⚠️ 它**不是** `.task-el`：那一套是五种界面共用的**行为标记**（拖拽与点击委托
+   都认它），这里是一个还没成形的草稿，不具备任务的行为 —— 只是「长得像将来
+   会长在这里的那张卡」，所以用同一批视觉令牌，不挂同一个类名。 */
+.new-cell {
+  display: block; box-sizing: border-box;
+  width: 100%; min-height: 26px; padding: 4px 8px;
+  resize: none; overflow: hidden;
+  font: inherit; font-size: 12.5px; line-height: 1.3; color: var(--text);
+  background: var(--panel);
+  border: var(--border-w) solid var(--primary); border-left: 3px solid var(--primary);
+  border-radius: var(--r-sm); box-shadow: var(--shadow-md);
+  outline: none;
+}
+.new-cell::placeholder { color: var(--text-3); }
+/* 落在带时间的区域里（日视图时间轴、周视图列）：由父级给 top / height */
+.new-cell--abs { position: absolute; left: 2px; right: 2px; z-index: 6; }
 
 /* ================= 任务胶囊 / 列表行 ================= */
 

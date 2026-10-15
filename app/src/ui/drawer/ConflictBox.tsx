@@ -8,11 +8,11 @@ import * as D from '../../domain/date.ts';
 
 /** 冲突提示里那个字段叫什么。没列到的（将来加的）就直接显示字段名，不猜。 */
 const FIELD_NAME: Record<string, string> = {
-  title: '标题', note: '备注', date: '日期', time: '时间',
+  title: '标题', note: '详细内容', date: '日期', time: '时间',
   duration: '时长', done: '完成状态', repeat: '重复',
 };
 
-/** 把值写成一句人话。null 在日期 / 时间 / 备注上是「清空」，得说出来 */
+/** 把值写成一句人话。null 在日期 / 时间 / 详细内容上是「清空」，得说出来 */
 function showVal(field: string, v: unknown): string {
   if (v === null || v === undefined || v === '') return '（空）';
   if (field === 'date') return D.fmtMD(String(v));

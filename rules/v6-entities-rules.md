@@ -67,7 +67,6 @@
 | 角色/归属（`roleOf/inCal/resolveDefaultCal`） | `model/permission.ts` + `model/cal.ts` |
 | 重复推进（`repeatNext/repeatAdvance/seriesRootOf/instanceId`） | `domain/repeat.ts` |
 | 合并/LWW/冲突判定（`writeFields/findConflicts`） | `domain/merge.ts` |
-| 自然语言解析（`parse`） | `domain/parse/` |
 
 ---
 

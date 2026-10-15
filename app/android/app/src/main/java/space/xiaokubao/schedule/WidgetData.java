@@ -23,6 +23,15 @@ class WTask {
     /** 分钟。0 = 未设 */
     final int dur;
     final String title;
+    /**
+     * 任务的**详细内容**（App 抽屉里那一格的同一个字段）。
+     *
+     * 2026-10-15：桌面上要在标题看不出「这条还有别的话要说」的时候给出线索 ——
+     * 所以卡片允许第二行。null / 空串 = 只有标题。
+     *
+     * ⚠️ 老快照没有这个键 → 这里会得到 ""，正好等于「只有标题」，向后兼容。
+     */
+    final String note;
     final boolean done;
     /** 提醒时刻 "HH:mm"（同一天）。null = 不提醒。由 ReminderScheduler 排闹钟 */
     final String reminder;
@@ -57,25 +66,16 @@ class WTask {
      */
     final String repeatUntil;
 
-    WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
-          String reminder, org.json.JSONObject repeat) {
-        this(id, calId, date, time, dur, title, done, reminder, repeat, null, false, null);
-    }
-
-    WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
-          String reminder, org.json.JSONObject repeat, String seriesId, boolean deleted) {
-        this(id, calId, date, time, dur, title, done, reminder, repeat, seriesId, deleted, null);
-    }
-
-    WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
-          String reminder, org.json.JSONObject repeat, String seriesId, boolean deleted,
-          String repeatUntil) {
+    WTask(String id, String calId, String date, String time, int dur, String title, String note,
+          boolean done, String reminder, org.json.JSONObject repeat, String seriesId,
+          boolean deleted, String repeatUntil) {
         this.id = id;
         this.calId = calId;
         this.date = date;
         this.time = time;
         this.dur = dur;
         this.title = title;
+        this.note = note;
         this.done = done;
         this.reminder = reminder;
         this.repeat = repeat;
@@ -160,6 +160,8 @@ class WidgetSnapshot {
                         t.isNull("time") ? null : t.optString("time", null),
                         t.optInt("dur"),
                         t.optString("title"),
+                        // note：老快照没有这个键 → ""（= 只有标题）
+                        t.isNull("note") ? "" : t.optString("note", ""),
                         t.optBoolean("done"),
                         t.isNull("reminder") ? null : t.optString("reminder", null),
                         t.optJSONObject("repeat"),

@@ -373,6 +373,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 只剩 11dp 放字，会被裁。
      */
     private static final int MIN_BLOCK_DP = 15;
+    /**
+     * 任务卡上允许画第二行（详细内容摘要）的**最小块高**。
+     *
+     * 9sp 一行约 12dp，两行 24dp，再加上 1dp 上下 padding —— 低于这个高度就只
+     * 画标题。这块的高度是按任务时长钉死的，15 分钟的任务只有 15dp，
+     * 硬塞两行会把两行的头尾一起切掉。
+     */
+    private static final int NOTE_LINE_MIN_DP = 26;
 
     /**
      * 十字面板左下角的**刻度列**。
@@ -562,7 +570,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     private static RemoteViews taskBlock(Context c, WTask t, int hDp) {
         RemoteViews block = new RemoteViews(c.getPackageName(), R.layout.widget_task_block);
-        block.setTextViewText(R.id.task_block, label(t));
+        /* 给不给第二行，看**这块有多高**（9sp 两行 ≈ 26dp，见 NOTE_LINE_MIN_DP）。
+           块矮时硬塞两行会把两行的头尾一起切掉 —— 那是比只画标题更糟的读法。
+           15 分钟的小块本来就只够放一个名字。 */
+        block.setTextViewText(R.id.task_block, label(t, hDp >= NOTE_LINE_MIN_DP));
         block.setViewLayoutHeight(R.id.task_block, hDp, TypedValue.COMPLEX_UNIT_DIP);
         // ⚠️ **字号不再按块高变化** —— 用户 2026-10-13 明确「任务卡上的文字不随着
         // 卡片变大而变大」。统一 9sp，写在 widget_task_block.xml 里（以前这里
@@ -1024,11 +1035,28 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         return (a << 24) | (color & 0x00FFFFFF);
     }
 
-    private static String label(WTask t) {
+    /**
+     * 卡片上的文字。**第一行永远是「时间 + 标题」**，第二行才轮到详细内容 ——
+     * 顺序不能倒：桌上一瞥要先看的是几点做什么，备注是辅助。
+     *
+     * @param roomy 这块够不够画两行（由调用方按实际高度算，见 NOTE_LINE_MIN_DP）
+     */
+    private static String label(WTask t, boolean roomy) {
         // 定时任务在卡片上直接显示「起止时段」（如 13:00-14:00），一眼看到几点到几点；
         // 详情里本来就有，现在面板上一瞥也该看到（用户 2026-10-14）。未定时没有时段，只放标题。
-        if (t.time != null) return rangeOf(t) + "  " + t.title;
-        return t.title;
+        String head = t.time != null ? rangeOf(t) + "  " + t.title : t.title;
+        if (!roomy) return head;
+
+        // 详细内容：**换行压成空格**再截断 —— 组件高度是按时间钉死的，多出来的行
+        // 只会把这两行自己挤没了。完整内容在「点这一条」的弹窗里。
+        String note = oneLine(t.note);
+        return note.isEmpty() ? head : head + "\n" + note;
+    }
+
+    /** 压成一行的摘要：换行变空格、掐掉了首尾空白。null 当空串 */
+    private static String oneLine(String s) {
+        if (s == null) return "";
+        return s.replace('\n', ' ').replace('\r', ' ').trim();
     }
 
     /** 定时任务的起止时段文字，如 "13:00-14:00"（时长取 durOf，缺省 60 分钟） */

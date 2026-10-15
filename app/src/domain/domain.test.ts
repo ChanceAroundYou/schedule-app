@@ -12,7 +12,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as D from './date.ts';
-import { parse } from './parse.ts';
 import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
@@ -103,10 +102,6 @@ test('找日期：裸周几取下一个，带「本 / 这」才允许落在过�
   assert.equal(p('这周五'), '2026-10-09');
   assert.equal(p('下周三'), '2026-10-14');
   assert.equal(p('下下周 一'), '2026-10-19', '空格要被吃掉');
-
-  // 与 parse.ts 同一个口径：同一句「周三」不该在两个解析器里跳到两个日子
-  const r = parse('周三 开会', T);
-  assert.equal(r?.date, p('周三'));
 });
 
 test('找日期：月份偏移与完整日期', () => {
@@ -143,91 +138,6 @@ test('找日期：认不出就返回 null（不猜）', () => {
   assert.equal(p('13月5日'), null);
   assert.equal(p('0月'), null);
   assert.equal(p('1969'), null, '1970 年之前不接受');
-});
-
-/* ============================== 解析 ============================== */
-
-test('解析：日期 + 时段 + 时长，剩下的才是标题', () => {
-  const r = parse('明天下午3点 交周报 2小时', T);
-  assert.equal(r?.date, '2026-10-07');
-  assert.equal(r?.time, '15:00');
-  assert.equal(r?.duration, 120);
-  assert.equal(r?.title, '交周报');
-});
-
-test('解析：重复必须在日期之前被吃掉，且首次落点要自己算', () => {
-  // 「每周一」如果不先被重复规则吃掉，会被后面的日期规则当成「周一」→ 一个具体日期
-  const r = parse('每周一 团队早会', T);
-  assert.equal(r?.repeat?.unit, 'week');
-  assert.deepEqual(r?.repeat?.weekdays, [1]);
-  // T = 2026-10-06 是**周二**：首次必须落在下一个周一，不能是今天。
-  // （不写 o.date 的话 QuickAdd 会回落到 defaultDate() = 今天）
-  assert.equal(r?.date, '2026-10-12');
-  assert.equal(r?.title, '团队早会');
-});
-
-test('解析：重复的首次落点不能是「今天」，除非规则真的命中今天', () => {
-  // 周二说的「每周二」——今天就是周二，首次就是今天
-  assert.equal(parse('每周二 例会', T)?.date, '2026-10-06');
-  assert.equal(parse('每周日 例会', T)?.date, '2026-10-11');
-
-  // 「工作日」：周二 → 今天；周六 → 下一个周一
-  assert.equal(parse('工作日 站会', T)?.date, '2026-10-06');
-  assert.equal(parse('工作日 站会', '2026-10-10')?.date, '2026-10-12');
-
-  // 「每月31号」：10/6 → 10/31；10/31 当天 → 就是今天；已过则顺延
-  assert.equal(parse('每月31号 交房租', T)?.date, '2026-10-31');
-  assert.equal(parse('每月31号 交房租', '2026-10-31')?.date, '2026-10-31');
-  assert.equal(parse('每月5号 交房租', '2026-10-20')?.date, '2026-11-05');
-  // 短月截到月末
-  assert.equal(parse('每月31号 交房租', '2026-02-10')?.date, '2026-02-28');
-  // monthday 保持 31，不被 date 的截断带偏
-  assert.equal(parse('每月31号 交房租', '2026-02-10')?.repeat?.monthday, 31);
-});
-
-test('解析：昨天 / 前天 / 大前天', () => {
-  assert.equal(parse('昨天 交电费', T)?.date, '2026-10-05');
-  assert.equal(parse('前天 取快递', T)?.date, '2026-10-04');
-  assert.equal(parse('大前天 取快递', T)?.date, '2026-10-03');
-  // 不能只摘掉「前天」、把「大」留在标题里
-  assert.equal(parse('大前天 取快递', T)?.title, '取快递');
-  assert.equal(parse('前天 取快递', T)?.title, '取快递');
-  // 与「N天后」那条规则不打架
-  assert.equal(parse('3天后 交材料', T)?.date, '2026-10-09');
-});
-
-test('解析：「大后天」优先于「后天」，「下下周一」优先于「下周一」', () => {
-  assert.equal(parse('大后天 交材料', T)?.date, '2026-10-09');
-  assert.equal(parse('后天 交材料', T)?.date, '2026-10-08');
-
-  const nx = parse('下周一 开会', T);
-  const nnx = parse('下下周一 开会', T);
-  assert.equal(nx?.date, '2026-10-12');
-  assert.equal(nnx?.date, '2026-10-19');
-});
-
-test('解析：「N点」要求整段独立成词，避免误判正文里的数字', () => {
-  // 「有三点要说明」里的「三点」不是时间
-  assert.equal(parse('有三点要说明', T)?.time, null);
-  // 独立成词的「3点」才算，且口语里不修饰的 3 点指下午
-  assert.equal(parse('3点 开会', T)?.time, '15:00');
-  // 带时段修饰时不受独立成词限制
-  assert.equal(parse('下午3点开会', T)?.time, '15:00');
-  // 带「半」信号足够强，也不需要独立成词
-  assert.equal(parse('3点半开会', T)?.time, '15:30');
-});
-
-test('解析：完整日期优先于「N号」', () => {
-  assert.equal(parse('2026年10月15日 交材料', T)?.date, '2026-10-15');
-  assert.equal(parse('10月15日 交材料', T)?.date, '2026-10-15');
-  // 单个「15号」按当前月算，已过则顺延到下个月
-  assert.equal(parse('15号 交材料', T)?.date, '2026-10-15');
-  assert.equal(parse('1号 交材料', T)?.date, '2026-11-01');
-});
-
-test('解析：解析不出东西时标题回退成原文', () => {
-  assert.equal(parse('随便写点什么', T)?.title, '随便写点什么');
-  assert.equal(parse('   ', T), null);
 });
 
 /* ============================== 重复 ============================== */

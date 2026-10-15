@@ -64,7 +64,11 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
         </span>,
       );
     }
-    if (t.note) meta.push(<span className="m-note" key="n">备注</span>);
+    /* 有详细内容就给个标记 —— 它是「这条还有更多，点开看」的路标。
+       有了下面那行摘要之后它看着冗余，但摘要是**截断**的：截断到看不出
+       「后面还有没有」的时候，正是这个标记要说话的时候（用户 2026-10-15
+       明确要「两者都要」）。 */
+    if (t.note) meta.push(<span className="m-note" key="n" title="有详细内容">详细内容</span>);
   }
   if (showDoneAt && t.doneAt) {
     const d = new Date(t.doneAt);
@@ -87,6 +91,9 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
       {sel === null ? <CheckBtn id={t.id} on={!!t.done} /> : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
         <div className="row-title">{t.title}</div>
+        {/* 详细内容的摘要预览。**只有有内容的行才多出这一行** ——
+            大多数任务只有标题，不该为「可能有」先占掉一格高度。 */}
+        {!bare && !!t.note && <div className="row-note">{t.note}</div>}
         <Meta items={meta} />
       </div>
     </div>

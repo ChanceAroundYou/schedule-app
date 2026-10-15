@@ -152,7 +152,8 @@ public class CreateTaskActivity extends Activity {
                             if (realId != null && !"none".equals(repeatUnit)) {
                                 try {
                                     RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(CreateTaskActivity.this),
-                                            realId, t, calId, date, buildRepeat(pickedDate), pickedRemind);
+                                            realId, t, calId, date, buildRepeat(pickedDate),
+                                            pickedRemind, null);
                                 } catch (Exception ignored) {
                                 }
                             }
