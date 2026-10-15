@@ -7,7 +7,6 @@ import { Plus, X } from 'lucide-react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { quickDefaults } from '../../domain/model.ts';
-import { parse, type ParseOut } from '../../domain/parse.ts';
 import { useIsNarrow } from '../hooks.ts';
 import { Textarea } from '../kit.tsx';
 import { useOverlayScrollbar } from '../scroll.ts';
@@ -81,29 +80,26 @@ export function QuickAdd({ state, onSubmit }: {
 
   const ui = state.ui;
   const def = quickDefaults(ui, D.today());
-  const parsed: ParseOut | null = text.trim() ? parse(text) : null;
-  // 生效值：面板选的 > 文本解析 > tab 默认。预览画的是生效值，不让人猜。
-  // **按钮上的文本和面板里写的必须是同一个 effDate / effTime**（需求 6）——
-  // 否则「今天」页上按钮写着 10/7、面板里却高亮别的日子，用户不知道该信哪个
-  const effDate = pendingDate !== undefined ? pendingDate : (parsed?.date ?? def.date);
-  const effTime = pendingTime !== undefined ? pendingTime : (parsed?.time ?? def.time);
+  /* 日期 / 时间只有两个来源：**面板选的** > **当前 tab 的默认值**。
+     ⚠️ 以前这里还有第三档「从输入文本里自动识别」，2026-10-15 用户要求删掉 ——
+        输入「买 3 本书」会被认成 3 号，猜错比不猜更糟。这条路整条移除了
+        （`domain/parse/` 已删），要改日期就点时钟按钮显式选。 */
+  const effDate = pendingDate !== undefined ? pendingDate : def.date;
+  const effTime = pendingTime !== undefined ? pendingTime : def.time;
 
   const submit = (openDetail: boolean) => {
-    const raw = text.trim();
-    if (!raw) return;
-    const p = parse(raw);
-    const date = pendingDate !== undefined ? pendingDate : (p?.date ?? def.date);
-    const time = pendingTime !== undefined ? pendingTime : (p?.time ?? def.time);
+    const title = text.trim();
+    if (!title) return;
+    const date = pendingDate !== undefined ? pendingDate : def.date;
+    const time = pendingTime !== undefined ? pendingTime : def.time;
     setText('');
     setPendingDate(undefined);
     setPendingTime(undefined);
     setWhenOpen(false);
     onSubmit({
-      title: (p?.title || raw),
+      title,
       date,
       time,
-      duration: p?.duration ?? undefined,
-      repeat: p?.repeat ?? undefined,
     }, openDetail);
     // 交完就收起（窄屏）：任务已经落盘，横条还开着只是占地方。
     // **宽屏不收** —— 那边没有圆钮，横条是常驻的，收起来就点不回来
