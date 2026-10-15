@@ -18,6 +18,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/tailwind.css';
 import App from './App.tsx';
+import { applySafeAreaInsets } from './data/widget.ts';
 
 const RELOAD_FLAG = 'schedule-sw-cleared';
 const MIGRATED_FLAG = 'schedule-sw-migrated';
@@ -91,11 +92,29 @@ function registerShell(): void {
   });
 }
 
+/**
+ * 量一次系统栏占位并写进 CSS 变量（`--sat` 等）。
+ *
+ * **必须在第一次渲染之前量**：晚一步的话首帧是没内边距的，顶栏会先贴着
+ * 状态栏画出来、再往下跳一段 —— 那一下子比一直没内边距还显眼。
+ *
+ * 转屏 / 从后台回来都要重新量：折叠屏展开、横竖屏切换后系统栏高度会变，
+ * 不重量就会留着上一次的旧值（横屏时状态栏更矮，那几像素就白给了）。
+ */
+async function watchSafeArea(): Promise<void> {
+  await applySafeAreaInsets();
+  window.addEventListener('resize', () => { void applySafeAreaInsets(); });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void applySafeAreaInsets();
+  });
+}
+
 async function boot(): Promise<void> {
   const reloading = await migrateAwayFromLegacySW();
   if (reloading) return;
 
   registerShell();
+  await watchSafeArea();
 
   const el = document.getElementById('root');
   if (!el) throw new Error('#root 不存在');

@@ -34,8 +34,24 @@ class WTask {
      */
     final org.json.JSONObject repeat;
 
+    /**
+     * 重复系列的根 id。null/空 = 不是实例；等于 {@link #id} = 自己是根。
+     *
+     * 2026-10-14：RepeatSpawn 要靠它区分「系列根」与「已生成的实例」——
+     * 实例自己也有 repeat，不区分的话每个实例又会派生一批（无界增长）。
+     */
+    final String seriesId;
+
+    /** 已进回收站（软删除）。补齐窗口时要跳过，否则会一直给删掉的任务续命。 */
+    final boolean deleted;
+
     WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
           String reminder, org.json.JSONObject repeat) {
+        this(id, calId, date, time, dur, title, done, reminder, repeat, null, false);
+    }
+
+    WTask(String id, String calId, String date, String time, int dur, String title, boolean done,
+          String reminder, org.json.JSONObject repeat, String seriesId, boolean deleted) {
         this.id = id;
         this.calId = calId;
         this.date = date;
@@ -45,6 +61,8 @@ class WTask {
         this.done = done;
         this.reminder = reminder;
         this.repeat = repeat;
+        this.seriesId = seriesId;
+        this.deleted = deleted;
     }
 
     /** 一天内排序用：未定时的排在最后（跟 App 的列表语义一致） */
@@ -125,7 +143,12 @@ class WidgetSnapshot {
                         t.optString("title"),
                         t.optBoolean("done"),
                         t.isNull("reminder") ? null : t.optString("reminder", null),
-                        t.optJSONObject("repeat")));
+                        t.optJSONObject("repeat"),
+                        // seriesId / deleted：RepeatSpawn 补齐窗口时要用。
+                        // 老快照没这两个键 → optString 给 ""、optBoolean 给 false，
+                        // 正好等于「不是实例」「没删掉」，向后兼容。
+                        t.isNull("seriesId") ? null : t.optString("seriesId", null),
+                        t.optBoolean("deleted")));
             }
         }
         JSONArray hs = o.optJSONArray("habits");

@@ -16,6 +16,11 @@ export function useNav() {
   const nav = useCallback((k: string) => {
     const cur = store.get().ui;
     const patch: Partial<typeof cur> = { nav: k };
+    /* 换页一定退出多选（2026-10-14）。多选只在「逾期 / 待办箱 / 已完成」
+       这三页有意义，而 dispatch 的判据是「ui.sel !== null」—— 不清掉的话，
+       带着选中集跳到「今天」后，那里每一行都会被当成可选中，点了没反应
+       （那几页根本没渲染选择圈）。 */
+    if (cur.sel !== null) patch.sel = null;
     // 从别处切回「今天」时把游标拉回今天，否则还停在几天前翻过的位置
     if (k === 'today') patch.cursor = D.today();
     store.setUi(patch);

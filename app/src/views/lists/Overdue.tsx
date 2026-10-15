@@ -6,17 +6,27 @@ import { ListChecks } from 'lucide-react';
 import type { LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { liveHabits, overdueTasks } from '../../domain/model.ts';
-import { CheckBtn, CheckinStrip, Empty } from '../parts.tsx';
+import { CheckinStrip, Empty } from '../parts.tsx';
+import { CheckBtn, SelDot } from '../parts/CheckBtn.tsx';
+import { SelBar } from './SelBar.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
 import { Btn } from '../../ui/kit.tsx';
 import { reorderList } from '../../data/store.ts';
 
 /** 逾期行：比普通任务行多一组「重新安排」的快捷键，都走事件委托 */
-function OverdueRow({ task: t, days }: { task: Task; days: number }) {
+function OverdueRow({ task: t, days, sel }: { task: Task; days: number; sel: boolean | null }) {
   const t0 = D.today();
   return (
-    <div className="task-row task-el od-row" data-id={t.id} data-untimed="1">
-      <CheckBtn id={t.id} on={!!t.done} />
+    <div
+      className={'task-row task-el od-row'
+        + (sel === null ? '' : ' sel-mode' + (sel ? ' sel-on' : ''))}
+      data-id={t.id}
+      data-untimed="1"
+      data-sel={sel === null ? undefined : sel ? '1' : '0'}
+    >
+      {sel === null
+        ? <CheckBtn id={t.id} on={!!t.done} />
+        : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
         <div className="row-title">{t.title}</div>
         <div className="row-meta">
@@ -38,6 +48,9 @@ function OverdueRow({ task: t, days }: { task: Task; days: number }) {
 export function OverdueView({ state }: { state: LocalState }) {
   const list = overdueTasks(state);
   const habits = liveHabits(state);
+  const sel = state.ui.sel;
+  const ids = list.map((t) => t.id);
+  const isSel = (id: string): boolean | null => (sel === null ? null : sel.includes(id));
 
   if (!list.length) {
     return (
@@ -58,6 +71,7 @@ export function OverdueView({ state }: { state: LocalState }) {
 
   return (
     <div className="list-view od-view">
+      <SelBar kind="overdue" sel={sel} ids={ids} />
       {[...groups.entries()].map(([d, items]) => {
         const days = Math.round((D.parseISO(D.today()).getTime() - D.parseISO(d).getTime()) / 86400000);
         return (
@@ -72,7 +86,9 @@ export function OverdueView({ state }: { state: LocalState }) {
             <SortableList
               items={items.map((t) => t.id)}
               onReorder={reorderList}
-              renderItem={(id) => <OverdueRow task={state.tasks[id]} days={days} />}
+              renderItem={(id) => (
+                <OverdueRow task={state.tasks[id]} days={days} sel={isSel(id)} />
+              )}
               className="mc"
               scope={'day:' + d}
             />

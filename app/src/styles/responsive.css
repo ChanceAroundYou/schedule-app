@@ -46,8 +46,11 @@ button, .nav-item, .tab, .ms-item, .jp-cell {
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
   display: flex; align-items: stretch;
-  height: calc(56px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* `max(env(...), var(--sab))`：iOS 靠 env()，安卓靠原生量的 --sab。
+     两边都取最大值 —— 安卓上 env() 恒为 0，iOS 上 --sab 不存在，
+     所以永远不会重复叠加。 */
+  height: calc(56px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--sab, 0px));
   background: var(--panel); border-top: 1px solid var(--border);
   box-shadow: var(--shadow-up-sm);
 }
@@ -91,7 +94,7 @@ body.sheet-open .tab:active { background: none; }
 
 .more-sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-  padding: 6px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  padding: 6px 16px calc(18px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   background: var(--panel); border-radius: var(--r-xl) var(--r-xl) 0 0;
   box-shadow: var(--shadow-up);
   animation: slideUp .22s cubic-bezier(.3, .8, .3, 1);
@@ -128,7 +131,7 @@ body.sheet-open .tab:active { background: none; }
   .app { height: 100dvh; }
   html, body { height: 100dvh; }
   /* 内容区给底部标签栏让位 */
-  .main { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .main { padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
   .content { padding: 12px 13px 8px; }
   .fast-add { margin: 4px 13px 12px; }
   .fast-add-shell { padding: 9px 13px; }
@@ -140,7 +143,8 @@ body.sheet-open .tab:active { background: none; }
      窄屏下顶栏随内容一起滚反而省出垂直空间，标签栏本来就常驻底部。 */
   .topbar {
     flex-direction: row; align-items: center; gap: 8px;
-    padding: 9px 13px 10px;
+    /* 顶部同样要避开状态栏（App 里这是最容易被顶到的一处） */
+    padding: calc(9px + var(--sat, 0px)) calc(13px + var(--sar, 0px)) 10px calc(13px + var(--sal, 0px));
   }
   .topbar-left, .topbar-right { gap: 8px; min-width: 0; }
   .topbar-left { flex-wrap: nowrap; }
@@ -238,7 +242,7 @@ body.sheet-open .tab:active { background: none; }
   .drawer-head { padding: 14px 15px; }
   .drawer-title { font-size: 17px; }
   .drawer-body { padding: 15px; }
-  .drawer-foot { padding: 12px 15px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .drawer-foot { padding: 12px 15px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
   .field-row { gap: 10px; }
 
   /* 习惯页：热力点放大一点 */

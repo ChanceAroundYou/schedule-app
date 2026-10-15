@@ -115,7 +115,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             WidgetSettingsActivity.start(c);
             return;
         } else if (ACTION_HABIT.equals(a)) {
-            toggleHabit(c, intent.getStringExtra(EXTRA_ID));
+            // ⚠️ 必须带上组件**当前选中的日期**（2026-10-14 修）。
+            // 不传的话 toggleHabit 会拿「今天」去写 —— 用户在组件上翻到
+            // 明天点一下，改的其实是今天，而屏幕上那格的完成态又始终按今天
+            // 渲染，两下一凑就成了用户报的「今天打了卡，日后几天全变成已完成」。
+            toggleHabit(c, intent.getStringExtra(EXTRA_ID), WidgetPrefs.selectedDay(c));
         }
 
         // 顺手把攒着没发出去的改动补一次 —— 用户此刻正在看桌面，是票最新、
@@ -140,6 +144,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 提醒闹钟跟着数据走：刷新一次就整体重排（新建 / 编辑 / 删除 / 勾完成
         // 都会走到这里，见 ReminderScheduler 的说明）。
         ReminderScheduler.reschedule(c);
+
+        /* 重复任务的窗口补齐（2026-10-14）。
+         *
+         * 原来只在「新建 / 编辑那一刻」派生一次，用户设完就走，之后几天窗口
+         * 用完就断了（他报「每天只重复几天就断了」）。这里挂在 refresh 上：
+         * 组件每次刷新都会检查一遍，窗口不足就补。refillAll 幂等且窗口够时
+         * 直接返回，不会有额外开销或请求。
+         *
+         * 必须在 ReminderScheduler 之前还是之后无所谓，但要在读快照之前跑 ——
+         * 它会写快照，补出来的新实例要参与本次渲染。 */
+        RepeatSpawn.refillAll(c);
 
         AppWidgetManager mgr = AppWidgetManager.getInstance(c);
         int[] ids = mgr.getAppWidgetIds(new android.content.ComponentName(c, ScheduleWidgetProvider.class));
@@ -223,12 +238,21 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     }
                     WHabit h = snap.habits.get(k);
                     chip.setTextViewText(R.id.habit_chip, h.title);
-                    // 颜色变化**跟随日程**（用户 2026-10-14）：未完成=深色实心（主绿）+ 白字；
-                    // 完成=浅底 + 灰字。以前打卡是「完成变深」，跟下面任务卡正好相反，
-                    // 现在统一成「完成变淡」，一眼就能把两类「已完成」对上。
+                    /* 完成态按**组件当前选中的那一天**取，不能用快照里的 h.done
+                     * （那是按服务端的「今天」算好的固定值）。
+                     *
+                     * 2026-10-14 修：原来这里读 h.done，于是组件翻到任何一天，
+                     * 打卡显示的都是「今天」的状态 —— 用户今天打了卡，翻到
+                     * 明天/后天发现每一项都是已完成，看起来像「完成态传染了」。
+                     * 打卡本来就是按天独立的（Habit.log 是按日期的稀疏表），
+                     * 这里就该按天读。
+                     *
+                     * 颜色变化**跟随日程**：未完成=深色实心（主绿）+ 白字；
+                     * 完成=浅底 + 灰字，与任务卡「完成变淡」一致。 */
+                    boolean hDone = h.log != null && h.log.optBoolean(day, false);
                     chip.setInt(R.id.habit_chip, "setBackgroundResource",
-                            h.done ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
-                    chip.setTextColor(R.id.habit_chip, h.done ? 0xFF7E8F84 : 0xFF1B3A2A);
+                            hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
+                    chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
                     chip.setOnClickPendingIntent(R.id.habit_chip,
                             WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
                     row.addView(R.id.habit_row, chip);
@@ -594,22 +618,33 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 当成「离线」，于是一条永远发不出去的 op 在队列里反复重发，桌面还一直
      * 显示着一个服务端并不承认的状态。详见 {@link WidgetApi.OpCallback}。
      */
-    private static void toggleHabit(Context c, String habitId) {
+    private static void toggleHabit(Context c, String habitId, String selectedDay) {
         WidgetSnapshot snap = WidgetPrefs.snapshot(c);
         WHabit target = snap.habitById(habitId);
         if (target == null) return;
 
-        final boolean on = !target.done;
         final String today = (snap.today != null && !snap.today.isEmpty())
                 ? snap.today : WidgetPrefs.today(c);
+        /* 打的是**组件当前选中那一天**的卡，不是「今天」的（2026-10-14 修）。
+         * 原来恒写 today，于是翻到别的日期点一下会改到今天 —— 用户看到的
+         * 是「今天打了卡，日后几天全成了已完成，而且点不掉」。 */
+        final String day = (selectedDay == null || selectedDay.isEmpty()) ? today : selectedDay;
 
-        // ① 乐观更新 + **立刻重绘**。以前只靠 onReceive 尾部那次 refresh，
-        //    虽然也来得及，但那是隐式的；点一下就变是这个功能的地基，
-        //    写在这儿才是明确的。
+        final boolean on = !(target.log != null && target.log.optBoolean(day, false));
+
+        // ① 乐观更新 + **立刻重绘**。写的是 log 里那一天，跟渲染取值口径一致
+        //    （渲染读 log[day]，不再读 h.done）。
         try {
+            JSONObject log = target.log == null
+                    ? new JSONObject() : new JSONObject(target.log.toString());
+            if (on) log.put(day, true);
+            else log.remove(day);
+
             JSONObject f = new JSONObject();
-            f.put("done", on);
-            f.put("streak", on ? target.streak + 1 : Math.max(0, target.streak - 1));
+            f.put("log", log);
+            // done 表达的是「今天打没打」，只在选中日就是今天时才跟着变 ——
+            // 否则会给别的日期留下一个含义错位的 done。
+            if (day.equals(today)) f.put("done", on);
             WidgetPrefs.patchEntity(c, "habits", habitId, f, false);
         } catch (Exception ignored) {
         }
@@ -619,7 +654,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         //    手里没有原表就只能发一个空对象上去，那会把这个人过去所有打卡
         //    一次抹干净。宁可先入队等 App 那边把新快照带下来。
         if (!WidgetPrefs.canDirect(c) || target.log == null) {
-            enqueueHabit(c, habitId, today, on);
+            // ⚠️ 入队也要带 day（不是 today），否则离线打卡会记到今天头上
+            enqueueHabit(c, habitId, day, on);
             return;
         }
         try {
@@ -634,8 +670,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // （以前这里发的是日期字符串，服务端存进去之后 h.log[today] 恒为
             //   undefined，表现是「打卡点了永远不生效」，还查不出错。）
             JSONObject log = new JSONObject(target.log.toString());
-            if (on) log.put(today, true);
-            else log.remove(today);
+            if (on) log.put(day, true);
+            else log.remove(day);
             fields.put("log", log);
             op.put("fields", fields);
             ops.put(op);

@@ -286,16 +286,16 @@ class WidgetPrefs {
      * 的任务来对接 —— 匹配不上就什么都不做（占位留着，下次 bootstrap 整体
      * 纠正），也绝不能整表覆盖（理由同 {@link #mergeEntities}）。
      */
-    static void adoptCreated(Context c, JSONObject serverView, String localId,
-                             String title, String date, String time) {
-        if (serverView == null) return;
+    static String adoptCreated(Context c, JSONObject serverView, String localId,
+                               String title, String date, String time) {
+        if (serverView == null) return null;
         String json = sp(c).getString(KEY_SNAPSHOT, null);
-        if (json == null) return;
+        if (json == null) return null;
         try {
             JSONObject local = new JSONObject(json);
             JSONArray src = serverView.optJSONArray("tasks");
             JSONArray dst = local.optJSONArray("tasks");
-            if (src == null || dst == null) return;
+            if (src == null || dst == null) return null;
 
             // ① 撤掉占位
             for (int i = 0; i < dst.length(); i++) {
@@ -318,11 +318,16 @@ class WidgetPrefs {
                 String st = e.optString("time", "");
                 if (!t.equals(st == null ? "" : st)) continue;
                 dst.put(new JSONObject(e.toString()));
-                break;
+                // 2026-10-14：**把服务端真 id 返回出去**。重复任务要在它
+                // 身上派生后续实例（id = `真id#日期`），本地占位 id 用不了。
+                sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+                return e.optString("id");
             }
             sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+            return null;
         } catch (Exception ignored) {
         }
+        return null;
     }
 
     /**

@@ -54,10 +54,20 @@ export function applyRemote(changes: RemoteChange[]): boolean {
     for (const j of Object.values(state.projects)) hydrateProject(j);
     persist();
     emit();
-    // 同步进来的数据里可能有**重复任务**（包括小组件新建的）→
-    // 补齐未来几次实例（幂等，已存在就跳过）。
-    ensureRepeatOccurrences();
   }
+
+  /* 补齐重复任务的未来实例。
+   *
+   * ⚠️ 2026-10-14：从 `if (touched)` 里挪了出来。原来只在「远端有变更」时才补，
+   * 于是「日期翻过去了但没人动任何数据」这种情况永远不补 —— 表现就是用户说的
+   * 「每天重复只重复几天就断了」。窗口补齐必须与「有没有变更」无关：
+   * 每轮同步都补一次（幂等，已有实例会跳过），这样每次打开 App / 切回前台
+   * 都会把窗口推到未来 REPEAT_LOOKAHEAD 次。
+   *
+   * 注意 commitMany 会往 outbox 里塞 op，所以它必须在 touched 分支**之后** ——
+   * 那批 op 由本轮之后的 push 推给服务端，不要混进本次的落地判断里。 */
+  ensureRepeatOccurrences();
+
   return touched;
 }
 

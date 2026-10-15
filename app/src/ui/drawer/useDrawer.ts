@@ -119,6 +119,15 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
 
   const remove = async () => {
     if (!task) return;
+    /* 重复任务**不走这里的确认框**（2026-10-14）。
+       它要问的是「删这一次还是删往后全部」，那是 onDelete 里那个三选浮层的事 ——
+       两处各问一次会变成「确认删除？」→ 点删除 → 又弹「要删哪些？」，很蠢。
+       这里直接交出去，整个决策由 onDelete 一处负责。 */
+    if (task.repeat && task.repeat.unit !== 'none') {
+      onDelete(task.id);
+      onClose();
+      return;
+    }
     const ok = await confirm({
       title: '删除这个任务？',
       body: `「${task.title}」会移到垃圾箱，可以还原。`,

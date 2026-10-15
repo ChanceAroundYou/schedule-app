@@ -68,6 +68,50 @@ async function runAct(
     case 'habit':
       store.toggleHabit(id);
       return;
+    /* ---- 多选（批量管理，2026-10-14）----
+       列表顶部的「选择」进入；进入后整条工具栏换成操作按钮。
+       这三个列表（逾期 / 待办箱 / 已完成）共用一套动作，靠 data-selkind
+       区分「完成」还是「取消完成」。 */
+    case 'sel-start':
+      store.selStart();
+      return;
+    case 'sel-cancel':
+      store.selCancel();
+      return;
+    case 'sel-toggle':
+      store.selToggle(id);
+      return;
+    case 'sel-all': {
+      // 全选要「当前列表里所有看得见的」，dispatch 拿不到视图的 list ——
+      // 所以由视图把 id 列表放在工具栏上带过来（data-ids，逗号分隔）。
+      const ids = (act.dataset.ids || '').split(',').filter(Boolean);
+      store.selAll(ids);
+      return;
+    }
+    case 'sel-done':
+    case 'sel-undo-done': {
+      const ids = store.get().ui.sel || [];
+      if (!ids.length) return;
+      const done = act.dataset.act === 'sel-done';
+      const n = store.batchSetDone(ids, done);
+      store.selCancel();
+      toast(done ? `已完成 ${n} 项` : `已取消完成 ${n} 项`);
+      return;
+    }
+    case 'sel-del': {
+      const ids = store.get().ui.sel || [];
+      if (!ids.length) return;
+      const ok = await confirm({
+        title: `删除选中的 ${ids.length} 项？`,
+        body: '会放进「垃圾箱」，在那里还能还原。重复任务只删选中的这几次，重复规则不受影响。',
+        confirmText: '删除', danger: true,
+      });
+      if (!ok) return;
+      const n = store.batchDelete(ids, '批量删除');
+      store.selCancel();
+      toast(`已删除 ${n} 项`, { label: '撤销', run: () => { for (const x of ids) store.restoreTask(x); } });
+      return;
+    }
     case 'toggle-tdone':
       // 「今天已完成」的展开状态要落盘：不落的话离开页面再回来就复位了
       store.setUi({ tdoneOpen: !store.get().ui.tdoneOpen });
@@ -215,6 +259,20 @@ export function makeOnClick(deps: ClickDeps) {
     const navBtn = el.closest<HTMLElement>('[data-nav]');
     if (navBtn?.dataset.nav) { deps.nav(navBtn.dataset.nav); return; }
     if (el.closest('[data-jump-habits]')) { deps.nav('habits'); return; }
+
+    /* 2.5) 多选态下点行 = 切换选中，**不开抽屉**（2026-10-14）。
+       必须排在「点行开抽屉」前面 —— 否则用户一多选就被抽屉挡住，
+       那正是「批量管理」最别扭的地方。 */
+    /* 判据是「这一行**确实渲染了选择圈**」（data-sel 存在），不是「ui.sel 非空」。
+       多选只在逾期/待办箱/已完成渲染；万一状态没清干净带到了别的页，
+       这里也不会把那些页的行点击吞掉 —— 它们根本没这个属性。 */
+    if (store.get().ui.sel !== null) {
+      const selRow = el.closest<HTMLElement>('.task-el');
+      if (selRow?.dataset.id && selRow.dataset.sel !== undefined) {
+        store.selToggle(selRow.dataset.id);
+        return;
+      }
+    }
 
     // 3) 点行 = 开抽屉。放在这一层，前面任何一个命中都不该再开抽屉
     const row = el.closest<HTMLElement>('.task-el');

@@ -10,7 +10,9 @@ import android.os.Bundle;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
+import android.view.View;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -369,6 +371,16 @@ public class TaskDetailActivity extends Activity {
         } catch (Exception ignored) {
         }
 
+        // 重复规则改了 → **当场派生后续几次**。只靠 App 那边的
+        // ensureRepeatOccurrences 不够：用户在小组件上改完就走，App 一直没开。
+        if (repeatCh) {
+            try {
+                RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(TaskDetailActivity.this),
+                        task.id, newTitle, task.calId, date, buildRepeat(), pickedRemind);
+            } catch (Exception ignored) {
+            }
+        }
+
         // ① 乐观更新本地快照 + 立刻重画
         try {
             WidgetPrefs.patchEntity(this, "tasks", task.id, patch, false);
@@ -454,21 +466,159 @@ public class TaskDetailActivity extends Activity {
      * App 的回收站还能找回。
      */
     private void confirmDelete() {
-        new AlertDialog.Builder(this)
-                .setTitle("删除任务")
-                .setMessage("确定删除「" + task.title + "」？\nApp 的回收站里还能找回。")
+        /* 重复任务要问「删哪些」（2026-10-14 用户要求）——
+         * 直接删会让「明天那一次」悄悄消失，而用户往往只是想跳过今天这一次。
+         * 判据看 repeat.unit，不用 seriesId：非重复任务的 seriesId 也是空的，
+         * 但以 repeat 为准语义更直接。 */
+        boolean repeating = task.repeat != null
+                && !"none".equals(task.repeat.optString("unit", "none"));
+        if (!repeating) {
+            new AlertDialog.Builder(this)
+                    .setTitle("删除任务")
+                    .setMessage("确定删除「" + task.title + "」？\nApp 的回收站里还能找回。")
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("删除", (dlg, which) -> doDelete())
+                    .show();
+            return;
+        }
+
+        final String rootId = (task.seriesId != null && !task.seriesId.isEmpty())
+                ? task.seriesId : task.id;
+        final String day = task.date;
+
+        /* ⚠️ 这里是**自定义布局**，不是 AlertDialog.setItems()（2026-10-14 修）。
+         * 原来用 setItems + setMessage，用户实测「弹出来只有取消、没有任何
+         * 选项」—— 平台那个列表视图和 message 一起用时不渲染。
+         * 自己画还顺带能把两个选项的说明写清楚，比光秃秃一个词好懂。 */
+        final View v = getLayoutInflater().inflate(R.layout.dialog_delete_repeat, null);
+        ((TextView) v.findViewById(R.id.dr_title)).setText("「" + task.title + "」是重复任务");
+        final String when = whenLabel(day);
+        ((TextView) v.findViewById(R.id.dr_sub)).setText(when + "。要删掉哪些？");
+        ((TextView) v.findViewById(R.id.dr_series_hint))
+                .setText(when + "及之后都不再出现");
+
+        final AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(v)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("删除", (dlg, which) -> doDelete())
-                .show();
+                .create();
+        v.findViewById(R.id.dr_one).setOnClickListener(x -> { dlg.dismiss(); doDelete(); });
+        v.findViewById(R.id.dr_series).setOnClickListener(x -> {
+            dlg.dismiss();
+            doDeleteSeriesFrom(rootId, day);
+        });
+        dlg.show();
+    }
+
+    /**
+     * 「从这次起往后全部」—— 结束这个系列。
+     *
+     * 只做两件事：① 把根任务标上 `repeatUntil`（这是**唯一的真相**）；
+     * ② 把本地看得见的、这天及以后的实例删掉。
+     * 看不见的（比如别的设备建过什么）不用管 —— App 侧同步下来会按这个标记
+     * 自己清理（`enforceRepeatUntil`），所以各端最终会收敛到同一状态。
+     */
+    private void doDeleteSeriesFrom(String rootId, String day) {
+        if (day == null || day.isEmpty()) { doDelete(); return; }
+        deleteRequested = true;
+
+        WidgetSnapshot snap = WidgetPrefs.snapshot(this);
+        JSONArray ops = new JSONArray();
+        // 受影响的 id 集合：被拒时只回滚这些，不去动别的（整表合并会把
+        // 还没发出去的乐观改动一起抹掉）
+        final java.util.List<String> affected = new java.util.ArrayList<>();
+        try {
+            // ① 根上落标记（根自己可能就是要删的那条，也要写上）
+            JSONObject rootFields = new JSONObject();
+            rootFields.put("repeatUntil", day);
+            WidgetPrefs.patchEntity(this, "tasks", rootId, rootFields, false);
+            WTask root = snap.taskById(rootId);
+            if (root != null) {
+                JSONObject op = new JSONObject();
+                op.put("entity", "task");
+                op.put("entityId", rootId);
+                op.put("calId", root.calId);
+                op.put("fields", rootFields);
+                ops.put(op);
+                affected.add(rootId);
+            }
+
+            // ② 本地看得见的、day 及以后的实例全部删掉
+            long now = System.currentTimeMillis();
+            for (WTask t : snap.tasks) {
+                if (t == null) continue;
+                String sid = (t.seriesId != null && !t.seriesId.isEmpty()) ? t.seriesId : t.id;
+                if (!sid.equals(rootId)) continue;
+                if (t.date == null || t.date.compareTo(day) < 0) continue;
+                JSONObject f = new JSONObject();
+                f.put("deleted", true);
+                f.put("deletedAt", now);
+                WidgetPrefs.patchEntity(this, "tasks", t.id, f, false);
+                JSONObject op = new JSONObject();
+                op.put("entity", "task");
+                op.put("entityId", t.id);
+                op.put("calId", t.calId);
+                op.put("fields", f);
+                ops.put(op);
+                affected.add(t.id);
+            }
+        } catch (Exception ignored) {
+        }
+        ScheduleWidgetProvider.refresh(this);
+
+        if (!WidgetPrefs.canDirect(this) || ops.length() == 0) {
+            // 离线：入队等 App 启动后补发。本地已经删干净了，桌面立刻是对的。
+            try {
+                for (int i = 0; i < ops.length(); i++) {
+                    JSONObject op = ops.optJSONObject(i);
+                    WidgetPrefs.enqueuePending(this, op);
+                }
+            } catch (Exception ignored) {
+            }
+            finish();
+            return;
+        }
+        WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
+            @Override
+            public void onAccepted(JSONObject body) {
+                ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
+                Ui.toast(TaskDetailActivity.this, "已删除这次及以后的所有重复");
+            }
+
+            @Override
+            public void onRejected(JSONObject body, String why) {
+                // 服务端不答应 → 用返回的真相覆盖本地，别让桌面停在一个假状态
+                WidgetPrefs.mergeEntities(TaskDetailActivity.this, body, "tasks", affected);
+                ScheduleWidgetProvider.refresh(TaskDetailActivity.this);
+                Ui.toast(TaskDetailActivity.this, "删除没有成功，服务端没有接受");
+            }
+
+            @Override
+            public void onUnreachable(String why) {
+                // 离线：保留本地结果 + 入队
+                try {
+                    for (int i = 0; i < ops.length(); i++) {
+                        WidgetPrefs.enqueuePending(TaskDetailActivity.this, ops.optJSONObject(i));
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        });
+        finish();
     }
 
     private void doDelete() {
         deleteRequested = true;
         final long now = System.currentTimeMillis();
+        /* `skipped` 只是语义标记（2026-10-14）：说明这条是「用户有意跳过的一次」，
+         * 而不是同步失败留下的墓碑。窗口补齐本来就会跳过已存在的 id，
+         * 所以功能上不依赖它，但别的端看到这个字段能明白发生了什么事。 */
+        final boolean repeating = task.repeat != null
+                && !"none".equals(task.repeat.optString("unit", "none"));
         try {
             JSONObject f = new JSONObject();
             f.put("deleted", true);
             f.put("deletedAt", now);
+            if (repeating) f.put("skipped", true);
             WidgetPrefs.patchEntity(this, "tasks", task.id, f, false);
         } catch (Exception ignored) {
         }
@@ -478,6 +628,8 @@ public class TaskDetailActivity extends Activity {
             JSONObject fields = new JSONObject();
             fields.put("deleted", true);
             fields.put("deletedAt", now);
+            // 与本地乐观改动保持一致：重复任务的那一次删除要带 skipped
+            if (repeating) fields.put("skipped", true);
             if (!WidgetPrefs.canDirect(this)) {
                 enqueueDelete(now);
                 finish();
@@ -702,6 +854,34 @@ public class TaskDetailActivity extends Activity {
     private static String timeOf(int minutes) {
         int m = ((minutes % 1440) + 1440) % 1440;
         return String.format(Locale.US, "%02d:%02d", m / 60, m % 60);
+    }
+
+    /**
+     * 把 yyyy-MM-dd 说成人话：今天 / 明天 / 昨天 / 后天，其余「M月D日」。
+     *
+     * 删除弹框里写「2026-10-15 及之后都不再出现」读起来费劲，
+     * 而用户此刻心里想的就是「明天开始不要了」。
+     */
+    private String whenLabel(String iso) {
+        if (iso == null || iso.isEmpty()) return "这一天";
+        String today = WidgetPrefs.today(this);
+        if (iso.equals(today)) return "今天";
+        if (iso.equals(shiftIso(today, 1))) return "明天";
+        if (iso.equals(shiftIso(today, -1))) return "昨天";
+        if (iso.equals(shiftIso(today, 2))) return "后天";
+        int[] ymd = ymdOf(iso);
+        return ymd == null ? iso : (ymd[1] + "月" + ymd[2] + "日");
+    }
+
+    /** yyyy-MM-dd 加减天数 */
+    private static String shiftIso(String iso, int n) {
+        int[] ymd = ymdOf(iso);
+        if (ymd == null) return iso;
+        Calendar c = Calendar.getInstance();
+        c.set(ymd[0], ymd[1] - 1, ymd[2]);
+        c.add(Calendar.DAY_OF_MONTH, n);
+        return String.format(Locale.US, "%04d-%02d-%02d",
+                c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
     }
 
     private static int[] ymdOf(String iso) {
