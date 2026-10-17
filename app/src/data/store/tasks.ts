@@ -121,7 +121,9 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?:
     if (!revive) return false;
     if (dead.skipped) return false;          // 「只删这一次」不复活
     if (typeof date !== 'string' || date < today) return false;
-    const restored = { ...dead, deleted: false, deletedAt: null, trashFrom: null, skipped: false };
+    /* 内存里用 undefined（Task 的类型是可选字段），写入通道里用 null ——
+       同步协议里 null 才是「把这个字段清空」，undefined 只是本地省掉。 */
+    const restored: Task = { ...dead, deleted: false, deletedAt: undefined, trashFrom: undefined, skipped: false };
     state.tasks[id] = restored;
     items.push({
       entity: 'task', id, calId: dead.calId,
