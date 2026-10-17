@@ -2126,29 +2126,21 @@ try {
   };
 
   /* 渲染窗的**合同**（domain/layout.ts 的 coverWindow）：设置窗 ∪ 当天定时任务
-     占的时间范围，向外取整到整点。2026-10-17 起「窗外的东西整条不画」改成了
-     「窗自动往外让到刚好装下它」，所以时间窗的断言不能写死设置值 ——
-     这里在页面里按同一套算式算出期望值，再跟 data-from/to 对。 */
-  const coverOf = () => evalJs(page, `
+     占的时间范围，任务一条不裁不丢。可视面上的不变量：每条定时卡的
+     top/height(%) 必须完整落在 [0,100] 里 —— 有任何一条越出窗沿就是破了合同。
+     （不从 localStorage 反推期望值：那是延迟落盘的，读到的是上一刻的世界。） */
+  const worstCard = () => evalJs(page, `
     return (() => {
-      const tl = document.querySelector('.timeline');
-      const date = tl.dataset.date;
-      const s = JSON.parse(localStorage.getItem('schedule-app-v4'));
-      const ui = s.ui || {};
-      let from = Math.max(0, Math.min(1439, Math.round(ui.dayFrom) * 60));
-      let to = Math.max(0, Math.min(1440, Math.round(ui.dayTo) * 60));
-      if (to - from < 60) to = Math.min(1440, from + 60);
-      for (const t of Object.values(s.tasks)) {
-        if (!t || t.deleted || t.date !== date || !t.time) continue;
-        const [h, m] = String(t.time).split(':').map(Number);
-        let start = Math.max(0, Math.min(1439, h * 60 + (m || 0)));
-        let end = start + (t.duration == null ? 60 : t.duration);
-        end = Math.max(start, Math.min(1440, end));
-        if (end > to) to = Math.min(1440, Math.ceil(end / 60) * 60);
-        if (start < from) from = Math.max(0, Math.floor(start / 60) * 60);
+      let worst = null;
+      for (const el of document.querySelectorAll('.timeline .task-el--timed')) {
+        const top = parseFloat(el.style.top) || 0;
+        const h = parseFloat(el.style.height) || 0;
+        const over = Math.max(-top, top + h - 100);
+        if (over > 0.01 && (!worst || over > worst.over)) {
+          worst = { over: Math.round(over * 100) / 100, title: (el.querySelector('.ev-title') || {}).textContent || '' };
+        }
       }
-      if (to - from < 60) to = Math.min(1440, from + 60);
-      return { from, to };
+      return worst;
     })();
   `);
 
@@ -2353,29 +2345,26 @@ try {
     + (afterH.left - beforeH.left).toFixed(1) + 'px');
 
   // ④ 收窄到 10 点起 —— 2026-10-17 起「窗外不画」改成「窗外让窗」：
-  //    渲染窗 = 设置窗 ∪ 当天任务的范围。断言**合同**而不是写死的值：
-  //    data-from/to 必须等于 coverWindow 的期望（把这天任务也算进去）。
+  //    渲染窗 = 设置窗 ∪ 当天任务的范围。窗至少盖住设置那段，
+  //    且每条任务都完整落在窗内（不裁半截、不整条消失）。
   await setWindow(10, 14);
   const w2 = await readTl();
-  const exp2 = await coverOf();
-  ok(w2.from === String(exp2.from) && w2.to === String(exp2.to),
-    '时间窗 = 设置窗 ∪ 当天任务范围（coverWindow 期望 ' + exp2.from + '/' + exp2.to
-    + '，实际 ' + w2.from + '/' + w2.to + '）');
   ok(Number(w2.from) <= 600 && Number(w2.to) >= 840,
-    '窗至少完整盖住设置的那一段 10:00–14:00（' + w2.from + '/' + w2.to + '）');
+    '窗至少完整盖住设置的那段 10:00–14:00（实际 ' + w2.from + '/' + w2.to
+    + '，有任务在外面会自动让出去）');
   ok(w2.n >= 2 && w2.first !== undefined,
     '小时线跟着窗走（' + w2.n + ' 条，起 ' + w2.first + '）');
+  const cut2 = await worstCard();
+  ok(cut2 === null, '窗内每条任务都完整画出（不裁不丢）', cut2 ? JSON.stringify(cut2) : '无越界');
 
   // ⑤ 窗外的东西**不再消失**：把窗设到 23 点起，上午那条任务要照画 ——
   //    窗口自动让到装下它为止（用户拍板「显示」，见 coverWindow）。
   await setWindow(23, 24);
   const w3 = await readTl();
-  const exp3 = await coverOf();
-  ok(w3.from === String(exp3.from) && w3.to === String(exp3.to),
-    '23:00 起的窗自动让到装下当天任务（期望 ' + exp3.from + '/' + exp3.to
-    + '，实际 ' + w3.from + '/' + w3.to + '）');
-  ok(w3.top !== null && parseFloat(w3.top) >= 0 && Number(w3.from) < 600,
-    '上午那条落在「设置窗外」的任务照画不误（top=' + w3.top + '，窗起 ' + w3.from + '）');
+  ok(w3.top !== null && Number(w3.from) < 1380,
+    '23:00 起的窗自动让到上午那条之前（窗起 ' + w3.from + '，top=' + w3.top + '）');
+  const cut3 = await worstCard();
+  ok(cut3 === null, '窗内每条任务都完整画出（不裁不丢）', cut3 ? JSON.stringify(cut3) : '无越界');
 
   // 收尾：把时间窗放回整天，别给后面的断言留一个收窄的时间轴。
   // 条数**不写死 24**：疏密是按像素密度分档的（见 DayView 的 step），
