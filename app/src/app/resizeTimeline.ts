@@ -56,13 +56,18 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       const t = store.get().tasks[h.dataset.id || ''];
       if (!t) return;
       const start = D.timeToMin(t.time) || 0;
-      const tl = el.querySelector<HTMLElement>('.timeline');
+      /* 时间轴 = 把手所在的那根。日视图是 `.timeline`，周视图那一列标了
+         `data-timeline`（它俩同构；以前只看全局第一个 `.timeline`，
+         周视图复用日视图那张卡之后会把它们认错）。 */
+      const tl = h.closest<HTMLElement>('.timeline, [data-timeline]');
       const boxH = tl?.getBoundingClientRect().height || HOUR_H * 24;
       rz = {
         id: t.id, y: getY(e),
         edge: h.dataset.act === 'resize-top' ? 'top' : 'bottom',
         start, end: start + D.durOf(t.duration), dur: D.durOf(t.duration), cur: D.durOf(t.duration),
-        el: el.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
+        /* document 级找：卡片 dt 可能同时出现在两个视图的 DOM 里
+           （日视图 + 周视图都渲染同一批任务），按 host 找会串到另一个去 */
+        el: document.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
         win: domWindow(tl), boxH, tl,
       };
       rz.el?.classList.add('resizing');

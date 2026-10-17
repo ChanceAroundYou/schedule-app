@@ -16,7 +16,7 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN } from './layout.ts';
+import { coverWindow, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
@@ -507,6 +507,34 @@ test('时间窗：合法值原样保留，且至少留一个小时', () => {
   // 用户至少得到一个**能看**的时间窗，而不是「设置被忽略了」
   assert.deepEqual(windowOf(normalizeUi({ dayFrom: 23, dayTo: 5 })), { from: 1380, to: 1440 },
     '反向的窗撑成 from 之后的那一小时');
+});
+
+test('coverWindow：任务跑到窗外，窗口自动往外让', () => {
+  const set = { from: 480, to: 1200 };   // 设置的 08:00 – 20:00
+
+  // 任务都在窗内 → 窗口分毫不动（这是常态，不该被随便改写）
+  assert.deepEqual(coverWindow(set, [{ start: 540, end: 600 }]), set, '窗内任务不动窗');
+
+  // 下端有任务（07:10 开始）→ 往外让到 07:00
+  assert.deepEqual(coverWindow(set, [{ start: 430, end: 500 }]), { from: 420, to: 1200 });
+  // 上端有任务（23:30 结束）→ 让到 24:00
+  assert.deepEqual(coverWindow(set, [{ start: 1200, end: 1410 }]), { from: 480, to: 1440 });
+
+  // 两头都有 → 两头都让
+  assert.deepEqual(
+    coverWindow(set, [{ start: 300, end: 360 }, { start: 1300, end: 1360 }]),
+    { from: 300, to: 1380 });
+
+  // 跨零点（23:00 + 120 分 = 1500）→ 下端夹回 24:00，不能让出一天之外
+  assert.deepEqual(coverWindow(set, [{ start: 1380, end: 1500 }]), { from: 480, to: 1440 });
+
+  // 荒数据不炸：NaN / 负数 / start > end 都跳过或夹回合法范围
+  assert.deepEqual(coverWindow(set, [{ start: NaN, end: 100 }]), set, 'NaN 跳过');
+  assert.deepEqual(coverWindow(set, [{ start: -60, end: 100 }]), { from: 0, to: 1200 });
+
+  // 让完仍保住最小窗宽
+  const thin = { from: 600, to: 660 };
+  assert.equal(coverWindow(thin, [{ start: 600, end: 700 }]).to - coverWindow(thin, [{ start: 600, end: 700 }]).from >= 60, true);
 });
 
 test('时间窗：纵坐标 ⇄ 分钟 互为逆运算', () => {

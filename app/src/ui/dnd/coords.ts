@@ -4,7 +4,7 @@
 
 import type { DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
-import { DAY_H, FULL_DAY, yToMin, type DayWindow } from '../../domain/layout.ts';
+import { FULL_DAY, yToMin, type DayWindow } from '../../domain/layout.ts';
 
 /* ============================ 指针坐标 ============================ */
 
@@ -38,12 +38,12 @@ export function minFromY(zone: HTMLElement, clientY: number): number {
   return yToMin(clientY - rect.top, rect.height, zoneWindow(zone));
 }
 
-/** 周视图整列都是 24 小时、像素高度固定 —— 那一套还成立 */
-export function weekGuideMin(zone: HTMLElement, clientY: number): number {
-  const rect = zone.getBoundingClientRect();
-  const min = Math.round((clientY - rect.top) / DAY_H * 1440 / 15) * 15;
-  return Math.max(0, Math.min(1425, min));
-}
+/**
+ * 周视图那一列现在和日视图 `.timeline` 同构（盒子就是可见时间窗，
+ * `data-from` / `data-to` 写在同一个元素上），所以这一 overrides 被统一的
+ * `minFromY` 吃掉 —— 以前要单独一条算式，是因为列曾经是「整天 1536px 高、
+ * 可视区只是一扇窗」。留着它只会在将来又一次 px ↔ 百分比漂移。 */
+
 
 /* ============================ zone 时间窗 ============================ */
 

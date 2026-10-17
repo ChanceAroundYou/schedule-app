@@ -8,7 +8,7 @@ import * as D from '../../domain/date.ts';
 import * as store from '../../data/store.ts';
 import { toast } from '../kit.tsx';
 import {
-  eventX, eventY, minFromY, weekGuideMin, zoneWindow,
+  eventX, eventY, minFromY, zoneWindow,
 } from './coords.ts';
 import {
   drawTimeGuide, drawTimeCursor, clearTimeCursor,
@@ -35,15 +35,14 @@ export function useTimelineDrag() {
      那个 zone（元素 + id —— id 用来区分 timeline / week 两种算法）。 */
   const zoneRef = useRef<{ el: HTMLElement; id: string } | null>(null);
 
-  /* 日视图纵向钳位：卡片不能拖出 `.day-panel`（整个面板，含无时间区）。
-     **夹的必须是 `.day-panel`**，不是 `.timeline` —— 后者只覆盖时间轴，
-     夹它会把卡片挡在无时间区外（用户 2026-10-12：「没有办法把它拖到
-     无时间的那片区域里了」）。`.day-panel` 是含 `.allday-zone` + `.tl-wrap`
-     的整个面板，夹它才能在整个范围内拖动。 */
+  /* 日 / 周视图纵向钳位：卡片不能拖出自己那块面板（含未定时那一区）。
+     **夹的是面板而不是时间轴本身** —— `.timeline` 只覆盖时间轴，
+     夹它会把卡片挡在未定时区外（用户 2026-10-12：「没有办法把它拖到
+     无时间的那片区域里了」）。周视图对应的那块是 `.week-view`。 */
   const clampTimelineDrag: Modifier = ({ active, activeNodeRect, transform }) => {
     if (!active || !activeNodeRect) return transform;
     const el = document.querySelector<HTMLElement>(`.task-el--timed[data-id="${String(active.id)}"]`);
-    const frame = el?.closest<HTMLElement>('.day-panel');
+    const frame = el?.closest<HTMLElement>('.day-panel, .week-view');
     if (!el || !frame) return transform;
 
     const rect = frame.getBoundingClientRect();
@@ -146,7 +145,9 @@ export function useTimelineDrag() {
     if (!over) {
       const task = store.get().tasks[activeId];
       if (!task || !task.date) return;
-      const tl = document.querySelector<HTMLElement>(`.timeline[data-zone-id="timeline:${task.date}"]`);
+      /* 同上：周视图那一列同样是一根时间轴，标了 `data-timeline` */
+      const tl = document.querySelector<HTMLElement>(
+        `.timeline[data-zone-id="timeline:${task.date}"], [data-timeline][data-date="${task.date}"]`);
       if (tl) {
         const rect = tl.getBoundingClientRect();
         if (currentX >= rect.left && currentX <= rect.right) {
@@ -187,7 +188,7 @@ export function useTimelineDrag() {
       const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
       const min = card
         ? minFromY(zone, card.getBoundingClientRect().top)
-        : weekGuideMin(zone, currentY);
+        : minFromY(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.fmtMD(date || '')} ${D.minToTime(min)}`);
       return;

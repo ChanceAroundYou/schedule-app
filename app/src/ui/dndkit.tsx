@@ -34,7 +34,6 @@ export {
   eventX,
   eventY,
   minFromY,
-  weekGuideMin,
   zoneWindow,
   drawTimeGuide,
   drawTimeCursor,

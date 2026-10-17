@@ -107,8 +107,8 @@
 .tl-events { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
 
 /* ================= 日视图卡片：定时与未定时共用这一份 =================
-   两种卡片是**同一段 DOM、同一条规则**（见 views/calendar/DayView.tsx 的
-   TaskCard）。差别只在两处，都由父级给：
+   两种卡片是**同一段 DOM、同一条规则**（见 views/calendar/TaskCard.tsx，
+   日视图与周视图共用）。差别只在两处，都由父级给：
      · `.task-el--timed`  —— 按时间轴百分比定位（top/height/left/width）
      · `.task-el--untimed` —— 走未定时网格流（只控自身高度）
    底下这段是共用的视觉：底色、左边框、勾选圈那一行、第二行时间。
@@ -121,7 +121,6 @@
      · `.task-row`   列表行（待办箱 / 今天 / 逾期 / 已完成）
      · `.task-pill`  未定时小胶囊
      · `.pj-card`    项目泳道里的卡片
-     · `.wk-event`   周视图事件
 
    它们的「自己人」样式都在各自的文件里，**没人声明 flex-direction** ——
    而这一段写的是 `flex-direction: column`（日历卡是「勾选圈+标题 / 时间」
@@ -211,25 +210,32 @@
    原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。
    **日视图两种卡片 + 周视图共用这一条**：它们都带 `.task-el`，所以只有这一处，
    原先 `.tl-event.dragging` 和 `.allday-items .task-pill.dragging` 各写一遍、各自漂移。 */
-.task-el.dragging, .wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
+  /* `.wk-event` 已于 2026-10-17 删除：周视图改用这一张卡 */
+.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
-/* ================= 周视图（时间网格） ================= */
+/* ================= 周视图 =================
+   **与日视图是同一根时间轴**：锁单屏不纵向滚、事件卡就是日视图那张
+   （views/calendar/TaskCard.tsx）、刻度线与当前时间线复用 .tl-hour /
+   .tl-label / .tl-now。周视图自己独有的只有一件事 —— 七天横向并排。
 
-/* 整块区域纵向滚动。表头、未定时行、左侧时间刻度和右侧任务列
-   全部放在同一个滚动容器里，横向永远共用一条基线，不会因为
-   某一行的滚动条宽度不同而错位 */
-/* 高度由 JS 按可见区域算好（见 Views.fitWeekHeight），
-   这里只给一个兜底值，避免脚本没跑时塌掉 */
+   2026-10-17 之前它是一套平行实现（自己的 .wk-* 皮肤、写死 24 小时
+   1536px、可以纵向滚），任何改动都要问「日视图要不要跟上」。 */
+
 .week-view {
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column;
-  height: calc(100vh - 168px); min-height: 420px;
-  overflow-y: auto; overflow-x: hidden;
+  /* 纵向永不滚：整天已经摊在一屏里。横向留给窄屏看全周 */
+  overflow-x: auto; overflow-y: hidden;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
+  /* 与 .day-panel 同一个道理：整块一个堆叠上下文，卡片跨列拖起来不被裁 */
+  isolation: isolate;
 }
+/* 表头 / 未定时行 / 左刻度 + 七列：**行宽共用一条基线**，
+   会不会错位只看这一处在不在同一个容器里 */
 .week-head {
+  flex: 0 0 auto;
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
-  flex: 0 0 auto; position: sticky; top: 0; z-index: 6;
   background: var(--panel); border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .week-head-gutter { }
@@ -252,50 +258,39 @@
    .week-col.today 的 --primary-pale 整列淡底负责，表头不重复做。 */
 .week-head-cell.today .wh-day { color: var(--primary); }
 
-/* 时间网格本体：左刻度 + 右 7 列，和表头、未定时行共用外层滚动容器。
-   可见高度由 JS 按时间窗给成 `--wk-h`（窗口小时数 × 64px），**内容仍然是
-   整整一天**（`--wk-full`，列顶代表 0:00），窗外那截靠 `--wk-offset` 负偏移
-   挪出去、再由外层的 overflow 剪掉。
-   这么绕一圈是为了不改动任何一处坐标换算：relay 显示窗口收窄之后，
-   「距列顶多少 px ÷ DAY_H」依旧是真答案，tapSnap / clickDispatch / 初始滚动
-   位置三处一个字都不用管。 */
+/* 时间网格本体：左刻度 + 右 7 列。**高度全部交给 flex** ——
+   `.week-grid` 是 `.week-view` 的 flex 子项、`flex:1 + min-height:0`，
+   它就刚好吃掉「表头和未定时行之外的全部空间」。不写 px、不写 calc(100vh - N)，
+   窗口怎么缩放都不用重算坐标。 */
 .week-grid {
-  flex: 0 0 auto;
+  flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
 }
-.week-gutter, .week-cols { height: var(--wk-h); overflow: hidden; }
-.week-gutter { position: relative; border-right: 1px solid var(--border); }
-/* 刻度整块上移：偏移量的绝对值 = 窗口起点在整天里的位置 */
-.week-hours { position: relative; height: var(--wk-full); margin-top: var(--wk-offset); }
-.wk-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
-.wk-hour span {
-  position: absolute; left: 0; top: -7px; width: 40px; text-align: right;
-  font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums;
-}
-/* 窗的第一条线在最顶端，标签往下挪一点，别被容器裁掉 */
-.wk-hour:first-child span { top: 2px; }
-/* 整列淡底 + 横向刻度线。横向线每格一小时，与左侧 .wk-hour 同一套高度；
-   背景画在 `.week-hours` 而不是裁剪层上，偏移之后线还是压在正确的时刻上 */
-.week-hours {
+/* 左侧刻度列。**刻度线就是日视图那一条**（.tl-hour），只是标签不像日视图那样
+   挂在轴外面 —— 这里右边是七天的起点，没有地方往左伸。 */
+.week-gutter {
+  position: relative; min-width: 0; overflow: hidden;
   background: var(--panel-2);
-  background-image: repeating-linear-gradient(
-    to bottom, var(--border) 0 1px, transparent 1px 64px);
+  border-right: 1px solid var(--border);
 }
+.week-gutter .tl-label { left: auto; right: 5px; top: -7px; width: 38px; }
+/* 窗的第一条线在顶端，标签往下挪一点别被裁掉 */
+.week-gutter .tl-hour:first-child .tl-label { top: 2px; }
 
-.week-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.week-cols { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .week-col {
   min-width: 0; position: relative;
-  height: var(--wk-full); margin-top: var(--wk-offset);
   border-right: 1px solid var(--border);
+  /* 横向刻度线：与左刻度列同一套百分比位置。一格的高度就是「一小时」——
+     列高由 flex 决定（整天摊在一屏里），所以用百分比而不是像素；
+     `--wk-hours` 是这一屏实际覆盖的小时数。 */
   background-image: repeating-linear-gradient(
-    to bottom, var(--border) 0 1px, transparent 1px 64px);
-  background-position: 0 0;
+    to bottom, var(--border) 0 1px, transparent 1px calc(100% / var(--wk-hours)));
 }
 .week-col:last-child { border-right: none; }
 .week-col.today { background-color: var(--primary-pale); }
 
-/* 未定时任务：独立一行，跟表头一起吸顶，
-   横向列宽和下面的时间网格完全共用一条基线。
+/* 未定时任务：独立一行，横向列宽和下面的时间网格共用一条基线。
    **上下都要有分割线**：只有下面那条时，这一行和上面的周几表头融成一体，
    看不出「未定时」是独立的一块。 */
 .week-un-row {
@@ -303,8 +298,6 @@
   background: var(--panel);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  position: sticky; top: var(--week-head-h); z-index: 5;
-  box-shadow: var(--shadow-sticky);
 }
 .week-un-gutter {
   border-right: 1px solid var(--border);
@@ -314,30 +307,18 @@
 }
 .week-un-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .wun-cell {
-  min-width: 0; padding: 4px;
-  display: flex; flex-direction: column; gap: 3px;
+  min-width: 0; padding: 3px;
+  display: flex; flex-direction: column; gap: 2px; align-content: start;
   border-right: 1px solid var(--border);
-  min-height: 30px;
+  min-height: 26px;
 }
 .wun-cell:last-child { border-right: none; }
 .wun-cell.today { background: var(--primary-pale); }
-.wun-cell .task-pill { font-size: 11px; }
+/* 这一行的卡片是**日视图未定时那一张**（task-el--untimed），只是这里横向只能
+   分到七分之一宽，所以字再收一号，"+" 提示用同一个灰度 */
+.wun-cell .task-el--untimed { font-size: 11px; padding: 1px 5px; }
+.wun-more { font-size: 10.5px; color: var(--text-3); padding-left: 2px; }
 .wun-empty { display: block; height: 4px; }
-
-/* 定时任务按时间落格 */
-.wk-event {
-  position: absolute; border-radius: var(--r-sm); padding: 2px 5px;
-  background: var(--primary-soft); border: var(--border-w) solid var(--border);
-  border-left: 3px solid var(--primary);
-  overflow: hidden; cursor: pointer;
-  display: flex; flex-direction: column; gap: 1px;
-  transition: box-shadow .14s;
-}
-.wk-event:hover { box-shadow: var(--shadow-md); z-index: 4; }
-.wk-event.done { opacity: .5; }
-.wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
-.wk-time { font-size: 9.5px; color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.2; }
-.wk-title { font-size: 11px; font-weight: 550; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- 按住拉出来的那一段时间（views/calendar/dragCreate.ts）----
    它在还没有实体时出现，所以**不是**任务卡：不挂 `.task-el`，

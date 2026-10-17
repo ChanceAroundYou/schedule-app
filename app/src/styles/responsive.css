@@ -288,20 +288,18 @@ body.sheet-open .tab:active { background: none; }
   .ci-item { padding: 8px 11px; }
 }
 
-/* ---- 周视图：窄屏改成横向滚动，列宽锁死 ---- */
+/* ---- 周视图：窄屏改成横向滚动，列宽锁死 ----
+   纵向**不滚**（2026-10-17）：整天已经摊在一屏里，滚动只会把一天切成两截。
+   横向必须留 —— 手机上 7 列并排每列不到 50px，看不清。 */
 @media (max-width: 900px) {
   .week-view {
-    /* 手机上 7 列并排根本看不清，改成左右滑 */
-    overflow-x: auto; overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
-  .week-head, .week-un-row, .week-grid { min-width: 0; }
-  /* 表头与未定时行是**吸顶**的，它们的不透明背景必须盖住整条滚动宽度。
-     可作为 flex 项时它们只有容器那么宽（≈一屏），右边三四列的头部会透出
-     下面时间网格的刻度线 —— 看着就是「表头只画了一半」。
-     `max-content` 让背景跟着内容走（列宽有 min-width 兜底，不会缩没）。 */
-  .week-head, .week-un-row { width: max-content; }
+  /* 表头、未定时行、时间网格三行一起吃这条最小宽度 —— 作为 flex 项它们默认
+     只有容器那么宽（≈一屏），右边三四列的表头会透出下面时间网格的刻度线，
+     看着就是「表头只画了一半」。 */
+  .week-head, .week-un-row, .week-grid { min-width: max-content; }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
     grid-template-columns: 44px minmax(0, 1fr);
@@ -316,14 +314,11 @@ body.sheet-open .tab:active { background: none; }
     position: sticky; left: 0; z-index: 3; background: var(--panel);
   }
   .week-gutter { background-color: var(--panel-2); }
-  .wk-hour span { left: 2px; text-align: left; width: 40px; }
+  .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
   .week-head-cell { padding: 7px 2px 5px; }
   .wh-day { font-size: 15px; min-width: 24px; }
-  .wk-event { padding: 3px 5px; }
-  .wk-title { font-size: 11.5px; }
-  .wk-time { font-size: 10px; }
   .wun-cell { padding: 3px; }
-  .wun-cell .task-pill { font-size: 11px; padding: 4px 6px; }
+  .wun-cell .task-el--untimed { padding: 1px 4px; }
 }
 
 /* ---- 月视图：窄屏下格子塞不进文字，改成圆点+计数 ---- */

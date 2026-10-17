@@ -110,6 +110,38 @@ export function windowOf(ui: { dayFrom: number; dayTo: number }): DayWindow {
   return { from, to };
 }
 
+/**
+ * 「窗外的任务也得看得见」—— 自动让窗。
+ *
+ * 时间窗是给**注意力**用的（白天那十几个小时才是人真正在用的时段），
+ * 但它不该让任务凭空消失：夜里 23:30 那条一旦整个落在窗外，界面上就查无此事，
+ * 用户只会以为它丢了。所以真正的渲染窗 = 设置窗 ∪ 这批任务占的时间范围：
+ *
+ *   · 任务都在窗里 → 窗口分毫不动，设置怎么说就怎么显示；
+ *   · 有东西跑到外面 → 窗口**只往外让到刚好装下它**（向外取整到整点），
+ *     不是一天到头全放开。代价是那几行格子矮一点，换来任务一条不少。
+ *   · 跨零点（23:00 + 2 小时 = 25:00）的下端夹回 24:00。
+ *
+ * 日视图 / 周视图共用这一份；严守端点对称性 —— 任何一边忘了，
+ * 两个视图就会「同一条任务一个看得见一个看不见」。
+ */
+export function coverWindow(w: DayWindow, spans: { start: number; end: number }[]): DayWindow {
+  let from = w.from;
+  let to = w.to;
+  for (const s of spans) {
+    if (!Number.isFinite(s.start) || !Number.isFinite(s.end)) continue;
+    const start = Math.max(0, Math.min(1439, s.start));
+    const end = Math.max(start, Math.min(1440, s.end));
+    /* `ceil` / `floor` 到整点，是为了让刻度线落在整点上 —— 差 7 分钟
+       就让出整整一小时，宁可松一点也不要半格 */
+
+    if (end > to) to = Math.min(1440, Math.ceil(end / 60) * 60);
+    if (start < from) from = Math.max(0, Math.floor(start / 60) * 60);
+  }
+  if (to - from < MIN_SPAN) to = Math.min(1440, from + MIN_SPAN);
+  return { from, to };
+}
+
 export function spanOf(w: DayWindow): number {
   return w.to - w.from;
 }

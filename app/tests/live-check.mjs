@@ -9,7 +9,7 @@
  *     定点断言」，写操作只有机器人账号自己日程集里的那一条（跑完就结束掉系列）。
  *
  *   node app/tests/live-check.mjs
- *   node app/tests/live-check.mjs --features core,now-line,repeat,drag
+ *   node app/tests/live-check.mjs --features core,now-line,week,repeat,drag
  *
  * 环境变量：
  *   LIVE_URL   默认 https://home.xiaokubao.space/schedule/
@@ -34,7 +34,7 @@ const HEADED = process.env.HEADED === '1';
 const argv = process.argv.slice(2);
 const featArg = argv.find((a) => a.startsWith('--features=')) || argv[argv.indexOf('--features') + 1];
 const FEATURES = new Set(
-  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,repeat,drag')
+  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,week,repeat,drag')
     .split(',').map((s) => s.trim()).filter(Boolean),
 );
 
@@ -109,8 +109,13 @@ async function ensureLogin(page) {
  */
 async function waitShell(page) {
   await page.click('[data-nav="calendar"]');
-  await page.waitForSelector('.timeline', { timeout: 15000 });
-  await page.waitForSelector('button[data-view="day"]', { timeout: 10000 });
+  await page.waitForSelector('button[data-view="day"]', { timeout: 15000 });
+  /* 上一段检查可能把视图停在周 / 月（ui.view 是记住的）—— 日视图那根时间轴
+     只有 view=day 时存在。等不到就显式切回日视图。 */
+  await page.waitForSelector('.timeline', { timeout: 3000 }).catch(async () => {
+    await page.click('button[data-view="day"]');
+    await page.waitForSelector('.timeline', { timeout: 10000 });
+  });
 }
 
 /** 切视图 */
@@ -171,6 +176,91 @@ async function checkNowLine(page) {
     '线条是 --ok 深绿', `实际 ${info.borderColor}，--ok=${info.okColor}（主题 ${info.theme}）`);
   assertOk(info.children === 0 && info.text === '',
     '只有一根线：无圆点、无时刻文字', `子元素 ${info.children}、文本「${info.text}」`);
+}
+
+/**
+ * week：周视图 = 一根锁单屏的日视图时间轴（2026-10-17 改版）。
+ *
+ * 断言四件事：
+ *   1. 纵向不滚 —— 整天摊在一屏里，scrollHeight 不该超过 clientHeight；
+ *   2. 七列齐整 —— 每列都是一根「时间轴」（带 data-from/to）；
+ *   3. 事件卡是日视图那张（.task-el--timed，带勾选圈），不是旧的紧凑块；
+ *   4. 「现在」这条线只在今天那一列，不横跨七天。
+ */
+async function checkWeek(page) {
+  await switchView(page, 'week');
+  await page.waitForSelector('.week-cols', { timeout: 10000 });
+
+  const noScroll = await page.$eval('.week-view', (el) => ({
+    sh: el.scrollHeight, ch: el.clientHeight, sw: el.scrollWidth, cw: el.clientWidth,
+  }));
+  assertOk(noScroll.sh <= noScroll.ch + 2, '周视图纵向不滚动（一屏装下）',
+    `scrollHeight ${noScroll.sh} vs clientHeight ${noScroll.ch}`);
+
+  const cols = await page.$$eval('.week-col', (els) => els.length);
+  assertOk(cols === 7, '七天七列', `${cols} 列`);
+
+  const gutted = await page.$$eval('.week-gutter .tl-label', (els) => els.length);
+  assertOk(gutted >= 8, '左侧刻度复用日视图的 .tl-label', `${gutted} 条`);
+
+  const nowLines = await page.$$eval('.week-col .tl-now', (els) => els.length);
+  assertOk(nowLines <= 1, '「现在」这条线只画在今天那一列', `${nowLines} 条`);
+
+  /* 定时任务渲染成日视图那张卡：建一条 → 看列里有 .task-el--timed → 删掉 */
+  const token = await page.evaluate(() => localStorage.getItem('schedule-app-token') || '');
+  if (!token) { bad('能取到登录 token（周视图建卡用）'); return; }
+  const calId = await page.evaluate(async (t) => {
+    const r = await fetch('api/me', { headers: { Authorization: 'Bearer ' + t } });
+    const j = await r.json().catch(() => null);
+    return j && j.cals && j.cals[0] && j.cals[0].id;
+  }, token);
+  const title = 'e2e周卡-' + Date.now().toString(36);
+  const id = 't_e2e_wk_' + Date.now().toString(36);
+  const now = Date.now();
+  const pad = (n) => (n < 10 ? '0' + n : '' + n);
+  const td = new Date();
+  const iso = `${td.getFullYear()}-${pad(td.getMonth() + 1)}-${pad(td.getDate())}`;
+  const st = await page.evaluate(async ({ t, calId, id, title, now, date }) => {
+    const r = await fetch('api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+      body: JSON.stringify({
+        cursor: 1,
+        ops: [{
+          opId: 'e2e-wk-' + id, deviceId: 'e2e-live', ts: now, entity: 'task',
+          entityId: id, calId, fields: { title, date, time: '10:00', duration: 60 },
+        }],
+      }),
+    });
+    return r.status;
+  }, { t: token, calId, id, title, now, date: iso });
+  assertOk(st === 200, '周视图用例：测试任务已建', 'HTTP ' + st);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.click('[data-nav="calendar"]');
+  await page.waitForSelector('.week-cols', { timeout: 15000 });
+  const card = page.locator('.week-col .task-el--timed', { hasText: title }).first();
+  const found = await card.count();
+  assertOk(found === 1, '周视图里的定时任务就是日视图那张卡（.task-el--timed）',
+    found ? '找到' : '没找到');
+
+  if (found) {
+    const del = await page.evaluate(async ({ t, id, calId, now }) => {
+      const r = await fetch('api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+        body: JSON.stringify({
+          cursor: 1,
+          ops: [{
+            opId: 'e2e-wk-del-' + id, deviceId: 'e2e-live', ts: now, entity: 'task',
+            entityId: id, calId, fields: { deleted: true, deletedAt: now },
+          }],
+        }),
+      });
+      return r.status;
+    }, { t: token, id, calId, now: Date.now() });
+    assertOk(del === 200, '收尾：周视图测试任务已删除', 'HTTP ' + del);
+  }
 }
 
 /**
@@ -368,6 +458,7 @@ async function checkDrag(page) {
 
     if (FEATURES.has('core')) await checkCore(page, consoleErrors);
     if (FEATURES.has('now-line')) await checkNowLine(page);
+    if (FEATURES.has('week')) await checkWeek(page);
     if (FEATURES.has('repeat')) await checkRepeat(page);
     if (FEATURES.has('drag')) await checkDrag(page);
 

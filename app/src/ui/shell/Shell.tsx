@@ -62,10 +62,13 @@ export function Shell({
             原来在底部，位置不一致）。窄屏时它是 fixed 定位的底部圆钮，
             DOM 顺序不影响 —— 仍留在底部，单手好按。 */}
         {quickAdd}
-        {/* 日视图锁单屏：内容区不跟着滚（见 styles/calendar.css 的 .content-day）。
-            判据是「日程页 + 日视图」—— 其它页面（列表 / 周 / 月）照常滚。 */}
+        {/* 日 / 周视图锁单屏：内容区不跟着滚（见 styles/calendar.css 的
+            .content-day）。判据是「日程页 + 日视图或周视图」——
+            列表页与月视图照常滚。周视图 2026-10-17 起也是一屏：它的一周七天
+            横向铺开，纵向 24 小时摊在一屏里，滚下来只是把晚上看一半再滚去看
+            那一半，没有意义。 */}
         <div
-          className={'content osb' + (state.ui.nav === 'calendar' && state.ui.view === 'day' ? ' content-day' : '')}
+          className={'content osb' + (state.ui.nav === 'calendar' && (state.ui.view === 'day' || state.ui.view === 'week') ? ' content-day' : '')}
           id="content"
           ref={osbContent}
         >{children}</div>

@@ -4,7 +4,6 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import * as D from '../../domain/date.ts';
-import { DAY_H } from '../../domain/layout.ts';
 
 const MONTH_ROW_MIN = 104;
 const MONTH_ROW_MAX = 132;
@@ -56,8 +55,9 @@ export function useViewLayout(
 
   if (el) {
     saved.current.scroll = el.scrollTop;
+    /* 周视图现在只留横向位置（纵向不再滚 —— 见 fit 里那句注释） */
     const g = el.querySelector<HTMLElement>('.week-view');
-    saved.current.week = g ? g.scrollTop : 0;
+    saved.current.week = g ? g.scrollLeft : 0;
   }
 
   useLayoutEffect(() => {
@@ -65,13 +65,9 @@ export function useViewLayout(
     if (!host) return;
 
     const fit = () => {
-      const wv = host.querySelector<HTMLElement>('.week-view');
-      if (wv) {
-        const head = wv.querySelector('.week-head');
-        // 表头实测高度写成变量：下面那行 sticky 的 top 取的就是它，写死必错
-        if (head) wv.style.setProperty('--week-head-h', head.getBoundingClientRect().height + 'px');
-        wv.style.height = Math.max(420, availHeight(host)) + 'px';
-      }
+      /* 周视图的高度**不用 JS 写**：它现在是 `#content` 的 flex 子项，
+         `flex: 1 + min-height: 0` 自己就填满剩余空间（2026-10-17 锁单屏）。
+         以前这里量 availHeight 再写成内联 style，窗口一缩就只剩 420 的下限。 */
       const grid = host.querySelector<HTMLElement>('.month-grid');
       if (grid) {
         const row = Math.round(Math.max(
@@ -98,33 +94,18 @@ export function useViewLayout(
       // 同一页面内的增删改保持原位 —— 勾选、拖动排序时画面不该突然跳走
       host.scrollTop = saved.current.scroll;
       const g = host.querySelector<HTMLElement>('.week-view');
-      if (g) g.scrollTop = saved.current.week;
+      if (g) g.scrollLeft = saved.current.week;
       return;
     }
     saved.current.key = key;
 
-    /* 日视图锁单屏、不滚动，所以没有「定位到当前时间」这一步 ——
-       整段可见，内容区不该再被 scrollTop 推走。 */
+    /* 日视图 / 周视图都锁单屏、不纵向滚，所以没有「定位到当前时间」这一步 ——
+       整天可见，内容区不该被 scrollTop 推走。剩下要管的只有横向：窄屏 7 列
+       要横滑，把用户关心那天放在中间（只在真能横滑时才做）。 */
     if (nav === 'calendar' && view === 'week') {
-      host.scrollTop = 0;
       const g = host.querySelector<HTMLElement>('.week-view');
-      if (!g) return;
-      // 早上别一上来就是半夜：9 点前先定位到 7:00
-      const want = D.nowMin() < 7 * 60 ? 7 * 60 : D.nowMin();
-      /* 按**可见窗口**那一屏折算，不再按整天：周视图现在可以只看某几个小时
-         （见 WeekView），那几小时往往一屏就装得下，还按 DAY_H 算会一口气
-         滚过头 —— 早上九点却停在下午。窗口那两端的分钟数就写在容器上。 */
-      const cols = g.querySelector<HTMLElement>('.week-cols');
-      const from = Number(cols?.dataset.from ?? 0);
-      const to = Number(cols?.dataset.to ?? 1440);
-      const boxH = cols?.getBoundingClientRect().height ?? DAY_H;
-      const span = Math.max(1, to - from);
-      const clamped = Math.max(from, Math.min(to, want));
-      g.scrollTop = Math.max(0, ((clamped - from) / span) * boxH - 40);
-      // 窄屏 7 列要横滑：把用户关心那天放在中间（只在真能横滑时才做）
-      if (g.scrollWidth > g.clientWidth + 1) centerWeekDay(g, cursor);
-    } else {
-      host.scrollTop = 0;
+      if (g && g.scrollWidth > g.clientWidth + 1) centerWeekDay(g, cursor);
     }
+    host.scrollTop = 0;
   }, [contentRef, key, nav, view, cursor]);
 }

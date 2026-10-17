@@ -25,7 +25,7 @@
  * 防止滚动后残留的旧快照被误用。任一条不满足就退回现场算（今天的行为）。
  */
 
-import { DAY_H, yToMin } from '../domain/layout.ts';
+import { yToMin } from '../domain/layout.ts';
 import { domWindow } from './domWindow.ts';
 
 export interface TapSnap {
@@ -51,16 +51,14 @@ export function captureTap(e: PointerEvent): void {
   const zid = zone.dataset.zoneId || '';
   const kind = zid.slice(0, zid.indexOf(':'));
   /* 只有这两种区要按纵坐标换算时间。全天区 / 月格子 / 泳道列只要日期，
-     没有「坐标系」这回事，存快照没意义。 */
+     没有「坐标系」这回事，存快照没意义。
+     周视图那一列现在和日视图 `.timeline` **完全同构**（盒子 = 可见时间窗、
+     `data-from` / `data-to` 写在同一个元素上），所以两种区共用同一条换算 ——
+     以前 `week:` 走 `/ DAY_H × 1440`，那是列高写死 1536px 时代的算法。 */
   if (kind !== 'timeline' && kind !== 'week') return;
 
   const r = zone.getBoundingClientRect();
-  let min: number;
-  if (kind === 'timeline') {
-    min = yToMin(e.clientY - r.top, r.height, domWindow(zone));
-  } else {
-    min = Math.max(0, Math.min(1425, Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15));
-  }
+  const min = yToMin(e.clientY - r.top, r.height, domWindow(zone));
   snap = { ts: Date.now(), x: e.clientX, y: e.clientY, zoneId: zid, min };
 }
 
