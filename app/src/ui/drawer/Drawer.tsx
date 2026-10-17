@@ -54,13 +54,17 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
   onDismissConflict: (entityId: string, field: string) => void;
 }) {
   const s = useDrawer({ state, id, onClose, onPatch, onToggle, onDelete });
+
+  /* 取消重复时「已经排好的那些怎么办」的询问（2026-10-17）。
+     ⚠️ **必须在下面的 `if (!s.task) return null` 之前**：hooks 的数量不能随
+     「有没有任务」变化，放到提前 return 之后会触发 React #310
+     （Rendered more hooks than during the previous render）——
+     表现就是点任务打不开抽屉。 */
+  const [dropAsk, setDropAsk] = useState<{ count: number; first: string; last: string } | null>(null);
+
   if (!s.task) return null;
 
   const { task, patch, repPatch, repOpen, setRepOpen, repAnchor, repPos, osbBody, osbRep, fid } = s;
-
-  /* 取消重复时「已经排好的那些怎么办」的询问（2026-10-17）。
-     先算一遍今天及以后还有多少条同系列实例，有才问；没有就直接取消。 */
-  const [dropAsk, setDropAsk] = useState<{ count: number; first: string; last: string } | null>(null);
   const rep = task.repeat;
   const repLabel = rep.unit === 'none' ? '不重复' : repeatLabel(rep);
 
