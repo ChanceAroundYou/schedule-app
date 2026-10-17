@@ -95,13 +95,41 @@ export const REPEAT_FILL_CAP = 500;
  *   调用方把「那天 + 缓冲」传进来，按需把窗口推过去 —— 这样既能随时看到
  *   很远的日子，又不用一上来就生成几千条。
  */
-export function ensureRepeatOccurrences(opts?: { until?: string | null }): void {
+export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?: boolean }): void {
   // 先把「已结束的系列」清理干净（幂等，无变动时不动）
   enforceRepeatUntil();
 
   const items: Change[] = [];
   const now = Date.now();
   const today = D.today();
+
+  /* 改规则时**复活**被「系列结束」清掉的未来空位（2026-10-17 晚）。
+   *
+   * 用户实测：先把「每月 19 日」的系列「从此往后全部删除」（那批未来的日子
+   * 都留下墓碑），再把规则改成「每周一」。墓碑的 id 是
+   * `系列根#日期`，补齐时看到「这个 id 已经存在」就直接跳过 —— 于是新规则
+   * 里那些空位永远造不出来，用户看到的就是「设了每周一，之后一个都没有」。
+   *
+   * 只复活两种条件都满足的：**今天及以后** + **不是 `skipped`**。
+   * `skipped` 是「只删这一次」打的标记 —— 那是用户对某一天的明确决定，
+   * 换个规则也不该翻案。 */
+  const revive = opts?.revive === true;
+  const reviveDead = (id: string, date: string): boolean => {
+    const dead = state.tasks[id];
+    if (!dead) return false;
+    if (!dead.deleted) return true;          // 已经活着，什么都不用做
+    if (!revive) return false;
+    if (dead.skipped) return false;          // 「只删这一次」不复活
+    if (typeof date !== 'string' || date < today) return false;
+    const restored = { ...dead, deleted: false, deletedAt: null, trashFrom: null, skipped: false };
+    state.tasks[id] = restored;
+    items.push({
+      entity: 'task', id, calId: dead.calId,
+      fields: { deleted: false, deletedAt: null, trashFrom: null, skipped: false },
+    });
+    return true;
+  };
+
   /* 铺到哪天：默认「今天 + 120 天」；调用方要更远（翻到了后面月份）就取更远的那个 */
   const defUntil = D.addDays(today, REPEAT_HORIZON_DAYS);
   const until = (opts && typeof opts.until === 'string' && opts.until > defUntil)
@@ -156,11 +184,17 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null }): void 
     const t = (rootTask && !rootTask.deleted) ? rootTask : members[0];
     const r = t.repeat;
     if (!r || r.unit === 'none') continue;
-    /* 已被「从某天起全部删除」结束的系列，整个跳过（2026-10-14）。
-     * `repeatUntil` 是那一次的日期（不含）—— 用户说「这天往后都不要了」，
-     * 于是这天之前的历史照常留着，这天及以后不再派生。
-     * 不认这个标记的话，删完一轮补齐又长出一批 —— 删了等于没删。 */
-    if (markers.has(root)) continue;
+    /* 已被「从某天起全部删除」结束的系列：标记只作**上界**，不是整组跳过
+     * （2026-10-17 晚改，用户实测）。
+     *
+     * 用户先把「每月 19 日」的系列删成「到此为止」（写下 repeatUntil），
+     * 之后又把规则改成「每周一」—— 旧写法 `if (markers.has(root)) continue`
+     * 让整组一条都不补，用户看到的就是「设了每周一，之后所有周一都不出现」。
+     * 标记的语义本来就只是「这天及以后不要」，它之前的日子照常该有。
+     * 真正让「删了不再长回来」成立的是 `enforceRepeatUntil()`（把结束日及以后
+     * 的实例删掉）+ 这里的上界，两道合起来足够，不需要整组跳过。
+     * 「用户改规则后应当整体失效」由 patchTask 里的 clearSeriesEnd 负责。 */
+    const end = markers.get(root) ?? null;
 
     /* 家族已存在的发生日（含已完成、不含已删）。
      * ⚠️ 只收**严格的 yyyy-MM-dd**：脏日期（同步写坏的非字符串、残缺串）
@@ -248,7 +282,9 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null }): void 
       if (taken.has(p.date)) continue;               // 这天已经有任务占着了（根也算）
       if (p.date < today || p.date > gapLimit) continue;
       const id = instanceId(root, p.date);
-      if (state.tasks[id]) continue;                  // 已存在（含墓碑/跳过）→ 不碰
+      // 已存在且活着 / 刚被复活 → 都不用重建；剩下的是「不复活」的墓碑
+      if (reviveDead(id, p.date)) continue;
+      if (state.tasks[id]) continue;                  // 墓碑（含「只删这一次」）→ 不碰
       const occ = makeTask({
         id, calId: t.calId, title: t.title, note: t.note,
         date: p.date, time: t.time, duration: t.duration,
@@ -310,9 +346,10 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null }): void 
     }
 
     // 从游标一路铺到 until；已经铺到位（cursor > until）时这个循环一次都不跑。
-    for (let i = 0; i < REPEAT_FILL_CAP && cursor <= until; i++) {
+    // 有「到此为止」标记时还要卡在 end 之前（不含）—— `>= end` 的日子不再派生。
+    for (let i = 0; i < REPEAT_FILL_CAP && cursor <= until && (end === null || cursor < end); i++) {
       const id = instanceId(root, cursor);
-      if (!state.tasks[id]) {
+      if (!reviveDead(id, cursor) && !state.tasks[id]) {
         const occ = makeTask({
           id, calId: t.calId, title: t.title, note: t.note,
           date: cursor, time: t.time, duration: t.duration,
@@ -438,17 +475,65 @@ export function toggleTask(id: string): void {
   });
 }
 
+/**
+ * 两条重复规则是否等价 —— 用来判断「用户是不是真的改了规则」。
+ *
+ * 只比**规则本身**，不比派生出来的东西：weekdays 顺序无关（[5,6] 与 [6,5]
+ * 是同一条规则），end 归一成 `n` / `d日期` / `c次数` 再比。
+ * 不做这个归一的话，弹层里点一下同样的选项也会被当成「改了规则」，
+ * 于是每次点开重复设置都可能把用户的「到此为止」清掉。
+ */
+function sameRepeat(a: RepeatRule | null | undefined, b: RepeatRule | null | undefined): boolean {
+  const norm = (r: RepeatRule | null | undefined): string => {
+    if (!r || r.unit === 'none') return 'none';
+    const days = [...(r.weekdays ?? [])].sort((x, y) => x - y).join(',');
+    const end = !r.end ? 'never'
+      : r.end.type === 'date' ? 'd:' + r.end.date
+      : 'c:' + r.end.count;
+    return [r.unit, r.n, days, r.monthday, r.yearMonth ?? '', end].join('|');
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * 撤销某个系列的「到此为止」标记。
+ *
+ * 为什么必须有（2026-10-17 用户实测）：他先把「每月 19 日」的系列删成
+ * 「从这次起往后全部」（写下 `repeatUntil = 2026-11-19`），转头又把规则改成
+ * 「每周一」—— 标记还挂着，于是补齐逻辑认为系列已结束，一条周一都不生成。
+ * 语义上「改规则」就是重新决定以后怎么重复，旧的结束日当然应当作废。
+ *
+ * **必须写成字段变更（commit）而不是只改内存**：标记要同步给别的设备，
+ * 否则那边仍然按「已结束」跳过，问题只在改了规则的那台机器上消失。
+ */
+function clearSeriesEnd(root: string): void {
+  for (const o of Object.values(state.tasks)) {
+    if (!o) continue;
+    if (typeof o.repeatUntil !== 'string' || !o.repeatUntil) continue;
+    if (seriesRootOf(o) !== root) continue;
+    commit('task', o.id, { repeatUntil: null });
+  }
+}
+
 export function patchTask(id: string, fields: Partial<Task>): void {
   const cur = state.tasks[id];
   if (!cur) return;
+  const beforeRepeat = cur.repeat;
   // 改日期时把未定时的位次重算一下，否则会带着旧日期的 order 落到新日期上
   const next: Record<string, unknown> = { ...fields };
   if ('date' in fields && !cur.time && !('order' in fields)) {
     next.order = nextOrder(state, (fields.date ?? null) as string | null);
   }
   commit('task', id, next);
-  // 改了重复规则 → 重新补齐未来实例（幂等）
-  if ('repeat' in fields) ensureRepeatOccurrences();
+  // 改了重复规则 → 先作废旧的「到此为止」，再重新补齐未来实例（幂等）
+  if ('repeat' in fields) {
+    const afterRepeat = (fields.repeat ?? null) as RepeatRule | null;
+    const changed = !sameRepeat(beforeRepeat, afterRepeat);
+    const root = seriesRootOf(cur) ?? id;
+    if (changed) clearSeriesEnd(root);
+    // 规则变了 = 以后的安排重来一遍：把被旧的「系列结束」清掉的未来空位复活
+    ensureRepeatOccurrences({ revive: changed });
+  }
 }
 
 export function deleteTask(id: string, from = '任务列表'): void {
