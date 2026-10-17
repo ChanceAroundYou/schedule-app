@@ -23,10 +23,14 @@
  *   RepeatPop.tsx     重复复合浮层
  */
 
+import { useState } from 'react';
 import { Check, Trash2 } from 'lucide-react';
 import type { LocalState, Task } from '../../domain/types.ts';
-import { repeatLabel, toRepeat } from '../../domain/repeat.ts';
+import { repeatLabel, toRepeat, seriesRootOf } from '../../domain/repeat.ts';
+import * as D from '../../domain/date.ts';
+import { dropRepeatTail } from '../../data/store.ts';
 import { IconBtn, Input } from '../kit.tsx';
+import { DropRepeatSheet, type DropRepeatChoice } from '../kit/DropRepeatSheet.tsx';
 import { ConflictBox } from './ConflictBox.tsx';
 import { useDrawer } from './useDrawer.ts';
 import { CalProjRow, DateTimeRow, NoteRow, ReminderRow } from './DrawerFields.tsx';
@@ -53,6 +57,10 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
   if (!s.task) return null;
 
   const { task, patch, repPatch, repOpen, setRepOpen, repAnchor, repPos, osbBody, osbRep, fid } = s;
+
+  /* 取消重复时「已经排好的那些怎么办」的询问（2026-10-17）。
+     先算一遍今天及以后还有多少条同系列实例，有才问；没有就直接取消。 */
+  const [dropAsk, setDropAsk] = useState<{ count: number; first: string; last: string } | null>(null);
   const rep = task.repeat;
   const repLabel = rep.unit === 'none' ? '不重复' : repeatLabel(rep);
 
@@ -136,8 +144,23 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
                   aria-label="清除重复"
                   onClick={(e) => {
                     e.stopPropagation();
-                    repPatch(toRepeat({ unit: 'none', n: 1, end: null }, task.date));
-                    setRepOpen(false);
+                    /* 2026-10-17：如果这个系列还有「今天及以后」的实例，
+                       不能静默留着（用户会以为没生效），也不能静默删掉 ——
+                       弹一层问「保留还是删除」。 */
+                    const root = seriesRootOf(task);
+                    const today = D.today();
+                    const tail = root
+                      ? Object.values(state.tasks).filter((t) => !!t && !t.deleted
+                          && t.id !== task.id && seriesRootOf(t) === root
+                          && typeof t.date === 'string' && t.date >= today)
+                      : [];
+                    if (!tail.length) {
+                      repPatch(toRepeat({ unit: 'none', n: 1, end: null }, task.date));
+                      setRepOpen(false);
+                      return;
+                    }
+                    const dates = tail.map((t) => t.date as string).sort();
+                    setDropAsk({ count: dates.length, first: dates[0], last: dates[dates.length - 1] });
                   }}
                 >✕</span>
               )}
@@ -165,6 +188,23 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
           <RepeatPop rep={rep} patch={repPatch} next={s.nextOcc} last={s.lastOcc} />
         </div>
       )}
+
+      {/* 取消重复：已经排进日程的那些「保留还是删除」（2026-10-17 用户要求） */}
+      <DropRepeatSheet
+        open={!!dropAsk}
+        title={task.title}
+        count={dropAsk ? dropAsk.count : 0}
+        first={dropAsk ? dropAsk.first : null}
+        last={dropAsk ? dropAsk.last : null}
+        onChoose={(c: DropRepeatChoice) => {
+          const ask = dropAsk;
+          setDropAsk(null);
+          if (!ask || c === 'cancel') return;
+          repPatch(toRepeat({ unit: 'none', n: 1, end: null }, task.date));
+          dropRepeatTail(task.id, D.today(), c);
+          setRepOpen(false);
+        }}
+      />
     </>
   );
 }

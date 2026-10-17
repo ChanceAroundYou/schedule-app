@@ -107,6 +107,24 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   const key = `${state.ui.nav}|${state.ui.view}|${state.ui.cursor}`;
   useViewLayout(contentRef, key, state.ui.nav, state.ui.view, state.ui.cursor);
 
+  /* -------- 重复任务：翻到远处时按需把窗口补过去 --------
+   * 默认窗口只铺到「今天 + 120 天」（见 REPEAT_HORIZON_DAYS）。用户翻到更远的
+   * 月份时，把目标日期推过去 —— 否则他会发现「某一天之后突然全没了」
+   * （2026-10-17 用户报 2027-01-23 之后消失）。幂等：已经铺到位就什么也不做。 */
+  useEffect(() => {
+    if (state.ui.nav !== 'calendar') return;
+    const c = state.ui.cursor;
+    let end = c;
+    if (state.ui.view === 'week') end = D.addDays(D.weekStart(c), 6);
+    else if (state.ui.view === 'month') {
+      const d = D.parseISO(c);
+      const last = D.lastDayOfMonth(d.getFullYear(), d.getMonth() + 1);
+      end = `${d.getFullYear()}-${D.pad(d.getMonth() + 1)}-${D.pad(last)}`;
+    }
+    // 多看 45 天，翻页时不会「刚滚过去又断」
+    store.ensureRepeatOccurrences({ until: D.addDays(end, 45) });
+  }, [state.ui.nav, state.ui.view, state.ui.cursor]);
+
   /* -------- 拖放 -------- */
   const timelineDrag = useTimelineDrag();
 

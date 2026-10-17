@@ -57,6 +57,11 @@ export function Shell({
 
       <main className="main">
         {topbar}
+        {/* 快速添加条放在**内容上方**（2026-10-17 用户要求统一到顶部：
+            打卡页的添加入口在顶部、日程/项目是就地新建，只有今天/待办箱
+            原来在底部，位置不一致）。窄屏时它是 fixed 定位的底部圆钮，
+            DOM 顺序不影响 —— 仍留在底部，单手好按。 */}
+        {quickAdd}
         {/* 日视图锁单屏：内容区不跟着滚（见 styles/calendar.css 的 .content-day）。
             判据是「日程页 + 日视图」—— 其它页面（列表 / 周 / 月）照常滚。 */}
         <div
@@ -64,7 +69,6 @@ export function Shell({
           id="content"
           ref={osbContent}
         >{children}</div>
-        {quickAdd}
       </main>
 
       {narrow && <Tabbar state={state} onNav={onNav} onMore={() => setMore(true)} />}

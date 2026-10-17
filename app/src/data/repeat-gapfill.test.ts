@@ -34,7 +34,7 @@ const mem = new Map<string, string>();
 const store = await import('./store.ts');
 const D = await import('../domain/date.ts');
 const { makeTask } = await import('../domain/model/make.ts');
-const { ensureRepeatOccurrences, REPEAT_LOOKAHEAD } = await import('./store/tasks.ts');
+const { ensureRepeatOccurrences, REPEAT_HORIZON_DAYS } = await import('./store/tasks.ts');
 
 const CAL = 'cal-1';
 
@@ -69,10 +69,11 @@ test('【#105b】补选周五后，周五必须出现在视图上（按洞补，
   const base = nextFriday();
   const root = store.addTask({ title: '美团领卡', date: base, repeat: WEEK_RULE });
 
-  // 窗口已被旧规则 [周六] 铺满：需要 = 窗口 − 1（根自己占一格）
+  // 窗口按「铺到今天 + 120 天」算：一周一次的规则应铺出 ~17 个周六
   const before = alive(root);
   console.log(`  初始窗口（规则 [周六]）: ${before.length} 条，全是周${before.map((d) => D.weekdayOf(d)).join('')}`);
-  assert.equal(before.length, REPEAT_LOOKAHEAD - 1, '初始应铺满窗口');
+  assert.ok(before.length >= Math.floor(REPEAT_HORIZON_DAYS / 7) - 1,
+    `初始应铺到窗口尽头（≥${Math.floor(REPEAT_HORIZON_DAYS / 7) - 1} 条），实际 ${before.length}`);
   assert.ok(before.every((d) => D.weekdayOf(d) === 6), '旧规则 [周六] 铺出来的应全是周六');
 
   // 用户随后补选周五 → [5, 6]

@@ -242,6 +242,17 @@ async function checkRepeat(page) {
   assertOk(fri.length >= 1, '周五有实例（#105b 的修法）', `周五 ${fri.length} 天`);
   assertOk(sat.length >= 1, '周六有实例', `周六 ${sat.length} 天`);
 
+  /* 用户报「2027-01-23 之后彻底消失」（窗口按次数算 + 改规则顶超）。
+     现在窗口按时间铺 120 天：翻到 3 个月后的月份，实例必须还在。 */
+  for (let i = 0; i < 3; i++) await page.click('button[title="下一个"]');
+  await page.waitForTimeout(400);
+  const farDates = await page.$$eval('[data-date]', (cells, t) => cells
+    .filter((c) => (c.textContent || '').includes(t))
+    .map((c) => c.getAttribute('data-date')), title);
+  console.log(`       翻 3 个月后那个月的实例: ${farDates.join(', ') || '(无)'}`);
+  assertOk(farDates.length >= 8,
+    '翻到 3 个月后仍有实例（窗口按时间铺，不再按次数）', `${farDates.length} 天`);
+
   // ④ 收尾：结束系列（repeatUntil=今天），实例由级联清掉
   const r2 = await push([{
     opId: 'e2e-end-' + rootId, deviceId: 'e2e-live', ts: now + 1, entity: 'task',

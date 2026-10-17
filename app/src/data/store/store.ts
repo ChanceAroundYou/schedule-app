@@ -35,8 +35,8 @@ export { setCursor, ackOps } from './sync-state.ts';
 export {
   addTask, toggleTask, patchTask, deleteTask, deleteOne, deleteSeriesFrom,
   seriesEndOf, restoreTask, purgeTask, emptyTrash,
-  batchSetDone, batchDelete,
-  ensureRepeatOccurrences, enforceRepeatUntil, REPEAT_LOOKAHEAD,
+  batchSetDone, batchDelete, dropRepeatTail,
+  ensureRepeatOccurrences, enforceRepeatUntil, REPEAT_HORIZON_DAYS, REPEAT_FILL_CAP,
   setTaskProject, setTaskDoing, type TaskDraft,
 } from './tasks.ts';
 export { addHabit, toggleHabit, deleteHabit, restoreHabit } from './habits.ts';

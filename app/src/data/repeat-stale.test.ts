@@ -30,7 +30,7 @@ const mem = new Map<string, string>();
 const store = await import('./store.ts');
 const D = await import('../domain/date.ts');
 const { makeTask } = await import('../domain/model/make.ts');
-const { ensureRepeatOccurrences, REPEAT_LOOKAHEAD } = await import('./store/tasks.ts');
+const { ensureRepeatOccurrences, REPEAT_HORIZON_DAYS } = await import('./store/tasks.ts');
 
 const CAL = 'cal-1';
 
@@ -59,32 +59,31 @@ function seriesDates(rootId: string): string[] {
     .sort();
 }
 
-test('每天重复：建系列当天就铺满窗口', () => {
-  fresh();
-  const root = seedDaily(D.today());
-  const dates = seriesDates(root);
-  console.log(`  派生 ${dates.length} 条:`, dates[0], '…', dates[dates.length - 1]);
-  assert.ok(dates.length >= REPEAT_LOOKAHEAD,
-    `当天应至少铺满 LOOKAHEAD=${REPEAT_LOOKAHEAD} 次（含根），实际 ${dates.length}`);
-});
-
-test('【核心回归】时间推进后仍能续上，不会卡在同一批', () => {
+test('每天重复：建系列当天就铺到「今天 + 120 天」', () => {
   fresh();
   const base = D.today();
   const root = seedDaily(base);
+  const dates = seriesDates(root).sort();
+  const furthest = dates[dates.length - 1];
+  console.log(`  派生 ${dates.length} 条:`, dates[0], '…', furthest);
+  /* 2026-10-17：窗口从「14 次」改成「铺到某天」。用户实测「2027-01-23 之后
+     彻底消失」，根因就是按次数算窗口 + 改规则把条数顶超了。 */
+  assert.equal(furthest, D.addDays(base, REPEAT_HORIZON_DAYS),
+    `每天重复应一直铺到「今天 + ${REPEAT_HORIZON_DAYS} 天」，实际最远 ${furthest}`);
+});
 
-  // 模拟真实使用：**末尾的实例被逐个消费掉**（勾完成），窗口出现缺口，
-  // 补齐必须把缺口填上。
-  //
-  // ⚠️ 不用 patchTask：它内部会再调一次 ensureRepeatOccurrences，观测被污染。
-  // 直接改内存状态表达「这一次已消费」。也不能靠改 today()（它读系统时钟）。
-  //
-  /* 正确行为不是「最远日期一路往后窜」，而是**窗口恒定、缺口从尾部补进**：
-   * 每完成一条，末尾就补一条新的，总数不变。这样既能一直有未来任务，
-   * 又不会攒下一堆用不上的。修复前窗口既不会补、也会无界膨胀。 */
+test('【核心回归】窗口是「铺到某天」：完成最远一条不会把窗口顶出去，也不留缺口', () => {
+  fresh();
+  const base = D.today();
+  const root = seedDaily(base);
+  const end = D.addDays(base, REPEAT_HORIZON_DAYS);
+
+  /* 模拟真实使用：**末尾的实例被逐个消费掉**（勾完成）。
+   *
+   * ⚠️ 不用 patchTask：它内部会再调一次 ensureRepeatOccurrences，观测被污染。
+   * 直接改内存状态表达「这一次已消费」。也不能靠改 today()（它读系统时钟）。 */
   for (let day = 0; day < 5; day++) {
     if (day > 0) {
-      // 把最靠后的那一条标成完成 = 消费掉这一次，窗口从尾部缩回来
       const all = Object.values(store.get().tasks)
         .filter((x) => x.seriesId === root && !x.done && !x.deleted);
       all.sort((a, b) => ((a.date ?? '') < (b.date ?? '') ? -1 : 1));
@@ -93,8 +92,6 @@ test('【核心回归】时间推进后仍能续上，不会卡在同一批', ()
     }
     ensureRepeatOccurrences();
 
-    // 只数**实例**（不含系列根本身）。ensureRepeatOccurrences 的 futureCount
-    // 也是这个口径 —— 根是「第一次发生」，是用户自己建的那条，不算窗口。
     const all = Object.values(store.get().tasks)
       .filter((t) => t.seriesId === root && t.date && t.date >= base)
       .sort((a, b) => ((a.date ?? '') < (b.date ?? '') ? -1 : 1));
@@ -102,21 +99,17 @@ test('【核心回归】时间推进后仍能续上，不会卡在同一批', ()
 
     console.log(`    第${day + 1}轮: 共 ${all.length} 条，未完成实例 ${live.length} 条，`
       + `最远 ${all[all.length - 1]?.date}`);
-    console.log('      ', all.map((t) => `${t.date}${t.id === root ? '(根)' : t.done ? '✓' : ''}`).join(' '));
 
-    // 窗口口径 = REPEAT_LOOKAHEAD - 1：根（用户建的那条）本身就算一次发生，
-    // 首次铺窗口时它已经占掉一格，所以实例数是 LOOKAHEAD-1。
-    assert.equal(live.length, REPEAT_LOOKAHEAD - 1,
-      `第${day + 1}轮后应有 ${REPEAT_LOOKAHEAD - 1} 个未完成的未来实例，实际 ${live.length}`);
-
-    // 日期必须连续、无缺口
+    // ① 最远日期始终停在「今天 + 120 天」：补齐只铺到这个日期，不会无限膨胀
+    assert.equal(all[all.length - 1].date, end,
+      `第${day + 1}轮后最远应仍是 ${end}，实际 ${all[all.length - 1].date}`);
+    // ② 日期必须连续、无缺口（每天重复）
     for (let i = 1; i < all.length; i++) {
       assert.equal(D.diffDays(all[i].date!, all[i - 1].date!), 1,
         `${all[i - 1].date} 与 ${all[i].date} 应连续（无缺口）`);
     }
   }
 });
-
 
 test('幂等：连续调用不会产生重复实例', () => {
   fresh();
@@ -130,7 +123,7 @@ test('幂等：连续调用不会产生重复实例', () => {
   assert.equal(a, b, '重复调用不应新增实例（窗口已满）');
 });
 
-test('每天重复能连续覆盖两周以上', () => {
+test('每天重复能连续覆盖到窗口尽头（120 天）', () => {
   fresh();
   const base = D.today();
   const root = seedDaily(base);
@@ -142,5 +135,6 @@ test('每天重复能连续覆盖两周以上', () => {
   }
   const span = D.diffDays(dates[dates.length - 1], base);
   console.log(`  覆盖 ${dates.length} 条，跨度 ${span} 天（${dates[0]} → ${dates[dates.length - 1]}）`);
-  assert.ok(span >= REPEAT_LOOKAHEAD - 1, `跨度应 ≥ ${REPEAT_LOOKAHEAD - 1} 天，实际 ${span}`);
+  assert.equal(span, REPEAT_HORIZON_DAYS,
+    `跨度应正好铺满 ${REPEAT_HORIZON_DAYS} 天，实际 ${span}`);
 });

@@ -113,19 +113,23 @@ test('每月某日：每个月同一天（月末不足时截到月末）', () =>
   }
 });
 
-test('每年：次年同月同日', () => {
+test('每年：次年同月同日（窗口按时间算，要显式铺到那一年）', () => {
   fresh();
   const base = D.today();
   const md = D.parseISO(base).getDate();
   const mm = D.parseISO(base).getMonth() + 1;
   const root = seed({ unit: 'year', n: 1, weekdays: [], monthday: md, yearMonth: mm, end: null }, base);
+
+  /* 2026-10-17 窗口语义改成「铺到某个日期」（默认今天 + 120 天）——
+     年重复在 120 天内本来就没有发生日，所以默认不生成任何实例是**对的**。
+     要拿到次年的那一条，得像「翻到明年」那样把目标日期传进来。 */
+  const near = occ(root);
+  assert.equal(near.length, 0, '120 天窗口内不该出现「每年」的下一次');
+
+  store.ensureRepeatOccurrences({ until: D.addDays(base, 400) });
   const ds = occ(root);
   console.log(`  每年${mm}-${md}:`, ds.join(', '));
-  if (ds.length === 0) {
-    // 窗口只有 14 次「发生」，而每年一次 —— 从今天起 14 年内本该有 14 个，
-    // 所以正常一定 > 0。留这个分支只为把原因说清楚。
-    assert.fail('每年重复没有生成任何未来实例 —— 窗口按「次数」算，年重复也应有 14 条');
-  }
+  assert.equal(ds.length, 1, '铺到 400 天后应正好生成次年那一条');
   for (const d of ds) {
     assert.equal(D.parseISO(d).getMonth() + 1, mm, `${d} 月份应是 ${mm}`);
     assert.equal(D.parseISO(d).getDate(), Math.min(md, D.lastDayOfMonth(D.parseISO(d).getFullYear(), mm)),

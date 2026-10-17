@@ -14,8 +14,12 @@
 
 /* ================= 快速添加横条 ================= */
 
+/* 位置：**内容区上方**（2026-10-17 用户要求统一到顶部）。
+   桌面端它是 `.main` 里 topbar 之后的流内元素（见 shell/Shell.tsx 的渲染顺序），
+   左右 22px 与 `.content` 的内边距对齐；窄屏走 responsive.css 那条（fixed 底部圆钮）。
+   视觉本身（底色 / 圆角 / 阴影 / 字号）一个字没改。 */
 .fast-add {
-  margin: 6px 22px 18px;
+  margin: 12px 22px 0;
   z-index: 100;
 }
 .fast-add-shell {

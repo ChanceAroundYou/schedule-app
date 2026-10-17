@@ -49,13 +49,25 @@ export function addTask(d: TaskDraft): string {
 }
 
 /**
- * 预生成未来几次重复实例。
+ * 重复实例**预先铺到多远的将来**（天）。
  *
- * 2026-10-14 从 4 提到 14：窗口太浅的话，用户几天没打开 App（或没开小组件）
- * 就又断档了 —— 补齐逻辑必须能在「很久没运行」之后一次性把窗口推远。
- * 14 次对每天重复 ≈ 两周，足够覆盖绝大多数间隔。
+ * ⚠️ 2026-10-17 从「14 次」改成「120 天」（用户报「2027-01-23 之后彻底消失」）：
+ * 按**次数**算窗口有个致命毛病 —— 一周一次时 14 次 = 14 周（约 3 个半月），
+ * 一周三次时 14 次只 = 4 周半；更要命的是**改规则会让现有条数超过窗口**，
+ * 于是「够不够」永远判成够，窗口再也不往前推。用户实测就是卡在 2027-01-22。
+ *
+ * 现在按**时间**铺：不管一周几次，一律铺到「今天 + 120 天」。
+ * 用户翻到更远的月份时，调用方再通过 `until` 把目标日期推过去（见 Workbench）。
  */
-export const REPEAT_LOOKAHEAD = 14;
+export const REPEAT_HORIZON_DAYS = 120;
+
+/**
+ * 单次补齐的上限条数。
+ *
+ * 防病态输入：每天重复 + 用户翻到三年后 = 上千条，一次全建出来会把同步撑爆。
+ * 正常使用（120 天 + 最多一天一次）远到不了这个数。
+ */
+export const REPEAT_FILL_CAP = 500;
 
 /**
  * 给所有「重复且未完成」的任务补齐未来 N 次实例（真的写进库）。
@@ -78,14 +90,22 @@ export const REPEAT_LOOKAHEAD = 14;
  *      实例删掉（每周五六改成每周五，周六的残留不能继续挂在未来）。
  * 三件事都只**新建/删除这一遍该动的东西**，不重铺整个窗口 —— 重铺会毁掉
  * 用户对未来实例的编辑和拖拽。
+ *
+ * @param opts.until 额外要铺到的日期（yyyy-MM-dd）。用户翻到更远的月份时，
+ *   调用方把「那天 + 缓冲」传进来，按需把窗口推过去 —— 这样既能随时看到
+ *   很远的日子，又不用一上来就生成几千条。
  */
-export function ensureRepeatOccurrences(): void {
+export function ensureRepeatOccurrences(opts?: { until?: string | null }): void {
   // 先把「已结束的系列」清理干净（幂等，无变动时不动）
   enforceRepeatUntil();
 
   const items: Change[] = [];
   const now = Date.now();
   const today = D.today();
+  /* 铺到哪天：默认「今天 + 120 天」；调用方要更远（翻到了后面月份）就取更远的那个 */
+  const defUntil = D.addDays(today, REPEAT_HORIZON_DAYS);
+  const until = (opts && typeof opts.until === 'string' && opts.until > defUntil)
+    ? opts.until : defUntil;
 
   /* 系列级「到此为止」标记：家族根 → 结束日。
    *
@@ -240,32 +260,23 @@ export function ensureRepeatOccurrences(): void {
       items.push({ entity: 'task', id, calId: t.calId, fields: dataOf(occ) });
     }
 
-    /* ⚠️ **窗口已满就直接跳过，按缺口补而不是固定补 N 次**（2026-10-14 修）。
-     * - 跳过：否则每次调用都再往后推 LOOKAHEAD 次，窗口无限膨胀（每天重复
-     *   一个月能攒几百条同一条任务）。
-     * - 按缺口：补的数量 = 窗口目标 − 当前未完成数。固定补 N 次的话，
-     *   消费掉 1 条就补 14 条、净增 13，窗口反而越滚越大。
+    /* ⚠️ 2026-10-17：窗口从「补够 14 次」改成「铺到某个日期」。
      *
-     * 只数**未完成且今天及以后**的：已完成的表示「这一次已经消费掉了」，
-     * 不该继续占着窗口；过去的实例同理（用户不回头看历史）。 */
-    let futureCount = 0;
-    for (const o of live) {
-      if (o.done) continue;
-      if (o.date && o.date >= today) futureCount++;
-    }
-    const need = REPEAT_LOOKAHEAD - futureCount;
-    if (need <= 0) continue;
-
+     * 旧写法的问题是**按次数算**：一周一天时 14 次 = 14 周，一周三天时
+     * 14 次只够 4 周半；更糟的是改规则会让现有条数超过窗口，`need` 直接
+     * 变负 → 窗口再也不往前推（用户实测卡在 2027-01-22）。
+     * 现在从最远实例往后一路铺到 `until`（默认今天 + 120 天），到点就停 ——
+     * 既不会无限膨胀，也不会因为「现有条数」提前收工。 */
+    const liveDates = live
+      .map((o) => o.date)
+      .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
     /* 游标取**全部**实例（含已完成）里最远的那天。
      *
      * 试过用「未完成的最远」，结果补不齐：完成掉的那些 id 仍占在
      * `state.tasks` 里，游标又退回到它们之前，推出来的 id 全都撞上已存在
      * 的实例被跳过 —— 实测「完成 1 条 → 只补出 0 条」，缺口永远填不上。
      * 用最远的（含已完成）才能保证每次都往**全新的**日期上走。 */
-    const liveDates = live
-      .map((o) => o.date)
-      .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
-      .sort();
     let cursor = liveDates.length ? liveDates[liveDates.length - 1] : (t.date || today);
     /* seq 取**已存在的最大 repeatSeq**，不是实例个数（2026-10-14 修）。
      *
@@ -298,10 +309,8 @@ export function ensureRepeatOccurrences(): void {
       if (!reached) continue;
     }
 
-    // 从游标往后补，直到「今天起至少还有 LOOKAHEAD 次」为止。
-    // 为什么要看剩余量而不是固定补 N 次：已经攒了 20 条实例时再补 4 条毫无意义，
-    // 只有把窗口维持住才是对的。
-    for (let i = 0; i < need; i++) {
+    // 从游标一路铺到 until；已经铺到位（cursor > until）时这个循环一次都不跑。
+    for (let i = 0; i < REPEAT_FILL_CAP && cursor <= until; i++) {
       const id = instanceId(root, cursor);
       if (!state.tasks[id]) {
         const occ = makeTask({
@@ -559,6 +568,45 @@ export function deleteSeriesFrom(seriesId: string, fromDate: string, from = '任
     items.push({ entity: 'task', id, calId: o.calId, fields: { deleted: true, deletedAt: now, trashFrom: from } });
   }
   if (items.length) commitMany(items);
+}
+
+/**
+ * 「取消重复」时处理已经铺在日程上的未来实例（用户 2026-10-17）。
+ *
+ * 场景：用户把一条重复任务改成「不重复」。任务本身要留着（今天还要用），
+ * 但**之前已经排进日程的那些未来实例**不能悄悄留着（也不该被静默删掉）——
+ * 由用户选：
+ *   · `keep`   → 降级成一条条独立任务：清掉重复规则、脱离系列，留在日程上
+ *   · `delete` → 打墓碑（进回收站），只留这一次和过去已完成的历史
+ *
+ * 只动「今天及以后」的实例：过去的发生是历史，删了等于篡改记录。
+ * 正在编辑的那一条（`keepId`）**永远不动**。
+ */
+export function dropRepeatTail(keepId: string, fromDate: string, mode: 'keep' | 'delete'): number {
+  const keep = state.tasks[keepId];
+  const root = keep ? seriesRootOf(keep) : null;
+  if (!root) return 0;
+
+  const items: Change[] = [];
+  const now = Date.now();
+  let n = 0;
+  for (const o of Object.values(state.tasks)) {
+    if (!o || o.deleted) continue;
+    if (o.id === keepId) continue;                       // 这一条不动
+    if (seriesRootOf(o) !== root) continue;
+    if (typeof o.date !== 'string' || o.date < fromDate) continue;
+    n++;
+    items.push({
+      entity: 'task', id: o.id, calId: o.calId,
+      fields: mode === 'delete'
+        ? { deleted: true, deletedAt: now, trashFrom: '取消重复' }
+        /* 保留：必须连 `repeat` 一起清空 —— 光摘掉 seriesId 的话，实例身上
+           那份旧规则的副本还会让补齐逻辑继续从它派生（等于没取消）。 */
+        : { repeat: toRepeat(null, o.date), seriesId: null },
+    });
+  }
+  if (items.length) commitMany(items);
+  return n;
 }
 
 /** 这个系列是否已被「从某天起全部删除」结束掉；结束日（不含）之前的仍有效。
