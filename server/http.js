@@ -56,12 +56,23 @@ function applyCors(req, res) {
 function preflight(req, res) {
   if (req.method !== 'OPTIONS') return false;
   if (applyCors(req, res)) {
-    res.writeHead(204, {
+    const headers = {
       'Access-Control-Allow-Origin': req.headers.origin,
       'Access-Control-Allow-Headers': CORS_HEADERS,
       'Access-Control-Allow-Methods': CORS_METHODS,
       Vary: 'Origin',
-    });
+    };
+    /* Android WebView（Chrome 115+）对「从 https://localhost 访问**解析到内网
+       IP** 的域名」会强制 Private Network Access 预检。App 的 WebView 源固定是
+       https://localhost，而 home.xiaokubao.space 在内网 DNS 上解析到 192.168.1.6，
+       正好落进这条规则：服务端不回这个头，请求就在 26ms 内被浏览器拦掉，
+       表现是 `TypeError: Failed to fetch` + transferSize=0 —— 也就是手机端
+       「连不上服务器」那条红条的根因（2026-10-17 实测）。
+       ⚠️ 只对白名单来源回（applyCors 已经过了一遍），不要无条件放开。 */
+    if (req.headers['access-control-request-private-network'] === 'true') {
+      headers['Access-Control-Allow-Private-Network'] = 'true';
+    }
+    res.writeHead(204, headers);
   } else {
     res.writeHead(204);
   }
