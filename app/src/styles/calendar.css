@@ -252,25 +252,31 @@
    .week-col.today 的 --primary-pale 整列淡底负责，表头不重复做。 */
 .week-head-cell.today .wh-day { color: var(--primary); }
 
-/* 时间网格本体：左刻度 + 右 7 列，和表头、未定时行共用外层滚动容器 */
+/* 时间网格本体：左刻度 + 右 7 列，和表头、未定时行共用外层滚动容器。
+   可见高度由 JS 按时间窗给成 `--wk-h`（窗口小时数 × 64px），**内容仍然是
+   整整一天**（`--wk-full`，列顶代表 0:00），窗外那截靠 `--wk-offset` 负偏移
+   挪出去、再由外层的 overflow 剪掉。
+   这么绕一圈是为了不改动任何一处坐标换算：relay 显示窗口收窄之后，
+   「距列顶多少 px ÷ DAY_H」依旧是真答案，tapSnap / clickDispatch / 初始滚动
+   位置三处一个字都不用管。 */
 .week-grid {
   flex: 0 0 auto;
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
 }
-/* 内部两条轨道都撑满整整 24 小时（DAY_H = 64 × 24）：
-   否则列的底色、竖分隔线、横向刻度线只画到容器可视高度那一段，
-   往下滚就变成「格子没画完」的样子 */
-.week-gutter, .week-cols { height: 1536px; }
+.week-gutter, .week-cols { height: var(--wk-h); overflow: hidden; }
 .week-gutter { position: relative; border-right: 1px solid var(--border); }
+/* 刻度整块上移：偏移量的绝对值 = 窗口起点在整天里的位置 */
+.week-hours { position: relative; height: var(--wk-full); margin-top: var(--wk-offset); }
 .wk-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
 .wk-hour span {
   position: absolute; left: 0; top: -7px; width: 40px; text-align: right;
   font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums;
 }
-/* 0:00 在最顶端，标签往下挪一点，别被容器裁掉 */
+/* 窗的第一条线在最顶端，标签往下挪一点，别被容器裁掉 */
 .wk-hour:first-child span { top: 2px; }
-/* 整列淡底，让「这一格属于哪一天」更好认 */
-.week-gutter {
+/* 整列淡底 + 横向刻度线。横向线每格一小时，与左侧 .wk-hour 同一套高度；
+   背景画在 `.week-hours` 而不是裁剪层上，偏移之后线还是压在正确的时刻上 */
+.week-hours {
   background: var(--panel-2);
   background-image: repeating-linear-gradient(
     to bottom, var(--border) 0 1px, transparent 1px 64px);
@@ -279,8 +285,8 @@
 .week-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .week-col {
   min-width: 0; position: relative;
+  height: var(--wk-full); margin-top: var(--wk-offset);
   border-right: 1px solid var(--border);
-  /* 横向刻度线：与左侧 .wk-hour 同一套高度 */
   background-image: repeating-linear-gradient(
     to bottom, var(--border) 0 1px, transparent 1px 64px);
   background-position: 0 0;
@@ -332,6 +338,22 @@
 .wk-event.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 .wk-time { font-size: 9.5px; color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.2; }
 .wk-title { font-size: 11px; font-weight: 550; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 按住拉出来的那一段时间（views/calendar/dragCreate.ts）----
+   它在还没有实体时出现，所以**不是**任务卡：不挂 `.task-el`，
+   也不吃指针事件（那会让 pointerup 落不到时间轴上）。
+   视觉语言与新建框一致（同一批令牌 + 虚线标明「还没成形」）。 */
+.drag-range {
+  position: absolute; left: 2px; right: 2px; z-index: 7;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary-soft);
+  border: 1px dashed var(--primary); border-radius: var(--r-sm);
+  font-size: 10.5px; color: var(--text-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none;
+}
+/* 拉的过程中别让浏览器把刻度数字选成蓝块 */
+body.is-drag-range { user-select: none; }
 
 /* ================= 月视图 ================= */
 

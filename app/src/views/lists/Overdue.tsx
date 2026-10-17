@@ -5,8 +5,8 @@
 import { ListChecks } from 'lucide-react';
 import type { LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { liveHabits, overdueTasks } from '../../domain/model.ts';
-import { CheckinStrip, Empty } from '../parts.tsx';
+import { overdueTasks } from '../../domain/model.ts';
+import { Empty } from '../parts.tsx';
 import { CheckBtn, SelDot } from '../parts/CheckBtn.tsx';
 import { SelBar } from './SelBar.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
@@ -46,18 +46,15 @@ function OverdueRow({ task: t, days, sel }: { task: Task; days: number; sel: boo
 
 export function OverdueView({ state }: { state: LocalState }) {
   const list = overdueTasks(state);
-  const habits = liveHabits(state);
+  /* 逾期页只谈**逾期的日程**（用户 2026-10-17：「只需要显示逾期的日程，
+     并不需要显示逾期的打卡」）。打卡条在「今天」页有，这里不再带一份 ——
+     打卡本身也没有「逾期」这个概念，把它摆在这儿只会让人以为它也过期了。 */
   const sel = state.ui.sel;
   const ids = list.map((t) => t.id);
   const isSel = (id: string): boolean | null => (sel === null ? null : sel.includes(id));
 
   if (!list.length) {
-    return (
-      <>
-        <CheckinStrip habits={habits} />
-        <Empty text="没有逾期任务，都跟上了" icon={<ListChecks size={30} strokeWidth={1.4} />} />
-      </>
-    );
+    return <Empty text="没有逾期任务，都跟上了" icon={<ListChecks size={30} strokeWidth={1.4} />} />;
   }
 
   // 按原定日期分组，标题写清逾期了几天

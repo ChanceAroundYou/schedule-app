@@ -166,6 +166,32 @@ export function pctRange(start: number, end: number, w: DayWindow): { top: numbe
 }
 
 /**
+ * 「按住拉一段时间」的起止 —— 时间轴上拖出来的那一段（每天勾选的地方见
+ * views/calendar/dragCreate.ts，那里只管事件，算式在这里）。
+ *
+ * `down` 是按下点、`cur` 是指针此刻的位置，两个进来之前都对齐过 15 分钟。
+ * 出去的一定是 `[≥ 窗起点, ≥ start + 30 分钟]`，且不越出窗；
+ * **向上拉也认** —— 往回拖等于「把开始时间往前推」，这是时间轴的常识。
+ */
+export const DRAG_MIN = 30;
+
+export function dragRange(down: number, cur: number, w: DayWindow): { start: number; end: number } {
+  let start: number;
+  let end: number;
+  if (cur >= down) {
+    start = down;
+    end = Math.max(cur, down + DRAG_MIN);
+  } else {
+    end = down;
+    start = Math.min(cur, down - DRAG_MIN);
+  }
+  /* 收进窗内。`to` 可能是 1440（24:00），它是合法的结束点 */
+  start = Math.max(w.from, Math.min(w.to - DRAG_MIN, start));
+  end = Math.max(start + DRAG_MIN, Math.min(w.to, end));
+  return { start, end };
+}
+
+/**
  * 浮层锚定定位：贴着 anchor 下沿弹出；下方放不下翻到 anchor 上方，
  * 右侧超出往左收。
  *

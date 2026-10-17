@@ -19,7 +19,8 @@ import * as D from '../domain/date.ts';
 import { habitStreak, liveHabits } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat } from './parts.tsx';
 import { SortableList } from '../ui/dndkit.tsx';
-import { Input, Btn } from '../ui/kit.tsx';
+import { Input, Btn, InlineRename, MiniIconBtn } from '../ui/kit.tsx';
+import { renameHabit } from '../ui/habits.ts';
 
 export function HabitsView({ state }: { state: LocalState }) {
   const [draft, setDraft] = useState('');
@@ -97,25 +98,40 @@ export function HabitsView({ state }: { state: LocalState }) {
             >
               <CheckBtn id={h.id} on={done} act="habit" sm />
               <div className="habit-main">
+                {/* 改名走 InlineRename（项目里所有改名同一套交互）。
+                    删除挪进它的操作槽第二格：这样「铅笔 + 删除」两态都是两格，
+                    标题区宽度不会因为进入编辑态而跳一下。
+                    打卡项只有名字可编辑，所以这里没有别的字段。 */}
                 <div className="habit-title">
-                  {h.title}
-                  {st > 1 && (
-                    <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>
-                      <Flame size={11} style={{ verticalAlign: '-1px' }} /> {st}
-                    </span>
-                  )}
+                  <InlineRename
+                    value={h.title}
+                    label="打卡项名字"
+                    onSave={(v) => renameHabit(h.id, v)}
+                    display={(
+                      <>
+                        {h.title}
+                        {st > 1 && (
+                          <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>
+                            <Flame size={11} style={{ verticalAlign: '-1px' }} /> {st}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    extraAction={(
+                      <MiniIconBtn
+                        tone="danger"
+                        label="删除打卡项"
+                        data-act="del-habit"
+                        data-id={h.id}
+                        data-title={h.title}
+                      >
+                        <X size={13} />
+                      </MiniIconBtn>
+                    )}
+                  />
                 </div>
                 <HabitHeat habit={h} />
               </div>
-              <button
-                className="habit-del"
-                data-act="del-habit"
-                data-id={h.id}
-                data-title={h.title}
-                title="删除打卡项"
-              >
-                <X size={14} />
-              </button>
             </div>
           );
         }}

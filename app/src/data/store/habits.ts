@@ -15,6 +15,22 @@ export function addHabit(title: string): string {
   return h.id;
 }
 
+/**
+ * 改打卡项的名字（2026-10-17 用户：「已经加入的打卡项没有办法编辑和修改」）。
+ *
+ * 打卡项**只有名字这一个可编辑的信息** —— 其余是 `order`（拖拽排序）和
+ * `log`（按日期的打卡记录），都不是「编辑」的对象。所以这里只接 title。
+ * 空串 / 只改空格的不收：界面那边也会先 trim 再判空，两边同一口径。
+ */
+export function patchHabit(id: string, fields: { title?: string }): void {
+  const h = state.habits[id];
+  if (!h || h.deleted) return;
+  if (fields.title === undefined) return;
+  const title = fields.title.trim();
+  if (!title || title === h.title) return;
+  commit('habit', id, { title });
+}
+
 export function toggleHabit(id: string, date = D.today()): void {
   const h = state.habits[id];
   if (!h || h.deleted) return;

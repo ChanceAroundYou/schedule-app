@@ -39,7 +39,7 @@ export {
   ensureRepeatOccurrences, enforceRepeatUntil, REPEAT_HORIZON_DAYS, REPEAT_FILL_CAP,
   setTaskProject, setTaskDoing, type TaskDraft,
 } from './tasks.ts';
-export { addHabit, toggleHabit, deleteHabit, restoreHabit } from './habits.ts';
+export { addHabit, patchHabit, toggleHabit, deleteHabit, restoreHabit } from './habits.ts';
 export { addProject, patchProject, deleteProject, restoreProject, purgeProject } from './projects.ts';
 export { reorder, reorderWithin, moveUntimed } from './sort.ts';
 export { moveToCal } from './moveToCal.ts';

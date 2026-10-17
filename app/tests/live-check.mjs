@@ -9,7 +9,7 @@
  *     定点断言」，写操作只有机器人账号自己日程集里的那一条（跑完就结束掉系列）。
  *
  *   node app/tests/live-check.mjs
- *   node app/tests/live-check.mjs --features core,now-line,repeat
+ *   node app/tests/live-check.mjs --features core,now-line,repeat,drag
  *
  * 环境变量：
  *   LIVE_URL   默认 https://home.xiaokubao.space/schedule/
@@ -34,7 +34,7 @@ const HEADED = process.env.HEADED === '1';
 const argv = process.argv.slice(2);
 const featArg = argv.find((a) => a.startsWith('--features=')) || argv[argv.indexOf('--features') + 1];
 const FEATURES = new Set(
-  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,repeat')
+  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,repeat,drag')
     .split(',').map((s) => s.trim()).filter(Boolean),
 );
 
@@ -261,6 +261,86 @@ async function checkRepeat(page) {
   assertOk(r2.status === 200, '收尾：系列已结束（repeatUntil=今天）');
 }
 
+/**
+ * drag：在时间轴上**按住拉出一段时间**就地新建（2026-10-17 加的能力）。
+ *
+ * 这是唯一能证明「鼠标拖拽 + 时长落成」整条链路的办法 —— 坐标换算、15 分钟
+ * 吸附、30 分钟下限、松手开草稿、回车落成全都在这几下里跑过一遍。
+ * 挑一个**当前没有任务**的时段动手（卡片会吃掉 pointerdown，那是刻意的），
+ * 跑完把这条任务删掉，机器人日程集不留垃圾。
+ */
+async function checkDrag(page) {
+  await waitShell(page);
+  if (await page.$('button[data-view="day"]')) await switchView(page, 'day');
+  const tl = await page.locator('.timeline').boundingBox();
+  const yOf = (hour) => tl.y + (hour / 24) * tl.height;
+  const x = tl.x + tl.width / 2;
+
+  /* 找一个竖着都没被占的一小时半：中心那条竖线上没有卡片挡着才行 */
+  const busy = await page.$$eval('.tl-events .task-el', (els) => els.map((e) => {
+    const r = e.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+  }));
+  let startHour = -1;
+  for (const h of [9, 14, 3, 19, 7, 21]) {
+    const top = yOf(h);
+    const bottom = yOf(h + 1.5);
+    const hit = busy.some((b) => b.left < x && b.right > x && b.bottom > top && b.top < bottom);
+    if (!hit) { startHour = h; break; }
+  }
+  if (startHour < 0) { bad('时间轴上找得到一段空白用于拖拽'); return; }
+
+  await page.mouse.move(x, yOf(startHour));
+  await page.mouse.down();
+  await page.mouse.move(x, yOf(startHour + 1.5), { steps: 14 });
+  const preview = (await page.locator('.drag-range span').first().innerText()).trim();
+  const want = (s) => `${String(s).padStart(2, '0')}:00`;
+  const expect = `${want(startHour)} – ${startHour + 1 === 24 ? '次日 ' : ''}${want((startHour + 1.5) % 24)}`;
+  assertOk(preview.includes(want(startHour)), '拖拽预览框跟着拉出的那段长', `${preview}（期望含 ${expect}）`);
+  await page.mouse.up();
+
+  await page.waitForSelector('.new-cell', { timeout: 5000 });
+  ok('松手后在拉出的那一段上开出草稿框');
+
+  const title = 'e2e拖拽-' + Date.now().toString(36);
+  await page.keyboard.type(title);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+
+  const card = page.locator('.tl-events .task-el', { hasText: title }).first();
+  assertOk(await card.count() === 1, '回车落成一条定时任务');
+  const info = await card.getAttribute('title').catch(() => null);
+  assertOk(!!info && info.includes(want(startHour)) && /1小时30分/.test(info),
+    '落下来的任务带上「开始时间 + 90 分钟时长」', info || '(没有 title)');
+
+  /* 收尾：删掉这条。用数据通道（不在界面上找删除按钮），跑完不留垃圾 */
+  const id = await card.getAttribute('data-id');
+  const token = await page.evaluate(() => localStorage.getItem('schedule-app-token') || '');
+  if (id && token) {
+    const calId = await page.evaluate(async (t) => {
+      const r = await fetch('api/me', { headers: { Authorization: 'Bearer ' + t } });
+      const j = await r.json().catch(() => null);
+      return j && j.cals && j.cals[0] && j.cals[0].id;
+    }, token);
+    const now = Date.now();
+    const res = await page.evaluate(async ({ t, id, calId, now }) => {
+      const r = await fetch('api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+        body: JSON.stringify({
+          cursor: 1,
+          ops: [{
+            opId: 'e2e-del-' + id, deviceId: 'e2e-live', ts: now, entity: 'task',
+            entityId: id, calId, fields: { deleted: true, deletedAt: now },
+          }],
+        }),
+      });
+      return r.status;
+    }, { t: token, id, calId, now });
+    assertOk(res === 200, '收尾：这条测试任务已删除', 'HTTP ' + res);
+  }
+}
+
 /* ------------------------------------------------------------------ 主流程 */
 
 (async () => {
@@ -284,6 +364,7 @@ async function checkRepeat(page) {
     if (FEATURES.has('core')) await checkCore(page, consoleErrors);
     if (FEATURES.has('now-line')) await checkNowLine(page);
     if (FEATURES.has('repeat')) await checkRepeat(page);
+    if (FEATURES.has('drag')) await checkDrag(page);
 
     // 收尾再扫一遍报错（写操作之后也可能冒）
     if (FEATURES.has('core')) {

@@ -28,6 +28,7 @@ import { CheckBtn } from '../parts.tsx';
 import { useClampedDraggableEvent, useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { pad2, hours24, type LayoutEvent } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
+import { useDragCreate } from './dragCreate.ts';
 
 /** 未定时区最多露几卡。两行 × 三列 = 6 —— 用户 2026-10-11 定的格子。
  *  超出的一律不渲染：区域高度**固定两块**，多渲染只会溢出到时间轴上盖住它。
@@ -128,11 +129,15 @@ function TimedCard({ e, isToday, nowMin, win, isDragSrc }: { e: LayoutEvent; isT
  * 起点同样是百分比：时间轴的高度由容器说了算（锁单屏），写 px 会一缩放就错位。
  * 分钟已经在点击那一刻对齐到 15 分钟了（`yToMin`），这里不再取整 ——
  * 二次取整会让框与真正的那条卡差出半格。
+ *
+ * **框多大 = 任务多大**：在时间轴上拉出来的草稿自带时长（`seed.duration`，
+ * 见 dragCreate.ts），就照那段画；点一下开的草稿没有，退回默认的一小时。
  */
 function draftBox(seed: DraftSeed, win: DayWindow): CSSProperties {
   const min = D.timeToMin(seed.time) ?? win.from;
   const top = minToPct(Math.max(win.from, Math.min(win.to, min)), win) ?? 0;
-  const h = Math.min(D.durOf(null), win.to - min);
+  const len = seed.duration && seed.duration > 0 ? seed.duration : D.durOf(null);
+  const h = Math.min(len, win.to - min);
   return { top: top + '%', height: Math.max(1.2, (h / spanOf(win)) * 100) + '%' };
 }
 
@@ -157,6 +162,19 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const timelineZone = useDroppableZone(`timeline:${iso}`);
   const alldayZone = useDroppableZone(`allday:${iso}`);
   const { activeId } = useDragSession();
+
+  /* 在时间轴上「按住拉一段时间」→ 松手就是一条带时长的草稿。
+     只认时间轴那一区：全天区没有纵向的时间刻度，无处可拉。
+     坐标就取 zone 元素自己 —— 它的 rect 正是这根时间轴。 */
+  const drag = useDragCreate({
+    win,
+    zoneAt: (target) => {
+      const z = target.closest<HTMLElement>('[data-zone-id]');
+      if (!z || z.dataset.zoneId !== `timeline:${iso}`) return null;
+      return { zone: `timeline:${iso}`, date: iso, frame: z };
+    },
+  });
+  const dragBox = drag.range ? pctRange(drag.range.start, drag.range.end, win) : null;
 
   /* 就地新建的草稿落在哪一区 —— 两区的 zone id 不同，天然互斥 */
   const draftTl = draftOn(state.ui, `timeline:${iso}`);
@@ -234,8 +252,10 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
         <div className="tl-wrap">
           <div
-            className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }} data-zone-id={`timeline:${iso}`}
+            className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
+            data-zone-id={`timeline:${iso}`}
             data-date={iso} data-from={win.from} data-to={win.to}
+            onPointerDown={drag.onPointerDown}
           >
           {hours.map((h) => (
             <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / spanOf(win)) * 100 + '%' }}>
@@ -283,6 +303,13 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
               state={state} zoneId={`timeline:${iso}`}
               className="new-cell--abs" style={draftBox(draftTl, win)}
             />
+          )}
+
+          {/* 拉时间段的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
+          {drag.range && dragBox && (
+            <div className="drag-range" style={{ top: dragBox.top + '%', height: dragBox.height + '%' }}>
+              <span>{timeRange(drag.range.start, drag.range.end - drag.range.start)}</span>
+            </div>
           )}
         </div>
         </div>

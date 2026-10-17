@@ -88,11 +88,8 @@
   border: var(--border-w) solid var(--border);
 }
 .heat-dot.on { background: var(--primary); border-color: var(--primary); }
-.habit-del {
-  border: none; background: none; color: var(--text-3); cursor: pointer;
-  font-size: 14px; padding: 6px 8px; border-radius: var(--r-sm);
-}
-.habit-del:hover { background: var(--danger-soft); color: var(--danger); }
+/* 删除按钮以前是这一行右侧的固定一列（`.habit-del`），现在搬进 `.habit-title`
+   里的 InlineRename 操作槽 —— 跟改名用的铅笔同一套位子，也不再单独占一列。 */
 
 .task-row {
   position: relative;

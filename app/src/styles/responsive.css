@@ -31,7 +31,7 @@ button, .nav-item, .tab, .ms-item, .jp-cell {
   .view-switch button.on:hover { background: var(--primary); }
   .jp-cell.today:hover, .jp-cell.has:hover { background: var(--primary-pale); }
   .jp-cell.has.cur:hover, .jp-cell.has.today:hover { background: var(--primary); }
-  .month-cell:hover, .cell-date:hover, .ci-manage:hover, .habit-del:hover,
+  .month-cell:hover, .cell-date:hover, .ci-manage:hover,
   .icon-btn:hover, .jp-go:hover,
   .sidebar-footer .ghost-btn:hover { background: none; color: inherit; }
   .month-cell.today:hover { background: var(--primary-pale); }

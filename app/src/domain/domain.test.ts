@@ -16,7 +16,7 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel } from './layout.ts';
+import { layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
@@ -556,6 +556,35 @@ test('时间窗：跨过窗沿的按窗沿截断，不整条抹掉', () => {
 
   // 正好卡在窗沿上：高度为 0，不该画成一个空壳
   assert.equal(pctRange(300, 480, win), null, '07:00–08:00 结束在窗顶，画出来是空的');
+});
+
+test('拖拽拉时间段：起止成对，且不小于 30 分钟', () => {
+  const win = { from: 420, to: 1380 };   // 07:00 – 23:00
+
+  // 手抖了一下（两点重合）：不能冒出一条 0 分钟的日程
+  assert.deepEqual(dragRange(600, 600, win), { start: 600, end: 630 },
+    '原地按下 / 拉不够 → 兜底 30 分钟');
+  assert.deepEqual(dragRange(600, 615, win), { start: 600, end: 630 },
+    '只拉了 15 分钟也顶到 30 分钟');
+
+  // 正常下拉
+  assert.deepEqual(dragRange(600, 645, win), { start: 600, end: 645 }, '10:00 → 10:45');
+
+  // 向上拉 = 把开始时间往前推，终点是按下那一刻
+  assert.deepEqual(dragRange(600, 540, win), { start: 540, end: 600 }, '往上拉 1 小时 → 09:00–10:00');
+  assert.deepEqual(dragRange(600, 585, win), { start: 570, end: 600 },
+    '往上只拉了 15 分钟 → 顶成 09:30–10:00');
+
+  // 贴窗沿：起落在窗 YAML 内，不会被推到窗外去
+  assert.deepEqual(dragRange(1365, 1365, win), { start: 1350, end: 1380 },
+    '贴着窗底（23:00）按下 → 收成 22:30–23:00');
+  assert.deepEqual(dragRange(420, 420, win), { start: 420, end: 450 },
+    '贴着窗顶（07:00）按下 → 07:00–07:30');
+
+  // 传进来的两点可能已经跑出窗（拖出了时间轴），收完之后必须仍是窗内的一段
+  const odd = dragRange(60, 1440, win);
+  assert.ok(odd.end - odd.start >= DRAG_MIN, '拉到窗外也保证最短时长');
+  assert.ok(odd.start >= win.from && odd.end <= win.to, '拉到窗外也保证仍在窗内');
 });
 
 test('navHidden：藏起来是显式黑名单，不会被 navOrder 的补全逻辑吃掉', () => {  // 关键区别：navOrder 会把缺的键**补回来**，所以「从 navOrder 里删掉」表达不了

@@ -18,6 +18,12 @@ export interface DraftSeed {
   date: string | null;
   /** 由格子位置算出来的时间。全天区、月视图与泳道列不带时间，是 null */
   time: string | null;
+  /**
+   * 时长（分钟）。只有**在时间轴上拉出来**的那段才有 —— 点某一时刻开的草稿
+   * 不带它，落成时用 `durOf(null)` 那个默认时长。带上它之后，草稿框画多大，
+   * 回车落下来那条任务就是多大（所见即所得）。
+   */
+  duration?: number | null;
   /** 在项目泳道列里点的 → 回车落成的任务直接归这个项目 */
   projectId?: string | null;
   /** 在「进行中」列里点的 → doing=true（待办列不设，已完成列不开草稿） */
@@ -123,10 +129,12 @@ export interface UiPrefs {
    */
   cals: string[];
   /**
-   * 日视图时间窗，只看 `[dayFrom, dayTo)` 这几个小时（整数小时，0–24）。
+   * **日视图与周视图共用的**时间窗，只看 `[dayFrom, dayTo)` 这几个小时
+   * （整数小时，0–24）。
    *
-   * 默认 0–24 = 整天。收窄之后时间轴按比例重排，**不滚动的日视图**因此还能
-   * 保持每小时足够高 —— 见 domain/layout.ts 的 DayWindow。
+   * 默认 0–24 = 整天。收窄之后日视图按比例重排（**不滚动**的日视图因此还能
+   * 保持每小时足够高），周视图则是把窗外那截裁掉 —— 见 domain/layout.ts
+   * 的 DayWindow 与 calendar/WeekView.tsx 的注释。
    */
   dayFrom: number;
   dayTo: number;
