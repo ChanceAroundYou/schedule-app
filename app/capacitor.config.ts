@@ -22,6 +22,17 @@ const config: CapacitorConfig = {
   webDir: '../dist',
 
   plugins: {
+    /* 让 fetch / XHR 走**原生网络栈**，而不是 WebView 的。原因（2026-10-17
+       真机实测）：这台手机上 WebView 的 DNS 解析整体失效 —— 连 baidu.com 都
+       报 net::ERR_NAME_NOT_RESOLVED，而系统 ping 和原生 HttpURLConnection
+       都正常（「检查更新」能拉到版本清单）。表现就是 App 里一直挂着
+       「连不上服务器」红条、同步全断。
+       启用后 @capacitor/core 会 patch window.fetch / XMLHttpRequest，请求改由
+       Android 原生发出，绕开 WebView 的网络栈。网页版不受影响（这段只在
+       Capacitor 原生壳里生效）。 */
+    CapacitorHttp: {
+      enabled: true,
+    },
     // 软键盘弹起时把界面顶上去，别盖住输入框（网页版那条避让逻辑在这同样要）
     Keyboard: {
       resizeOnFullScreen: true,
