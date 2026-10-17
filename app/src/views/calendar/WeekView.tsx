@@ -168,7 +168,12 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
             ))}
           </div>
         </div>
-        <div className="week-cols" onPointerDown={drag.onPointerDown}>
+        {/* data-from / data-to 是给初始滚动位置读的：它按「这一屏覆盖哪一段
+            分钟」折算 scrollTop，窗口收窄之后不能再按整天算 */}
+        <div
+          className="week-cols" onPointerDown={drag.onPointerDown}
+          data-from={win.from} data-to={win.to}
+        >
           {days.map((d) => (
             <WeekColumn
               key={d} state={state} d={d} today={today}

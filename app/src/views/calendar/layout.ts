@@ -110,8 +110,17 @@ export function useViewLayout(
       const g = host.querySelector<HTMLElement>('.week-view');
       if (!g) return;
       // 早上别一上来就是半夜：9 点前先定位到 7:00
-      const anchor = D.nowMin() < 7 * 60 ? 7 * 60 : D.nowMin();
-      g.scrollTop = Math.max(0, anchor / 1440 * DAY_H - 40);
+      const want = D.nowMin() < 7 * 60 ? 7 * 60 : D.nowMin();
+      /* 按**可见窗口**那一屏折算，不再按整天：周视图现在可以只看某几个小时
+         （见 WeekView），那几小时往往一屏就装得下，还按 DAY_H 算会一口气
+         滚过头 —— 早上九点却停在下午。窗口那两端的分钟数就写在容器上。 */
+      const cols = g.querySelector<HTMLElement>('.week-cols');
+      const from = Number(cols?.dataset.from ?? 0);
+      const to = Number(cols?.dataset.to ?? 1440);
+      const boxH = cols?.getBoundingClientRect().height ?? DAY_H;
+      const span = Math.max(1, to - from);
+      const clamped = Math.max(from, Math.min(to, want));
+      g.scrollTop = Math.max(0, ((clamped - from) / span) * boxH - 40);
       // 窄屏 7 列要横滑：把用户关心那天放在中间（只在真能横滑时才做）
       if (g.scrollWidth > g.clientWidth + 1) centerWeekDay(g, cursor);
     } else {
