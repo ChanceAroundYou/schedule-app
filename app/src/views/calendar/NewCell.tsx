@@ -73,17 +73,14 @@ export function NewCell({
 }) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
-  /* Enter / Esc / 失焦三个出口都可能触发同一个动作（Esc → 卸载 → 失焦）。
+  /* 三个出口（Enter / Esc / 点别处）都可能触发同一个动作（Esc → 卸载 → 再触发）。
      用一个闸门拦住第二次，否则「取消」会被当成「提交空串再取消」走两遍。 */
   const settled = useRef(false);
-  /* 失焦的延迟确认。键盘弹起会改变 WebView 高度 → 布局重排 → textarea
-     可能瞬间失焦再回来。立刻结算的话，用户刚点开就没了（2026-10-17 实测）。
-     等 250ms，焦点回来了就当没发生；真点到别处去了才结算。 */
-  const blurTimer = useRef(0);
-  /* 被系统抢走焦点后主动抢回来的次数。真机实测：键盘 200ms 弹到位、
-     400ms 焦点落到 body、草稿跟着消失 —— 用户看到的是「输入法闪一下就没了」。
-     这是布局变化导致的失焦，不是用户意图，必须抢回来（最多两次，防止死循环）。 */
-  const blurRecovered = useRef(0);
+  /* 出生时刻。刚出现的 800ms 内**一律不做自动撤销** —— 键盘弹起动画就在这段里，
+     任何基于「焦点/视口」的判定在这期间都不可靠（2026-10-17 真机两次踩坑）。 */
+  const bornAt = useRef(Date.now());
+  /* 被布局变化弄丢焦点后抢回来的次数。纯保险，防死循环，不参与结算。 */
+  const focusTries = useRef(0);
 
   // 一出现就聚焦 —— 用户点格子的意图就是「要在这打字」
   useEffect(() => { ref.current?.focus(); }, []);
@@ -94,53 +91,85 @@ export function NewCell({
     fn();
   };
 
-  /* 手机上「收起输入法」= 不想要这条任务（用户 2026-10-17）。
-     为什么不能靠 onBlur：安卓把输入法按下去收起时，textarea **并没有失焦**，
-     焦点还在输入框上，所以 onBlur 压根不触发，草稿框就留在屏幕上 ——
-     用户看到的是「我明明把键盘关了，它怎么还在要我写字」。
-     这里改看**软键盘的可见高度**（visualViewport）：弹出时可视视口变矮，
-     收起时弹回。弹回那一瞬若输入框还是空的，就当用户放弃了。
-     ⚠️ 只在**空**的时候撤：打了字又收键盘，多半是「想先歇一会儿再写」，
-       把已打的字丢掉才是真 bug。 */
+  /* 直接读 DOM 值：受控 textarea 的 value 永远是最新的，
+     比闭包里的 state 更不容易读到旧值（键盘/异步时序下踩过）。 */
+  const commit = () => {
+    const v = (ref.current?.value ?? '').trim();
+    settle(() => (v ? onCommit(v) : onCancel()));
+  };
+  /* onCommit / onCancel 每次父级渲染都是新函数，监听器只在挂载时挂一次，
+     所以要用 ref 拿最新的 commit，否则会调到一个过期闭包。 */
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  /* **唯一**的「点了别处」判定：pointerdown 落在输入框之外。
+     ⚠️ 不能用 onBlur —— 安卓键盘弹起会把 App 高度撑变、布局重排，
+        输入框会在 200–400ms 之间被系统自己弄丢焦点。那是布局后果，
+        不是用户意图；拿它当「放弃」就会「输入法闪一下就没了」。 */
+  useEffect(() => {
+    const onDown = (e: Event) => {
+      const el = ref.current;
+      if (!el) return;
+      const t = e.target as Node | null;
+      if (t && (t === el || el.contains(t))) return;   // 点在输入框自己身上
+      commitRef.current();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, []);
+
+  /* 手机上「收起输入法」= 不想要这条任务（用户 2026-10-17 提的原始需求）。
+     难点：安卓收键盘时 textarea **不一定失焦**，所以只能看软键盘高度
+     （visualViewport 变矮 = 键盘弹起，弹回 = 收起）。但键盘的**弹起动画**
+     也会让这个高度在阈值附近来回抖，一变回去就撤 → 用户看到「闪一下就没了」。
+     所以判定必须两条同时满足：
+       ① 键盘**稳定**弹起过 ≥400ms（动画抖动的时长远小于这个，攒不起来）；
+       ② 收起后**稳定** 450ms 没再弹回来；
+       ③ 草稿已存在 ≥800ms（出生瞬间无论如何不动它）。
+     再加一条分流：那一刻焦点还在输入框 → 是用户主动收键盘（撤）；
+       焦点被布局弄丢了 → 只抢回焦点，**绝不撤稿**。 */
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;              // 老浏览器：退回 onBlur 那一路
-    let wasHidden = false;         // 键盘曾经遮住过（用来认准「弹回」这一下）
-    let timer = 0;                 // 待确认的「收起」判定
+    if (!vv) return;              // 老浏览器没有这个 API：退回「点别处才结算」
+    let kbSince = 0;              // 键盘被判定「弹起中」的起始时刻，0 = 没见过
+    let hideTimer = 0;
+    const inset = () => window.innerHeight - vv.height - vv.offsetTop;
+
     const onResize = () => {
-      const hidden = window.innerHeight - vv.height - vv.offsetTop > 120;
-      if (hidden) {
-        clearTimeout(timer);
-        wasHidden = true;
+      if (inset() > 120) {
+        // 键盘占位变多。抖动会不断把起点往后推，只有真弹起才攒得住 400ms
+        if (!kbSince) kbSince = Date.now();
+        clearTimeout(hideTimer);
         return;
       }
-      if (!wasHidden) return;
-      /* ⚠️ 键盘**弹起动画**过程中也会出现 hidden=true→false 的瞬态。
-         2026-10-17 真机实测：点一下时间轴空白处，输入法闪一下就没了，
-         草稿框跟着消失 —— 就是在这里被误判成「用户收起了键盘」。
-         所以不能一变回 false 就撤，等 300ms 再看它是不是真的收起；
-         动画抖动会在这 300ms 内自己弹回去。 */
-      clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const stillHidden = window.innerHeight - vv.height - vv.offsetTop > 120;
-        if (stillHidden) return;   // 又弹回去了，是抖动，什么都不做
-        wasHidden = false;
+      if (!kbSince) return;                    // 从没见过键盘
+      if (Date.now() - kbSince < 400) {         // 弹起动画里的瞬态，不算数
+        kbSince = 0;
+        return;
+      }
+      clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        if (inset() > 120) return;              // 又弹回去了，是抖动
+        kbSince = 0;
+        if (settled.current) return;
+        if (Date.now() - bornAt.current < 800) return;   // 刚出现，别动它
         const el = ref.current;
-        if (el && el === document.activeElement && !el.value.trim()) {
-          settle(onCancel);
+        if (!el) return;
+        if (document.activeElement === el) {
+          // 焦点还在 = 用户主动按了「收起键盘」→ 空的就当放弃
+          if (!el.value.trim()) settle(onCancel);
+        } else if (focusTries.current < 3) {
+          // 焦点是键盘弹起时被布局弄丢的 → 抢回来，草稿留着
+          focusTries.current += 1;
+          el.focus();
         }
-      }, 300);
+      }, 450);
     };
     vv.addEventListener('resize', onResize);
-    return () => { clearTimeout(timer); vv.removeEventListener('resize', onResize); };
+    return () => { clearTimeout(hideTimer); vv.removeEventListener('resize', onResize); };
     // 只挂一次：settled / onCancel 在整个生命周期里指向同一件事
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const commit = () => {
-    const v = text.trim();
-    settle(() => (v ? onCommit(v) : onCancel()));
-  };
 
   return (
     <textarea
@@ -155,23 +184,8 @@ export function NewCell({
       autoComplete="off"
       spellCheck={false}
       onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        const el = ref.current;
-        clearTimeout(blurTimer.current);
-        blurTimer.current = window.setTimeout(() => {
-          if (!el || document.activeElement === el) return;
-          /* 焦点落回 body/html：不是「用户点了别的东西」，而是键盘弹起
-             改了 WebView 高度、布局重排把焦点弄掉了。这种要抢回来 ——
-             不抢的话用户根本打不了字（输入法刚弹起就跟着草稿一起消失）。
-             用户真点到别的元素时 activeElement 会是那个元素，走下面的提交。 */
-          const a = document.activeElement;
-          if (a === document.body || a === document.documentElement) {
-            blurRecovered.current += 1;
-            if (blurRecovered.current <= 2) { el.focus(); return; }
-          }
-          commit();
-        }, 250);
-      }}
+      /* ⚠️ 这里**故意没有 onBlur**。结算只看三件事：回车、Esc、手指点到框外。
+         理由见上面 pointerdown 那段注释 —— 安卓键盘弹起会让框自己失焦。 */
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
