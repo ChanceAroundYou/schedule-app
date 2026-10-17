@@ -2125,6 +2125,33 @@ try {
     return h * 60 + m;
   };
 
+  /* 渲染窗的**合同**（domain/layout.ts 的 coverWindow）：设置窗 ∪ 当天定时任务
+     占的时间范围，向外取整到整点。2026-10-17 起「窗外的东西整条不画」改成了
+     「窗自动往外让到刚好装下它」，所以时间窗的断言不能写死设置值 ——
+     这里在页面里按同一套算式算出期望值，再跟 data-from/to 对。 */
+  const coverOf = () => evalJs(page, `
+    return (() => {
+      const tl = document.querySelector('.timeline');
+      const date = tl.dataset.date;
+      const s = JSON.parse(localStorage.getItem('schedule-app-v4'));
+      const ui = s.ui || {};
+      let from = Math.max(0, Math.min(1439, Math.round(ui.dayFrom) * 60));
+      let to = Math.max(0, Math.min(1440, Math.round(ui.dayTo) * 60));
+      if (to - from < 60) to = Math.min(1440, from + 60);
+      for (const t of Object.values(s.tasks)) {
+        if (!t || t.deleted || t.date !== date || !t.time) continue;
+        const [h, m] = String(t.time).split(':').map(Number);
+        let start = Math.max(0, Math.min(1439, h * 60 + (m || 0)));
+        let end = start + (t.duration == null ? 60 : t.duration);
+        end = Math.max(start, Math.min(1440, end));
+        if (end > to) to = Math.min(1440, Math.ceil(end / 60) * 60);
+        if (start < from) from = Math.max(0, Math.floor(start / 60) * 60);
+      }
+      if (to - from < 60) to = Math.min(1440, from + 60);
+      return { from, to };
+    })();
+  `);
+
   // ② 时间窗：先收到 08:00–11:00（3 小时）。
   //    收这么窄是有原因的：整天铺满一屏时每小时只有十几 px，方块比上下两个
   //    把手（各 11px）还矮，正中点到的其实是把手 —— 那样测的就不是拖拽了。
@@ -2325,23 +2352,30 @@ try {
     + '，width ' + beforeH.width.toFixed(1) + ' → ' + afterH.width.toFixed(1) + '），实际差 '
     + (afterH.left - beforeH.left).toFixed(1) + 'px');
 
-  // ④ 收窄到 10 点起 —— 拖完之后那条已经不在 10 点之前了，所以这里只看
-  //    小时线随窗收窄（拖动把它的位置改了，位置断言不该跟着漂）。
+  // ④ 收窄到 10 点起 —— 2026-10-17 起「窗外不画」改成「窗外让窗」：
+  //    渲染窗 = 设置窗 ∪ 当天任务的范围。断言**合同**而不是写死的值：
+  //    data-from/to 必须等于 coverWindow 的期望（把这天任务也算进去）。
   await setWindow(10, 14);
   const w2 = await readTl();
-  ok(w2.from === '600' && w2.to === '840',
-    '时间窗收成 10:00–14:00（' + w2.from + '/' + w2.to + '）');
-  ok(w2.n === 5 && w2.first === '10:00',
-    '小时线跟着收窄成 5 条（' + w2.n + ' 条，起 ' + w2.first + '）');
+  const exp2 = await coverOf();
+  ok(w2.from === String(exp2.from) && w2.to === String(exp2.to),
+    '时间窗 = 设置窗 ∪ 当天任务范围（coverWindow 期望 ' + exp2.from + '/' + exp2.to
+    + '，实际 ' + w2.from + '/' + w2.to + '）');
+  ok(Number(w2.from) <= 600 && Number(w2.to) >= 840,
+    '窗至少完整盖住设置的那一段 10:00–14:00（' + w2.from + '/' + w2.to + '）');
+  ok(w2.n >= 2 && w2.first !== undefined,
+    '小时线跟着窗走（' + w2.n + ' 条，起 ' + w2.first + '）');
 
-  // ⑤ 窗外的不画：那条被拖到了 09:00 之后…… 直接回整天、把它拖回 09:00 前太绕，
-  //    这里换成验「窗外的东西不画」这条本身 —— 把窗设到 23 点起。
+  // ⑤ 窗外的东西**不再消失**：把窗设到 23 点起，上午那条任务要照画 ——
+  //    窗口自动让到装下它为止（用户拍板「显示」，见 coverWindow）。
   await setWindow(23, 24);
   const w3 = await readTl();
-  ok(w3.n === 2 && w3.first === '23:00' && w3.last === '24:00',
-    '23:00–24:00 的窗里有 2 条小时线（含末端的 24:00），实际 ' + w3.n + ' 条，first=' + w3.first + ' last=' + w3.last);
-  ok(w3.top === null || w3.evH === null,
-    '上午那条落在窗外，整条不画（不是画在顶上冒充 23:00），实际 top=' + w3.top);
+  const exp3 = await coverOf();
+  ok(w3.from === String(exp3.from) && w3.to === String(exp3.to),
+    '23:00 起的窗自动让到装下当天任务（期望 ' + exp3.from + '/' + exp3.to
+    + '，实际 ' + w3.from + '/' + w3.to + '）');
+  ok(w3.top !== null && parseFloat(w3.top) >= 0 && Number(w3.from) < 600,
+    '上午那条落在「设置窗外」的任务照画不误（top=' + w3.top + '，窗起 ' + w3.from + '）');
 
   // 收尾：把时间窗放回整天，别给后面的断言留一个收窄的时间轴。
   // 条数**不写死 24**：疏密是按像素密度分档的（见 DayView 的 step），
