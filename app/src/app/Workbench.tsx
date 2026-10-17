@@ -46,6 +46,9 @@ import { useResizeTimeline } from './resizeTimeline.ts';
 import { useKeyboard } from './keyboard.ts';
 import { useBackup } from './backup.ts';
 import { contentDispatch } from './contentDispatch.tsx';
+import { initKeyboard } from './kb.ts';
+import { captureTap } from './tapSnap.ts';
+import { settleDraftAndSet } from '../ui/newCell.ts';
 import { publishWidgetSnapshot } from '../data/widget.ts';
 
 function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
@@ -102,6 +105,34 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
    * 静默失败（失败也只是桌面没更新，不影响用户正在做的事）。
    */
   useEffect(() => { void publishWidgetSnapshot(state); }, [state]);
+
+  /* -------- 键盘 + 落点快照 --------
+   *
+   * 1. `initKeyboard()`：原生壳里订阅系统的键盘弹起/收起（见 app/kb.ts）。
+   *    没有它，「收起键盘 → 撤掉空草稿」就永远触发不了 —— 因为 App 是
+   *    adjustResize，拿 visualViewport 差值算键盘高度恒等于 0。
+   * 2. `captureTap`：在 pointerdown（布局还没变）把「这是几点」算完存起来。
+   *    click 里只取结果，避免「按下时的坐标 + 抬起时的布局」混用。
+   * 3. 兜底结算：点 `#content` 之外的地方（底部导航、顶栏）也要收掉草稿；
+   *    `#content` 以内的由 clickDispatch 统一收尾。
+   */
+  useEffect(() => {
+    const offKb = initKeyboard();
+    document.addEventListener('pointerdown', captureTap, true);
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest('.new-cell')) return;
+      if (t.closest('#content')) return;     // 内部由 clickDispatch 收尾，别重复
+      settleDraftAndSet(null);
+    };
+    document.addEventListener('click', onDocClick);
+    return () => {
+      offKb();
+      document.removeEventListener('pointerdown', captureTap, true);
+      document.removeEventListener('click', onDocClick);
+    };
+  }, []);
 
   /* -------- 视图尺寸 + 滚动位置 -------- */
   const key = `${state.ui.nav}|${state.ui.view}|${state.ui.cursor}`;

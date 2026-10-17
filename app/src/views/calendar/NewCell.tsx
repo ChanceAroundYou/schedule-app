@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { commitDraftTask, setDraftNull } from '../../ui/newCell.ts';
 import { isNarrowNow } from '../../ui/hooks.ts';
+import { isNativeShell } from '../../app/kb.ts';
 import type { DraftSeed, LocalState } from '../../domain/types.ts';
 
 
@@ -48,6 +49,7 @@ export function NewCellSlot({
   if (!seed) return null;
   return (
     <NewCell
+      seed={seed}
       className={className}
       style={style}
       onCommit={(title) => {
@@ -63,8 +65,11 @@ export function NewCellSlot({
 }
 
 export function NewCell({
-  className, style, onCommit, onCancel,
+  seed, className, style, onCommit, onCancel,
 }: {
+  /** 这一格要建在哪。**引用变了就清空输入框** —— 点空白换个位置时，
+      上一个框里已经打过的字不能跟过来（它已经被落成任务了）。 */
+  seed?: DraftSeed;
   className?: string;
   /** 位置。日视图是百分比（top/height），周视图是 px */
   style?: CSSProperties;
@@ -82,8 +87,13 @@ export function NewCell({
   /* 被布局变化弄丢焦点后抢回来的次数。纯保险，防死循环，不参与结算。 */
   const focusTries = useRef(0);
 
-  // 一出现就聚焦 —— 用户点格子的意图就是「要在这打字」
-  useEffect(() => { ref.current?.focus(); }, []);
+  /* 一出现就聚焦（用户点格子的意图就是「要在这打字」）；
+     **换了位置**（seed 是新对象）时还要清空文字 —— 上一处的字已经落成任务了，
+     不能跟到新框里。settleDraftAndSet 每次都传新对象，所以换位置必触发。 */
+  useEffect(() => {
+    setText('');
+    ref.current?.focus();
+  }, [seed]);
 
   const settle = (fn: () => void) => {
     if (settled.current) return;
@@ -97,40 +107,34 @@ export function NewCell({
     const v = (ref.current?.value ?? '').trim();
     settle(() => (v ? onCommit(v) : onCancel()));
   };
-  /* onCommit / onCancel 每次父级渲染都是新函数，监听器只在挂载时挂一次，
-     所以要用 ref 拿最新的 commit，否则会调到一个过期闭包。 */
-  const commitRef = useRef(commit);
-  commitRef.current = commit;
 
-  /* **唯一**的「点了别处」判定：pointerdown 落在输入框之外。
-     ⚠️ 不能用 onBlur —— 安卓键盘弹起会把 App 高度撑变、布局重排，
-        输入框会在 200–400ms 之间被系统自己弄丢焦点。那是布局后果，
-        不是用户意图；拿它当「放弃」就会「输入法闪一下就没了」。 */
+  /* **收键盘 = 不想要这条**（用户 2026-10-17 提的原始需求）。
+     ⚠️ 不能用 onBlur：安卓键盘弹起会把 App 高度撑变、布局重排，输入框会在
+        200–400ms 之间被系统自己弄丢焦点 —— 那是布局后果，不是用户意图，
+        拿它当「放弃」就会「输入法闪一下就没了」（真机踩过两轮）。
+     ⚠️ 也不能用 visualViewport 差值：App 里键盘是 adjustResize（界面被压小），
+        `innerHeight` 跟着变小，相减恒等于 0，等于从来没检测到过键盘
+        （所以上一版「收键盘后框不消失」）。
+     → 原生壳里用 `@capacitor/keyboard` 的 keyboardWillHide（见 app/kb.ts）。 */
   useEffect(() => {
-    const onDown = (e: Event) => {
+    const onHide = () => {
+      if (settled.current) return;
+      if (Date.now() - bornAt.current < 300) return;   // 刚出现时收到的是残留事件
       const el = ref.current;
-      if (!el) return;
-      const t = e.target as Node | null;
-      if (t && (t === el || el.contains(t))) return;   // 点在输入框自己身上
-      commitRef.current();
+      if (el && !el.value.trim()) settle(onCancel);     // 只有空着才撤，有字不丢
     };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
+    window.addEventListener('kb:hide', onHide);
+    return () => window.removeEventListener('kb:hide', onHide);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 手机上「收起输入法」= 不想要这条任务（用户 2026-10-17 提的原始需求）。
-     难点：安卓收键盘时 textarea **不一定失焦**，所以只能看软键盘高度
-     （visualViewport 变矮 = 键盘弹起，弹回 = 收起）。但键盘的**弹起动画**
-     也会让这个高度在阈值附近来回抖，一变回去就撤 → 用户看到「闪一下就没了」。
-     所以判定必须两条同时满足：
-       ① 键盘**稳定**弹起过 ≥400ms（动画抖动的时长远小于这个，攒不起来）；
-       ② 收起后**稳定** 450ms 没再弹回来；
-       ③ 草稿已存在 ≥800ms（出生瞬间无论如何不动它）。
-     再加一条分流：那一刻焦点还在输入框 → 是用户主动收键盘（撤）；
-       焦点被布局弄丢了 → 只抢回焦点，**绝不撤稿**。 */
+  /* 网页版（没有原生壳）保留 visualViewport 兜底 —— 手机浏览器里这条是有效的：
+     键盘只压可视视口，布局视口不动，差值算得出真实高度。
+     原生壳里直接跳过，否则它会把原生写好的 --kb 覆盖回 0、并误判收键盘。 */
   useEffect(() => {
+    if (isNativeShell()) return;
     const vv = window.visualViewport;
-    if (!vv) return;              // 老浏览器没有这个 API：退回「点别处才结算」
+    if (!vv) return;
     let kbSince = 0;              // 键盘被判定「弹起中」的起始时刻，0 = 没见过
     let hideTimer = 0;
     const inset = () => window.innerHeight - vv.height - vv.offsetTop;

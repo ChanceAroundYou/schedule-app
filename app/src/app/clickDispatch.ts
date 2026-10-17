@@ -30,9 +30,12 @@ import * as D from '../domain/date.ts';
 import * as store from '../data/store.ts';
 import { toast, type ConfirmOptions } from '../ui/kit.tsx';
 import { domWindow } from './domWindow.ts';
+import { takeTap } from './tapSnap.ts';
+import { settleDraftAndSet } from '../ui/newCell.ts';
 import { pickDate } from './pickDate.ts';
 import { DAY_H, snapToHour, yToMin } from '../domain/layout.ts';
 import { isNarrowNow } from '../ui/hooks.ts';
+import type { DraftSeed } from '../domain/types.ts';
 
 type ConfirmFn = (o: ConfirmOptions) => Promise<boolean>;
 
@@ -220,7 +223,7 @@ export function makeOnChange() {
 const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day', 'proj'];
 
 /**
- * 点日历上的空格子 → 在那个位置**就地开一个输入框**（日期与时间由格子决定）。
+ * 点日历上的空格子 → 算出「要开在哪」。**纯计算，不碰 store 也不碰 DOM 状态**。
  *
  * ## 为什么不直接 `addTask` 再开抽屉
  *
@@ -230,6 +233,13 @@ const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day', 'proj'];
  * 里的两个表单字段。现在是反过来：位置决定日期时间，抽屉是**事后再补给细节**的
  * 地方（加详细内容、设重复），不再承担「确定时空坐标」。
  *
+ * ## 位置为什么从快照里取
+ *
+ * `click` 时读 `getBoundingClientRect()` 会读到**此刻**的布局。但从手指按下到
+ * click 之间，键盘可能正好收起、页面高度变了一倍 —— 那时 `e.clientY`（按下那一刻
+ * 的坐标）配上新的 rect，能把 21:00 算成 7:00（实测偏 14 小时）。
+ * `tapSnap` 在 pointerdown 就把分钟算完，这里只取结果。
+ *
  * ## 四种区域前缀的来历
  *
  * zone id 本来是给 dnd 用的（`useDroppableZone`），这里**复用同一套名字** ——
@@ -237,13 +247,16 @@ const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day', 'proj'];
  * 前缀同时也表达了「这一区带不带时间」：带时间的两区要拿 pointer 的纵坐标换算，
  * 不带时间的两区有日期就够了。
  */
-function openDraft(zone: HTMLElement, e: React.MouseEvent): void {
+function draftSeedFrom(
+  zone: HTMLElement,
+  e: { clientX: number; clientY: number; target: EventTarget | null },
+): DraftSeed | null {
   const zid = zone.dataset.zoneId || '';
   const kind = zid.slice(0, zid.indexOf(':'));
   /* `data-zone-id` 不是日历专用的：项目泳道的每一列（`proj:<id>:<column>`）
      也用它做拖放的落点。点到那里不该开出个草稿框 —— 那儿的 columns 既不是日期
      也不是时刻。所以按前缀白名单过滤，而不是「有 data-zone-id 就算」。 */
-  if (!DRAFT_KINDS.includes(kind)) return;
+  if (!DRAFT_KINDS.includes(kind)) return null;
 
   const date = zone.dataset.date || store.get().ui.cursor;
   let time: string | null = null;
@@ -254,53 +267,67 @@ function openDraft(zone: HTMLElement, e: React.MouseEvent): void {
        · 只认**列体**（.pj-col-b）：列头点的是列名/计数，不开草稿；
        · 只开待办 / 进行中两列：新建的任务不可能是已完成；
        · 日期留空：泳道里的卡片是待办性质的，没有「这一天」。 */
-    if (!(e.target as HTMLElement).closest('.pj-col-b')) return;
+    if (!(e.target as HTMLElement | null)?.closest?.('.pj-col-b')) return null;
     const m = /^proj:([^:]+):(todo|doing)$/.exec(zid);
-    if (!m) return;
-    store.setUi({
-      draft: {
-        zone: zid, date: null, time: null,
-        projectId: m[1], doing: m[2] === 'doing',
-      },
-    });
-    return;
+    if (!m) return null;
+    return {
+      zone: zid, date: null, time: null,
+      projectId: m[1], doing: m[2] === 'doing',
+    };
   }
 
   if (kind === 'timeline') {
-    /* 日视图时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——
-       实测高度 + 窗内换算，见 domain/layout.ts 的 yToMin（顺带对齐 15 分钟）。 */
-    const r = zone.getBoundingClientRect();
-    const min = yToMin(e.clientY - r.top, r.height, domWindow(zone));
-    time = D.minToTime(min);
+    /* 优先用 pressed 那一刻的快照（同坐标系），取不到才现场算。
+       日视图时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母。 */
+    const tap = takeTap(e.clientX, e.clientY, zone);
+    if (tap) {
+      time = D.minToTime(tap.min);
+    } else {
+      const r = zone.getBoundingClientRect();
+      time = D.minToTime(yToMin(e.clientY - r.top, r.height, domWindow(zone)));
+    }
   } else if (kind === 'week') {
-    const r = zone.getBoundingClientRect();
-    const min = Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15;
-    time = D.minToTime(Math.max(0, Math.min(1425, min)));
+    const tap = takeTap(e.clientX, e.clientY, zone);
+    const min = tap
+      ? tap.min
+      : Math.max(0, Math.min(1425, Math.round(((e.clientY - zone.getBoundingClientRect().top) / DAY_H) * 1440 / 15) * 15));
+    time = D.minToTime(min);
   }
   // 'allday'（全天区）与 'day'（月视图格子）不带时间 —— 只落在那一天
 
-  /* 手机上吸附到整点，网页端仍吸 15 分钟（用户 2026-10-17）：
-     手机格子比手指还细，按位置算出来常是 9:07、14:23，用户想的是「9 点」这种
-     整数；网页端格子大、瞄得准，15 分钟一档才够用，硬吸整点反而丢精度。 */
-  if (time && isNarrowNow()) {
+  /* 手机 + **日视图时间轴**才吸附到整点（用户 2026-10-17）。
+     · 手机上格子比手指还细，按位置算出来常是 9:07、14:23，用户想的是「9 点」；
+     · 网页端格子大、瞄得准，15 分钟一档才够用，硬吸整点反而丢精度；
+     · 周视图一列只有几十像素宽、也不适用，保持 15 分钟。 */
+  if (time && kind === 'timeline' && isNarrowNow()) {
     const m = D.timeToMin(time);
     if (m !== null) time = D.minToTime(snapToHour(m));
   }
 
-  store.setUi({ draft: { zone: zid, date, time } });
+  return { zone: zid, date, time };
 }
 
 export function makeOnClick(deps: ClickDeps) {
   return async function onClick(e: React.MouseEvent): Promise<void> {
     const el = e.target as HTMLElement;
 
-    // 1) 行内动作
-    const act = el.closest<HTMLElement>('[data-act]');
-    if (act) {
-      e.stopPropagation();
-      await runAct(act, deps);
-      return;
-    }
+    /* 点的是就地新建框自己 → 什么都不做。它自己处理回车 / Esc，
+       而且 `data-act="draft"` 会让下面的分派把它当成「又点了一次空白」。 */
+    if (el.closest('.new-cell')) return;
+
+    /* 这一下最终有没有开出新草稿。**必须在所有分支跑完之后统一结算**：
+       见 finally —— 先把新草稿算好，再一次替换掉旧的，中间不留「已卸载」
+       的空档。否则卸载 → 键盘收起 → 布局变高，正是 21:00 算成 7:00 的成因。 */
+    let seed: DraftSeed | null = null;
+
+    try {
+      // 1) 行内动作
+      const act = el.closest<HTMLElement>('[data-act]');
+      if (act) {
+        e.stopPropagation();
+        await runAct(act, deps);
+        return;
+      }
 
     // 2) 跳转 / 找日期 / 打卡管理
     const jump = el.closest<HTMLElement>('[data-jump]');
@@ -336,6 +363,13 @@ export function makeOnClick(deps: ClickDeps) {
        这一层必须排在第 3 步之后**：任务卡片本身就长在这些区域里（`.task-el`），
        顺序反了会把「点开某条任务」变成「又开一个草稿框」。 */
     const zone = el.closest<HTMLElement>('[data-zone-id]');
-    if (zone) openDraft(zone, e);
+    if (zone) seed = draftSeedFrom(zone, e);
+    } finally {
+      /* 所有分支的统一收尾：结算上一条草稿（有字落库、没字丢弃），
+         再一次性换成这一下算出来的新草稿（null = 只结算、不开新的）。
+         ⚠️ 不做「先 setUi(null) 再 setUi(新)」两步 —— 那会让输入框先卸载，
+            键盘跟着收起、布局变高，于是又落回坐标错配里（21:00 → 7:00）。 */
+      settleDraftAndSet(seed);
+    }
   };
 }

@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { isNativeShell } from '../../app/kb.ts';
 
 /**
  * 浏览器报告的联网状态。
@@ -47,6 +48,10 @@ export function useOnline(): boolean {
  */
 export function useKeyboardInset(): void {
   useEffect(() => {
+    /* 原生壳里**不要跑**这段：App 是 adjustResize（键盘把界面一起压小），
+       `innerHeight` 与 `vv.height` 同时变小，算出来恒等于 0；而且它会把
+       原生键盘事件写好的 --kb 覆盖回 0。见 app/kb.ts。 */
+    if (isNativeShell()) return;
     const vv = window.visualViewport;
     if (!vv) return;   // 老浏览器：退回「浏览器自己滚」，不报错也不做事
     const apply = () => {
