@@ -270,8 +270,12 @@ async function checkRepeat(page) {
  * 跑完把这条任务删掉，机器人日程集不留垃圾。
  */
 async function checkDrag(page) {
-  await waitShell(page);
-  if (await page.$('button[data-view="day"]')) await switchView(page, 'day');
+  /* 不能直接复用 waitShell：上一段检查把视图停在了月视图（还翻了三个月），
+     而 waitShell 只等日视图那根时间轴 —— 在月视图里它会干等到超时。 */
+  await page.click('[data-nav="calendar"]');
+  await page.waitForSelector('button[data-view="day"]', { timeout: 10000 });
+  await switchView(page, 'day');
+  await page.waitForSelector('.timeline', { timeout: 15000 });
   const tl = await page.locator('.timeline').boundingBox();
   const yOf = (hour) => tl.y + (hour / 24) * tl.height;
   const x = tl.x + tl.width / 2;
@@ -294,9 +298,10 @@ async function checkDrag(page) {
   await page.mouse.down();
   await page.mouse.move(x, yOf(startHour + 1.5), { steps: 14 });
   const preview = (await page.locator('.drag-range span').first().innerText()).trim();
-  const want = (s) => `${String(s).padStart(2, '0')}:00`;
-  const expect = `${want(startHour)} – ${startHour + 1 === 24 ? '次日 ' : ''}${want((startHour + 1.5) % 24)}`;
-  assertOk(preview.includes(want(startHour)), '拖拽预览框跟着拉出的那段长', `${preview}（期望含 ${expect}）`);
+  const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${m % 60 === 0 ? '00' : '30'}`;
+  const endMin = (startHour + 1.5) * 60;
+  const expect = `${hhmm(startHour * 60)} – ${endMin >= 1440 ? '次日 ' : ''}${hhmm(endMin)}`;
+  assertOk(preview === expect, '拖拽预览框跟着拉出的那段长', `${preview}（期望 ${expect}）`);
   await page.mouse.up();
 
   await page.waitForSelector('.new-cell', { timeout: 5000 });
@@ -310,7 +315,7 @@ async function checkDrag(page) {
   const card = page.locator('.tl-events .task-el', { hasText: title }).first();
   assertOk(await card.count() === 1, '回车落成一条定时任务');
   const info = await card.getAttribute('title').catch(() => null);
-  assertOk(!!info && info.includes(want(startHour)) && /1小时30分/.test(info),
+  assertOk(!!info && info.includes(hhmm(startHour * 60)) && /1小时30分/.test(info),
     '落下来的任务带上「开始时间 + 90 分钟时长」', info || '(没有 title)');
 
   /* 收尾：删掉这条。用数据通道（不在界面上找删除按钮），跑完不留垃圾 */
