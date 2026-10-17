@@ -319,8 +319,10 @@
 /* 拖动中禁止文字选中，否则拖过的地方会留下一片选区高亮 */
 body.dragging-active { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 
-/* 时间轴上的落点指示（只画线，不改底色）。
-   `left: 0` 与红线 `.tl-now` 对齐；左端圆点复刻 `.tl-now i`，刚好放在线的尽头。 */
+/* 时间轴上的落点指示（只画线，不改底色）—— **只有日视图画**。
+   2026-10-17：周视图拖动时不再画这根虚线（用户：「页面底下有一条虚线，
+   把这个虚线给去掉」），周列拖动改成只显示持续时间标签；落点计算
+   （onDragEnd 的 week: 分支）不经过引导线，照旧。 */
 .tl-guide {
   position: absolute; left: 0; right: 0; height: 0;
   border-top: 1.5px dashed var(--primary); z-index: 10; pointer-events: none;
@@ -331,9 +333,9 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   background: var(--primary); box-shadow: 0 0 0 3px rgb(from var(--primary) r g b / .16);
 }
 
-/* 左侧时间轴上的时间标签（显示绿线对应几点）。
+/* 左侧时间轴上的时间标签（显示落点线对应几点）。
    挂在 `.timeline` 上，用 --tl-label-left / --tl-label-width 变量，
-   与 .tl-label / .tl-now span 完全一致的位置和宽度。
+   与 .tl-label 完全一致的位置和宽度。
    字体字号字重与 .tl-label 严格一致，只有颜色不同。 */
 .tl-cursor {
   position: absolute; left: var(--tl-label-left); top: 0;

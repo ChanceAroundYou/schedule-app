@@ -8,7 +8,7 @@ import type { Task } from '../../domain/types.ts';
 import {
   makeTask, nextOrder, trashedTasks, trashedHabits,
 } from '../../domain/model.ts';
-import { seriesRootOf, instanceId, repeatNext, repeatAdvance, toRepeat } from '../../domain/repeat.ts';
+import { seriesRootOf, instanceId, repeatNext, repeatAdvance, toRepeat, parseInstanceId } from '../../domain/repeat.ts';
 import type { RepeatRule } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { state, dataOf } from './core.ts';
@@ -67,6 +67,17 @@ export const REPEAT_LOOKAHEAD = 14;
  *
  * 幂等：每次都先查 id 在不在。可以挂在同步之后反复调，不会重复建。
  * 只补**今天及以后**的发生日，不去把过去的历史补出来（那只会污染列表）。
+ *
+ * ⚠️ 2026-10-17 大改（用户报「每周五六只显示周六」「全部删除只删当天」），
+ * 这一遍现在同时干三件事，按顺序：
+ *   ① **按当前规则走一遍「锚点 → 最远实例」**，得到这本应存在的发生日序列；
+ *   ② **回填中间的洞**（create-only）：窗口被旧规则铺满之后再改规则，
+ *      `need = 窗口目标 − 现有数` 会是 0，什么都不补 —— 周五那种「改了
+ *      规则却永远不出现」的日子只有按洞补才救得回来；
+ *   ③ **清理规则缩水的残留**：把今天及以后、未完成、不再符合当前规则的
+ *      实例删掉（每周五六改成每周五，周六的残留不能继续挂在未来）。
+ * 三件事都只**新建/删除这一遍该动的东西**，不重铺整个窗口 —— 重铺会毁掉
+ * 用户对未来实例的编辑和拖拽。
  */
 export function ensureRepeatOccurrences(): void {
   // 先把「已结束的系列」清理干净（幂等，无变动时不动）
@@ -75,6 +86,23 @@ export function ensureRepeatOccurrences(): void {
   const items: Change[] = [];
   const now = Date.now();
   const today = D.today();
+
+  /* 系列级「到此为止」标记：家族根 → 结束日。
+   *
+   * 标记**不一定写在根上**：根被「只删这一次」删掉后墓碑还在、字段还在；
+   * 但根要是不在本机（别的设备建的系列），deleteSeriesFrom 会把标记写在
+   * 家族里还能活过那次删除的成员身上。所以这里全量扫一遍、按家族归并 ——
+   * 比「只认 state.tasks[seriesId].repeatUntil」稳（旧写法漏认标记时，
+   * 删完的系列又会长回来，正是「删了等于没删」的另一半原因）。 */
+  const markers = new Map<string, string>();
+  for (const t of Object.values(state.tasks)) {
+    if (!t) continue;
+    const u = (typeof t.repeatUntil === 'string' && t.repeatUntil) ? t.repeatUntil : null;
+    if (u === null) continue;
+    const root = seriesRootOf(t) ?? t.id;
+    const prev = markers.get(root);
+    if (prev === undefined || u < prev) markers.set(root, u);
+  }
 
   /* 按**系列**归组，每个系列只处理一次（2026-10-14 重构）。
    *
@@ -87,7 +115,10 @@ export function ensureRepeatOccurrences(): void {
    *
    * 现在按 seriesRootOf 归组：只要组里还有一条活着的任务，系列就继续派生。
    * 规则从「还活着的那条」上读 —— 实例身上带着同一份 repeat 的完整副本，
-   * 所以根没了也能继续。 */
+   * 所以根没了也能继续。
+   * 2026-10-17 起 seriesRootOf 改成**形状优先**（id 带 # 就以 # 前的为真根），
+   * 所以被小组件改Instance repeat 改乱了血脉（seriesId 指向中间层 / 整个缺失）
+   * 的旧数据也会归到同一条家族下 —— 删除和补齐都不会再漏掉旁支。 */
   const groups = new Map<string, typeof state.tasks[string][]>();
   for (const o of Object.values(state.tasks)) {
     if (!o || o.deleted) continue;
@@ -109,29 +140,99 @@ export function ensureRepeatOccurrences(): void {
      * `repeatUntil` 是那一次的日期（不含）—— 用户说「这天往后都不要了」，
      * 于是这天之前的历史照常留着，这天及以后不再派生。
      * 不认这个标记的话，删完一轮补齐又长出一批 —— 删了等于没删。 */
-    if (seriesEndOf(root) !== null) continue;
+    if (markers.has(root)) continue;
 
-    // ⚠️ **游标必须从「已存在的最后一个实例」起算，不能从系列根自己的日期起算**
-    // （2026-10-14 修，用户报「每天重复只重复几天就断了」）。
-    //
-    // 原来的写法：`cursor = t.date`（根的原始日期）、`seq = t.repeatSeq || 0`，
-    // 于是**每次调用都从同一起点重新推一遍**，生成出来的永远是同样那 4 条。
-    // 一旦这 4 条都被消费掉（过了窗口期），再调多少次都不会有新实例 ——
-    // 表现就是「设了每天，第 5 天起就没了，App 和小组件上都找不到」。
-    //
-    // 现在改成：先扫出这个系列**已经存在**的所有实例，取日期最大的那个当游标，
-    // 从它继续往后补。于是窗口可以一轮一轮往前滚，越滚越远，且幂等
-    // （已存在的 id 会被跳过）。
-    const existing: string[] = [];
-    /** 已存在的实例里最大的 repeatSeq —— 「按次数结束」靠它判断还能不能继续 */
+    // 家族已存在的发生日（含已完成、不含已删）
+    const dates = members
+      .map((o) => o.date)
+      .filter((d): d is string => !!d)
+      .sort();
+    if (!dates.length) continue;      // 一条带日期的都没有，没什么可对齐的
+    const anchor = dates[0];               // 最早的发生日 = 系列的起点
+    const furthest = dates[dates.length - 1];   // 最远已存在的实例
     let maxSeq = 0;
-    for (const o of Object.values(state.tasks)) {
-      if (!o || o.deleted) continue;
-      if (seriesRootOf(o) !== root) continue;
-      if (o.date) existing.push(o.date);
+    for (const o of members) {
       if ((o.repeatSeq ?? 0) > maxSeq) maxSeq = o.repeatSeq ?? 0;
     }
-    existing.sort();
+
+    /* ① 按**当前规则**从锚点走到最远实例，得到「这本应存在的发生日」序列。
+     *
+     * 步数上限定锚点到最远实例的天数：规则再密也密不过「每天」，
+     * 所以 `spanDays + 16` 一定够；不够只会让序列截断（见下面的用途），
+     * 不会死循环。 */
+    const plan: { date: string; seq: number }[] = [];
+    {
+      const spanDays = Math.max(1, (Date.parse(furthest) - Date.parse(anchor)) / 86400000);
+      let cur = anchor;
+      let seq = 0;
+      for (let guard = 0; guard <= spanDays + 16; guard++) {
+        plan.push({ date: cur, seq });
+        const nxt = nextOccurrence(r, cur, seq);
+        if (!nxt || nxt <= cur) break;   // 规则到头 / 原地踏步
+        cur = nxt;
+        seq += 1;
+        if (cur > furthest) break;
+      }
+    }
+    const expected = new Set(plan.map((p) => p.date));
+    /* 已占用的发生日。**不能只查 `state.tasks[instanceId(root, date)]`**：
+     * 系列根本身的 id 是随机 uuid（不是派生形状），它占着锚点那天，
+     * 按派生 id 查不到 → 补洞会在同一天再造出一条和根一模一样的任务。
+     * 所以拿家族成员的日期一并作为「已占用」。 */
+    const taken = new Set(dates);
+
+    /* ③ 规则缩水清理：把「今天及以后、未完成、不再符合当前规则」的实例删掉
+     *    （用户 2026-10-17：每周五六改成每周五之后，周六的残留还挂在未来）。
+     *    三道保护一个都不能少：
+     *      · 系列根本身（护根）；
+     *      · 已完成的 —— 那是用户真的做完过的，不是规则残留；
+     *      · 被手动拖拽过的 —— 派生 id 里编码的是**原发生日**，`date` 和它
+     *        不一致就说明用户把这一次挪去过（拖拽 / 改日期），不是残留。
+     *        没有这道保护，用户拖一次任务，下一轮同步就把它当残留删了。
+     *      · 锚点（plan 的第一项）天然在 expected 里，同样受保护。 */
+    const doomed = new Set<string>();
+    for (const o of members) {
+      if (!o.date || o.date < today) continue;   // 只清今天及以后
+      if (o.done) continue;
+      if (o.id === root) continue;
+      const orig = parseInstanceId(o.id);
+      if (orig && orig.date !== o.date) continue; // 手动挪过日期
+      if (expected.has(o.date)) continue;
+      doomed.add(o.id);
+      items.push({
+        entity: 'task', id: o.id, calId: o.calId,
+        fields: { deleted: true, deletedAt: now, trashFrom: '重复规则变更' },
+      });
+    }
+    // 被清掉的不再占窗口，下面按**清理后**的存活成员重算
+    const live = members.filter((o) => !doomed.has(o.id));
+
+    /* ② create-only 补洞：锚点 → 最远实例之间，按当前规则补上**缺失**的日子。
+     *
+     *    这就是「每周五六只显示周六」的修法：窗口早在规则还是 [周六] 的
+     *    时候就铺满了 14 条周六，改成 [周五、周六] 之后 `need` 一直是 0，
+     *    而按缺口补只会从最远实例**往后**推，中间的周五永远回不来。
+     *    现在按洞补：走一遍规则序列，缺一个建一个，已存在的（含墓碑和
+     *    「只删这一次」的跳过标记）一律不碰。
+     *
+     *    范围收到「今天 → 最多一年后」：超过一年的洞等窗口滚过去自然补，
+     *    不至于因为某条实例被拖到很远而使一次补出上千条。 */
+    const gapLimit = D.addDays(today, 366);
+    for (const p of plan) {
+      if (taken.has(p.date)) continue;               // 这天已经有任务占着了（根也算）
+      if (p.date < today || p.date > gapLimit) continue;
+      const id = instanceId(root, p.date);
+      if (state.tasks[id]) continue;                  // 已存在（含墓碑/跳过）→ 不碰
+      const occ = makeTask({
+        id, calId: t.calId, title: t.title, note: t.note,
+        date: p.date, time: t.time, duration: t.duration,
+        repeat: r, repeatSeq: p.seq, seriesId: root,
+        order: null, ord: null, createdAt: now, source: t.source ?? null,
+      });
+      occ.reminder = t.reminder ?? null;
+      state.tasks[id] = occ;
+      items.push({ entity: 'task', id, calId: t.calId, fields: dataOf(occ) });
+    }
 
     /* ⚠️ **窗口已满就直接跳过，按缺口补而不是固定补 N 次**（2026-10-14 修）。
      * - 跳过：否则每次调用都再往后推 LOOKAHEAD 次，窗口无限膨胀（每天重复
@@ -142,9 +243,8 @@ export function ensureRepeatOccurrences(): void {
      * 只数**未完成且今天及以后**的：已完成的表示「这一次已经消费掉了」，
      * 不该继续占着窗口；过去的实例同理（用户不回头看历史）。 */
     let futureCount = 0;
-    for (const o of Object.values(state.tasks)) {
-      if (!o || o.deleted || o.done) continue;
-      if (seriesRootOf(o) !== root) continue;
+    for (const o of live) {
+      if (o.done) continue;
       if (o.date && o.date >= today) futureCount++;
     }
     const need = REPEAT_LOOKAHEAD - futureCount;
@@ -156,7 +256,8 @@ export function ensureRepeatOccurrences(): void {
      * `state.tasks` 里，游标又退回到它们之前，推出来的 id 全都撞上已存在
      * 的实例被跳过 —— 实测「完成 1 条 → 只补出 0 条」，缺口永远填不上。
      * 用最远的（含已完成）才能保证每次都往**全新的**日期上走。 */
-    let cursor = existing.length ? existing[existing.length - 1] : (t.date || today);
+    const liveDates = live.map((o) => o.date).filter((d): d is string => !!d).sort();
+    let cursor = liveDates.length ? liveDates[liveDates.length - 1] : (t.date || today);
     /* seq 取**已存在的最大 repeatSeq**，不是实例个数（2026-10-14 修）。
      *
      * 用 `existing.length` 看着等价，其实不对：预生成已经把未来几次铺满了，
@@ -191,7 +292,6 @@ export function ensureRepeatOccurrences(): void {
     // 从游标往后补，直到「今天起至少还有 LOOKAHEAD 次」为止。
     // 为什么要看剩余量而不是固定补 N 次：已经攒了 20 条实例时再补 4 条毫无意义，
     // 只有把窗口维持住才是对的。
-    let made = 0;
     for (let i = 0; i < need; i++) {
       const id = instanceId(root, cursor);
       if (!state.tasks[id]) {
@@ -204,7 +304,6 @@ export function ensureRepeatOccurrences(): void {
         occ.reminder = t.reminder ?? null;
         state.tasks[id] = occ;
         items.push({ entity: 'task', id, calId: t.calId, fields: dataOf(occ) });
-        made++;
       }
       const nxt = nextOccurrence(r, cursor, seq);
       if (!nxt) break;
@@ -227,25 +326,40 @@ export function ensureRepeatOccurrences(): void {
  *   · 新设备首次同步也会自动收敛到同一状态。
  *
  * 幂等：没有 repeatUntil 的系列直接跳过；已经删过的实例不再重复写。
+ *
+ * ⚠️ 2026-10-17：标记**按家族真根归并**，不再假设它一定写在系列根本身。
+ * 实际数据里标记可能落在：被「只删这一次」删掉的根墓碑上、别的设备建的
+ * 系列里本机没有的根（deleteSeriesFrom 会把标记改写到存活成员身上）、
+ * 以及被小组件改乱了血脉的旁支任务上。旧写法按 `id === 标记所在任务`
+ * 收集，漏掉旁支 → 删不干净、过两天又长回来。
  */
 export function enforceRepeatUntil(): void {
   const items: Change[] = [];
   const now = Date.now();
-  for (const [id, t] of Object.entries(state.tasks)) {
-    // ⚠️ 这里**不能跳过 deleted**：根自己很可能就是先被「只删这一次」删掉的那条，
-    // 而 repeatUntil 正是写在它身上的。跳过了就永远清不掉后面的实例。
-    if (!t) continue;
-    const until = (typeof t.repeatUntil === 'string' && t.repeatUntil) ? t.repeatUntil : null;
-    if (until === null) continue;      // repeatUntil 只写在系列根上，有它就说明是根
-    for (const o of Object.values(state.tasks)) {
-      if (!o || o.deleted) continue;
-      if (seriesRootOf(o) !== id) continue;
-      if (!o.date || o.date < until) continue;
-      items.push({
-        entity: 'task', id: o.id, calId: o.calId,
-        fields: { deleted: true, deletedAt: now, trashFrom: '重复任务结束' },
-      });
-    }
+
+  // 标记 → 家族根（形状优先的真根），同一家族取最早的结束日
+  const markers = new Map<string, string>();
+  for (const t of Object.values(state.tasks)) {
+    if (!t) continue;   // 根自己很可能就是墓碑，不能跳过
+    const u = (typeof t.repeatUntil === 'string' && t.repeatUntil) ? t.repeatUntil : null;
+    if (u === null) continue;
+    const root = seriesRootOf(t) ?? t.id;
+    const prev = markers.get(root);
+    if (prev === undefined || u < prev) markers.set(root, u);
+  }
+  if (!markers.size) return;
+
+  for (const o of Object.values(state.tasks)) {
+    if (!o || o.deleted) continue;
+    const root = seriesRootOf(o);
+    if (!root) continue;
+    const until = markers.get(root);
+    if (until === undefined) continue;
+    if (!o.date || o.date < until) continue;
+    items.push({
+      entity: 'task', id: o.id, calId: o.calId,
+      fields: { deleted: true, deletedAt: now, trashFrom: '重复任务结束' },
+    });
   }
   if (items.length) commitMany(items);
 }
@@ -377,6 +491,16 @@ function findOccurrence(seriesId: string, date: string): string | null {
  * 关键在于**必须连系列根一起处理**：只要根还活着（`repeat.unit !== 'none'`），
  * 窗口补齐就会越过 fromDate 再造出一批未来的 —— 那等于「删了又长出来」。
  * 这里给根打一个 `repeatUntil`：窗口补齐看到它就整个系列跳过。
+ *
+ * ⚠️ 2026-10-17：收集成员用 seriesRootOf（形状优先），所以被小组件改乱了
+ * 血脉的旁支实例（seriesId 指向中间层 / 整个缺失）也一并收进来 —— 旧写法
+ * 单路按 seriesId 比对，旁支漏网后过两天又被窗口造回来，正是「选了全部
+ * 删除却只删了当天」的根因。
+ *
+ * ⚠️ 标记尽量写在**系列根**上；根要是本机没有（别的设备建的系列），
+ * 就改写在家族里日期最靠前、且能活过这次删除（date < fromDate）的成员上。
+ * 写在即将被删的成员上也能生效（墓碑字段会同步、enforceRepeatUntil 认
+ * 墓碑），但有能活的载体更稳。
  */
 export function deleteSeriesFrom(seriesId: string, fromDate: string, from = '任务列表'): void {
   const now = Date.now();
@@ -393,8 +517,33 @@ export function deleteSeriesFrom(seriesId: string, fromDate: string, from = '任
   // ⚠️ **根自己可能已经是被删的**（用户先删了根那一次）—— 那时也要把标记写上，
   // 否则分组逻辑看到组里还有活实例，又会把未来的重新造出来。
   const root = state.tasks[seriesId];
-  if (root) {
-    items.push({ entity: 'task', id: seriesId, calId: root.calId, fields: { repeatUntil: fromDate } });
+  let carrierId: string | null = seriesId;
+  if (!root) {
+    carrierId = null;
+    // 优先：能活过这次删除的存活成员里日期最靠前的
+    let best: (typeof state.tasks)[string] | null = null;
+    for (const o of Object.values(state.tasks)) {
+      if (!o || o.deleted) continue;
+      if (seriesRootOf(o) !== seriesId) continue;
+      if (!o.date || o.date >= fromDate) continue;
+      if (!best || (o.date as string) < (best.date as string)) best = o;
+    }
+    if (best) carrierId = best.id;
+    else if (doomed.length) {
+      // 整条家族都在删除范围内：挑日期最靠前的那个墓碑当载体
+      let earliest = doomed[0];
+      for (const id of doomed) {
+        const d = state.tasks[id]?.date || '';
+        if (d && (!earliest || d < (state.tasks[earliest]?.date || ''))) earliest = id;
+      }
+      carrierId = earliest;
+    }
+  }
+  if (carrierId) {
+    const carrier = state.tasks[carrierId];
+    if (carrier) {
+      items.push({ entity: 'task', id: carrierId, calId: carrier.calId, fields: { repeatUntil: fromDate } });
+    }
   }
   for (const id of doomed) {
     const o = state.tasks[id];
@@ -403,11 +552,20 @@ export function deleteSeriesFrom(seriesId: string, fromDate: string, from = '任
   if (items.length) commitMany(items);
 }
 
-/** 这个系列是否已被「从某天起全部删除」结束掉；结束日（不含）之前的仍有效 */
+/** 这个系列是否已被「从某天起全部删除」结束掉；结束日（不含）之前的仍有效。
+ *
+ *  ⚠️ 2026-10-17：**全家族扫描**，不限系列根本身。标记可能写在根墓碑上、
+ *  也可能写在别的成员上（根不在本机时 deleteSeriesFrom 的改写）。 */
 export function seriesEndOf(seriesId: string): string | null {
-  const root = state.tasks[seriesId];
-  const v = root?.repeatUntil;
-  return typeof v === 'string' && v ? v : null;
+  let earliest: string | null = null;
+  for (const t of Object.values(state.tasks)) {
+    if (!t) continue;
+    const u = (typeof t.repeatUntil === 'string' && t.repeatUntil) ? t.repeatUntil : null;
+    if (u === null) continue;
+    if ((seriesRootOf(t) ?? t.id) !== seriesId) continue;
+    if (earliest === null || u < earliest) earliest = u;
+  }
+  return earliest;
 }
 
 /**

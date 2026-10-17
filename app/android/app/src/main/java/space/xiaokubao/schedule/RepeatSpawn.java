@@ -126,6 +126,28 @@ final class RepeatSpawn {
     }
 
     /**
+     * 这条任务的**系列真根**。与 App 的 `seriesRootOf` 同一口径（形状优先）：
+     *   ① id 带 `#` → 真根是 `#` 前的部分。**这是 2026-10-17 的关键**：
+     *      编辑实例 repeat 时若拿 task.id 当根去 spawn，整个家族会重新挂到
+     *      实例 id 上，子嗣 id 变成两层日期段 —— 血脉从此裂开，
+     *      「全部删除」就再也删不干净（用户实报）；
+     *   ② 否则 seriesId 字段（它也带 `#` 时同样取前缀，兜住指向中间层的坏数据）；
+     *   ③ 都没有 → 它自己就是根。
+     */
+    static String seriesRootOf(WTask t) {
+        if (t == null) return null;
+        if (t.id != null) {
+            int hash = t.id.indexOf('#');
+            if (hash > 0) return t.id.substring(0, hash);
+        }
+        if (t.seriesId != null && !t.seriesId.isEmpty()) {
+            int hash = t.seriesId.indexOf('#');
+            return hash > 0 ? t.seriesId.substring(0, hash) : t.seriesId;
+        }
+        return t.id;
+    }
+
+    /**
      * 扫描整个快照，把「窗口快用完」的重复系列补齐。
      *
      * 为什么需要这个（用户2026-10-14 报「每天只重复几天就断了」）：
@@ -137,6 +159,12 @@ final class RepeatSpawn {
      *
      * 幂等：已存在的实例 id 会被 patchEntity 跳过，且窗口够长时直接 return，
      * 不会反复发请求。
+     *
+     * ⚠️ 2026-10-17（用户报「全部删除只删了当天」）：根识别改成**形状优先**。
+     * 旧判据是「seriesId 为空或指向自己 → 是根」，于是 seriesId 缺失的实例
+     * （被改乱血脉的那批）每条都变成一个**新系列**的根，从这里各自再派生一批
+     * id 更长的实例 —— 血脉越裂越多，删除自然永远删不干净。
+     * 派生实例 id 一定是 `系列根id#发生日`，所以 **id 带 `#` 的一律不是根**。
      */
     static void refillAll(Context c) {
         try {
@@ -145,18 +173,11 @@ final class RepeatSpawn {
             java.util.Set<String> roots = new java.util.LinkedHashSet<>();
             for (WTask t : snap.tasks) {
                 if (t == null || t.done || t.deleted) continue;
-                /* ⚠️ **已结束的系列直接跳过**（2026-10-14，用户报「App 卡在开屏页」）。
-                 * 判据是根上的 `repeatUntil`（由「从这次起往后全部」写下）。
-                 * 不跳的话：对一个已结束的系列，窗口永远是「不足」的
-                 * （它结束日之后的实例都被删了）→ 这里补 → App 按同一个标记又删 →
-                 * 下一轮再补。而 spawn 结尾会直接调 refresh（普通 Java 调用），
-                 * 于是 refresh → refillAll → spawn → refresh 在主线程上无限递归，
-                 * 首屏永远画不出来。
-                 * 老快照没这个键 → null → 照旧补，向后兼容。 */
-                if (t.repeatUntil != null && !t.repeatUntil.isEmpty()) continue;
                 JSONObject r = t.repeat;
                 if (r == null || "none".equals(r.optString("unit", "none"))) continue;
-                // 只处理系列根：实例自己也有 repeat，处理它会重复派生
+                // 形状优先：id 带 '#' 的一律是派生实例（含被改乱血脉的中间层），
+                // 永远不当根。seriesId 那条判据留着，兜老数据里随机 id 的成员。
+                if (t.id != null && t.id.indexOf('#') >= 0) continue;
                 String sid = t.seriesId;
                 if (sid != null && !sid.isEmpty() && !sid.equals(t.id)) continue;
                 roots.add(t.id);
@@ -164,6 +185,17 @@ final class RepeatSpawn {
             for (String rootId : roots) {
                 WTask root = snap.taskById(rootId);
                 if (root == null || root.repeat == null) continue;
+                /* ⚠️ **已结束的系列直接跳过**（2026-10-14，用户报「App 卡在开屏页」）。
+                 * 判据是根上的 `repeatUntil`（由「从这次起往后全部」写下）。
+                 * 不跳的话：对一个已结束的系列，窗口永远是「不足」的
+                 * （它结束日之后的实例都被删了）→ 这里补 → App 按同一个标记又删 →
+                 * 下一轮再补。而 spawn 结尾会直接调 refresh（普通 Java 调用），
+                 * 于是 refresh → refillAll → spawn → refresh 在主线程上无限递归，
+                 * 首屏永远画不出来。
+                 * 2026-10-17：改成**全家族**认标记 —— 标记不一定在根上
+                 * （App 在根不在本机时会改写到存活成员身上），只认根会漏，
+                 * 漏了就又长回来，那个递归也跟着回来。 */
+                if (seriesEnded(snap, root)) continue;
                 if (countFuture(snap, root, today) >= LOOKAHEAD) continue;
                 // ⚠️ 起点用「已存在的最远日期」，不是根自己的日期。
                 // 用根的日期会每次都从同一天重推一遍，生成的永远是同样那几条 ——
@@ -177,16 +209,45 @@ final class RepeatSpawn {
         }
     }
 
+    /**
+     * 这个系列是不是已经被「从某天起全部删除」结束掉了。
+     *
+     * 全家族扫描：根或**任意成员**身上有 repeatUntil 都算。标记的落点有三类
+     * （根墓碑 / 根不在本机时 App 改写的存活成员 / 被改乱血脉的旁支），
+     * 只认根本身会漏 → 漏判的系列会被这里重新补出来 → 删了等于没删。
+     */
+    private static boolean seriesEnded(WidgetSnapshot snap, WTask root) {
+        if (root == null) return false;
+        for (WTask t : snap.tasks) {
+            if (t == null) continue;
+            if (t.repeatUntil == null || t.repeatUntil.isEmpty()) continue;
+            if (sameSeries(t, root.id)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 是不是同一个家族 —— **形状优先**，与 App 的 seriesRootOf 同一口径。
+     *   ① id 等于根本人，或以 `根id#` 开头 → 是（seriesId 字段坏了也认亲，
+     *      这是 2026-10-17「全部删除只删当天」的关键：旁支实例的 seriesId
+     *      可能指向中间层、甚至整个缺失）；
+     *   ② seriesId 字段指向根 → 是（老数据里随机 id 的成员只认这个）。
+     * 包内可见：TaskDetailActivity 的「从这次起全部」也要按这个口径收集。
+     */
+    static boolean sameSeries(WTask t, String rootId) {
+        if (t == null || t.id == null || rootId == null) return false;
+        if (t.id.equals(rootId)) return true;
+        if (t.id.startsWith(rootId + "#")) return true;
+        String sid = t.seriesId;
+        return sid != null && !sid.isEmpty() && sid.equals(rootId);
+    }
+
     /** 这个系列已存在的实例里最远的那天（含根自己）；没有就返回 null */
     private static String furthestDate(WidgetSnapshot snap, WTask root) {
         String max = null;
         for (WTask t : snap.tasks) {
             if (t == null || t.deleted || t.date == null) continue;
-            String sid = t.seriesId;
-            boolean same = sid != null && !sid.isEmpty()
-                    ? sid.equals(root.id) || root.id.equals(sid)
-                    : t.id.equals(root.id);
-            if (!same) continue;
+            if (!sameSeries(t, root.id)) continue;
             if (max == null || t.date.compareTo(max) > 0) max = t.date;
         }
         return max;
@@ -203,11 +264,7 @@ final class RepeatSpawn {
         int n = 0;
         for (WTask t : snap.tasks) {
             if (t == null || t.deleted || t.done) continue;
-            String sid = t.seriesId;
-            boolean same = sid != null && !sid.isEmpty()
-                    ? sid.equals(root.id) || root.id.equals(sid)
-                    : t.id.equals(root.id);
-            if (!same) continue;
+            if (!sameSeries(t, root.id)) continue;
             if (today == null || t.date == null || t.date.compareTo(today) >= 0) n++;
         }
         return n;

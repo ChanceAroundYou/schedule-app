@@ -388,10 +388,16 @@ public class TaskDetailActivity extends Activity {
 
         // 重复规则改了 → **当场派生后续几次**。只靠 App 那边的
         // ensureRepeatOccurrences 不够：用户在小组件上改完就走，App 一直没开。
+        // ⚠️ 根 id 必须取**真根**（2026-10-17，用户报「全部删除只删当天」）：
+        // 编辑的很可能是某一条实例而不是系列根，拿 task.id 当根 spawn 会把
+        // 整个家族重新挂到实例 id 上，子嗣 id 带上两层日期段，血脉从此裂开。
         if (repeatCh) {
             try {
-                RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(TaskDetailActivity.this),
-                        task.id, newTitle, task.calId, date, buildRepeat(), pickedRemind, newNote);
+                String rootId = RepeatSpawn.seriesRootOf(task);
+                if (rootId != null) {
+                    RepeatSpawn.spawn(new RepeatSpawn.ContextWrapper(TaskDetailActivity.this),
+                            rootId, newTitle, task.calId, date, buildRepeat(), pickedRemind, newNote);
+                }
             } catch (Exception ignored) {
             }
         }
@@ -497,8 +503,11 @@ public class TaskDetailActivity extends Activity {
             return;
         }
 
-        final String rootId = (task.seriesId != null && !task.seriesId.isEmpty())
-                ? task.seriesId : task.id;
+        /* 真根解析（2026-10-17）：**形状优先**，不能直接拿 seriesId 当根。
+         * 被小组件自己改乱血脉的那批实例，seriesId 可能指向中间层甚至整个
+         * 缺失；拿它当根删除只能删掉一支主轴，旁支漏网后又被窗口补齐造回来
+         * —— 正是用户报的「选了全部删除，却只删了当天」。 */
+        final String rootId = RepeatSpawn.seriesRootOf(task);
         final String day = task.date;
 
         /* ⚠️ 这里是**自定义布局**，不是 AlertDialog.setItems()（2026-10-14 修）。
@@ -527,8 +536,9 @@ public class TaskDetailActivity extends Activity {
     /**
      * 「从这次起往后全部」—— 结束这个系列。
      *
-     * 只做两件事：① 把根任务标上 `repeatUntil`（这是**唯一的真相**）；
-     * ② 把本地看得见的、这天及以后的实例删掉。
+     * 只做两件事：① 落一个 `repeatUntil` 标记（这是**唯一的真相**，
+     * 根不在本机时改写到能活过这次删除的成员身上）；
+     * ② 把本地看得见的、这天及以后的实例删掉（两路收集，旁支不漏）。
      * 看不见的（比如别的设备建过什么）不用管 —— App 侧同步下来会按这个标记
      * 自己清理（`enforceRepeatUntil`），所以各端最终会收敛到同一状态。
      */
@@ -542,28 +552,47 @@ public class TaskDetailActivity extends Activity {
         // 还没发出去的乐观改动一起抹掉）
         final java.util.List<String> affected = new java.util.ArrayList<>();
         try {
-            // ① 根上落标记（根自己可能就是要删的那条，也要写上）
-            JSONObject rootFields = new JSONObject();
-            rootFields.put("repeatUntil", day);
-            WidgetPrefs.patchEntity(this, "tasks", rootId, rootFields, false);
-            WTask root = snap.taskById(rootId);
-            if (root != null) {
-                JSONObject op = new JSONObject();
-                op.put("entity", "task");
-                op.put("entityId", rootId);
-                op.put("calId", root.calId);
-                op.put("fields", rootFields);
-                ops.put(op);
-                affected.add(rootId);
+            /* ① 先圈出要删的：本地看得见的、day 及以后的**全部**家族成员。
+             *    收集口径是 sameSeries（形状 + seriesId 字段两路）——
+             *    2026-10-17 修：只按 seriesId 单路收集会漏掉旁支
+             *    （seriesId 指向中间层 / 整个缺失的那批），漏掉的过两天
+             *    又被窗口补齐造回来，正是「选了全部删除却只删了当天」。 */
+            final java.util.List<WTask> doomed = new java.util.ArrayList<>();
+            for (WTask t : snap.tasks) {
+                if (t == null || t.deleted) continue;
+                if (!RepeatSpawn.sameSeries(t, rootId)) continue;
+                if (t.date == null || t.date.compareTo(day) < 0) continue;
+                doomed.add(t);
             }
 
-            // ② 本地看得见的、day 及以后的实例全部删掉
+            /* ② 落 repeatUntil 标记（唯一的真相，各端按它收敛）。
+             *    载体优先级：系列根本身 → 能活过这次删除的最早成员 →
+             *    都不行就落在 doomed 里最早的那个（墓碑字段一样会同步、
+             *    一样被 App 的 seriesEndOf / enforceRepeatUntil 认出来）。
+             *    根不在本机快照里时（从没同步过这条系列）尤其需要这条退路。 */
+            JSONObject rootFields = new JSONObject();
+            rootFields.put("repeatUntil", day);
+            String markerId = rootId;
+            if (snap.taskById(rootId) == null) {
+                WTask best = earliestAlive(snap, rootId, day, true);
+                if (best == null) best = earliestOf(doomed);
+                if (best != null) markerId = best.id;
+            }
+            WidgetPrefs.patchEntity(this, "tasks", markerId, rootFields, false);
+            WTask carrier = snap.taskById(markerId);
+            if (carrier != null) {
+                JSONObject op = new JSONObject();
+                op.put("entity", "task");
+                op.put("entityId", markerId);
+                op.put("calId", carrier.calId);
+                op.put("fields", rootFields);
+                ops.put(op);
+                affected.add(markerId);
+            }
+
+            // ③ doomed 逐个删
             long now = System.currentTimeMillis();
-            for (WTask t : snap.tasks) {
-                if (t == null) continue;
-                String sid = (t.seriesId != null && !t.seriesId.isEmpty()) ? t.seriesId : t.id;
-                if (!sid.equals(rootId)) continue;
-                if (t.date == null || t.date.compareTo(day) < 0) continue;
+            for (WTask t : doomed) {
                 JSONObject f = new JSONObject();
                 f.put("deleted", true);
                 f.put("deletedAt", now);
@@ -619,6 +648,33 @@ public class TaskDetailActivity extends Activity {
             }
         });
         finish();
+    }
+
+    /**
+     * 家族里日期最早的活着成员。
+     *
+     * @param beforeDay 非空时只要这个日期**之前**的（用来挑「能活过这次删除」
+     *                  的标记载体）；null 时不限
+     */
+    private static WTask earliestAlive(WidgetSnapshot snap, String rootId,
+                                       String beforeDay, boolean before) {
+        WTask best = null;
+        for (WTask t : snap.tasks) {
+            if (t == null || t.deleted || t.date == null) continue;
+            if (!RepeatSpawn.sameSeries(t, rootId)) continue;
+            if (before && beforeDay != null && t.date.compareTo(beforeDay) >= 0) continue;
+            if (best == null || t.date.compareTo(best.date) < 0) best = t;
+        }
+        return best;
+    }
+
+    private static WTask earliestOf(java.util.List<WTask> list) {
+        WTask best = null;
+        for (WTask t : list) {
+            if (t == null || t.date == null) continue;
+            if (best == null || t.date.compareTo(best.date) < 0) best = t;
+        }
+        return best;
     }
 
     private void doDelete() {

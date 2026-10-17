@@ -264,11 +264,11 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
             })}
           </div>
 
+          {/* 当前时间线：**只要一条线**（用户 2026-10-17：「不要显示具体
+              的时间，只是有一条线就够了」）。圆点和时刻文字都去掉了，
+              只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。 */}
           {isToday && nowPct !== null && (
-            <div className="tl-now" style={{ top: nowPct + '%' }}>
-              <i />
-              <span>{D.minToTime(nowMin)}</span>
-            </div>
+            <div className="tl-now" style={{ top: nowPct + '%' }} />
           )}
 
           <div className="tl-events">

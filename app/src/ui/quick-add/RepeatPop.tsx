@@ -80,16 +80,14 @@ export function RepeatPop({ rep, patch, next, last }: {
              那个按钮上的状态，不是下拉里的一项。 */
           options={REPEAT_UNITS.map((u) => ({ value: u.value, label: u.label }))}
           onPick={(u) => {
-            /* 切单位时默认值填「今天对应的那个」（用户 2026-10-10）：
-               周 → 今天星期几；月 → 今天几号；年 → 今天几月几号。
-               原先切过去拿到的是任务日期推的默认值（emptyRepeat 用的 date），
-               用户看到的第一个东西和自己手点的这一下对不上。 */
-            const todayIso = D.today();
-            const td = D.parseISO(todayIso);
-            const next = toRepeat({ ...rep, unit: u, n: 1, end: null }, todayIso);
-            if (u === 'week') next.weekdays = [td.getDay()];
-            if (u === 'month') next.monthday = td.getDate();
-            if (u === 'year') { next.yearMonth = td.getMonth() + 1; next.monthday = td.getDate(); }
+            /* 切单位时**不再默认星期几/几号**（用户 2026-10-17：「我点选的
+               是星期五，打开重复设置默认的却是今天周六，不需要它给我默认」）：
+               周 → 星期几全不选，等用户自己点（今天星期几和用户建任务的日期
+                     没有必然关系，预选哪个都是猜）；
+               月/年 → 沿用规则里已有的值（浮层打开时就按**任务日期**推好了），
+                       不再拿今天覆盖。 */
+            const next = toRepeat({ ...rep, unit: u, n: 1, end: null }, null);
+            if (u === 'week') next.weekdays = [];
             patch(next);
           }}
           label="重复单位"

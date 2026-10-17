@@ -106,6 +106,15 @@ function validateOp(op, now) {
  * 不再依赖任何时序假设。
  *
  * 幂等：已经 deleted 的实例 `putField` 不会胜出 → 不记流水、重复调用无副作用。
+ *
+ * ⚠️ 2026-10-17：成员收集改成**两路并集**（用户报「全部删除只删了当天」）。
+ * 实测数据里有一批实例的 seriesId 是坏的 —— ① 指向中间层实例（id 带两层
+ * 日期段），② 整个缺失。只按 seriesId 字段单路收集会漏掉旁支，漏掉的那些
+ * 过两天又被客户端的窗口补齐造回来。派生实例的 id 一定是
+ * `${seriesId}#${发生日期}`，所以**只要 id 以 `真根 + '#'` 开头就是这个
+ * 家族的**，不管 seriesId 字段写成什么。
+ * 同理，`repeatUntil` 标记本身也可能不落在根上（客户端在根不在本机时会
+ * 改写到存活成员身上），所以先把标记所在任务的**真根**解析出来再收集。
  */
 function cascadeRepeatUntil(terms, now) {
   const SERVER_DEVICE = 'server';
@@ -118,12 +127,34 @@ function cascadeRepeatUntil(terms, now) {
   const dateOf = new Map();
   /** 已经删掉的，跳过 */
   const gone = new Set();
+  /** 这个库里的全部任务 id（形状路扫描用） */
+  const taskIds = new Set();
   for (const r of rows) {
     if (r.entity !== 'task') continue;
+    taskIds.add(r.entity_id);
     if (r.field === 'seriesId') seriesOf.set(r.entity_id, safeParse(r.value));
     else if (r.field === 'date') dateOf.set(r.entity_id, safeParse(r.value));
     else if (r.field === 'deleted' && r.value === 'true') gone.add(r.entity_id);
   }
+
+  /**
+   * 解析真根：**形状优先**，与客户端 seriesRootOf 同一口径。
+   *   ① id 带 `#` → 真根是 `#` 前的部分（标记落在了派生实例 / 中间层上）；
+   *   ② 否则顺着 seriesId 字段往上找（老数据、随机 id 的成员）；
+   *   ③ 都断了 → 它自己就是根。
+   * guard 防坏数据成环。
+   */
+  const trueRoot = (id) => {
+    let cur = String(id);
+    for (let guard = 0; guard < 8; guard++) {
+      const hash = cur.indexOf('#');
+      if (hash > 0) return cur.slice(0, hash);
+      const sid = seriesOf.get(cur);
+      if (sid && sid !== cur) { cur = sid; continue; }
+      return cur;
+    }
+    return cur;
+  };
 
   const mark = (calId, id, field, json) => {
     if (db.putField(calId, 'task', id, field, json, now, SERVER_DEVICE) > 0) {
@@ -134,10 +165,17 @@ function cascadeRepeatUntil(terms, now) {
   for (const { seriesId, until, calId } of terms) {
     // 客户端可能传 null（把标记撤掉）—— 那时没有要清的
     if (typeof until !== 'string' || !until) continue;
-    /** 属于这个系列的所有 id（含系列根本身） */
-    const ids = new Set([seriesId]);
+    const root = trueRoot(seriesId);
+    /** 属于这个系列的所有 id（含系列根本身、含旁支） */
+    const ids = new Set([root]);
+    // 形状路：id 以 `真根#` 开头 —— seriesId 字段坏了也照样收进来
+    const prefix = root + '#';
+    for (const id of taskIds) {
+      if (id.startsWith(prefix)) ids.add(id);
+    }
+    // 字段路：老数据里随机 id 的成员只认 seriesId
     for (const [id, sid] of seriesOf) {
-      if (sid === seriesId) ids.add(id);
+      if (sid === root) ids.add(id);
     }
     for (const id of ids) {
       if (gone.has(id)) continue;

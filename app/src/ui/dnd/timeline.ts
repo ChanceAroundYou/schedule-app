@@ -6,7 +6,6 @@ import { useRef, useCallback } from 'react';
 import type { DragOverEvent, DragMoveEvent, DragEndEvent, Modifier } from '@dnd-kit/core';
 import * as D from '../../domain/date.ts';
 import * as store from '../../data/store.ts';
-import { FULL_DAY } from '../../domain/layout.ts';
 import { toast } from '../kit.tsx';
 import {
   eventX, eventY, minFromY, weekGuideMin, zoneWindow,
@@ -83,8 +82,13 @@ export function useTimelineDrag() {
       drawTimeGuide(zone, min, win);
       drawTimeCursor(zone, min, win);
     } else if (overId.startsWith('week:')) {
+      /* 周视图**不再画落点引导线**（用户 2026-10-17：「拖动任务的时候，
+         页面底下有一条虚线，把这个虚线给去掉」）。
+         zoneRef 照记 —— onDragEnd 的落点逻辑不经过引导线，不受影响；
+         clearTimeGuide 是防止从日视图拖进来时留着上一根的线。 */
       zoneRef.current = { el: zone, id: overId };
-      drawTimeGuide(zone, weekGuideMin(zone, min), FULL_DAY);
+      clearTimeGuide();
+      clearTimeCursor();
     } else {
       zoneRef.current = null;
       clearTimeGuide();
@@ -118,9 +122,9 @@ export function useTimelineDrag() {
       const win = zoneWindow(z.el);
       drawTimeGuide(z.el, min, win);
       drawTimeCursor(z.el, min, win);
-    } else if (z.id.startsWith('week:')) {
-      drawTimeGuide(z.el, weekGuideMin(z.el, min), FULL_DAY);
     }
+    /* 周视图分支整个去掉了：不画引导线（用户 2026-10-17）。onDragOver
+       进入周视图时已经 clear 过一次，这里不需要每帧再清。 */
   }, []);
 
   const onDragEnd = useCallback((event: DragEndEvent) => {

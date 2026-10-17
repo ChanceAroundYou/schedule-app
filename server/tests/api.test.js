@@ -1014,3 +1014,56 @@ test('repeatUntil 为 null（撤销标记）时不误删任何实例', async () 
   const snap = await snapshot();
   assert.ok(snap.tasks[`${SERIES}#2026-10-16`], 'null 只是「没设结束日」，不该删东西');
 });
+
+/**
+ * 2026-10-17 用户报「全部删除只删了当天」。
+ *
+ * 实测服务端数据里，被小组件改乱了血脉的系列有三种形态：
+ *   ① 中间层实例的 seriesId 指向自己（id 带一层日期段）；
+ *   ② 子嗣 id 带两层日期段、seriesId 指向中间层；
+ *   ③ seriesId 整个缺失。
+ * 只按 seriesId 字段单路收集 → 旁支漏网 → 客户端的窗口补齐又把它们造回来。
+ * 修法：形状路（id 以 `真根#` 开头即家族成员）+ 真根解析。
+ */
+test('血脉裂成多层的系列：级联删除要连旁支一起删', async () => {
+  const SERIES = 'series-cascade-split';
+  const D1 = '2026-10-15', D2 = '2026-10-16', D3 = '2026-10-17', D4 = '2026-10-18';
+
+  await push([op(SERIES, { title: '55', date: D1, seriesId: null }, 44000, 'devA')]);
+  await push([op(`${SERIES}#${D2}`, { title: '55', date: D2, seriesId: SERIES }, 44010, 'devA')]);
+  // 变异①：中间层实例 seriesId 指向自己
+  await push([op(`${SERIES}#${D3}`, { title: '55', date: D3, seriesId: `${SERIES}#${D3}` }, 44020, 'devA')]);
+  // 变异②：子嗣带两层日期段，seriesId 指向中间层（单路收集永远漏它）
+  await push([op(`${SERIES}#${D3}#${D4}`, { title: '55', date: D4, seriesId: `${SERIES}#${D3}` }, 44030, 'devA')]);
+  // 变异③：seriesId 整个缺失
+  await push([op(`${SERIES}#2026-10-19`, { title: '55', date: '2026-10-19', seriesId: null }, 44040, 'devA')]);
+
+  const before = await snapshot();
+  assert.ok(before.tasks[`${SERIES}#${D3}#${D4}`], '前提：旁支实例先得存在');
+
+  // 用户在 10-17 那一次上选「从这次起往后全部」
+  await push([op(SERIES, { repeatUntil: D3 }, 44050, 'devA')]);
+
+  const after = await snapshot();
+  assert.ok(!after.tasks[`${SERIES}#${D3}`], '结束日当天的实例要删');
+  assert.ok(!after.tasks[`${SERIES}#${D4}`], '正常实例要删');
+  assert.ok(!after.tasks[`${SERIES}#${D3}#${D4}`], '两层日期段的旁支也必须删');
+  assert.ok(!after.tasks[`${SERIES}#2026-10-19`], '缺 seriesId 的旁支也必须删');
+  assert.ok(after.tasks[`${SERIES}#${D2}`], '结束日之前的历史要留');
+  assert.ok(after.tasks[SERIES], '系列根早于结束日，要留');
+});
+
+test('标记落在旁支成员上（根不在发起端本机）：按真根级联', async () => {
+  const SERIES = 'series-cascade-carrier';
+  await push([op(SERIES, { title: '喝水', date: '2026-10-15' }, 45000, 'devA')]);
+  await push([op(`${SERIES}#2026-10-16`, { title: '喝水', date: '2026-10-16', seriesId: SERIES }, 45010, 'devA')]);
+  await push([op(`${SERIES}#2026-10-17`, { title: '喝水', date: '2026-10-17', seriesId: SERIES }, 45020, 'devA')]);
+
+  // 标记写在 10-16 那个成员身上（客户端在根不在本机时改写到存活成员）
+  await push([op(`${SERIES}#2026-10-16`, { repeatUntil: '2026-10-17' }, 45030, 'devA')]);
+
+  const after = await snapshot();
+  assert.ok(!after.tasks[`${SERIES}#2026-10-17`], '真根仍是 SERIES，10-17 该被删');
+  assert.ok(after.tasks[`${SERIES}#2026-10-16`], '载体在结束日之前，是故意留给它的，要留');
+  assert.ok(after.tasks[SERIES], '系列根本身不受影响（还没到结束日）');
+});

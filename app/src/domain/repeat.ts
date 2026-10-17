@@ -159,8 +159,23 @@ export function instanceId(seriesId: string, occurrenceDate: string): string {
   return seriesId + '#' + occurrenceDate;
 }
 
-/** 系列根 id：非重复任务是 null，重复任务第一次创建时以自己的 id 为根 */
+/**
+ * 系列根 id：非重复任务是 null，重复任务第一次创建时以自己的 id 为根。
+ *
+ * ⚠️ **形状优先**（2026-10-17 修，用户报「全部删除只删了当天」）：
+ * 派生实例的 id 一定是 `${seriesId}#${发生日期}`，所以**只要 id 里带 `#`，
+ * 真根就是 `id.split('#')[0]`** —— 不看 seriesId 字段。
+ *
+ * 为什么不能信 seriesId：实测服务端数据里有一批实例的 seriesId 是坏的 ——
+ * ① 指向中间层实例（`t_xxx#2026-10-29` 的子嗣挂着两层日期段），
+ * ② 整个缺失（于是旧逻辑回落到自身 id，一个系列裂成四五条血脉）。
+ * 根一裂，按 seriesId 单路收集的删除就只能删掉一支主轴，剩下的过两天
+ * 又被窗口补齐造回来 —— 正是「选了全部删除却只删了当天」的根因。
+ * id 的形状是生成时就定死的，比可能被写坏的字段可靠。
+ */
 export function seriesRootOf(task: Pick<Task, 'id' | 'seriesId' | 'repeat'>): string | null {
+  const hash = task.id.indexOf('#');
+  if (hash > 0) return task.id.slice(0, hash);
   if (task.seriesId) return task.seriesId;
   if (task.repeat && task.repeat.unit !== 'none') return task.id;
   return null;
