@@ -5,12 +5,14 @@
 #   ./deploy/publish-apk.sh                 # 用当天日期当更新说明
 #   ./deploy/publish-apk.sh "修了打卡回弹"   # 自己写说明
 #
-# 做四件事：
+# 做五件事：
 #   1. assembleRelease（用 keystore.properties 里的固定 keystore 签名）
 #   2. 从 APK 里读 versionCode / versionName（不信 build.gradle，信产物本身）
 #   3. scp 到服务器 ~/.local/schedule/apk/schedule-<versionCode>.apk，
 #      连同算好的 sha256 一起写进 version.json
 #   4. curl 回读校验，确认客户端真能拿到
+#   5. 把版本/提交/分支写进 ~/.local/schedule/state/app.version
+#      （2026-10-17 补：以前漏了这步，线上记录停在旧版本不更新）
 #
 # ⚠️ 前置条件：
 #   · app/android/keystore.properties 必须在（密码在里面），否则 release 未签名
@@ -39,6 +41,11 @@ SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
 SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
 REMOTE_DIR='~/.local/schedule/apk'
 BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule/dl}"
+
+# 版本记录（state/app.version）与 publish-web.sh 对齐，靠 preflight.sh 的
+# pf_gather / pf_write_version。⚠️ 2026-10-17 补的：以前这里没有，发完 APK
+# 线上记录不更新（上上个版本就停更过）。
+source "$ROOT/deploy/preflight.sh"
 
 NOTES="${1:-$(date +%Y-%m-%d 发布)}"
 
@@ -110,6 +117,11 @@ printf '%s' "$GOT" | grep -q "\"versionCode\": *$VERSION_CODE" \
 CODE="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' "$BASE_URL/$APK_NAME")"
 [ "$CODE" = "200" ] || die "APK 下载返回 $CODE"
 printf '  %s -> HTTP %s\n' "$APK_NAME" "$CODE"
+
+say "5/5 写版本记录（~/.local/schedule/state/app.version）"
+# pf_gather 会自己 cd 回仓库根采集 git 状态；上面 cd 到 android 目录不影响它。
+pf_gather
+pf_write_version app "$VERSION_NAME" "versionCode=$VERSION_CODE sha256=$SHA"
 
 say "发布完成：$VERSION_NAME（versionCode $VERSION_CODE）"
 printf '  手机下次冷启动 App 就会看到更新提示。\n'
