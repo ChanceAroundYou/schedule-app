@@ -85,6 +85,12 @@ class AppUpdate {
     static volatile String sPendingSha256;
     static volatile int sPendingVersionCode;
 
+    /**
+     * 已把用户送去「安装未知应用」设置页，等他回来补一次检查。
+     * 见 {@link #onResume} —— 这是那类「点了却没做成」的自动补救。
+     */
+    private static volatile boolean sWaitingForPermission = false;
+
     // ---------------------------------------------------------------- 对外入口
 
     /**
@@ -95,13 +101,42 @@ class AppUpdate {
         activity.getWindow().getDecorView().postDelayed(new Runnable() {
             @Override
             public void run() {
-                checkAndPrompt(activity);
+                checkAndPrompt(activity, false);
             }
         }, 3000L);
     }
 
-    /** 立刻检查（网页侧「检查更新」按钮用）。有更新同样走弹框 */
-    static void checkAndPrompt(final Activity activity) {
+    /**
+     * 检查一次并弹框。{@code force} 为 true 时**跳过 24 小时冷却**。
+     *
+     * 为什么要这个开关（用户 2026-10-17 报障）：以前点「立即更新」时是先
+     * {@link #markPrompted} 再 {@link #startDownload}，而没授「安装未知应用」
+     * 权限时后者直接送用户去设置页、**什么也不做**。标记已经写下 → 授权回来
+     * 按钮消失，24 小时内再也不提示，等于那次更新**彻底丢了**。
+     *
+     * 关于页的「检查更新」按钮走 force = true —— 用户主动点的，不该被冷却挡着；
+     * 「已是最新」也要给个回执（toast），否则按钮点了没反应，跟没做一样。
+     */
+    static void checkForced(final Activity activity) {
+        checkAndPrompt(activity, true);
+    }
+
+    /**
+     * 从「安装未知应用」设置页回来时调一次。
+     *
+     * 用户去授权前我们什么都没做成（见 {@link #startDownload} 的早退），
+     * 所以回来得自动补上 —— 不然他会以为 App 坏了。
+     * {@code sWaitingForPermission} 只有那一条路径会置 true。
+     */
+    static void onResume(final Activity activity) {
+        if (!sWaitingForPermission) return;
+        sWaitingForPermission = false;
+        Log.i(TAG, "授权回来，补一次更新检查");
+        checkForced(activity);
+    }
+
+    /** 检查更新。{@code force} = 跳过冷却 + 「已是最新」也给 toast */
+    private static void checkAndPrompt(final Activity activity, final boolean force) {
         final Context c = activity.getApplicationContext();
         new Thread(new Runnable() {
             @Override
@@ -114,9 +149,12 @@ class AppUpdate {
                     long self = selfVersionCode(c);
                     if (m.versionCode <= self) {
                         Log.i(TAG, "已是最新 versionCode=" + self);
+                        if (force) {
+                            toast(c, "已是最新版本（versionCode " + self + "）");
+                        }
                         return;
                     }
-                    if (!shouldPrompt(c, m.versionCode)) {
+                    if (!force && !shouldPrompt(c, m.versionCode)) {
                         Log.i(TAG, "有新版 " + m.versionCode + " 但 24h 内提示过了，跳过");
                         return;
                     }
@@ -205,7 +243,10 @@ class AppUpdate {
                         .setMessage(msg)
                         .setNegativeButton("稍后", null)
                         .setPositiveButton("立即更新", (d, w) -> {
-                            markPrompted(activity, m.versionCode);
+                            // **先启动、后标记**（2026-10-17 修）：以前是
+                            // markPrompted 在前、startDownload 在后，没权限时
+                            // startDownload 早退去设置页，标记却已写下 ——
+                            // 授权回来按钮消失，24h 内也不再提示。
                             startDownload(activity, m);
                         })
                         .show();
@@ -219,12 +260,15 @@ class AppUpdate {
         // Android 8+ 的「安装未知应用」是特殊权限，弹不了系统安装器就先送设置页
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
-            Toast.makeText(activity, "请先允许本应用「安装未知应用」，再回来点更新", Toast.LENGTH_LONG).show();
+            Toast.makeText(activity, "请先允许本应用「安装未知应用」，回来会自动继续", Toast.LENGTH_LONG).show();
+            sWaitingForPermission = true;      // 交给 onResume 补刀
             Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + activity.getPackageName()));
             activity.startActivity(i);
             return;
         }
+        // 到这里才算「这次提示真的转化成了下载」，可以标记冷却了
+        markPrompted(activity, m.versionCode);
         String apkUrl = BuildConfig.UPDATE_BASE.replaceAll("/+$", "") + "/dl/" + m.url;
         Context c = activity.getApplicationContext();
         DownloadManager dm = (DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE);

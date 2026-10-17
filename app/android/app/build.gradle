@@ -71,6 +71,23 @@ android {
                 keyPassword keystoreProps['keyPassword']
             }
         }
+        // debug 也用同一个 keystore（2026-10-17 加）。
+        //
+        // 为什么：调试包默认是另一把 debug 签名，**装不到正式版上面** ——
+        // 会撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能卸载重装，而卸载
+        // 会连登录态和数据一起清掉。共用 keystore 后调试包可以直接覆盖安装。
+        //
+        // 附带的好处：debug 构建是 debuggable 的，Android 会自动打开 WebView
+        // 远程调试（release 不打开）。这样自动化测试能用 CDP 精确驱动网页，
+        // 不用靠 adb input tap 猜坐标 —— 猜坐标这件事今天已经错了三次。
+        if (keystoreProps['storeFile'] != null) {
+            debug {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
     }
 
     buildTypes {
@@ -79,6 +96,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (hasReleaseKeystore) {
                 signingConfig signingConfigs.release
+            }
+        }
+        // debug 只有配了 keystore 才改签名 —— 否则保持默认，不影响别人
+        if (hasReleaseKeystore) {
+            debug {
+                signingConfig signingConfigs.debug
             }
         }
     }

@@ -10,8 +10,9 @@ import { useState, useEffect } from 'react';
 import { Info } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import type { LocalState, PublicUser } from '../../domain/types.ts';
-import { Card, Field } from '../kit.tsx';
+import { Card, Field, Btn } from '../kit.tsx';
 import { cx } from '../cx.ts';
+import { checkAppUpdate } from '../../data/widget.ts';
 import { ChangePasswordSheet } from './ChangePasswordSheet.tsx';
 import { AppearanceTab } from './AppearanceTab.tsx';
 import { SecurityTab } from './SecurityTab.tsx';
@@ -54,6 +55,9 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   const [tab, setTab] = useState<SettingsTab>('appearance');
   const [apkUrl, setApkUrl] = useState<string | null>(null);
   const [apkName, setApkName] = useState<string | null>(null);
+  /** 检查更新的进行中态 —— 点了立刻有反馈，不让用户怀疑自己没点到 */
+  const [checking, setChecking] = useState(false);
+  const native = Capacitor.isNativePlatform();
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return;
@@ -119,6 +123,30 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           <Field label="版本">
             <span data-about="version" className="text-[12.5px]">{VERSION}</span>
           </Field>
+          {/* 检查更新：只有 App 里有（更新提示是原生弹的，网页没有这一层）。
+              点了之后是原生去干活，这里只做一个进行中态 —— 有没有新版本、
+              弹不弹框，都由原生回答（含「已是最新」的回执）。 */}
+          {native && (
+            <Field label="更新">
+              <Btn
+                type="button"
+                size="sm"
+                variant="normal"
+                data-about="check-update"
+                disabled={checking}
+                onClick={async () => {
+                  setChecking(true);
+                  try { await checkAppUpdate(); } finally {
+                    // 延迟一小会儿再解除进行中态：原生是异步拉版本清单的，
+                    // 立刻恢复会让按钮看起来「点了没反应」
+                    window.setTimeout(() => setChecking(false), 800);
+                  }
+                }}
+              >
+                {checking ? '检查中…' : '检查更新'}
+              </Btn>
+            </Field>
+          )}
           <Field label="技术栈">
             <span className="text-[12.5px]">React + Node + SQLite</span>
           </Field>

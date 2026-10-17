@@ -1,6 +1,7 @@
 package space.xiaokubao.schedule;
 
 import android.appwidget.AppWidgetManager;
+import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Insets;
@@ -95,6 +96,26 @@ public class WidgetBridge extends Plugin {
     } catch (Exception e) {
       call.reject("刷新小组件失败：" + e.getMessage());
     }
+  }
+
+  /**
+   * 立刻检查更新（网页侧「关于」页的「检查更新」按钮用）。
+   *
+   * 走 {@code force} 分支：**跳过 24 小时冷却**。用户主动点了按钮还被告知
+   * 「24 小时内提示过了，跳过」，那按钮等于不存在。
+   * 「已是最新」会给一句 toast 回执 —— 按钮点了没反应跟没做一样。
+   */
+  @PluginMethod
+  public void checkUpdate(PluginCall call) {
+    Activity activity = getActivity();
+    if (activity == null) {
+      call.reject("拿不到当前 Activity");
+      return;
+    }
+    AppUpdate.checkForced(activity);
+    JSObject ret = new JSObject();
+    ret.put("ok", true);
+    call.resolve(ret);
   }
 
   /**

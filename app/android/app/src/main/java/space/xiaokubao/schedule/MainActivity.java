@@ -28,10 +28,21 @@ public class MainActivity extends BridgeActivity {
     ReminderScheduler.reschedule(this);
   }
 
-  private void askNotifyPermission() {
-    if (Build.VERSION.SDK_INT < 33) return;   // 13 以下不需要
-    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-            == PackageManager.PERMISSION_GRANTED) return;
-    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
+    private void askNotifyPermission() {
+      if (Build.VERSION.SDK_INT < 33) return;   // 13 以下不需要
+      if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+          == PackageManager.PERMISSION_GRANTED) return;
+      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
+    }
+
+    /**
+     * 从设置页（比如「安装未知应用」授权）回到 App 时补一次更新检查。
+     * 用户被送去授权时那次更新**并没有真正启动**（见 AppUpdate.startDownload
+     * 的早退），不补的话他会以为点过的那次更新凭空消失了。
+     */
+  @Override
+  public void onResume() {
+    super.onResume();
+    AppUpdate.onResume(this);
   }
 }
