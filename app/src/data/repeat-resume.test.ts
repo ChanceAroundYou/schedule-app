@@ -30,7 +30,7 @@ const mem = new Map<string, string>();
 const store = await import('./store.ts');
 const D = await import('../domain/date.ts');
 const { makeTask } = await import('../domain/model/make.ts');
-const { ensureRepeatOccurrences, patchTask } = await import('./store/tasks.ts');
+const { ensureRepeatOccurrences, patchTask, dropRepeatTail } = await import('./store/tasks.ts');
 
 const CAL = 'cal-1';
 
@@ -112,4 +112,20 @@ test('等价规则（只是星期几顺序不同）不算改规则', () => {
   // 同样的规则、weekdays 换顺序后传进来
   patchTask(root, { repeat: { ...DAILY, unit: 'week', weekdays: [0, 5, 6] } });
   assert.ok(family(root).some((t) => t.repeatUntil), '等价规则不该清掉「到此为止」');
+});
+
+test('改规则不复活「取消重复→删除」掉的那批（用户刚做过处置）', () => {
+  fresh();
+  const today = D.today();
+  const root = seed(today, DAILY);
+  ensureRepeatOccurrences();
+  // 模拟 UI：取消重复 + 选择「删除这些任务」
+  patchTask(root, { repeat: { ...DAILY, unit: 'none' } });
+  const n = dropRepeatTail(root, today, 'delete');
+  assert.ok(n > 5, `前提：应删掉若干未来实例，实际 ${n}`);
+
+  // 之后用户又调了一下重复规则
+  patchTask(root, { repeat: MON });
+  const alive = aliveDates(root);
+  assert.ok(!alive.some((d) => d !== today), `不该把刚删的复活，实际又出现了 ${alive.length - 1} 条`);
 });

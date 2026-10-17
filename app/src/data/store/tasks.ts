@@ -120,6 +120,11 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?:
     if (!dead.deleted) return true;          // 已经活着，什么都不用做
     if (!revive) return false;
     if (dead.skipped) return false;          // 「只删这一次」不复活
+    /* 「取消重复 → 删除这些任务」也不复活：那是用户刚刚做过的一次明确处置
+       （2026-10-17 实测踩到）。他先删掉未来、之后又调了一下重复规则，
+       复活会把刚删的一整批又端回来 —— 看起来就是「点了删除没生效」。
+       只复活「从某天起全部删除」那种系列级结束留下的墓碑。 */
+    if (dead.trashFrom === '取消重复') return false;
     if (typeof date !== 'string' || date < today) return false;
     /* 内存里用 undefined（Task 的类型是可选字段），写入通道里用 null ——
        同步协议里 null 才是「把这个字段清空」，undefined 只是本地省掉。 */
