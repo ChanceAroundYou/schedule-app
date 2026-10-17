@@ -335,3 +335,12 @@ REST，不走 LWW**（它们是「关系」不是「字段」）。**LWW 是逐�
     合流由用户手动做 —— 冲突时**报告差异，不要替他选一边**。
     尤其别动 ubuntu 那份工作区（`main` 分支及其未提交改动）。
     完整约定见 [DEPLOY.md](DEPLOY.md)「二、双端开发与生产锁定」。
+12. **工作区保护是铁律**：动 git 之前先看 `status` / `stash list` / `ls-files -u`；
+    工作区里有**别人的**改动（另一个并行会话很可能就在同一份工作副本里改）→
+    先 `git stash push -u` 或 WIP 分支存档，**绝不允许覆盖**。
+    禁用 `checkout --` / `reset --hard` / `clean -fd` / `push -f` / `stash drop`。
+    提交信息必须带「来源：」一行。完整规则见 [docs/工作区保护.md](docs/工作区保护.md)。
+13. **就地新建的落点由 `pointerdown` 快照决定**（`app/tapSnap.ts`）。
+    键盘弹起时界面会被压矮，`e.clientY` 是按下那一刻的坐标、
+    `getBoundingClientRect()` 是 click 那一刻的布局 —— 两个坐标系混用会把
+    21:00 算成 7:00（实测偏 14 小时）。**不要改回「click 时读 rect」的写法。**

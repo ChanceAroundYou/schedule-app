@@ -195,6 +195,32 @@ published_from=小哭包家的笔记本
 
 ## 三、发布
 
+### 3.0 一键闭环（日常用这两个，不要手工串 publish-*.sh）
+
+```bash
+./deploy/web-loop.sh       # 网页端：可追溯 → tsc → 单测 → 本地深测 → 发布 → 线上实测
+./deploy/mobile-loop.sh    # 手机端：+版本号自检 → 打包 → 发布 → 装机 → 真机冒烟
+```
+
+两者都会逐段检查、失败退出码非 0（调用方自动返工），结尾给实测结论。
+publish-*.sh 仍然可以直接用，但**必须自己先做完体检**。
+
+⚠️ **发布前的工作区保护**（多人/多会话并行时的硬性前置，见
+[docs/工作区保护.md](docs/工作区保护.md)）：
+
+```bash
+git status --porcelain     # 必须为空（或已 stash -u / WIP 分支存档）
+git stash list             # 有半成品要记住编号，写进当天 memory
+git ls-files -u            # 必须为空（不能在冲突中发布）
+git log @{u}.. --oneline   # 必须为空（改动要先推到 dev）
+```
+
+**不要用 `--allow-dirty` / `--allow-unpushed` 绕过体检** —— 那会让线上版本
+对不上任何提交。真遇到「脏文件全在发布路径之外」（例如 `deploy/` 下的草稿脚本）
+才可以用 `--allow-dirty`。
+
+### 3.1 单独用发布脚本
+
 ```bash
 ./deploy/publish-web.sh        # 前端：构建 → 上传 → 备份 → 切换 → 回读校验
 ./deploy/publish-server.sh     # 后端：拷代码 → 备份 → restart → 探活
