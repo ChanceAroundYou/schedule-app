@@ -80,3 +80,14 @@ export function useIsNarrow(): boolean {
   }, []);
   return narrow;
 }
+
+/**
+ * 窄屏判定，**给非组件的地方用**（clickDispatch 这种模块级函数）。
+ *
+ * 与 useIsNarrow 用同一个断点常量 —— 两边必须一致，所以只认这一处。
+ * 组件里优先用 hook（能跟着断点变化重渲染）；这里只是点下去那一刻读一次当前值，
+ * 断点真的变了自然会重新读，不缓存。
+ */
+export function isNarrowNow(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(NARROW).matches;
+}

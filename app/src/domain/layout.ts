@@ -128,6 +128,21 @@ export function yToMin(y: number, boxH: number, w: DayWindow): number {
   return Math.max(w.from, Math.min(w.to - 15, snapped));
 }
 
+/**
+ * 吸附到**整点**（分钟 → 分钟）。
+ *
+ * 为什么只在手机上用：手机上格子比手指还细，按位置换算出来的时间常年是
+ * 9:07、14:23 这种，用户想的是「9 点」「10 点」这种整数（用户 2026-10-17）。
+ * 网页端格子够大、用户能瞄得准，15 分钟一档就够用了（见 yToMin），
+ * 硬吸整点反而丢精度 —— 所以这个函数由调用方按窄屏决定要不要用。
+ *
+ * 规则：距离整点 ≤30 分钟归到那个整点，超过就归到下一个整点。
+ * 等价于 `Math.round(min / 60) * 60`（24:00 那头收到 23:45）。
+ */
+export function snapToHour(min: number): number {
+  return Math.max(0, Math.min(1425, Math.round(min / 60) * 60));
+}
+
 /** 分钟 → 纵向百分比（0–100）。窗外返回 null —— 窗外的东西不画 */
 export function minToPct(min: number, w: DayWindow): number | null {
   if (min < w.from || min > w.to) return null;

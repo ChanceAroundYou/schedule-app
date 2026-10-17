@@ -31,7 +31,8 @@ import * as store from '../data/store.ts';
 import { toast, type ConfirmOptions } from '../ui/kit.tsx';
 import { domWindow } from './domWindow.ts';
 import { pickDate } from './pickDate.ts';
-import { DAY_H, yToMin } from '../domain/layout.ts';
+import { DAY_H, snapToHour, yToMin } from '../domain/layout.ts';
+import { isNarrowNow } from '../ui/hooks.ts';
 
 type ConfirmFn = (o: ConfirmOptions) => Promise<boolean>;
 
@@ -269,13 +270,22 @@ function openDraft(zone: HTMLElement, e: React.MouseEvent): void {
     /* 日视图时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——
        实测高度 + 窗内换算，见 domain/layout.ts 的 yToMin（顺带对齐 15 分钟）。 */
     const r = zone.getBoundingClientRect();
-    time = D.minToTime(yToMin(e.clientY - r.top, r.height, domWindow(zone)));
+    const min = yToMin(e.clientY - r.top, r.height, domWindow(zone));
+    time = D.minToTime(min);
   } else if (kind === 'week') {
     const r = zone.getBoundingClientRect();
     const min = Math.round(((e.clientY - r.top) / DAY_H) * 1440 / 15) * 15;
     time = D.minToTime(Math.max(0, Math.min(1425, min)));
   }
   // 'allday'（全天区）与 'day'（月视图格子）不带时间 —— 只落在那一天
+
+  /* 手机上吸附到整点，网页端仍吸 15 分钟（用户 2026-10-17）：
+     手机格子比手指还细，按位置算出来常是 9:07、14:23，用户想的是「9 点」这种
+     整数；网页端格子大、瞄得准，15 分钟一档才够用，硬吸整点反而丢精度。 */
+  if (time && isNarrowNow()) {
+    const m = D.timeToMin(time);
+    if (m !== null) time = D.minToTime(snapToHour(m));
+  }
 
   store.setUi({ draft: { zone: zid, date, time } });
 }

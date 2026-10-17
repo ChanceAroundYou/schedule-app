@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { commitDraftTask, setDraftNull } from '../../ui/newCell.ts';
+import { isNarrowNow } from '../../ui/hooks.ts';
 import type { DraftSeed, LocalState } from '../../domain/types.ts';
 
 
@@ -85,6 +86,31 @@ export function NewCell({
     fn();
   };
 
+  /* 手机上「收起输入法」= 不想要这条任务（用户 2026-10-17）。
+     为什么不能靠 onBlur：安卓把输入法按下去收起时，textarea **并没有失焦**，
+     焦点还在输入框上，所以 onBlur 压根不触发，草稿框就留在屏幕上 ——
+     用户看到的是「我明明把键盘关了，它怎么还在要我写字」。
+     这里改看**软键盘的可见高度**（visualViewport）：弹出时可视视口变矮，
+     收起时弹回。弹回那一瞬若输入框还是空的，就当用户放弃了。
+     ⚠️ 只在**空**的时候撤：打了字又收键盘，多半是「想先歇一会儿再写」，
+       把已打的字丢掉才是真 bug。 */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;              // 老浏览器：退回 onBlur 那一路
+    let wasHidden = false;         // 键盘曾经遮住过（用来认准「弹回」这一下）
+    const onResize = () => {
+      const hidden = window.innerHeight - vv.height - vv.offsetTop > 120;
+      if (wasHidden && !hidden && ref.current === document.activeElement) {
+        if (!ref.current!.value.trim()) settle(onCancel);
+      }
+      wasHidden = hidden;
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+    // 只挂一次：settled / onCancel 在整个生命周期里指向同一件事
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const commit = () => {
     const v = text.trim();
     settle(() => (v ? onCommit(v) : onCancel()));
@@ -98,7 +124,7 @@ export function NewCell({
       style={style}
       rows={1}
       value={text}
-      placeholder="写点什么，回车保存"
+      placeholder={isNarrowNow() ? '写点什么' : '写点什么，回车保存'}
       aria-label="新建任务"
       autoComplete="off"
       spellCheck={false}

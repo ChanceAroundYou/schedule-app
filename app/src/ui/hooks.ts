@@ -3,7 +3,7 @@
  */
 
 export { useStoreState, useScopedState, useStoreSelector } from './hooks/store.ts';
-export { useOnline, useKeyboardInset, useIsNarrow } from './hooks/viewport.ts';
+export { useOnline, useKeyboardInset, useIsNarrow, isNarrowNow } from './hooks/viewport.ts';
 export { useOutsideClose, useFocusTrap, useEscape } from './hooks/overlay.ts';
 export { useAnchoredPosition, useAnchoredPositionFrom } from './hooks/anchored.ts';
 export { useMeasuredHeight, useDebounced } from './hooks/utils.ts';
