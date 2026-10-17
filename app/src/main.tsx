@@ -19,6 +19,7 @@ import { createRoot } from 'react-dom/client';
 import './styles/tailwind.css';
 import App from './App.tsx';
 import { applySafeAreaInsets } from './data/widget.ts';
+import { watchUpdates } from './data/update-guard.ts';
 
 const RELOAD_FLAG = 'schedule-sw-cleared';
 const MIGRATED_FLAG = 'schedule-sw-migrated';
@@ -127,6 +128,11 @@ async function boot(): Promise<void> {
 
   registerShell();
   watchSafeArea();          // 不 await：见上面那段，别挡首屏
+
+  /* 版本自检（2026-10-17）：线上换版后提示刷新，避免「发了新版还看到旧界面」。
+     只在生产构建里做（dev 的 index.html 引的是 /src/main.tsx，比出来永远不一致）。
+     不 await —— 它要发一个请求，卡在首屏前面没道理。 */
+  if (import.meta.env.PROD) watchUpdates();
 
   const el = document.getElementById('root');
   if (!el) throw new Error('#root 不存在');

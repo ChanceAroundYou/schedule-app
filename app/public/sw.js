@@ -24,7 +24,12 @@
  * 否则 activate 里删旧缓存那一步不会触发。
  */
 
-const CACHE = 'sched-shell-v2';
+/* v2 → v3（2026-10-17）：用户报「发了新版但看到旧界面」。v2 那个壳里躺着的
+ * index.html 一旦被 `navFirst()` 在断网/抖动时端出来，界面就一直停在旧版，
+ * 而且它自己不会好（缓存里的 HTML 引的是旧 assets）。抬版本号 = 新 worker
+ * 装上后 activate 会把 v2 整份删掉，客户端最迟下一次联网导航就重新预缓存。
+ * 配合 `data/update-guard.ts`（比 bundle 名，不一致就提示刷新）双保险。 */
+const CACHE = 'sched-shell-v3';
 
 /** 这些都要按 sw.js 自己的位置算 —— 应用挂在 /schedule/ 下，不是根 */
 const INDEX = new URL('./index.html', self.location.href).href;
