@@ -85,6 +85,13 @@ const ok = (cond, what) => {
 
 function serveDist() {
   const srv = createServer((req, res) => {
+    /* 网页版「关于」卡要从 /schedule/dl/version.json 拿安装包名（线上 nginx 同路径）。
+       探针那台不挂 apk 目录，这里回一份假的 —— 否则关于卡里那条下载链接永远不渲染。 */
+    if (req.url.startsWith('/schedule/dl/version.json')) {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end('{"versionCode":5,"versionName":"2.0.2","url":"schedule-5.apk","sha256":"stub"}');
+      return;
+    }
     if (req.url.startsWith('/api/')) {
       const up = fetch(`http://127.0.0.1:${API_PORT}${req.url}`, {
         method: req.method,
@@ -557,6 +564,21 @@ try {
     'Btn chipOn 文字+描边 = --primary（选中档），实际 ' + btnChips.onColor + ' / ' + btnChips.onBorder);
   ok(btnChips.offColor === btnChips.wantText2 && btnChips.offBg === btnChips.wantPanel,
     'Btn chip 文字 = --text-2 且底 = --panel（未选档），实际 ' + btnChips.offColor + ' / ' + btnChips.offBg);
+
+  /* ---- 关于卡：网页显示版本号（自动取 package.json） + 网页专属的 App 下载 ----
+     APK 下载链接在网页里出现，但**在 Capacitor App 内置的 WebView 里不显示** ——
+     免得用户在一个 Android App 里再点一次 Android 安装包。 */
+  console.log('\n四之二、关于：网页版本号 + App 下载（网页专属）');
+  await clickEl(page, `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '关于')`);
+  await waitFor(page, `!!document.querySelector('[data-about="version"]')`, '设置页关于卡挂上');
+  const aboutVer = await evalJs(page, `return document.querySelector('[data-about="version"]').textContent;`);
+  ok(/^2\.\d+\.\d+$/.test(aboutVer), '关于卡版本号是 2.x.x 格式，实际 ' + aboutVer);
+  const apkLink = await evalJs(page, `
+    const a = document.querySelector('[data-about="apk-download"]');
+    return a ? { href: a.getAttribute('href'), text: a.textContent } : null;
+  `);
+  ok(apkLink && apkLink.href && apkLink.href.includes('/schedule/dl/schedule-'),
+    '关于卡有 App 下载链接（指向 /schedule/dl/），实际 ' + JSON.stringify(apkLink));
 
   // 安全 tab：danger（退出登录）—— 只读样式，**不点它**（点了就登出了）
   await evalJs(page, `document.querySelector('[data-settings-tab="security"]').click(); return true;`);

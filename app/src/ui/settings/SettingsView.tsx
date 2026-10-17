@@ -6,8 +6,9 @@
  * 独立，跟「哪个 tab 开着」没有关系。
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Info } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import type { LocalState, PublicUser } from '../../domain/types.ts';
 import { Card, Field } from '../kit.tsx';
 import { cx } from '../cx.ts';
@@ -51,6 +52,22 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
 }) {
   const [pwOpen, setPwOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>('appearance');
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const [apkName, setApkName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+
+    void fetch('/schedule/dl/version.json')
+      .then((response) => response.ok ? response.json() : null)
+      .then((manifest: { url?: string; versionName?: string } | null) => {
+        if (!manifest?.url) return;
+        setApkUrl(`/schedule/dl/${manifest.url}`);
+        setApkName(manifest.versionName ?? manifest.url);
+      })
+      // 下载入口不影响日程功能；服务暂不可用时不渲染该链接。
+      .catch(() => undefined);
+  }, []);
 
   return (
     <div className="mx-auto w-full max-w-[620px] pb-6">
@@ -105,6 +122,18 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           <Field label="技术栈">
             <span className="text-[12.5px]">React + Node + SQLite</span>
           </Field>
+          {apkUrl && (
+            <Field label="下载 App">
+              <a
+                href={apkUrl}
+                className="text-[12.5px] underline"
+                style={{ color: 'var(--primary)' }}
+                data-about="apk-download"
+              >
+                Android 版 {apkName}
+              </a>
+            </Field>
+          )}
         </Card>
       )}
 
