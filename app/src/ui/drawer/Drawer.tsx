@@ -151,7 +151,10 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
                     /* 2026-10-17：如果这个系列还有「今天及以后」的实例，
                        不能静默留着（用户会以为没生效），也不能静默删掉 ——
                        弹一层问「保留还是删除」。 */
-                    const root = seriesRootOf(task);
+                    /* 兜底 task.id：根的 seriesId 可能被历史的「保留」逻辑摘掉过，
+                       那时 seriesRootOf 返回 null，tail 会算成空集 ——
+                       于是只悄悄关掉重复、一条都不删（用户实测的「点了删除没反应」）。 */
+                    const root = seriesRootOf(task) ?? task.id;
                     const today = D.today();
                     const tail = root
                       ? Object.values(state.tasks).filter((t) => !!t && !t.deleted

@@ -108,3 +108,35 @@ test('删除：未来实例进回收站，但不动这一条和过去的历史',
   const live = family(root).filter((t) => !t.deleted);
   assert.equal(live.length, kept.length + 1, '补齐不该把删掉的造回来');
 });
+
+test('「保留」不能把系列根的 seriesId 摘掉（否则整条家族失去入口）', () => {
+  fresh();
+  const today = D.today();
+  const root = seedDaily(today);
+  const members = family(root).filter((t) => !t.deleted && t.id !== root);
+  // 用户在**后面某一次的实例**上取消重复（不是根）：根这时是普通成员
+  const opening = members[2].id;
+  store.patchTask(opening, { repeat: { ...DAY_REPEAT, unit: 'none' } });
+  dropRepeatTail(opening, today, 'keep');
+
+  const rootNow = store.get().tasks[root];
+  assert.equal(rootNow.seriesId, root,
+    '根的 seriesId 必须留着 —— 摘掉之后 seriesRootOf(根) 返回 null，整条家族再也没法定位');
+  assert.equal(rootNow.repeat.unit, 'none', '根要停派生，只清 repeat 就够了');
+});
+
+test('历史脏数据：根已成孤儿（seriesId=null + repeat=none）时，「删除」仍要生效', () => {
+  fresh();
+  const today = D.today();
+  const root = seedDaily(today);
+  // 复刻线上坏状态：根的 seriesId 被旧版「保留」逻辑摘掉，repeat 也停了
+  store.patchTask(root, { repeat: { ...DAY_REPEAT, unit: 'none' }, seriesId: null });
+  const members = all().filter((t) => !t.deleted && t.id !== root && (t.date ?? '') >= today);
+  assert.ok(members.length > 5, `前提：应还有若干存活实例，实际 ${members.length}`);
+
+  const n = dropRepeatTail(root, today, 'delete');
+  assert.equal(n, members.length, `孤儿根也要能清干净，应删 ${members.length} 条，实际 ${n}`);
+  for (const t of members) {
+    assert.equal(store.get().tasks[t.id].deleted, true, `${t.date} 应被删`);
+  }
+});

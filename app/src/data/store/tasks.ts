@@ -671,7 +671,10 @@ export function deleteSeriesFrom(seriesId: string, fromDate: string, from = '任
  */
 export function dropRepeatTail(keepId: string, fromDate: string, mode: 'keep' | 'delete'): number {
   const keep = state.tasks[keepId];
-  const root = keep ? seriesRootOf(keep) : null;
+  /* 兜底用 keep.id：历史上可能已经把根的 seriesId 摘掉了（2026-10-17 之前
+     的「保留」分支会这么干），那 seriesRootOf(根) 会返回 null —— 不兜底的话
+     这个函数直接返回 0，用户点「删除这些任务」等于什么都没发生。 */
+  const root = (keep ? seriesRootOf(keep) : null) ?? (keep ? keep.id : null);
   if (!root) return 0;
 
   const items: Change[] = [];
@@ -688,8 +691,14 @@ export function dropRepeatTail(keepId: string, fromDate: string, mode: 'keep' | 
       fields: mode === 'delete'
         ? { deleted: true, deletedAt: now, trashFrom: '取消重复' }
         /* 保留：必须连 `repeat` 一起清空 —— 光摘掉 seriesId 的话，实例身上
-           那份旧规则的副本还会让补齐逻辑继续从它派生（等于没取消）。 */
-        : { repeat: toRepeat(null, o.date), seriesId: null },
+           那份旧规则的副本还会让补齐逻辑继续从它派生（等于没取消）。
+           ⚠️ **系列根本身例外：绝对不能把它的 seriesId 摘掉**（2026-10-17 晚修）。
+           根一旦变成 seriesId=null + repeat=none，`seriesRootOf(根)` 就返回 null
+           ——整条家族失去入口。后果是用户之后在这条任务上点 ✕「取消重复 →
+           删除这些任务」时，算出来的「后续实例」是空集，于是**只悄悄关掉重复、
+           一条都不删**（用户实测：「点了全部删除，它们依然保留着」）。
+           根要停派生只需要 repeat=none；身份（seriesId）必须留着。 */
+        : { repeat: toRepeat(null, o.date), ...(o.id === root ? {} : { seriesId: null }) },
     });
   }
   if (items.length) commitMany(items);
