@@ -76,6 +76,14 @@ export function NewCell({
   /* Enter / Esc / 失焦三个出口都可能触发同一个动作（Esc → 卸载 → 失焦）。
      用一个闸门拦住第二次，否则「取消」会被当成「提交空串再取消」走两遍。 */
   const settled = useRef(false);
+  /* 失焦的延迟确认。键盘弹起会改变 WebView 高度 → 布局重排 → textarea
+     可能瞬间失焦再回来。立刻结算的话，用户刚点开就没了（2026-10-17 实测）。
+     等 250ms，焦点回来了就当没发生；真点到别处去了才结算。 */
+  const blurTimer = useRef(0);
+  /* 被系统抢走焦点后主动抢回来的次数。真机实测：键盘 200ms 弹到位、
+     400ms 焦点落到 body、草稿跟着消失 —— 用户看到的是「输入法闪一下就没了」。
+     这是布局变化导致的失焦，不是用户意图，必须抢回来（最多两次，防止死循环）。 */
+  const blurRecovered = useRef(0);
 
   // 一出现就聚焦 —— 用户点格子的意图就是「要在这打字」
   useEffect(() => { ref.current?.focus(); }, []);
@@ -98,15 +106,33 @@ export function NewCell({
     const vv = window.visualViewport;
     if (!vv) return;              // 老浏览器：退回 onBlur 那一路
     let wasHidden = false;         // 键盘曾经遮住过（用来认准「弹回」这一下）
+    let timer = 0;                 // 待确认的「收起」判定
     const onResize = () => {
       const hidden = window.innerHeight - vv.height - vv.offsetTop > 120;
-      if (wasHidden && !hidden && ref.current === document.activeElement) {
-        if (!ref.current!.value.trim()) settle(onCancel);
+      if (hidden) {
+        clearTimeout(timer);
+        wasHidden = true;
+        return;
       }
-      wasHidden = hidden;
+      if (!wasHidden) return;
+      /* ⚠️ 键盘**弹起动画**过程中也会出现 hidden=true→false 的瞬态。
+         2026-10-17 真机实测：点一下时间轴空白处，输入法闪一下就没了，
+         草稿框跟着消失 —— 就是在这里被误判成「用户收起了键盘」。
+         所以不能一变回 false 就撤，等 300ms 再看它是不是真的收起；
+         动画抖动会在这 300ms 内自己弹回去。 */
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const stillHidden = window.innerHeight - vv.height - vv.offsetTop > 120;
+        if (stillHidden) return;   // 又弹回去了，是抖动，什么都不做
+        wasHidden = false;
+        const el = ref.current;
+        if (el && el === document.activeElement && !el.value.trim()) {
+          settle(onCancel);
+        }
+      }, 300);
     };
     vv.addEventListener('resize', onResize);
-    return () => vv.removeEventListener('resize', onResize);
+    return () => { clearTimeout(timer); vv.removeEventListener('resize', onResize); };
     // 只挂一次：settled / onCancel 在整个生命周期里指向同一件事
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -129,7 +155,23 @@ export function NewCell({
       autoComplete="off"
       spellCheck={false}
       onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        const el = ref.current;
+        clearTimeout(blurTimer.current);
+        blurTimer.current = window.setTimeout(() => {
+          if (!el || document.activeElement === el) return;
+          /* 焦点落回 body/html：不是「用户点了别的东西」，而是键盘弹起
+             改了 WebView 高度、布局重排把焦点弄掉了。这种要抢回来 ——
+             不抢的话用户根本打不了字（输入法刚弹起就跟着草稿一起消失）。
+             用户真点到别的元素时 activeElement 会是那个元素，走下面的提交。 */
+          const a = document.activeElement;
+          if (a === document.body || a === document.documentElement) {
+            blurRecovered.current += 1;
+            if (blurRecovered.current <= 2) { el.focus(); return; }
+          }
+          commit();
+        }, 250);
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
