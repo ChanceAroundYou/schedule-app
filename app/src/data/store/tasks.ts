@@ -142,10 +142,14 @@ export function ensureRepeatOccurrences(): void {
      * 不认这个标记的话，删完一轮补齐又长出一批 —— 删了等于没删。 */
     if (markers.has(root)) continue;
 
-    // 家族已存在的发生日（含已完成、不含已删）
+    /* 家族已存在的发生日（含已完成、不含已删）。
+     * ⚠️ 只收**严格的 yyyy-MM-dd**：脏日期（同步写坏的非字符串、残缺串）
+     * 进不了锚点/游标，否则 Date.parse 出 NaN → 走序一步都不走 →
+     * `expected` 空 → 下面的「缩水清理」会把整个家族未来的实例全删了。
+     * 宁可漏补，不可误删。 */
     const dates = members
       .map((o) => o.date)
-      .filter((d): d is string => !!d)
+      .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
       .sort();
     if (!dates.length) continue;      // 一条带日期的都没有，没什么可对齐的
     const anchor = dates[0];               // 最早的发生日 = 系列的起点
@@ -192,7 +196,9 @@ export function ensureRepeatOccurrences(): void {
      *      · 锚点（plan 的第一项）天然在 expected 里，同样受保护。 */
     const doomed = new Set<string>();
     for (const o of members) {
-      if (!o.date || o.date < today) continue;   // 只清今天及以后
+      // 只清**今天及以后、日期干净**的；脏日期动不了（清它可能误伤，留着由用户处理）
+      if (typeof o.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.date)) continue;
+      if (o.date < today) continue;
       if (o.done) continue;
       if (o.id === root) continue;
       const orig = parseInstanceId(o.id);
@@ -256,7 +262,10 @@ export function ensureRepeatOccurrences(): void {
      * `state.tasks` 里，游标又退回到它们之前，推出来的 id 全都撞上已存在
      * 的实例被跳过 —— 实测「完成 1 条 → 只补出 0 条」，缺口永远填不上。
      * 用最远的（含已完成）才能保证每次都往**全新的**日期上走。 */
-    const liveDates = live.map((o) => o.date).filter((d): d is string => !!d).sort();
+    const liveDates = live
+      .map((o) => o.date)
+      .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
     let cursor = liveDates.length ? liveDates[liveDates.length - 1] : (t.date || today);
     /* seq 取**已存在的最大 repeatSeq**，不是实例个数（2026-10-14 修）。
      *

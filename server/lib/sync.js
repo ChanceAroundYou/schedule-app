@@ -150,7 +150,8 @@ function cascadeRepeatUntil(terms, now) {
       const hash = cur.indexOf('#');
       if (hash > 0) return cur.slice(0, hash);
       const sid = seriesOf.get(cur);
-      if (sid && sid !== cur) { cur = sid; continue; }
+      // 只认真串：非字符串的脏值不跟，免得把 cur 变成非字符串后 indexOf 炸穿整批同步
+      if (typeof sid === 'string' && sid && sid !== cur) { cur = sid; continue; }
       return cur;
     }
     return cur;
