@@ -18,6 +18,22 @@ import { FastSide } from './FastSide.tsx';
     自己刚才打的东西被吃了。 */
 const QUICK_PLACEHOLDER = '新建任务，回车保存';
 
+/**
+ * 快速添加条**不出现**的页面（用户 2026-10-17：「待办箱和今天可以保留这个功能，
+ * 逾期不需要这个功能；日程只需要点位置就地新建；打卡顶部已有添加入口」；
+ * 项目同日程——只留点格子就地新建；已完成页同理：新任务不可能是已完成状态）。
+ * 每个页面只保留**一种**最自然的新建入口，不做两套冗余的。
+ */
+const HIDDEN_NAVS = [
+  'overdue',   // 逾期：复看页面，不在这建新的
+  'calendar',  // 日程：点时间轴 / 格子就地新建（NewCellSlot）
+  'projects',  // 项目：点泳道列空白处就地新建
+  'habits',    // 打卡：顶部已有「添加打卡项」
+  'done',      // 已完成：新建的任务不会是已完成
+  'trash',
+  'settings',
+];
+
 export function QuickAdd({ state, onSubmit }: {
   state: LocalState;
   onSubmit: (draft: { title: string; date: string | null; time: string | null; duration?: number | null; repeat?: unknown }, openDetail: boolean) => void;
@@ -113,6 +129,8 @@ export function QuickAdd({ state, onSubmit }: {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'n' || e.key === 'N') {
+        /* 横条不显示的页面按 N 没意义（聚焦到一个 hidden 输入框上什么也不会发生） */
+        if (HIDDEN_NAVS.includes(ui.nav)) return;
         e.preventDefault();
         if (narrow && !expanded) { setExpanded(true); focusOnExpand.current = true; }
         else inputRef.current?.focus();
@@ -120,7 +138,7 @@ export function QuickAdd({ state, onSubmit }: {
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);
-  }, [narrow, expanded]);
+  }, [narrow, expanded, ui.nav]);
 
   // 展开之后才聚焦 —— 收起的横条是 display:none，聚焦不上去
   useEffect(() => {
@@ -192,7 +210,7 @@ export function QuickAdd({ state, onSubmit }: {
       <div
         className={'fast-add' + (expanded ? ' open' : '') + (closing ? ' closing' : '')}
         ref={barRef}
-        hidden={ui.nav === 'trash' || ui.nav === 'settings'}
+        hidden={HIDDEN_NAVS.includes(ui.nav)}
         // 展开 / 关闭动画只该在窄屏（有圆钮、横条 fixed）时跑。用 JS 的 narrow
         // 而不是 CSS 的 @media：探针环境里两者不一致（JS 判窄、CSS 判宽），
         // 而圆钮和 fixed 定位本来就跟着 JS 的 narrow 走。

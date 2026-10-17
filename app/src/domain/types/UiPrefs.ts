@@ -14,9 +14,14 @@ export type ThemeMode = 'auto' | 'light' | 'dark';
 export interface DraftSeed {
   /** 落在哪个区域。值就是 dnd 那边的 zone id —— 两边用同一套名字，不用对一次表 */
   zone: string;
-  date: string;
-  /** 由格子位置算出来的时间。全天区与月视图不带时间，是 null */
+  /** 哪天。项目泳道列里点的草稿没有日期，是 null */
+  date: string | null;
+  /** 由格子位置算出来的时间。全天区、月视图与泳道列不带时间，是 null */
   time: string | null;
+  /** 在项目泳道列里点的 → 回车落成的任务直接归这个项目 */
+  projectId?: string | null;
+  /** 在「进行中」列里点的 → doing=true（待办列不设，已完成列不开草稿） */
+  doing?: boolean;
 }
 /** 色板。只改主色族，底色归深浅那一轴 —— 见 styles/tokens.css 的「色板轴」一段 */
 export type AccentKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate';

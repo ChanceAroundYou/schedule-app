@@ -175,17 +175,40 @@ export function useTimelineDrag() {
     }
 
     if (overId.startsWith('week:')) {
-      const min = weekGuideMin(zone, currentY);
+      /* 落点跟绿线一致：用**卡片顶部**坐标，不用指针（用户 2026-10-17 报
+         「想定位 6:00 却跳到 6:45」）。抓握点在卡片上的高低各不相同，指针坐标
+         就把抓握偏移算进了落点；引导线（onDragOver / onDragMove）和日视图
+         用的都是卡片顶，唯独松手这里是指针 —— 三处不一致，绿线预告的就不是
+         实际落点。键盘拖拽没有卡片可量，退回指针坐标。 */
+      const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
+      const min = card
+        ? minFromY(zone, card.getBoundingClientRect().top)
+        : weekGuideMin(zone, currentY);
       store.patchTask(activeId, { date, time: D.minToTime(min) });
       toast(`已改到 ${D.fmtMD(date || '')} ${D.minToTime(min)}`);
       return;
     }
 
-    /* **有时间的卡片拖回无时间区也走 `moveUntimed`**（它一次写 `{date, time:null}`
-       并重排序）。原先这里分了两支：有时间的只 `patchTask({date})` —— **`time`
+    if (overId.startsWith('day:')) {
+      /* 月视图格子：**改期不改时间**。定时任务拖到某天，时间时长原样带着走；
+         以前这里和全天区共用 moveUntimed，会把 time / duration 一起清掉
+         （用户 2026-10-17：月视图要能拖动任务定位到某一天）。未定时的才走
+         moveUntimed —— 它负责在目标日那一组里重排序。 */
+      const task = store.get().tasks[activeId];
+      if (task && task.time) {
+        store.patchTask(activeId, { date });
+      } else {
+        store.moveUntimed(activeId, date, null, 'after');
+      }
+      toast(date ? `已改到 ${D.fmtMD(date)}` : '已移回待办箱');
+      return;
+    }
+
+    /* 有时间的卡片拖回无时间区也走 `moveUntimed`（它一次写 `{date, time:null}`
+       并重排序）。分两支是因为：有时间的只 `patchTask({date})` 的话 **`time`
        没清**，任务算「改到同一天的同一时刻」，松手后原封不动停在时间轴上，
        看着就是「拖不回无时间区」（用户 2026-10-11）。 */
-    if (overId.startsWith('allday:') || overId.startsWith('day:')) {
+    if (overId.startsWith('allday:')) {
       store.moveUntimed(activeId, date, null, 'after');
       toast(date ? `已改到 ${D.fmtMD(date)}` : '已移回待办箱');
       return;

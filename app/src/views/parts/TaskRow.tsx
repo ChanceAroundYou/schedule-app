@@ -8,6 +8,7 @@ import type { Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
+import { useDraggableEvent } from '../../ui/dndkit.tsx';
 
 /* ============================== 分隔点 ============================== */
 
@@ -103,9 +104,19 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
 /* ============================== 小胶囊 ============================== */
 
 export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean }) {
+  /* 周视图全天行 / 月视图格子共用这一个胶囊，两处都要能拖：
+     · 拖进周视图时间列 → 松手生成定时块（默认 1 小时，15 分钟吸附）；
+     · 拖到月视图别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
+     落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。TaskPill 只有这两个
+     使用处，无条件启用是安全的（列表行走的是 useSortableItem，另一套）。 */
+  const drag = useDraggableEvent(t.id);
   return (
     <div
       className={'task-pill task-el' + (t.done ? ' done' : '')}
+      ref={drag.ref}
+      style={drag.style}
+      {...drag.attributes}
+      {...drag.listeners}
       data-id={t.id}
       data-untimed={t.time ? undefined : '1'}
       title={t.title}

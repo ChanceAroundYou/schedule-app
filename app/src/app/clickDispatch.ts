@@ -216,7 +216,7 @@ export function makeOnChange() {
 }
 
 /** 能开草稿框的区域前缀。改动这张表要连 `views/calendar/` 那几个 `NewCellSlot` 一起动 */
-const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day'];
+const DRAFT_KINDS = ['timeline', 'allday', 'week', 'day', 'proj'];
 
 /**
  * 点日历上的空格子 → 在那个位置**就地开一个输入框**（日期与时间由格子决定）。
@@ -246,6 +246,24 @@ function openDraft(zone: HTMLElement, e: React.MouseEvent): void {
 
   const date = zone.dataset.date || store.get().ui.cursor;
   let time: string | null = null;
+
+  if (kind === 'proj') {
+    /* 项目泳道列：点列体空白处就地新建（用户 2026-10-17 —— 项目页也只留
+       这一个新建入口，顶部横条已隐藏）。三条规矩：
+       · 只认**列体**（.pj-col-b）：列头点的是列名/计数，不开草稿；
+       · 只开待办 / 进行中两列：新建的任务不可能是已完成；
+       · 日期留空：泳道里的卡片是待办性质的，没有「这一天」。 */
+    if (!(e.target as HTMLElement).closest('.pj-col-b')) return;
+    const m = /^proj:([^:]+):(todo|doing)$/.exec(zid);
+    if (!m) return;
+    store.setUi({
+      draft: {
+        zone: zid, date: null, time: null,
+        projectId: m[1], doing: m[2] === 'doing',
+      },
+    });
+    return;
+  }
 
   if (kind === 'timeline') {
     /* 日视图时间轴高度是算出来的（锁定单屏），不能拿 DAY_H 当分母 ——

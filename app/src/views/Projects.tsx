@@ -28,6 +28,7 @@ import { fmtMD } from '../domain/date.ts';
 import { useDraggableEvent, useDroppableZone } from '../ui/dndkit.tsx';
 import { Btn } from '../ui/kit.tsx';
 import { Empty } from './parts.tsx';
+import { NewCellSlot } from './calendar/NewCell.tsx';
 
 /** 三列。顺序就是板子上的顺序 —— `projectColumn` 的返回值要对得上 */
 const COLS = [
@@ -78,6 +79,9 @@ function ProjColumn({ state, p, c }: { state: LocalState; p: Project; c: { key: 
         <span>{c.label}</span><b>{items.length}</b>
       </div>
       <div className="pj-col-b">
+        {/* 点列体空白处就地新建（2026-10-17：项目页只留这一个新建入口）。
+            草稿认领自己的 zone，别的列不渲染。 */}
+        <NewCellSlot state={state} zoneId={`proj:${p.id}:${c.key}`} />
         {items.map((t) => <ProjCard key={t.id} t={t} />)}
       </div>
     </div>

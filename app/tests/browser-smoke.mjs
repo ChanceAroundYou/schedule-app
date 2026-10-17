@@ -2406,6 +2406,13 @@ try {
   // 先把光标放到一个真输入框里当「原来那个元素」。合成的 pointerdown 不会移
   // 焦点（浏览器只对受信任的 mousedown 做默认聚焦），所以点抽屉之前它还在 ——
   // 正好用来验「关掉之后还回原处」。
+  // 快速添加条按 2026-10-17 定的显隐规则**只在待办箱 / 今天出现**（逾期 /
+  // 日程 / 项目 / 打卡 / 已完成都隐藏了，各自只留一种新建入口）。这一节要拿它
+  // 当「原来那个元素」验焦点归还，所以先切到待办箱 —— 抽屉从箱子的行上开，
+  // 后面的语义断言不受影响。
+  await clickEl(page, `[...document.querySelectorAll('.nav-item')].find((b) => b.dataset.nav === 'inbox')`);
+  await waitFor(page, `document.querySelector('[data-scope="inbox"]') ? 1 : null`, '切到待办箱', 8000);
+
   const RESTORE = '.fast-add textarea';
   ok(await evalJs(page, `
     const el = document.querySelector(${JSON.stringify(RESTORE)});
