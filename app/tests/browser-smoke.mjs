@@ -5004,11 +5004,16 @@ try {
       unBorderTop: getComputedStyle(document.querySelector('.week-un-row')).borderTopWidth,
       // 今天的数字**只染色**，不加圆底 —— 圆底会让那一格凭空高出 9px
       todayBg: todayCell ? getComputedStyle(todayCell).backgroundColor : 'no-today-cell',
+      // 刻度列与日视图同一副面孔：无底色、左格无字
+      gutterBg: getComputedStyle(document.querySelector('.week-gutter')).backgroundColor,
+      unText: (document.querySelector('.week-un-gutter') || {}).textContent || '',
     };
   `);
   ok(wk.whLoad === 0 && wk.whCount === 0, '表头不再有负载横条与任务计数，实际 ' + wk.whLoad + ' / ' + wk.whCount);
   ok(parseFloat(wk.unBorderTop) >= 1, '未定时行**上边**也有一条分割线，实际 ' + wk.unBorderTop);
   ok(wk.todayBg === 'rgba(0, 0, 0, 0)', '今天的数字没有圆底（只染色），实际 ' + wk.todayBg);
+  ok(wk.gutterBg === 'rgba(0, 0, 0, 0)', '刻度列没有自己的底色（跟日视图一样是白底），实际 ' + wk.gutterBg);
+  ok(wk.unText === '', '未定时那一行的左格不写字，实际「' + wk.unText + '」');
 
   /* ---- 真·窄屏视口（390×854）----
      上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，

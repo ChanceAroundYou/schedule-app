@@ -266,13 +266,13 @@
   flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
 }
-/* 左侧刻度列。**刻度线就是日视图那一条**（.tl-hour），只是标签不像日视图那样
-   挂在轴外面 —— 这里右边是七天的起点，没有地方往左伸。 */
+/* 左侧刻度列。**与日视图同一副面孔**：没有自己的底色（白底）、小时线
+   不穿过数字（线只画在七列区）、没有分割线 —— 数字右对齐贴着轴。
+   线的定位复用 .tl-hour 那个壳，只是把它的 border 关掉。 */
 .week-gutter {
   position: relative; min-width: 0; overflow: hidden;
-  background: var(--panel-2);
-  border-right: 1px solid var(--border);
 }
+.week-gutter .tl-hour { border-top: 0; }
 .week-gutter .tl-label { left: auto; right: 5px; top: -7px; width: 38px; }
 /* 窗的第一条线在顶端，标签往下挪一点别被裁掉 */
 .week-gutter .tl-hour:first-child .tl-label { top: 2px; }
@@ -291,6 +291,7 @@
 .week-col.today { background-color: var(--primary-pale); }
 
 /* 未定时任务：独立一行，横向列宽和下面的时间网格共用一条基线。
+   左侧不留字 —— 日视图的全天区也没有标题，这一行是什么一看便知。
    **上下都要有分割线**：只有下面那条时，这一行和上面的周几表头融成一体，
    看不出「未定时」是独立的一块。 */
 .week-un-row {
@@ -300,10 +301,7 @@
   border-bottom: 1px solid var(--border);
 }
 .week-un-gutter {
-  border-right: 1px solid var(--border);
-  font-size: 10.5px; color: var(--text-3);
-  display: flex; align-items: center; justify-content: flex-end;
-  padding-right: 6px;
+  /* 只占位对齐，不画线 —— 和下面的刻度列一致，左边这条竖线谁都没有 */
 }
 .week-un-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .wun-cell {

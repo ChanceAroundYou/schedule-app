@@ -174,9 +174,10 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
         </div>
       </div>
 
-      {/* 未定时单独一行、固定高度，保证下面各列的刻度线横向对齐 */}
+      {/* 未定时单独一行、固定高度，保证下面各列的刻度线横向对齐。
+          左格只占位不写字 —— 日视图的全天区也没有标题（2026-10-18 用户）。 */}
       <div className="week-un-row">
-        <div className="week-un-gutter">未定时</div>
+        <div className="week-un-gutter" />
         <div className="week-un-cols">
           {days.map((d) => (
             <WunCell key={d} state={state} d={d} today={today} />
