@@ -265,19 +265,29 @@
 .week-grid {
   flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  /* 上下各留一段呼吸空隙，与日视图 .tl-wrap 的 padding 同款：
+     · 顶部 8px —— 第一根小时线不顶着未定时行的分割线（贴在一起就是
+       用户看到的「两条线重叠」），数字也才有地方骑到线上；
+     · 底部 10px —— 最底那根线上的数字完整落笔，不再被剪掉半截。 */
+  padding: 8px 0 10px;
 }
 /* 左侧刻度列。**与日视图同一副面孔**：没有自己的底色（白底）、小时线
-   不穿过数字（线只画在七列区）、没有分割线 —— 数字右对齐贴着轴。
-   线的定位复用 .tl-hour 那个壳，只是把它的 border 关掉。 */
+   不穿过数字（线只画在七列区）、没有分割线。
+   线的定位复用 .tl-hour 那个壳，只是把它的 border 关掉；数字用 .tl-label
+   的默认定位 —— **骑在线上**，跟日视图一个样。
+   不能 overflow: hidden：最顶/最底的数字要探出格子半截才骑得上线。 */
 .week-gutter {
-  position: relative; min-width: 0; overflow: hidden;
+  position: relative; min-width: 0;
 }
 .week-gutter .tl-hour { border-top: 0; }
-.week-gutter .tl-label { left: auto; right: 5px; top: -7px; width: 38px; }
-/* 窗的第一条线在顶端，标签往下挪一点别被裁掉 */
-.week-gutter .tl-hour:first-child .tl-label { top: 2px; }
+.week-gutter .tl-label { left: auto; right: 5px; width: 38px; }
 
-.week-cols { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.week-cols {
+  position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0;
+  /* 底边那根结束线：渐变画不到 100%，由这条补上 —— 与日视图的 24:00
+     那根线同源，也让最底下的数字有确切的线可骑。 */
+  border-bottom: 1px solid var(--border);
+}
 .week-col {
   min-width: 0; position: relative;
   border-right: 1px solid var(--border);
