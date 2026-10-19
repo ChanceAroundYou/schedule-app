@@ -462,19 +462,84 @@ async function checkMonthTap() {
   })()`);
   if (!spot) { bad('月视图里有空白格子可点'); return; }
   await tapAt(spot.x, spot.y);
-  await wait(600);
+  await wait(700);
   const draft = await evalIn(`(function(){
     var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
-    return {draft: s.ui.draft?1:0,
+    return {draft: s.ui.draft?1:0, view:s.ui.view, cursor:s.ui.cursor,
       input: document.querySelectorAll('.month-cell .new-cell').length};
   })()`);
-  assert(draft.draft === 0 && draft.input === 0, '月视图点空白处不再弹新建输入框（功能已砍掉）',
+  assert(draft.draft === 0 && draft.input === 0, '月视图点空白处不弹新建输入框（功能已砍掉）',
     `draft=${draft.draft} input=${draft.input}`);
+  assert(draft.view === 'day' && draft.cursor === spot.d,
+    '点空白处 → 跳到那一天的日视图', `view=${draft.view} cursor=${draft.cursor}（应为 ${spot.d}）`);
 
   /* ③ 日视图那个入口还在（砍的只是月视图） */
   await tap('button[data-view="day"]'); await wait(800);
   const stillThere = await evalIn(`!!document.querySelector('.new-cell, [data-zone-id^="timeline"], [data-zone-id^="allday"]')`);
   assert(stillThere, '日视图的就地新建入口还在（只砍了月视图）');
+}
+
+/* 视觉三条（2026-10-19 用户报「今天和已完成分不出来 / 任务连在一起 / 日周太方、
+   月视图太圆」）—— 都能量出来，不靠眼睛。 */
+async function checkLook() {
+  /* 先回「今天」：上一个用例可能把光标留在某天空白格跳过去的那一天，
+     那一周没有任务，就量不到卡片了（2026-10-19 实测踩到）。 */
+  await evalIn(`(function(){var b=Array.from(document.querySelectorAll('button')).find(function(x){return (x.textContent||'').trim()==='今'});
+    if(!b)return 'no-btn';var r=b.getBoundingClientRect();var x=r.x+r.width/2,y=r.y+r.height/2;
+    var t=document.elementFromPoint(x,y);if(!t)return 'no-pt';
+    var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};
+    t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));t.dispatchEvent(new MouseEvent('click',o));return 'ok'})()`);
+  await wait(600);
+  await openCalendar();
+  await tap('button[data-view="week"]'); await wait(800);
+  const w = await evalIn(`(function(){
+    var qa=function(s){return Array.from(document.querySelectorAll(s))};
+    /* 圆角/已完成这两条**用探针元素量**，不依赖真实数据里恰好有没有已完成的任务：
+       类名一样 → 样式一样，插进 body 量完就拆。 */
+    var probe=document.createElement('div');
+    probe.className='task-el task-el--timed done';
+    probe.innerHTML='<div class="ev-head"><span class="ev-title">测</span></div><span class="ev-time">00:00</span>';
+    document.body.appendChild(probe);
+    var pcs=getComputedStyle(probe);
+    var probeRadius=parseFloat(pcs.borderTopLeftRadius);
+    var probeBg=pcs.backgroundColor;
+    var probeLine=getComputedStyle(probe.querySelector('.ev-title')).textDecorationLine;
+    probe.remove();
+    var todayCol=document.querySelector('.week-col.today');
+    var todayBg=todayCol?getComputedStyle(todayCol).backgroundColor:'';
+    /* 同一列里首尾相接的两张卡，最小缝有多宽（真实数据，没有就跳过） */
+    var minGap=null;
+    qa('.week-col').forEach(function(col){
+      var rs=qa('.task-el--timed').filter(function(c){return col.contains(c)})
+        .map(function(c){return c.getBoundingClientRect()})
+        .sort(function(a,b){return a.top-b.top});
+      for(var i=1;i<rs.length;i++){
+        var g=Math.round(rs[i].top-rs[i-1].bottom);
+        if(g>=0 && (minGap===null||g<minGap)) minGap=g;
+      }
+    });
+    return {cardRadius: probeRadius, cardBg: probeBg, doneBg: probeBg,
+      doneLine: probeLine, todayBg: todayBg, minGap: minGap,
+      realCards: qa('.task-el--timed').length};
+  })()`);
+  assert(w.cardRadius >= 10, '日/周视图的大卡圆角更圆了（≥10px）', `${w.cardRadius}px（改之前 7px）`);
+  assert(w.minGap === null || w.minGap >= 2, '首尾相接的两条任务之间留出了缝',
+    w.minGap === null ? `当前数据里没有相邻的两条卡（这一周 ${w.realCards} 张定时卡）` : `最小缝 ${w.minGap}px`);
+  assert(w.doneBg && w.todayBg && w.doneBg !== w.todayBg, '已完成和「今天那一列」不再是同一个颜色',
+    `done=${w.doneBg} / today 列=${w.todayBg}`);
+  assert(w.doneLine === 'line-through', '已完成任务标题有划线', `text-decoration=${w.doneLine}`);
+
+  /* 月视图：胶囊不能比日/周大卡还圆 */
+  await tap('button[data-view="month"]'); await wait(700);
+  const m = await evalIn(`(function(){
+    var p=document.querySelector('.cell-tasks .task-pill');
+    var grid=document.querySelector('.month-grid');
+    return {pill: p?parseFloat(getComputedStyle(p).borderTopLeftRadius):0,
+      grid: grid?parseFloat(getComputedStyle(grid).borderTopLeftRadius):0};
+  })()`);
+  assert(m.pill <= 5, '月视图胶囊不再是个药丸（圆角 ≤5px）', `${m.pill}px（改之前 7px）`);
+  assert(m.grid > 0 && m.grid < 12, '月视图外框比之前收一档（<12px）', `${m.grid}px（改之前 12px）`);
+  assert(m.pill < 10, '月视图的圆角比日/周大卡更小（视觉分档）', `月 ${m.pill}px / 日周 ${w.cardRadius}px`);
 }
 
 async function checkRepeat() {
@@ -523,6 +588,29 @@ async function checkRepeat() {
     entityId: rootId, calId, fields: { repeatUntil: iso },
   }]);
   assert(r2.status === 200, '收尾：系列已结束（repeatUntil=今天）');
+
+  /* ⚠️ 只打 repeatUntil **不够**（2026-10-19 实测）：级联删完之后客户端本地仍
+     留着那批实例，冷启动同步回来照样显示在月视图上 —— 等于往用户真实日历里
+     留了一堆「e2e安卓重复…」。所以再显式把这一批（含历史残留）逐条打删除标。 */
+  await pullSync(3000);
+  const leftovers = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+    var t=s.tasks||{};
+    return Object.keys(t).filter(function(id){
+      var x=t[id]; return x && !x.deleted && (x.title||'').indexOf('e2e安卓重复-')===0;
+    });
+  })()`);
+  if (leftovers.length) {
+    const del2 = Date.now();
+    const r3 = await apiPush(leftovers.map((id, i) => ({
+      opId: 'e2e-rm-' + id, deviceId: 'e2e-android', ts: del2 + i, entity: 'task',
+      entityId: id, calId, fields: { deleted: true, deletedAt: del2 + i },
+    })));
+    assert(r3.status === 200, `收尾：逐条清掉残留实例（${leftovers.length} 条）`);
+  } else {
+    ok('收尾：没有残留实例');
+  }
+  await pullSync(3000);
 }
 
 /* ------------------------------------------------------------------ 主流程 */
@@ -540,6 +628,7 @@ try {
     await checkMonth();
     await checkMonthOverflow();
     await checkMonthTap();
+    await checkLook();
   }
   if (FEATURES.has('repeat')) await checkRepeat();
 

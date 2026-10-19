@@ -29,7 +29,9 @@
    @media (max-width: 900px) 里只改变量值，规则本身不重复写。 */
 :root {
   --allday-zone-pad: 3px 12px 3px 60px;
-  --allday-items-gap: 1px 6px;
+  /* 行间距 1px → 6px：2026-10-19 用户报「任务之间连在一起」，1px 的缝看着就是
+     糊成一坨。多列时列间距仍是 6px。 */
+  --allday-items-gap: 6px;
   --allday-pill-pad: 3px 7px;
   --allday-min-h: 14px;
   /* **两个 z 变量已删**（原先 --tl-wrap-z / --allday-zone-z）：两个区现在同处
@@ -128,6 +130,8 @@
    竖排居中、项目卡与胶囊跟着一起歪。日历卡片**永远**带上面两个修饰类之一，
    所以把选择器收成这两个，就再也不会漏到别的界面去了。 */
 .task-el--timed, .task-el--untimed {
+  /* 圆角：大卡（定时块）比小胶囊圆一档 —— 2026-10-19 用户报「日周太方」。
+     小胶囊那一行只有 ~20px 高，跟着用大圆角会变成药丸，所以只在下面单独放大卡。 */
   border-radius: var(--r-sm); background: var(--primary-soft);
   border: var(--border-w) solid var(--border);
   cursor: pointer;
@@ -137,10 +141,28 @@
   display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
+/* 日/周视图那张大卡：7px → 12px */
+.task-el--timed { border-radius: var(--r-lg); }
 .task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
-.task-el--timed.done, .task-el--untimed.done { opacity: .5; }
 /* 正在进行的卡：只靠外发光点出来（左侧那条绿线 2026-10-19 按用户要求全去掉了） */
 .task-el--timed.live { box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+/* ---- 已完成 ----
+   2026-10-19 用户报「今天和已完成的差距太小」：今天那一列是 --primary-pale
+   淡绿、卡片本身是 --primary-soft，done 再打半透明（opacity: .5）就成了跟
+   淡绿底几乎一样的颜色，看不出这条已经做完了。
+   改成**中性灰底 + 标题划线**，于是：绿底 = 今天这一列，灰底划线 = 已完成。 */
+.task-el--timed.done, .task-el--untimed.done {
+  opacity: 1;
+  background: var(--panel-3);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.task-el--timed.done .ev-title, .task-el--untimed.done .ev-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { color: var(--text-3); }
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
@@ -319,7 +341,9 @@
 .week-un-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .wun-cell {
   min-width: 0; padding: 3px;
-  display: flex; flex-direction: column; gap: 2px; align-content: start;
+  /* 2px → 5px：2026-10-19 用户报「任务之间连在一起」。这一行卡片本来就是同一
+     底色，缝再小就分不出是两条任务。 */
+  display: flex; flex-direction: column; gap: 5px; align-content: start;
   border-right: 1px solid var(--border);
   min-height: 26px;
 }
@@ -369,7 +393,9 @@ body.is-drag-range { user-select: none; }
 .month-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
   gap: 1px; background: var(--border);
-  border: var(--border-w) solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
+  /* 外框圆角比日/周的大卡小一档（2026-10-19 用户报「月视图太圆」）：
+     12px 的一整块看着像个大药丸，9px 收住了仍不失圆润。 */
+  border: var(--border-w) solid var(--border); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow);
 }
 .month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
 .month-cell:hover { background: var(--panel-2); }

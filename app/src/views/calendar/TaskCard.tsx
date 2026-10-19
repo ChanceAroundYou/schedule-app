@@ -118,7 +118,15 @@ export function TimedCard({
     <TaskCard
       t={t}
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
-      style={{ top: box.top + '%', height: Math.max(1.2, box.height) + '%', left: `${e.col * w}%`, width: `calc(${w}% - 3px)` }}
+      /* 上下各让 1.5px：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
+         「任务之间连在一起」）。位置仍走百分比，只有这 3px 是固定的 ——
+         它表达的是「两张卡之间要有缝」，跟时间窗缩放无关。
+         `max(4px, …)` 兜底：15 分钟的小块减 3px 也不会变成负高度。 */
+      style={{
+        top: `calc(${box.top}% + 1.5px)`,
+        height: `max(4px, calc(${Math.max(1.2, box.height)}% - 3px))`,
+        left: `${e.col * w}%`, width: `calc(${w}% - 3px)`,
+      }}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
          同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，

@@ -16,9 +16,9 @@
  *   与 AGENTS.md「点击事件必须走委托」）：
  *   · 点任务（含 "+N"）= `data-jump` → 那一天的**日视图**（不是开抽屉）；
  *   · 点月份数字 = `data-jump` → 那一天的日视图；
- *   · 点邻月数字 = `data-jump-month` → 那一个月；
- *   · 点空白处**什么也不做** —— 月视图不提供就地新建（`data-no-draft`），
- *     格子太挤，而且和「点任务去看那一天」意图相撞。
+ *   · 点**空白处** = `data-jump`（挂在整个格子上）→ 那一天的日视图；
+ *   · 点邻月数字 = `data-jump-month` → 那一个月（邻月格子不挂 data-jump，不挡它）；
+ *   · 月视图**不提供就地新建**（`data-no-draft`）—— 格子太挤。
  * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（45px 宽放不下圈 + 字），想勾完成要点开
  *   抽屉；时间也放不下 —— 这两个都是窄屏取舍，不是漏了。
  */
@@ -79,11 +79,14 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
       className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '') + (lv ? ' lv' + lv : '')}
       ref={zone.ref}
       data-zone-id={`day:${d}`}
-      /* 月视图**不提供「点空白处就地新建」**（用户 2026-10-19：格子本来就挤，
-         而且点格子里的任务是要「去看那一天」，两种意图撞在一起更乱）。
+      /* 月视图**不提供「点空白处就地新建」**（用户 2026-10-19：格子本来就挤），
+         改成**点空白处 = 去看那一天的日视图**（同日再次要求，与点任务同一条路）。
          `data-zone-id` 还得留着 —— 拖拽落点（dnd/timeline.ts）靠它找 DOM；
-         这个标记只让 clickDispatch 的 draftSeedFrom 别在这儿开草稿框。 */
+         `data-no-draft` 只让 clickDispatch 的 draftSeedFrom 别在这儿开草稿框。
+         ⚠️ `data-jump` 只挂在本月的格子上：邻月格子挂了会把「点邻月数字跳那个月」
+         （第 2.1 步 data-jump-month）挡在前面那一步之外。 */
       data-no-draft="1"
+      data-jump={out ? undefined : d}
       data-date={d}
     >
       <div className="cell-head">

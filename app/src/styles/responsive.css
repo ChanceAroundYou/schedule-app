@@ -350,9 +350,10 @@ body.sheet-open .tab:active { background: none; }
      9px 字号正好 5 个汉字。
      ⚠️ 所以左右内边距必须是 0：留 1px 就变 43px，5 个字差 2px 放不下。
      ⚠️ 绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求全去掉，
-     剩下的 1px 是四面一样的灰框，不是强调线。 */
+     剩下的 1px 是四面一样的灰框，不是强调线。
+     圆角 7px → 4px：18px 高的小条用 7px 就是个药丸，用户说「月视图太圆」。 */
   .cell-tasks .task-pill {
-    font-size: 9px; padding: 1px 0; gap: 0;
+    font-size: 9px; padding: 1px 0; gap: 0; border-radius: 4px;
     line-height: 14px;
   }
   /* 时间放不下（45px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
