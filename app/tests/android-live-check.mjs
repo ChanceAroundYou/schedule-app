@@ -31,7 +31,16 @@ import { connect } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { execSync } from 'node:child_process';
 
-const BASE = 'https://home.xiaokubao.space/schedule';
+/* 基址要跟**装机包实际用的那个**一致 —— 家用局域网直连包（Cloudflare 被丢包的
+   绕开方案，见 docs/踩坑-环境.md 第 4 条）是用
+   `API_BASE=http://192.168.1.6/schedule UPDATE_BASE=... ./deploy/build-apk.sh`
+   打的，这时候打公网域名会连不上。用 --base / BASE 覆盖。 */
+/* 基址要跟**装机包实际用的那个**一致 —— 家用局域网直连包（Cloudflare 被丢包的
+   绕开方案，见 docs/踩坑-环境.md 第 4 条）是用
+   `API_BASE=http://192.168.1.6/schedule UPDATE_BASE=... ./deploy/build-apk.sh`
+   打的；这种包在 WebView 里打公网域名会连不上（实测 connection closed）。
+   用 --base / BASE 覆盖，默认仍是公网域名。 */
+const BASE = process.env.BASE || 'https://home.xiaokubao.space/schedule';
 const ADB = process.env.ADB || 'C:/Users/小哭包/Android/platform-tools/adb.exe';
 const ENV = { ...process.env, MSYS_NO_PATHCONV: '1' };
 const PKG = 'space.xiaokubao.schedule';
@@ -135,6 +144,33 @@ async function reload() {
   await wait(4000); // 等 SPA 重新挂载
 }
 
+/* 不用 Page.reload：reload 会换掉执行上下文，把这条裸 WS 连接甩断
+   （实测 connection closed）。改用页面事件触发同步 —— lifecycle 在
+   focus/visibilitychange 上挂了 onWake → syncNow，等一轮就能读到新数据。 */
+async function pullSync(waitMs = 4000) {
+  await evalIn(`window.dispatchEvent(new Event('focus'))`);
+  await wait(waitMs);
+}
+
+/* 视图切换只在「日程」页里，所以要先确保 nav 落在 calendar。
+   ⚠️ 窄屏底栏按钮**没有** `data-nav`（那是侧栏的锚点，底栏成员是用户自选的
+   ui.tabs）—— 所以这里按文本找「日程」，找不到也不报错：已经在日程页就不用点。 */
+async function openCalendar() {
+  const r = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+    if (s.ui && s.ui.nav === 'calendar') return 'already';
+    var el=Array.from(document.querySelectorAll('[data-nav], .tab')).find(function(x){return (x.textContent||'').trim()==='日程'});
+    if(!el) return 'no-nav';
+    var b=el.getBoundingClientRect();var x=b.x+b.width/2,y=b.y+b.height/2;
+    var t=document.elementFromPoint(x,y);if(!t) return 'no-pt';
+    var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};
+    t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));t.dispatchEvent(new MouseEvent('click',o));
+    return 'clicked';
+  })()`);
+  if (r !== 'no-nav' && r !== 'no-pt') await wait(600);
+  return r;
+}
+
 /* ---------- API 助手（页面上下文里发，带 Bearer） ---------- */
 async function apiMe() {
   return evalIn(`(async()=>{var t=localStorage.getItem('schedule-app-token');if(!t)return null;
@@ -151,6 +187,7 @@ async function apiPush(ops) {
 /* ------------------------------------------------------------ 各项检查 */
 
 async function checkCore() {
+  await openCalendar();
   await tap('button[data-view="day"]'); await wait(700);
   let has = await evalIn(`!!document.querySelector('.timeline')`);
   assert(has, '日视图时间轴存在');
@@ -175,6 +212,7 @@ async function checkNowLine() {
   // now-line 只在「今天」渲染（isToday 门控），先点顶栏「今」跳回今天
   await evalIn(`(function(){var b=Array.from(document.querySelectorAll('button')).find(x=>(x.textContent||'').trim()==='今');if(!b)return 'no-btn';var r=b.getBoundingClientRect();var x=r.x+r.width/2,y=r.y+r.height/2;var t=document.elementFromPoint(x,y);if(!t)return 'no-pt';var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));t.dispatchEvent(new MouseEvent('click',o));return 'clicked';})()`);
   await wait(500);
+  await openCalendar();
   await tap('button[data-view="day"]'); await wait(700);
   const has = await evalIn(`!!document.querySelector('.tl-now')`);
   if (!has) { bad('当前时间线存在（今天、日视图）'); return; }
@@ -240,6 +278,84 @@ async function checkMonth() {
   return m;
 }
 
+/* 点那一行必须被**真正触发**才算测到（光靠真实数据对账是空跑：当月最多两三条，
+   还没超过格子容量）。这里在当月挑一天造一条超容量的任务组，跑完清干净。 */
+async function checkMonthOverflow() {
+  const me = await apiMe();
+  if (!me) { bad('能取到登录 token'); return; }
+  const calId = me.cals?.[0]?.id;
+  if (!calId) { bad('能取到日程集'); return; }
+
+  /* 挑当月中**本来任务最少**的一天，容量最可控；造满 6 条（窄屏一般 3 行容量）。 */
+  const target = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}'); var s=j.state||j;
+    var tasks=s.tasks||{}; var cnt={};
+    Object.values(tasks).forEach(function(t){ if(!t.deleted) cnt[t.date]=(cnt[t.date]||0)+1 });
+    var cur=new Date().getMonth(); var best=null;
+    Object.keys(cnt).forEach(function(d){ if(new Date(d+'T00:00:00').getMonth()===cur && (!best||cnt[d]<cnt[best])) best=d });
+    return best;
+  })()`);
+  if (!target) { bad('月视图里有可造数据的日期（当月至少一天有任务）'); return; }
+  const existing = await evalIn(`(function(){var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;var t=s.tasks||{};return Object.values(t).filter(function(x){return !x.deleted && x.date===${JSON.stringify(target)}}).length})()`);
+  const ids = [];
+  const ops = [];
+  const now = Date.now();
+  for (let i = 0; i < 6; i++) {
+    const id = 't_e2e_ovf_' + now.toString(36) + '_' + i;
+    ids.push(id);
+    ops.push({
+      opId: 'e2e-ovf-' + id, deviceId: 'e2e-android', ts: now + i, entity: 'task',
+      entityId: id, calId,
+      fields: {
+        title: 'e2e点行探针-' + i, note: '', date: target, time: null, reminder: null,
+        duration: null, done: false, doneAt: null, repeat: null, repeatSeq: 0,
+        seriesId: null, order: null, ord: null, createdAt: now + i, source: null,
+      },
+    });
+  }
+  const r = await apiPush(ops);
+  if (r.status !== 200 || !(r.body?.applied?.length)) {
+    bad('探针任务能写进服务端', r.body?.rejected?.length ? JSON.stringify(r.body.rejected[0]) : JSON.stringify(r));
+    return;
+  }
+  ok('探针：在 ' + target + ' 造 6 条任务（原有 ' + existing + ' 条）');
+
+  await pullSync();
+  await openCalendar();
+  await tap('button[data-view="month"]'); await wait(900);
+  const cell = await evalIn(`(function(){
+    var c=document.querySelector('.month-cell[data-date=${JSON.stringify(target)}]'); if(!c) return null;
+    var pills=c.querySelectorAll('.task-pill').length;
+    var dots=c.querySelectorAll('.more-dot').length;
+    var moreN=(c.querySelector('.more-n')||{}).textContent||'';
+    var row=c.querySelector('.cell-more');
+    var cr=c.getBoundingClientRect(), rr=row?row.getBoundingClientRect():null;
+    return {
+      pills, dots, moreN: moreN ? Number(moreN.replace('+','')) : 0,
+      hasMoreRow: !!row,
+      rowInside: !!rr && rr.bottom <= cr.bottom + 1 && rr.top >= cr.top,
+      cellH: Math.round(cr.height),
+      cellScrolls: c.scrollHeight > c.clientHeight + 1,
+    };
+  })()`);
+  if (!cell) { bad('探针那天在月视图里有格子', target); return; }
+  const shownTotal = cell.pills + cell.dots + cell.moreN;
+  const expect = existing + 6;
+  console.log(`       ${target}: 显示 ${cell.pills} 行文字 + 点 ${cell.dots} + ${cell.moreN}（当天应有 ${expect} 条），格高 ${cell.cellH}px`);
+  assert(shownTotal === expect, '点那一行真的被触发且数得上（显示行数 + 点 = 当天任务数）', `显示 ${cell.pills}，点 ${cell.dots + cell.moreN}，应为 ${expect}`);
+  assert(cell.hasMoreRow && cell.dots + cell.moreN > 0, '格子下方确实画了点行（不再是只有一个点）');
+  assert(cell.rowInside, '点那一行在格子内（没被 overflow 裁掉）', `bottom ${cell.rowInside ? '在框内' : '顶出格子'}`);
+  assert(!cell.cellScrolls, '格子本身不滚（内容靠省略，不靠滚动）');
+
+  /* 收尾：逐条打删除标记，别让探针留在生产库里 */
+  const del = Date.now();
+  const done = await apiPush(ids.map((id, i) => ({
+    opId: 'e2e-ovf-del-' + id, deviceId: 'e2e-android', ts: del + i, entity: 'task',
+    entityId: id, calId, fields: { deleted: true, deletedAt: del + i },
+  })));
+  assert(done.status === 200, '收尾：探针已清干净');
+}
+
 async function checkRepeat() {
   const me = await apiMe();
   if (!me) { bad('能取到登录 token'); return; }
@@ -267,8 +383,9 @@ async function checkRepeat() {
   assert(r1.status === 200 && (r1.body?.applied?.length ?? 0) > 0,
     '线上能创建重复任务', r1.body?.rejected?.length ? JSON.stringify(r1.body.rejected[0]) : 'ok');
 
-  // 刷新 → 同步 → 客户端补齐实例；看月视图
-  await reload();
+  // 同步 → 客户端补齐实例；看月视图（不 reload：会换执行上下文、甩断这条 WS）
+  await pullSync(6000);
+  await openCalendar();
   await tap('button[data-view="month"]'); await wait(600);
   const dates = await evalIn(`Array.from(document.querySelectorAll('[data-date]')).filter(c=>(c.textContent||'').includes(${JSON.stringify(title)})).map(c=>c.getAttribute('data-date'))`, 20000);
   const wd = (d) => new Date(d + 'T00:00:00').getDay();
@@ -290,14 +407,18 @@ async function checkRepeat() {
 /* ------------------------------------------------------------------ 主流程 */
 console.log(`\n== 安卓真机实测 ${device}（features: ${[...FEATURES].join(', ')}）`);
 try {
-  // 等外壳就绪：App 直接进某个视图，先点一下 day 确保日视图挂载
+  // 登录后默认落在「今天」列表；视图切换在日程页副 header → 先进日程页
+  await openCalendar();
   await tap('button[data-view="day"]'); await wait(800);
   const shell = await evalIn(`!!document.querySelector('.timeline') || !!document.querySelector('.week-cols')`);
   assert(shell, '应用外壳就绪（时间轴/周视图出现）');
 
   if (FEATURES.has('core')) await checkCore();
   if (FEATURES.has('now-line')) await checkNowLine();
-  if (FEATURES.has('month')) await checkMonth();
+  if (FEATURES.has('month')) {
+    await checkMonth();
+    await checkMonthOverflow();
+  }
   if (FEATURES.has('repeat')) await checkRepeat();
 
   if (FEATURES.has('core')) {

@@ -190,21 +190,24 @@ export const MONTH_CELL_HEAD_H = 23;
 export const MONTH_CELL_PAD_H = 6;
 /** 点那一行占的高度（点 4 + 上边距 2 + 行间距 2） */
 export const MONTH_DOTS_H = 8;
+/** 就地新建那个输入框占的高度（16.3 行高 + 4 内边距 + 2 边框 + 2 行间距） */
+export const MONTH_DRAFT_H = 24;
 
 /**
  * 窄屏格子放得下几行任务文字。
  *
- * `reserveDots` = true 时先把「点那一行」扣掉（那一格有东西没显示出来，
- * 点必须画得下）。两层都要算：先算不放点能放几行，超了才改用「留点位」的口径 ——
- * 少掉的条数正好就是点的个数，所以点永远画得下。
+ * 两个都要预留时才算得准：点那一行（有东西没显示出来就必须画得下）和
+ * 草稿那一行（就地新建的输入框占一行）。不预留点时最后一行后面没有行间距，
+ * 那 2px 还回去；要放点就接不上。
  * 这些常数与 responsive.css 窄屏那段同源（2026-10-19 真机实测），改一处要改另一处。
  */
-export function monthCellCapacity(cellH: number, reserveDots = false): number {
-  const avail = cellH - MONTH_CELL_PAD_H - MONTH_CELL_HEAD_H - (reserveDots ? MONTH_DOTS_H : 0);
-  if (avail < MONTH_LINE_H - MONTH_LAST_ROW_NO_GAP) return 0;
-  /* 不预留点位时最后一行后面没有行间距，那 2px 还回去；要放点就接不上。 */
-  const room = reserveDots ? avail : avail + MONTH_LAST_ROW_NO_GAP;
-  return Math.floor(room / MONTH_LINE_H);
+export function monthCellCapacity(cellH: number, reserveDots = false, reserveDraft = false): number {
+  let avail = cellH - MONTH_CELL_PAD_H - MONTH_CELL_HEAD_H;
+  if (reserveDots) avail -= MONTH_DOTS_H;
+  if (reserveDraft) avail -= MONTH_DRAFT_H;
+  if (!reserveDots) avail += MONTH_LAST_ROW_NO_GAP;
+  if (avail < MONTH_LINE_H) return 0;
+  return Math.floor(avail / MONTH_LINE_H);
 }
 
 /** 分钟 → 纵向百分比（0–100）。窗外返回 null —— 窗外的东西不画 */

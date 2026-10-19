@@ -45,8 +45,22 @@ function cellOrder(list: Task[]): Task[] {
   return [...open, ...done];
 }
 
-function MonthCell({ state, d, curMonth, today, curMonthStr, narrow, shown, more }: {
-  state: LocalState; d: string; curMonth: number; today: string; curMonthStr: string;
+/**
+ * 这一格显示几条、下面该画几个点。
+ *
+ * 先按「不放点」算能放几行；真有溢出才改用「留点位」的口径 —— 少掉的条数
+ * 正好就是点的个数，所以点那一行永远画得下。
+ * 传入的两个 room 由调用方算，**已经把草稿那一行扣掉了**（见 MonthView 里
+ * 逐格调用 monthCellCapacity 的地方），这里不再自己减 —— 减两次会少显示一行。
+ */
+function cellCounts(ts: Task[], roomPlain: number, roomWithDots: number): { shown: Task[]; more: number } {
+  if (ts.length <= roomPlain) return { shown: ts, more: 0 };
+  const room = Math.max(0, roomWithDots);
+  return { shown: ts.slice(0, room), more: ts.length - room };
+}
+
+function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }: {
+  state: LocalState; d: string; curMonth: number; today: string; anchorIso: string;
   narrow: boolean; shown: Task[]; more: number;
 }) {
   const zone = useDroppableZone(`day:${d}`);
@@ -54,8 +68,10 @@ function MonthCell({ state, d, curMonth, today, curMonthStr, narrow, shown, more
   const out = dt.getMonth() !== curMonth;
   const load = dayLoad(state, d);
   const lv = loadLevel(load.mins);
-  /* 邻月的格子照画、照能点：点数字跳到那个月（见 clickDispatch 的 data-jump-month） */
-  const monthJump = out ? D.addMonths(curMonthStr, dt.getMonth() - D.parseISO(curMonthStr).getMonth()) : undefined;
+  /* 邻月的格子照画、照能点：点数字跳到那个月（见 clickDispatch 的 data-jump-month）。
+     基准必须是**完整日期** —— addMonths 先 parseISO，给它 "2026-10" 会算出
+     NaN-NaN-NaN。用当月的 1 号当基准最稳（月运算不会被"日"顶超）。 */
+  const monthJump = out ? D.addMonths(D.monthStart(anchorIso), dt.getMonth() - curMonth) : undefined;
 
   return (
     <div
@@ -106,11 +122,10 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
   /* 窄屏只画含当月某天的那些周（10 月是 5 行）；宽屏照旧整 6 周 */
   const weeks = narrow ? D.monthWeeks(iso) : chunk7(D.monthMatrix(iso));
   const curMonth = D.parseISO(iso).getMonth();
-  const curMonthStr = iso.slice(0, 7);          // addMonths 要日期，当月任一天都行
   const today = D.today();
   /* 窄屏是 flex 均分 → 每格高确定（网格高减行间距再除行数）。首帧量不到
      （h=0）先按「能显示 2 行」算，ResizeObserver 下一帧重渲染修正。 */
-  const capCellH = narrow ? (h > 0 ? (h - (weeks.length - 1) * 1) / weeks.length : 62) : 0;
+  const cellH = narrow ? (h > 0 ? (h - (weeks.length - 1) * 1) / weeks.length : 62) : 0;
 
   return (
     <div className="month-view">
@@ -122,18 +137,16 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
       <div className="month-grid" ref={gridRef}>
         {weeks.map((row) => row.map((d) => {
           const ts = cellOrder(tasksOn(state, d));
+          /* 草稿那一行必须显式预留，否则输入框会把内容顶出格子（窄屏 overflow:hidden）。
+             逐格算：只有开着草稿的那一格才扣。 */
           const draftHere = !!state.ui.draft && state.ui.draft.zone === `day:${d}`;
-          /* 先按「不放点」算能放几行；真有溢出才改用「留点位」的口径 —— 少掉的
-             条数正好就是点的个数，所以点那一行永远画得下。草稿开着时它自己
-             占一行，先从行数里让出来。 */
-          const capPlain = narrow ? monthCellCapacity(capCellH) : MONTH_CELL_MAX;
-          const capWithDraft = capPlain - (draftHere ? 1 : 0);
-          const n = Math.min(ts.length, ts.length > capWithDraft ? Math.max(0, monthCellCapacity(capCellH, true) - (draftHere ? 1 : 0)) : capWithDraft);
+          const roomPlain = narrow ? monthCellCapacity(cellH, false, draftHere) : MONTH_CELL_MAX;
+          const roomWithDots = narrow ? monthCellCapacity(cellH, true, draftHere) : MONTH_CELL_MAX;
+          const { shown, more } = cellCounts(ts, roomPlain, roomWithDots);
           return (
             <MonthCell
               key={d} state={state} d={d} curMonth={curMonth} today={today}
-              curMonthStr={curMonthStr} narrow={narrow}
-              shown={ts.slice(0, n)} more={ts.length - n}
+              anchorIso={iso} narrow={narrow} shown={shown} more={more}
             />
           );
         }))}
