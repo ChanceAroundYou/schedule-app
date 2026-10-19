@@ -125,9 +125,12 @@ export function TimedCard({
   const narrow = isNarrowNow();
   const roomy = box.height >= (narrow ? 5.4 : 3.4);
   const hasEnd = t.duration != null;
-  /* 上下把手各 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
-     上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。 */
-  const canResize = box.height >= 4.5;
+  /* 上下把手各占 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
+     上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。
+     **门槛按端分档**：窄屏的卡只有 92px 宽、字更小，同样高度下把手更碍事；
+     桌面那一档定得低（3.5%），保证 24h 窗口里的 1 小时任务（≈4.2%）仍有把手
+     —— browser-smoke 有一条专门验「时间轴方块带上下两个把手」。 */
+  const canResize = box.height >= (narrow ? 6 : 3.5);
   /* 上下各留一条缝：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
      「任务之间连在一起」）。
      ⚠️ 用**百分比**而不是 `calc(% + 1.5px)`：`top`/`height` 一直是纯数字，
