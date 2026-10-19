@@ -1953,6 +1953,46 @@ try {
   ok(!!block.name && !!block.topName && block.name !== block.topName,
     '两个把手各有名字，且分得清上下：' + JSON.stringify(block.name) + ' / ' + JSON.stringify(block.topName));
 
+  /* ---- 2026-10-19 用户报「没地方拖动改时长」----
+     「点一下新建」的任务 duration 是空的（默认 1 小时不等于写死了 1 小时），
+     而以前 `resizable={hasEnd}` 让这些卡**一个把手都没有** —— 用户根本没处拖。
+     这里真建一条没时长的任务，验证它照样有把手、且看得见。 */
+  await evalJs(page, `
+    (async () => {
+      const pad = (n) => (n < 10 ? '0' + n : '' + n);
+      const token = localStorage.getItem('schedule-app-token');
+      const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+      const d = new Date();
+      const id = 't_smoke_nodur_' + Date.now().toString(36);
+      window.__nodurId = id;
+      await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id, deviceId: 'smoke', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { title: '没时长的卡', date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), time: '11:00' } }] }) });
+      return 1;
+    })()
+  `);
+  const nodur = await waitFor(page, `
+    (() => {
+      const e = document.querySelector('.task-el--timed[data-id="' + window.__nodurId + '"]');
+      if (!e) return null;
+      const h = e.querySelector('.ev-resize:not(.ev-resize-top)');
+      return h && h.getBoundingClientRect().height > 0 ? {
+        op: parseFloat(getComputedStyle(h).opacity), cursor: getComputedStyle(h).cursor,
+      } : null;
+    })()
+  `, '没设时长的任务也带着把手', 10000);
+  ok(nodur.op > 0.1 && nodur.cursor === 'ns-resize',
+    '没设时长的任务，把手也常显可拖（opacity ' + nodur.op.toFixed(2) + '，cursor ' + nodur.cursor + '）');
+  /* 收尾：这条验证用的任务删掉，别影响后面的节 */
+  await evalJs(page, `
+    (async () => {
+      const token = localStorage.getItem('schedule-app-token');
+      const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+      await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ cursor: 1, ops: [{ opId: 'del' + window.__nodurId, deviceId: 'smoke', ts: Date.now(), entity: 'task', entityId: window.__nodurId, calId: me.cals[0].id, fields: { deleted: true, deletedAt: Date.now() } }] }) });
+      return 1;
+    })()
+  `);
+
   const sel = (act) => `document.querySelector('.task-el--timed[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
   const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;
 

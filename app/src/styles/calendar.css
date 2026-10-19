@@ -175,7 +175,10 @@
   padding-left: 21px;
 }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { text-decoration: none; }
-/* 上下沿拖拽改时间：平时隐去，悬停时显出抓手，避免和「点开详情」冲突。
+/* 上下沿拖拽改时间：**把手常显**（2026-10-19 用户报「没地方拖动改时长」）。
+   以前完全隐去、悬停才显形 —— 一个 opacity:0 的 72×8 小条等于不存在，
+   用户根本不知道卡片能拉。现在默认淡显（.3），悬停提到 .85，
+   既随时看得到「这里能拉」，又不抢标题的视线。
   /* **把手只占一小条，其余全是拖动区**（2026-10-12 再定）
      —— 用户报「卡片高度比较窄的时候，上下两端覆盖整体拖拽」，又要求
      「调整长度的区域只在小把手附近，其他位置不能触发调整时间」。
@@ -185,20 +188,20 @@
          稍矮的卡片只剩中间一线能拖。现在只有中间 72px 是 resize，
          四个角与两侧边都归拖动。
        ② `height: min(9px, 30%)` —— 纵向封顶，矮卡片兜底 4px。
-       ③ 视觉指示 `.ev-resize::after` 也跟着放宽：12px → 36px，
-          用户看得到「哪里能拉」和「哪里只能拖」的边界。 */
+       ③ 视觉指示 `.ev-resize::after`：40px 横条，用户看得到「哪里能拉」
+          和「哪里只能拖」的边界。 */
 .ev-resize {
   position: absolute; left: 50%; width: 72px; transform: translateX(-50%); bottom: 0;
   height: min(9px, 30%); min-height: 4px;
   cursor: ns-resize; display: flex; align-items: center; justify-content: center;
-  opacity: 0; transition: opacity .12s;
+  opacity: .3; transition: opacity .12s;
   touch-action: none;
 }
 .ev-resize-top { top: 0; bottom: auto; }
-.task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .85; }
+.task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .8; }
 .ev-resize::after {
-  content: ''; width: 36px; height: 3px; border-radius: var(--r-xs);
-  background: rgb(from var(--primary) r g b / .55);
+  content: ''; width: 40px; height: 3px; border-radius: var(--r-xs);
+  background: rgb(from var(--primary) r g b / .5);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
 .task-el--timed.resizing { z-index: 8; box-shadow: 0 8px 20px rgb(from var(--primary) r g b / .3); }

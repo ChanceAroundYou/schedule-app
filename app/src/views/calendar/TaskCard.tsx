@@ -125,7 +125,11 @@ export function TimedCard({
          那不如不写。完整内容仍在抽屉里。 */
       noteText={roomy && t.note ? t.note : null}
       title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
-      resizable={hasEnd}
+      /* **每条定时卡都带把手**（2026-10-19 用户报「没地方拖动改时长」）：
+         以前 `resizable={hasEnd}` —— 没显式设过时长的任务一个把手都没有，
+         而「点一下新建」的任务恰恰占大多数。时长是「默认 60 分钟」的含义，
+         不是「不许改」的含义；拖把手就是把时长落定。 */
+      resizable
       lockX={lockX}
     />
   );
