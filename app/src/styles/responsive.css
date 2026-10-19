@@ -339,15 +339,23 @@ body.sheet-open .tab:active { background: none; }
     max-width: 30px; text-align: right; flex: 0 0 auto;
   }
   .month-head-cell { font-size: 10.5px; padding: 3px 0; }
-  /* 任务文字在这个宽度下必然被截成一两个字，不如只留一个点 + 数量 */
-  .cell-tasks { flex-direction: row; flex-wrap: wrap; gap: 2px; }
+  /* 窄屏格子：一行一条任务（只放得下标题前几个字），塞不下的在下方用一排点
+     表示「还有几条没显示」——一个点 = 一条。行数 = 格子实测高度算出来的
+     （见 domain/layout.ts 的 monthCellCapacity，常数与这段同源）。
+     勾选圈在这一行省掉：47px 宽放不下 14px 的圈 + 字，想勾完成要点开抽屉。 */
+  .month-cell { padding: 3px 4px; min-height: 0; overflow: hidden; }
+  .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
   .cell-tasks .task-pill {
-    width: 6px; height: 6px; padding: 0; border-radius: 50%;
-    background: var(--primary); border: none; overflow: hidden;
-    font-size: 0; gap: 0;
+    font-size: 10px; padding: 1px 3px; gap: 0; border-left-width: 2px;
+    line-height: 14px;
   }
-  .cell-tasks .task-pill.done { background: var(--border); }
-  .cell-more { font-size: 9.5px; padding-left: 0; }
+  /* 这一行宽度只够标题前几个字，时间放不下（39px 里 09:30 就占满），
+     所以窄屏格子里不显示时间 —— 标题优先，这是用户 2026-10-19 要的。 */
+  .cell-tasks .task-pill .pill-time { display: none; }
+  .cell-tasks .task-pill .check-btn { display: none; }
+  .cell-more { display: flex; align-items: center; gap: 3px; padding-top: 2px; font-size: 9.5px; color: var(--text-3); }
+  .cell-more .more-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); flex: 0 0 4px; }
+  .cell-more .more-n { font-size: 9.5px; line-height: 1; }
 }
 
 @media (max-width: 1100px) and (min-width: 901px) {

@@ -63,6 +63,30 @@ export function monthMatrix(isoStr: string): string[] {
   return out;
 }
 
+/**
+ * 月视图的**行**：只画「含当月某天」的那些周。
+ *
+ * 与 monthMatrix 的区别就是 2026-10-19 用户提的那件事 —— 死画 6 周会让
+ * 10 月多出一整行 11/2–11/8。行里可能含上月/下月的天（10/1 是周四，那行
+ * 前三格是 9/28–9/30），那些格子照画、照能点，点日期数字跳到那个月。
+ */
+export function monthWeeks(isoStr: string): string[][] {
+  const d = parseISO(isoStr);
+  const start = weekStart(monthStart(isoStr));
+  const rows: string[][] = [];
+  for (let r = 0; r < 6; r++) {
+    const row: string[] = [];
+    let hasThisMonth = false;
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(start, r * 7 + i);
+      row.push(day);
+      if (parseISO(day).getMonth() === d.getMonth()) hasThisMonth = true;
+    }
+    if (hasThisMonth) rows.push(row);
+  }
+  return rows;
+}
+
 /** 当月最后一天是几号 */
 export function lastDayOfMonth(year: number, month1: number): number {
   return new Date(year, month1, 0).getDate();

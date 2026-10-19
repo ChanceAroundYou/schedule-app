@@ -6,5 +6,5 @@ export { useStoreState, useScopedState, useStoreSelector } from './hooks/store.t
 export { useOnline, useKeyboardInset, useIsNarrow, isNarrowNow } from './hooks/viewport.ts';
 export { useOutsideClose, useFocusTrap, useEscape } from './hooks/overlay.ts';
 export { useAnchoredPosition, useAnchoredPositionFrom } from './hooks/anchored.ts';
-export { useMeasuredHeight, useDebounced } from './hooks/utils.ts';
+export { useMeasuredHeight, useDebounced, useElementHeight } from './hooks/utils.ts';
 export { useModalFocus } from './hooks/modalFocus.ts';

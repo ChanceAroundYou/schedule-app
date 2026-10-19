@@ -358,6 +358,12 @@ body.is-drag-range { user-select: none; }
 /* 高度由 JS 按可见区域算好（见 Views.fitMonthHeight）：
    窗口高就撑满整屏、行高均分；窗口矮就按最小行高撑开，页面照常滚动，不会截掉最后一行 */
 .month-view { display: flex; flex-direction: column; min-height: 480px; }
+/* 窄屏（Shell 挂 content-month）锁单屏不滚：行高由 flex 均分，所以这里把
+   min-height 收回 0、网格吃掉剩余高度。JS 那边（domain/layout.ts 的 fit）看到
+   content-month 就不再写 gridAutoRows，否则会把 6 周的月份顶出屏幕。 */
+.content-month { overflow: hidden; display: flex; flex-direction: column; }
+.content-month .month-view { min-height: 0; flex: 1 1 auto; min-height: 0; }
+.content-month .month-grid { flex: 1 1 auto; min-height: 0; grid-auto-rows: 1fr; }
 .month-head { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
 .month-head-cell { text-align: center; font-size: 11.5px; color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
 .month-grid {

@@ -29,6 +29,29 @@ export function useMeasuredHeight<T extends HTMLElement>(
   }, [ref, cssVar, ...deps]);
 }
 
+/**
+ * 实测一个元素的**自身高度**（不含滚动内容），返回像素数。
+ *
+ * 与 {@link useMeasuredHeight} 的区别：那条把高度写进 CSS 变量给别处对齐用；
+ * 这里要把数字拿回 JS 里算算术（窄屏月视图格子能塞几行任务）。
+ * 首帧返回 0，下一帧实测到就更新 —— 所以调用方要把 0 当「还没量到」处理。
+ */
+export function useElementHeight<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+): number {
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const apply = () => setH(Math.round(el.getBoundingClientRect().height));
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return h;
+}
+
 /** 防抖：搜索框这类高频输入用它，避免每个字符都重排整棵树 */
 export function useDebounced<T>(value: T, ms = 180): T {
   const [v, setV] = useState(value);

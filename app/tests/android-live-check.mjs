@@ -5,6 +5,8 @@
  * 通过 CDP 驱动真机 WebView，断言同一套核心场景：
  *   core      进应用外壳（日视图时间轴出现）→ 周/月视图渲染 → 零控制台报错
  *   now-line  今天日视图的当前时间线是 --ok 深绿细线、无圆点无时刻文字
+ *   month     窄屏月视图：行数只含当月某天、一屏不滚、格子里是文字行、
+ *             塞不下的在下方用点表示（点数 = 没显示出来的条数）
  *   repeat    API 建「每周五、六」系列 → 断言周五+周六实例都落到月视图 → repeatUntil 收尾
  *
  * 与网页端 live-check.mjs 的区别：
@@ -37,7 +39,7 @@ const PKG = 'space.xiaokubao.schedule';
 /* ---------- 参数 ---------- */
 const argv = process.argv.slice(2);
 let device = null;
-let featArg = 'core,now-line,repeat';
+let featArg = 'core,now-line,month,repeat';
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--device') device = argv[++i];
   else if (argv[i].startsWith('--device=')) device = argv[i].split('=')[1];
@@ -188,6 +190,56 @@ async function checkNowLine() {
     `子元素 ${info.children}、文本「${info.text}」`);
 }
 
+async function checkMonth() {
+  await tap('button[data-view="month"]'); await wait(900);
+  const m = await evalIn(`(function(){
+    var q=function(s){return document.querySelector(s)};
+    var qa=function(s){return Array.from(document.querySelectorAll(s))};
+    var rows=new Set(); qa('.month-cell').forEach(function(c){rows.add(Math.round(c.getBoundingClientRect().y))});
+    var content=q('#content');
+    var cells=qa('.month-cell');
+    var texts=cells.filter(function(c){return c.querySelector('.task-pill')});
+    var dotRows=qa('.cell-more');
+    var widest=0; cells.forEach(function(c){var p=c.querySelector('.task-pill'); if(p) widest=Math.max(widest,Math.round(p.getBoundingClientRect().width))});
+    return {
+      rows: rows.size, cells: cells.length,
+      contentScroll: content ? content.scrollHeight : 0,
+      contentH: content ? Math.round(content.getBoundingClientRect().height) : 0,
+      cellHasText: texts.length,
+      widestPill: widest,
+      dotRows: dotRows.length,
+      dotsTotal: qa('.more-dot').length,
+      pillTextNonEmpty: texts.filter(function(c){return ((c.querySelector('.task-pill').innerText||'').trim().length>0)}).length
+    };
+  })()`);
+  assert(m.rows >= 4 && m.rows <= 6, '月视图行数只含当月某天（4–6 行）', `${m.rows} 行 / ${m.cells} 格`);
+  assert(m.contentScroll <= m.contentH + 1, '一屏放完、内容区不滚', `scroll ${m.contentScroll} vs ${m.contentH}`);
+  assert(m.cellHasText > 0, '格子里显示的是文字行（不再是只有点）', `${m.cellHasText} 格有文字`);
+  assert(m.widestPill > 20, '文字行有实际宽度', `${m.widestPill}px`);
+  assert(m.pillTextNonEmpty === m.cellHasText, '文字行标题非空');
+
+  /* 点数必须等于「没显示出来的条数」—— 拿本地缓存逐格对账。
+     格子显示 N 行 + 点 M 个，那这一天就该正好有 N+M 条活任务。 */
+  const acct = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');
+    var s=j.state||j; var tasks=s.tasks||{};
+    var live={}; Object.values(tasks).forEach(function(t){ if(!t.deleted) live[t.date]=(live[t.date]||0)+1 });
+    var mismatches=[];
+    Array.from(document.querySelectorAll('.month-cell')).forEach(function(c){
+      var d=c.getAttribute('data-date');
+      var shown=c.querySelectorAll('.task-pill').length;
+      var dots=c.querySelectorAll('.more-dot').length;
+      var n=(c.querySelector('.more-n')||{}).textContent;
+      var moreN = n ? Number(n.replace('+','')) : 0;
+      var total = shown + dots + moreN;
+      if (live[d] !== undefined && total !== live[d]) mismatches.push(d+': 显示'+shown+'+点'+(dots+moreN)+' 应为 '+live[d]);
+    });
+    return mismatches;
+  })()`);
+  assert(acct.length === 0, '点数与「没显示出来的条数」逐格对得上', acct.length ? acct.slice(0, 3).join(' | ') : '无差异');
+  return m;
+}
+
 async function checkRepeat() {
   const me = await apiMe();
   if (!me) { bad('能取到登录 token'); return; }
@@ -245,6 +297,7 @@ try {
 
   if (FEATURES.has('core')) await checkCore();
   if (FEATURES.has('now-line')) await checkNowLine();
+  if (FEATURES.has('month')) await checkMonth();
   if (FEATURES.has('repeat')) await checkRepeat();
 
   if (FEATURES.has('core')) {

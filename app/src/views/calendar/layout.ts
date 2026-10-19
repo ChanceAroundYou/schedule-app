@@ -69,15 +69,21 @@ export function useViewLayout(
          `flex: 1 + min-height: 0` 自己就填满剩余空间（2026-10-17 锁单屏）。
          以前这里量 availHeight 再写成内联 style，窗口一缩就只剩 420 的下限。 */
       const grid = host.querySelector<HTMLElement>('.month-grid');
-      if (grid) {
-        const row = Math.round(Math.max(
-          MONTH_ROW_MIN,
-          Math.min(MONTH_ROW_MAX, (availHeight(host) - MONTH_HEAD_H) / 6),
-        ));
-        grid.style.gridTemplateRows = '';
-        // minmax(下限, auto)：下限保证尽量占满一屏，auto 让内容多的行自己长高 → 能滚
-        grid.style.gridAutoRows = `minmax(${row}px, auto)`;
+      if (!grid) return;
+      /* 窄屏月视图走的是同一套 flex（见 calendar.css 的 .content-month）——
+         这里写的内联 gridAutoRows 会压过 CSS 的 1fr，把占满 6 周的月份顶出屏幕，
+         与「一屏画完不滚」直接打架。所以窄屏让 CSS 说话，这里不插手。 */
+      if (host.classList.contains('content-month')) {
+        grid.style.gridAutoRows = '';
+        return;
       }
+      const row = Math.round(Math.max(
+        MONTH_ROW_MIN,
+        Math.min(MONTH_ROW_MAX, (availHeight(host) - MONTH_HEAD_H) / 6),
+      ));
+      grid.style.gridTemplateRows = '';
+      // minmax(下限, auto)：下限保证尽量占满一屏，auto 让内容多的行自己长高 → 能滚
+      grid.style.gridAutoRows = `minmax(${row}px, auto)`;
     };
 
     fit();

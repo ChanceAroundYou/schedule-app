@@ -336,6 +336,15 @@ export function makeOnClick(deps: ClickDeps) {
       store.setUi({ nav: 'calendar', view: 'day', cursor: jump.dataset.jump, search: '' });
       return;
     }
+    /* 2.1) 月视图点**邻月**的日期数字 = 跳到那个月（2026-10-19）。
+       窄屏行数只画含当月某天的那些周，可首行/末行里仍有上月或下月的天 ——
+       那些格子照画、照能点，点数字过去看那个月。与上面那条分开是因为去向不同：
+       点本月的日期是「看这一天的日程」，点邻月的是「看那一个月」（落在月视图）。 */
+    const jumpMonth = el.closest<HTMLElement>('[data-jump-month]');
+    if (jumpMonth?.dataset.jumpMonth) {
+      store.setUi({ nav: 'calendar', view: 'month', cursor: jumpMonth.dataset.jumpMonth, search: '' });
+      return;
+    }
     const navBtn = el.closest<HTMLElement>('[data-nav]');
     if (navBtn?.dataset.nav) { deps.nav(navBtn.dataset.nav); return; }
     if (el.closest('[data-jump-habits]')) { deps.nav('habits'); return; }
