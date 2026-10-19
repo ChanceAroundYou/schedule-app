@@ -114,17 +114,21 @@ export function TimedCard({
      所以不能再拿写死的 px 比 —— 用百分比跟最小可读高度比。 */
   const roomy = box.height >= 3.4;
   const hasEnd = t.duration != null;
+  /* 上下各留一条缝：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
+     「任务之间连在一起」）。
+     ⚠️ 用**百分比**而不是 `calc(% + 1.5px)`：`top`/`height` 一直是纯数字，
+     探针（browser-smoke 的越界检查、位置断言）都靠 `parseFloat(el.style.top)` 读，
+     掺了 calc 就解析成 NaN，测试会静默失效。0.35% 在 ~590px 高的时间轴上
+     大约就是 1.5px。 */
+  const GAP_PCT = 0.35;
+  const topPct = box.top + GAP_PCT / 2;
+  const hPct = Math.max(1.2, Math.max(1.2, box.height) - GAP_PCT);
   return (
     <TaskCard
       t={t}
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
-      /* 上下各让 1.5px：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
-         「任务之间连在一起」）。位置仍走百分比，只有这 3px 是固定的 ——
-         它表达的是「两张卡之间要有缝」，跟时间窗缩放无关。
-         `max(4px, …)` 兜底：15 分钟的小块减 3px 也不会变成负高度。 */
       style={{
-        top: `calc(${box.top}% + 1.5px)`,
-        height: `max(4px, calc(${Math.max(1.2, box.height)}% - 3px))`,
+        top: topPct + '%', height: hPct + '%',
         left: `${e.col * w}%`, width: `calc(${w}% - 3px)`,
       }}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
