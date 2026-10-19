@@ -3985,6 +3985,17 @@ try {
     return true;
   `);
   await new Promise((r) => setTimeout(r, 60));
+  /* 指针先真正挪到 today 上 —— **断言必须写在指针到位之后**。
+     2026-10-19 教训：原来「落点那一格 = today」写在只挪了 12px（刚过激活
+     门槛）的位置上，那时候指针还压在 trash 自己身上、落点是它自己。那条断言
+     当时能绿，是因为 `isOver` 的判据写反了（见下面第三条），每一格都中。 */
+  await evalJs(page, `
+    const el = document.elementFromPoint(${navDst.x}, ${navDst.y});
+    el.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, cancelable: true, clientX: ${navDst.x}, clientY: ${navDst.y} }));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 60));
   /* 占位虚影画在**落点**，不是原点：判据是 dnd-kit 的 `isOver`（指针正压着的
      那一格 = 松手时会被占掉的槽位），所以 trash 自己身上**没有**虚线类，
      today 那一格才有。判的是类名在谁身上，不是「有没有虚线」——
@@ -4705,16 +4716,17 @@ try {
       text: b.textContent.trim(),
       hasCheck: !!b.querySelector('.lucide-check'),
       display: s.display,
-      // 保存在时间下面（需求 4）
-      belowClock: r.top >= c.bottom - 0.5,
-      // 日期按钮和 ✓ 一样高（需求 3）
+      // 保存挨着日期按钮**右边**（2026-10-19 起横排）：单行小条参考打卡页，
+      // 原来是上下叠放——那一版把整条撑成两行高，用户报「框太大」
+      besideClock: r.left >= c.right - 0.5,
+      // 日期按钮和 ✓ 一样高
       h: Math.round(r.height), clockH: Math.round(c.height),
     };
   `);
   ok(saveBtn && saveBtn.hasCheck, '横条上那个保存键是个 ✓ 图标，实际 ' + JSON.stringify(saveBtn));
   ok(saveBtn && saveBtn.text === '', '它只有图标，没有「保存」两个字（一行里三个文字按钮太吵）');
   ok(saveBtn && saveBtn.display !== 'none', '「保存」按钮看得见（不是 display:none）');
-  ok(saveBtn && saveBtn.belowClock, '✓ 摆在日期按钮**下面**（需求 4）');
+  ok(saveBtn && saveBtn.besideClock, '✓ 摆在日期按钮**右边**（单行小条，不再上下叠放）');
   ok(saveBtn && saveBtn.h === saveBtn.clockH,
     '✓ 和日期按钮一样高（需求 3：那个按钮要摆两行小字，高度不能变），实际 ' + JSON.stringify([saveBtn && saveBtn.h, saveBtn && saveBtn.clockH]));
   // 空着的时候禁用：一个点下去没反应的按钮，比没有按钮更让人犯嘀咕
