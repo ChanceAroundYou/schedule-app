@@ -20,6 +20,10 @@
  * 第 4 步**必须排在第 3 步之后**：任务方块本身就长在那些区域里（`.task-el`），
  * 顺序反了会把「点开某条任务」变成「新建一条空任务」，而且这条空任务还排在它前面。
  *
+ * **例外**：月视图格子带 `data-no-draft` —— 那一页不提供就地新建
+ * （用户 2026-10-19：格子本来就挤），所以 `draftSeedFrom` 见到它就返回 null。
+ * 第 4 步里「点格子里的任务去看那一天」走的是第 2 步的 `data-jump`。
+ *
  * ## 新增一个动作
  *
  * 在 `views/` 里给元素加 `data-act="xxx"`，然后在这里加一个 `case`。
@@ -253,6 +257,11 @@ function draftSeedFrom(
 ): DraftSeed | null {
   const zid = zone.dataset.zoneId || '';
   const kind = zid.slice(0, zid.indexOf(':'));
+  /* 月视图格子显式说「别在这儿开草稿」（用户 2026-10-19：格子本来就挤，
+     而且点格子里的任务是要去看那一天，两种意图撞在一起更乱）。
+     ⚠️ `data-zone-id` 必须留着 —— 拖拽落点靠它找 DOM，所以不能靠
+     「没有 zone-id 就不开草稿」来判断，只能另加一个标记。 */
+  if (zone.dataset.noDraft) return null;
   /* `data-zone-id` 不是日历专用的：项目泳道的每一列（`proj:<id>:<column>`）
      也用它做拖放的落点。点到那里不该开出个草稿框 —— 那儿的 columns 既不是日期
      也不是时刻。所以按前缀白名单过滤，而不是「有 data-zone-id 就算」。 */

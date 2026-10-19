@@ -130,7 +130,6 @@
 .task-el--timed, .task-el--untimed {
   border-radius: var(--r-sm); background: var(--primary-soft);
   border: var(--border-w) solid var(--border);
-  border-left: 3px solid var(--primary);
   cursor: pointer;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
      **过渡只有 box-shadow，没有 transform**：松手时 transform 从
@@ -140,7 +139,8 @@
 }
 .task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
 .task-el--timed.done, .task-el--untimed.done { opacity: .5; }
-.task-el--timed.live { border-left-width: 4px; box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
+/* 正在进行的卡：只靠外发光点出来（左侧那条绿线 2026-10-19 按用户要求全去掉了） */
+.task-el--timed.live { box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
@@ -411,7 +411,7 @@ body.is-drag-range { user-select: none; }
   resize: none; overflow: hidden;
   font: inherit; font-size: 12.5px; line-height: 1.3; color: var(--text);
   background: var(--panel);
-  border: var(--border-w) solid var(--primary); border-left: 3px solid var(--primary);
+  border: var(--border-w) solid var(--primary);
   border-radius: var(--r-sm); box-shadow: var(--shadow-md);
   outline: none;
 }
@@ -425,7 +425,7 @@ body.is-drag-range { user-select: none; }
   /* 同 .task-row：它也是 task-el 标记的成员，自己声明横向，别靠别人 */
   display: flex; flex-direction: row; align-items: center; gap: 5px;
   padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
-  border: var(--border-w) solid var(--border); border-left: 3px solid var(--primary);
+  border: var(--border-w) solid var(--border);
   font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
 }

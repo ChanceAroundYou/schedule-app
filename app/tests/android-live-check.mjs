@@ -5,8 +5,9 @@
  * 通过 CDP 驱动真机 WebView，断言同一套核心场景：
  *   core      进应用外壳（日视图时间轴出现）→ 周/月视图渲染 → 零控制台报错
  *   now-line  今天日视图的当前时间线是 --ok 深绿细线、无圆点无时刻文字
- *   month     窄屏月视图：行数只含当月某天、一屏不滚、每行放得下 4 个汉字、
- *             左右留白已收窄、塞不下的在最后一条文字尾巴上挂 +N（数得上）
+ *   month     窄屏月视图：行数只含当月某天、一屏不滚、每行 5 个完整汉字（无省略号）、
+ *             左右留白已收窄、任务左侧没有绿线、塞不下的在最后一条尾巴上挂 +N、
+ *             点任务跳那一天的日视图、点空白处不再就地新建
  *   repeat    API 建「每周五、六」系列 → 断言周五+周六实例都落到月视图 → repeatUntil 收尾
  *
  * 与网页端 live-check.mjs 的区别：
@@ -139,6 +140,17 @@ async function tap(sel) {
     return t.tagName;
   })()`);
 }
+/* 按坐标点（点空白处用，没有选择器可点） */
+async function tapAt(x, y) {
+  return evalIn(`(function(){
+    var t=document.elementFromPoint(${x},${y}); if(!t) return 'no-pt';
+    var o={bubbles:true,cancelable:true,view:window,clientX:${x},clientY:${y},button:0};
+    t.dispatchEvent(new MouseEvent('mousedown',o));
+    t.dispatchEvent(new MouseEvent('mouseup',o));
+    t.dispatchEvent(new MouseEvent('click',o));
+    return t.tagName+'.'+(t.className||'');
+  })()`);
+}
 async function reload() {
   await send('Page.reload');
   await wait(4000); // 等 SPA 重新挂载
@@ -260,19 +272,30 @@ async function checkMonth() {
       moreBadges: qa('.pill-more').length,
       gridLeft: grid?Math.round(grid.getBoundingClientRect().x):0,
       viewportW: window.innerWidth,
+      /* 2026-10-19 用户要求：标题不用省略号，直接裁掉，一行多显示一个字 */
+      titleOverflow: pill ? getComputedStyle(pill.querySelector('.pill-title')).textOverflow : '',
+      /* 绿线全去掉：左边框**不能是强调线** —— 与上边框同宽同色（都是中性灰框） */
+      pillBorderLeft: pill ? getComputedStyle(pill).borderLeftWidth : '',
+      pillBorderLeftColor: pill ? getComputedStyle(pill).borderLeftColor : '',
+      pillBorderTopColor: pill ? getComputedStyle(pill).borderTopColor : '',
       pillTextNonEmpty: texts.filter(function(c){return ((c.querySelector('.task-pill').innerText||'').trim().length>0)}).length
     };
   })()`);
   assert(m.rows >= 4 && m.rows <= 6, '月视图行数只含当月某天（4–6 行）', `${m.rows} 行 / ${m.cells} 格`);
   assert(m.contentScroll <= m.contentH + 1, '一屏放完、内容区不滚', `scroll ${m.contentScroll} vs ${m.contentH}`);
   assert(m.cellHasText > 0, '格子里显示的是文字行（不再是只有点）', `${m.cellHasText} 格有文字`);
-  /* 2026-10-19 用户明确要求「一行放四到五个字」（参考图 Google 日历）。
-     改之前文字净宽 31px / 10px 字号只能放 3 个字；现在 46px / 9px 字号。
-     ⚠️ 省略号本身要占一个汉字宽，所以「净宽 ≥ 5 字宽」才代表真能显示 5 个字、
-     「≥ 4 字宽 + 1 个省略号」代表截断时至少还有 4 个字。两个都卡。 */
-  assert(m.textW >= 4 * m.cjkW + m.cjkW - 1, '截断时也放得下 4 个汉字 + 省略号',
-    `净宽 ${m.textW}px（4 字 + 省略号 = ${Math.round(5 * m.cjkW)}px）`);
-  assert(m.charsFit >= 5, '不截断时放得下 5 个汉字', `${m.charsFit} 字（净宽 ${m.textW}px / 字宽 ${m.cjkW}px）`);
+  assert(m.titleOverflow === 'clip', '标题不用省略号（直接裁掉，一行多显示一个字）', `text-overflow=${m.titleOverflow}`);
+  assert(m.pillBorderLeftColor === m.pillBorderTopColor,
+    '任务的左侧绿线已去掉（左边框不再有强调色）',
+    `左 ${m.pillBorderLeft}px ${m.pillBorderLeftColor} / 上 ${m.pillBorderTopColor}`);
+  /* 2026-10-19 用户明确要求「一行放四到五个字」（参考图 Google 日历），
+     而且第二轮要求**去掉省略号**把那个字宽还给标题。
+     改之前文字净宽 31px / 10px 字号只能放 3 个字；现在 45px / 9px 字号 = 正好 5 个。
+     没有省略号了，所以「净宽 ≥ 5 字宽」就是真能完整显示 5 个字。 */
+  assert(m.charsFit >= 5, '一行放得下 5 个完整汉字（无省略号，第 6 个字整字不可见）',
+    `${m.charsFit} 字（净宽 ${m.textW}px / 字宽 ${m.cjkW}px）`);
+  assert(m.textW % m.cjkW === 0, '文字净宽是整字宽的倍数（不会切出半个字的碎边）',
+    `${m.textW} ÷ ${m.cjkW} = ${(m.textW / m.cjkW).toFixed(2)}`);
   assert(m.pillTextNonEmpty === m.cellHasText, '文字行标题非空');
   assert(m.gridLeft <= 8, '月视图左右留白已收窄（≤8px）', `左边 ${m.gridLeft}px / 视口 ${m.viewportW}px`);
 
@@ -385,6 +408,75 @@ async function checkMonthOverflow() {
   assert(done.status === 200, '收尾：探针已清干净');
 }
 
+/* 月视图两种点击（2026-10-19 用户明确要求）：
+   ① 点格子里的任务 → 跳那一天的**日视图**（不是开任务抽屉）；
+   ② 点格子空白处 → 什么也不发生（月视图不再就地新建）。 */
+async function checkMonthTap() {
+  await openCalendar();
+  await tap('button[data-view="month"]'); await wait(800);
+
+  const target = await evalIn(`(function(){
+    var c=Array.from(document.querySelectorAll('.month-cell')).find(function(x){
+      return !x.classList.contains('out') && x.querySelector('.task-pill')});
+    if(!c) return null;
+    c.querySelector('.task-pill').setAttribute('data-probe-tap','1');
+    return c.getAttribute('data-date');
+  })()`);
+  if (!target) { bad('月视图里有可点的任务'); return; }
+  await tap('[data-probe-tap="1"]');
+  await wait(700);
+  const after = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+    return {view:s.ui.view, cursor:s.ui.cursor,
+      drawer: !!document.querySelector('.drawer'),
+      timeline: !!document.querySelector('.timeline')};
+  })()`);
+  assert(after.view === 'day' && after.cursor === target,
+    '点格子里的任务 → 跳到那一天的日视图', `view=${after.view} cursor=${after.cursor}（应为 ${target}）`);
+  assert(after.timeline, '跳过去真的渲染了日视图时间轴');
+  assert(!after.drawer, '点任务不再弹任务抽屉（改成一跳到底）');
+
+  /* 行内绿线：日视图时间轴上的卡也不能有左边框强调色 */
+  const dayCard = await evalIn(`(function(){
+    var el=document.querySelector('.task-el--timed');
+    if(!el) return null;
+    var cs=getComputedStyle(el);
+    return {left:cs.borderLeftColor, top:cs.borderTopColor, lw:cs.borderLeftWidth, tw:cs.borderTopWidth};
+  })()`);
+  if (dayCard) {
+    assert(dayCard.left === dayCard.top && dayCard.lw === dayCard.tw,
+      '日/周视图的定时卡也没有左侧绿线',
+      `左 ${dayCard.lw} ${dayCard.left} / 上 ${dayCard.tw} ${dayCard.top}`);
+  }
+
+  /* ② 回月视图，点一个没任务的格子的空白处 → 不该弹新建输入框 */
+  await openCalendar();
+  await tap('button[data-view="month"]'); await wait(800);
+  const spot = await evalIn(`(function(){
+    var c=Array.from(document.querySelectorAll('.month-cell')).find(function(x){
+      return !x.classList.contains('out') && !x.querySelector('.task-pill')});
+    if(!c) return null;
+    var r=c.getBoundingClientRect();
+    return {d:c.getAttribute('data-date'),
+      x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height*0.78)};
+  })()`);
+  if (!spot) { bad('月视图里有空白格子可点'); return; }
+  await tapAt(spot.x, spot.y);
+  await wait(600);
+  const draft = await evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+    return {draft: s.ui.draft?1:0,
+      input: document.querySelectorAll('.month-cell .new-cell').length};
+  })()`);
+  assert(draft.draft === 0 && draft.input === 0, '月视图点空白处不再弹新建输入框（功能已砍掉）',
+    `draft=${draft.draft} input=${draft.input}`);
+
+  /* ③ 日视图那个入口还在（砍的只是月视图） */
+  await tap('button[data-view="day"]'); await wait(800);
+  const stillThere = await evalIn(`!!document.querySelector('.new-cell, [data-zone-id^="timeline"], [data-zone-id^="allday"]')`);
+  assert(stillThere, '日视图的就地新建入口还在（只砍了月视图）');
+}
+
 async function checkRepeat() {
   const me = await apiMe();
   if (!me) { bad('能取到登录 token'); return; }
@@ -447,6 +539,7 @@ try {
   if (FEATURES.has('month')) {
     await checkMonth();
     await checkMonthOverflow();
+    await checkMonthTap();
   }
   if (FEATURES.has('repeat')) await checkRepeat();
 

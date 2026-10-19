@@ -6,16 +6,20 @@
  * 行高由 flex 均分剩余高度。格子高度确定 → 能塞几行文字是算得出的：
  * `domain/layout.ts` 的 monthCellCapacity，那几个常数与 responsive.css 窄屏那段同源。
  *
- * 格子里一行一条任务（标题放不下走省略号），塞不下的在**最后一条可见文字尾巴上**
+ * 格子里一行一条任务（标题放不下**直接裁掉**，不用省略号 —— 省略号要占整整一个
+ * 汉字宽，去掉它一行能多显示一个字），塞不下的在**最后一条可见文字尾巴上**
  * 挂一个 "+N"（参考图 Google 日历：公司+2）—— 行内的，不单独占一行，省下的
  * 高度能多显示一行。格子内口径是「未完成在前（按时间），已完成在后」。
  * 宽屏格子够宽（≈250px），照旧直接列任务、照旧灰色邻月 —— 用户要求只改手机端。
  *
- * ⚠️ 这里零回调：点邻月日期跳月走 `data-jump-month`、点任务开抽屉走 `.task-el`、
- *   点 "+N" 看这一天完整日程走它自己身上的 `data-jump`、点空格子新建走
- *   `[data-zone-id]`，全由 `#content` 上那一个委托处理
- *   （见 app/clickDispatch.ts 与 AGENTS.md「点击事件必须走委托」）。
- * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（44px 宽放不下圈 + 字），想勾完成要点开
+ * ⚠️ 这里零回调，全由 `#content` 上那一个委托处理（见 app/clickDispatch.ts
+ *   与 AGENTS.md「点击事件必须走委托」）：
+ *   · 点任务（含 "+N"）= `data-jump` → 那一天的**日视图**（不是开抽屉）；
+ *   · 点月份数字 = `data-jump` → 那一天的日视图；
+ *   · 点邻月数字 = `data-jump-month` → 那一个月；
+ *   · 点空白处**什么也不做** —— 月视图不提供就地新建（`data-no-draft`），
+ *     格子太挤，而且和「点任务去看那一天」意图相撞。
+ * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（45px 宽放不下圈 + 字），想勾完成要点开
  *   抽屉；时间也放不下 —— 这两个都是窄屏取舍，不是漏了。
  */
 
@@ -26,7 +30,6 @@ import { dayLoad, tasksOn } from '../../domain/model.ts';
 import { monthCellCapacity } from '../../domain/layout.ts';
 import { TaskPill, loadLevel } from '../parts.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
-import { NewCellSlot } from './NewCell.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
 
 const MONTH_CELL_MAX = 8;
@@ -76,6 +79,11 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
       className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '') + (lv ? ' lv' + lv : '')}
       ref={zone.ref}
       data-zone-id={`day:${d}`}
+      /* 月视图**不提供「点空白处就地新建」**（用户 2026-10-19：格子本来就挤，
+         而且点格子里的任务是要「去看那一天」，两种意图撞在一起更乱）。
+         `data-zone-id` 还得留着 —— 拖拽落点（dnd/timeline.ts）靠它找 DOM；
+         这个标记只让 clickDispatch 的 draftSeedFrom 别在这儿开草稿框。 */
+      data-no-draft="1"
       data-date={d}
     >
       <div className="cell-head">
@@ -95,15 +103,15 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
       <div className="cell-tasks">
         {/* 最后一条可见的挂 "+N"（more > 0 时）—— 行内的，不单独占一行。
             ⚠️ 只有窄屏走这套：宽屏格子够宽，照旧用下面那行「还有 N 项 ›」，
-            两边同时出现就重复了。 */}
+            两边同时出现就重复了。
+            点这一行 = 去看那一天的**日视图**（jumpDay），不是开任务抽屉
+            —— 用户 2026-10-19 明确要求。 */}
         {shown.map((t, i) => (
           <TaskPill
-            key={t.id} task={t} showTime
+            key={t.id} task={t} showTime jumpDay={d}
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
           />
         ))}
-        {/* 点空格子 → 任务就建在这一天（月视图不带时间） */}
-        <NewCellSlot state={state} zoneId={`day:${d}`} />
         {/* 宽屏格子够宽，照旧「还有 N 项 ›」单独一行；窄屏的 +N 已经挂在最后
             一条文字上了，不再画这一行。 */}
         {more > 0 && !narrow && (

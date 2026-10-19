@@ -345,22 +345,24 @@ body.sheet-open .tab:active { background: none; }
   .month-cell { padding: 3px 1px; min-height: 62px; }
   .content-month .month-cell { min-height: 0; overflow: hidden; }
   .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
-  /* 一行一条任务。横向每一分都要省：内容区留白 6px + 格子 1px×2 + 胶囊 0 +
-     左色条 1px → 每格开销 9px，文字净宽 46px。
-     ⚠️ 胶囊左右内边距必须是 **0**：省略号本身要吃掉一个汉字宽，
-     留 1px 内边距时 5 字（45px）就差 1px 放不下，会退化成「3 字 + …」
-     （2026-10-19 真机实图验证过）。9px 字号下 46px 正好放下 5 个汉字。 */
+  /* 一行一条任务。横向每一分都要省：47px 的胶囊减掉左右各 1px 的**中性边框**
+     （`border: 1px solid var(--border)` 四面都有，不只是顶底）就是 45px，
+     9px 字号正好 5 个汉字。
+     ⚠️ 所以左右内边距必须是 0：留 1px 就变 43px，5 个字差 2px 放不下。
+     ⚠️ 绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求全去掉，
+     剩下的 1px 是四面一样的灰框，不是强调线。 */
   .cell-tasks .task-pill {
-    font-size: 9px; padding: 1px 0; gap: 0; border-left-width: 1px;
+    font-size: 9px; padding: 1px 0; gap: 0;
     line-height: 14px;
   }
-  /* 时间放不下（44px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
+  /* 时间放不下（45px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
      这两个都是窄屏取舍，不是漏了。 */
   .cell-tasks .task-pill .pill-time { display: none; }
   .cell-tasks .task-pill .check-btn { display: none; }
-  /* 标题吃省略号，"+N" 角标永远完整可见 —— 参考图（Google 日历）就是
-     「公司+2」这样跟在最后一条可见文字尾巴上，不再单独占一行圆点。 */
-  .cell-tasks .pill-title { flex: 1 1 auto; min-width: 0; }
+  /* 标题**不用省略号**，直接裁掉超出的部分（用户 2026-10-19：省略号占了整整
+     一个字宽，去掉它一行能多显示一个字）。45px 正好 5 个汉字，第 6 个从边界
+     开始、整字不可见，不会切出半个字的碎边。 */
+  .cell-tasks .pill-title { flex: 1 1 auto; min-width: 0; text-overflow: clip; }
   .cell-tasks .pill-more {
     flex: 0 0 auto; padding-left: 1px;
     font-size: 8.5px; line-height: 1; color: var(--text-3);
