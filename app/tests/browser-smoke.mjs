@@ -2537,24 +2537,28 @@ try {
   await clickEl(page, `document.querySelector('#content .task-el--timed, #content .task-row')`);
   await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
 
-  /* 2026-10-19 回归：快速添加条以前 z-index 100、抽屉只有 50，永远压在抽屉
-     上面（用户报「新建任务的框压在编辑框上面」）。现在抽屉开着时它整条退场
-     （Workbench 记 body.drawer-open）。同时它已是单行小条 —— 「不要这么大」。
-     顺带验占位文案也短了（原来七个字「新建任务，回车保存」）。 */
+  /* 2026-10-19 用户两次反馈后的最终形态：抽屉弹出 → 整页压暗 → 抽屉盖在
+     压暗的页面上。快速添加条**不消失**（用户：「不要它不见，要整个页面变灰、
+     弹窗盖在上面」），它作为页面的一部分被遮罩压暗、被抽屉盖住，点不到而已。
+     同时它已是单行小条 —— 「不要这么大」。 */
   const qa = await evalJs(page, `
     const fa = document.querySelector('.fast-add');
     if (!fa) return { bar: 'no-bar' };
-    const cs = getComputedStyle(fa);
+    const r = fa.getBoundingClientRect();
+    // 在横条中点探一针：拿到的必须是遮罩/抽屉，不能是横条自己
+    const hit = document.elementFromPoint(r.left + Math.min(60, r.width / 2), r.top + r.height / 2);
     return {
-      bodyCls: document.body.className,
-      display: cs.display,
-      shellH: fa.querySelector('.fast-add-shell') ? Math.round(fa.querySelector('.fast-add-shell').getBoundingClientRect().height) : null,
-      placeholder: (fa.querySelector('textarea') || {}).placeholder || null,
+      display: getComputedStyle(fa).display,
+      z: getComputedStyle(fa).zIndex,
+      coveredBy: hit ? (hit.closest('.fast-add') ? 'fast-add（没被盖住！）'
+        : (hit.closest('.drawer') ? 'drawer' : (hit.className || hit.tagName))) : null,
+      shellH: Math.round(fa.querySelector('.fast-add-shell').getBoundingClientRect().height),
+      placeholder: fa.querySelector('textarea').placeholder,
     };
   `);
-  ok(qa.bodyCls.includes('drawer-open') && qa.display === 'none',
-    '抽屉开着的时候快速添加条整条退场（不再压在编辑框上），实际 '
-      + JSON.stringify({ cls: qa.bodyCls, display: qa.display }));
+  ok(qa.display !== 'none' && qa.coveredBy && qa.coveredBy !== 'fast-add（没被盖住！）',
+    '抽屉开着时快速添加条还在原处（被遮罩压暗、被抽屉盖住，不消失），实际 '
+      + JSON.stringify(qa));
 
   const sem = await evalJs(page, `
     const d = document.querySelector('.drawer.open');

@@ -21,11 +21,16 @@
    **单行小条**（2026-10-19 用户：「缩小一些，参考打卡的文本框」）：原来是
    两行文本框 + 右侧竖排两个按钮，整条 60px 出头，比内容区第一条任务还高，
    喧宾夺主。现在和打卡页同一副面孔 —— 一行输入框，时钟 / 保存在右边横排。
-   z-index 保持 100（要盖过内容），但**有抽屉 / 浮层开着时整条闪开**
-   （见下面 body.drawer-open 那条）—— 抽屉只有 z 50，正面压不过。 */
+
+   **层级压在遮罩之下**（30 < mask 40）：抽屉打开时整页变灰，这条也在灰里、
+   被抽屉盖住它该盖的部分 —— 模态就该这么工作。2026-10-19 用户明确要求
+   「不要让它消失，要整个页面变灰、弹窗盖在上面」。
+   （桌面端它是流内静态元素，z-index 本来就不生效；真正起作用的是窄屏
+   fixed 那条 —— 原先那里写 100，浮在遮罩和抽屉上面，就是用户报的
+   「新建任务的框压在编辑框上」。） */
 .fast-add {
   margin: 8px 22px 0;
-  z-index: 100;
+  z-index: 30;
 }
 .fast-add-shell {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -44,12 +49,6 @@
   font: inherit; font-size: 13px; line-height: 1.4;
   padding: 4px 0; margin: 0; resize: none; overflow-y: auto;
 }
-/* 抽屉 / 底部浮层开着的时候整条退场。**必须退场而不是调 z-index**：
-   抽屉(50)本来就该盖过它，而它的面板(when-pop 70)又是它的子节点、
-   会被它的层级框住，往下调反而把日期时间面板埋进别的浮层底下。
-   用户打开一条任务是去看那条任务的，不是看输入框的。 */
-body.drawer-open .fast-add,
-body.sheet-open .fast-add { display: none; }
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
 /* 时钟 / 保存在同一行横排（原来是竖排，把整条撑成两行高） */
