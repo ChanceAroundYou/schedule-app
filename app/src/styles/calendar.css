@@ -34,6 +34,13 @@
   --allday-items-gap: 6px;
   --allday-pill-pad: 3px 7px;
   --allday-min-h: 14px;
+  /* 卡片圆角用（见 .task-el--timed）：`--tl-h` 是时间轴容器的**实测像素高**，
+     由 WeekView / DayView 写进容器；`--card-h` 是这张卡的**百分比高度**，
+     由 TimedCard 写在卡上。两者相乘 = 这张卡真正的像素高，半径取它的 30%。
+     ⚠️ 不能用 `min(12px, 30%)`：百分比半径在计算样式里是**未求值**的字符串，
+     探针读不到数、也断言不了「矮卡更方」。 */
+  --tl-h: 0;
+  --card-h: 5;
   /* **两个 z 变量已删**（原先 --tl-wrap-z / --allday-zone-z）：两个区现在同处
      `.day-panel` 这一个堆叠上下文，区自己不再建上下文，这两档没有意义了。
      堆叠只在卡片之间发生，用的写死的 `.task-el.dragging { z-index: 9 }`。 */
@@ -141,8 +148,17 @@
   display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
-/* 日/周视图那张大卡：7px → 12px */
-.task-el--timed { border-radius: var(--r-lg); }
+/* 日/周视图那张大卡。**圆角按自身高度收**（2026-10-19 用户报「不同高度的框圆角
+   都一样大，矮框非常圆、高框还行，看着不统一」）：固定 12px 时，55px 高的卡
+   正合适、18px 高的 15 分钟小块就成了药丸。
+   算法：半径 = 卡高 × 30%，上下夹在 3px 与 --r-lg 之间。
+   ⚠️ **不用 `min(12px, 30%)`**：百分比半径在 `getComputedStyle` 里是**未求值**
+   的字符串（实测返回 "min(12px, 30%)"），探针读不到数、也没法断言「矮卡更方」。
+   所以由父级（WeekView / DayView）把实测的容器高写进 `--tl-h`，
+   卡自己把百分比高度写进 `--card-h`，两边相乘换成 px —— 计算样式就是实打实的 px。 */
+.task-el--timed {
+  border-radius: clamp(3px, calc(var(--card-h, 5) * var(--tl-h, 0) * 0.003 * 1px), var(--r-lg));
+}
 .task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
 /* 正在进行的卡：只靠外发光点出来（左侧那条绿线 2026-10-19 按用户要求全去掉了） */
 .task-el--timed.live { box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
@@ -450,14 +466,21 @@ body.is-drag-range { user-select: none; }
 .task-pill {
   /* 同 .task-row：它也是 task-el 标记的成员，自己声明横向，别靠别人 */
   display: flex; flex-direction: row; align-items: center; gap: 5px;
-  padding: 4px 8px; border-radius: var(--r-sm); background: var(--panel-2);
+  /* 圆角按自身高度收（同 .task-el--timed）：宽屏月格子里 200px 宽的胶囊 7px 合适，
+     窄屏 18px 高的小条在 responsive.css 里另给 4px。
+     底色用 --primary-soft，与日/周视图的卡片**同一套语言** —— 2026-10-19 用户报
+     「月视图无论是否完成全是白的，和日周不统一」：原来是 --panel-2（≈白），
+     跟 --panel-3（已完成）差得太近，两种状态都看不出来。 */
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--primary-soft);
   border: var(--border-w) solid var(--border);
   font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
 }
-.task-pill:hover { background: var(--primary-soft); box-shadow: var(--shadow); transform: translateY(-1px); }
-.task-pill.done { opacity: .5; }
-.task-pill.done .pill-title { color: var(--text-2); }
+/* 悬停只加投影，不改底色（日/周也是这么做的）—— 底色一变就盖住「任务色」了 */
+.task-pill:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+/* 已完成：与日/周视图同一套语言 —— 中性灰底 + 标题划线，不再靠半透明。 */
+.task-pill.done { opacity: 1; background: var(--panel-3); }
+.task-pill.done .pill-title { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
 .pill-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill-time { color: var(--text-2); font-size: 11px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 

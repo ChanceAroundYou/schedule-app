@@ -130,7 +130,10 @@ export function TimedCard({
       style={{
         top: topPct + '%', height: hPct + '%',
         left: `${e.col * w}%`, width: `calc(${w}% - 3px)`,
-      }}
+        /* 圆角按卡高收（见 calendar.css 的 .task-el--timed）：父级给了容器实高的
+           `--tl-h`，这里给百分比高度，两者相乘就是这张卡真正的像素高。 */
+        '--card-h': hPct,
+      } as CSSProperties}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
          同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，

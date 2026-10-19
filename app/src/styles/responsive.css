@@ -322,7 +322,25 @@ body.sheet-open .tab:active { background: none; }
   .week-head-cell { padding: 7px 2px 5px; }
   .wh-day { font-size: 15px; min-width: 24px; }
   .wun-cell { padding: 3px; }
-  .wun-cell .task-el--untimed { padding: 1px 4px; }
+  .wun-cell .task-el--untimed { padding: 1px 4px; font-size: 10px; }
+
+  /* 周视图的卡片跟月视图一个路子：**小字号、尽量多放字**（2026-10-19 用户要求）。
+     列宽 92px（比月格子 45px 宽一倍），10px 字号一行约 6 个汉字。
+     更重要的是**够高的卡允许换行多放几行** —— 以前 `.ev-title` 是 nowrap + 省略号，
+     1~2 小时的高卡明明有空间却被截成一行。
+     ⚠️ 顺手把时间行/摘要行在窄屏周视图里藏掉：它们各占一整行，而这块卡最缺的
+     就是行数 —— 时刻本来就由卡片在时间轴上的位置表达（左侧有刻度）。 */
+  .week-col .task-el--timed { --ev-title-size: 10px; }
+  .week-col .task-el--timed .ev-head {
+    /* flex:1 + min-height:0 + overflow:hidden：标题吃满卡片内高，放不下的在
+       卡片边界处裁掉（卡片自己不能 overflow:hidden —— 会切断跨边界的拖拽） */
+    flex: 1 1 auto; min-height: 0; align-items: flex-start; overflow: hidden;
+  }
+  .week-col .task-el--timed .ev-title {
+    line-height: 12px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+  }
+  .week-col .task-el--timed .ev-time,
+  .week-col .task-el--timed .ev-note { display: none; }
 }
 
 /* ---- 月视图：窄屏一屏画完、一行一条任务文字 ---- */

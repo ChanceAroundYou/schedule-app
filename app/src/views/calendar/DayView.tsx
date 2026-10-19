@@ -38,6 +38,7 @@ import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
 import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { useTimelineMetrics } from './metrics.ts';
+import { useElementHeight } from '../../ui/hooks.ts';
 
 /** 未定时区最多露几卡。两行 × 三列 = 6 —— 用户 2026-10-11 定的格子。
  *  超出的一律不渲染：区域高度**固定两块**，多渲染只会溢出到时间轴上盖住它。
@@ -88,6 +89,8 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
   const { pxPerHour, hours } = useTimelineMetrics(win, tlRef);
+  /* 容器实测高度给卡片算圆角用（见 calendar.css 的 .task-el--timed） */
+  const tlH = useElementHeight(tlRef);
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
@@ -136,6 +139,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         <div className="tl-wrap">
           <div
             className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
+            style={{ '--tl-h': tlH } as CSSProperties}
             data-zone-id={`timeline:${iso}`}
             data-date={iso} data-from={win.from} data-to={win.to}
             onPointerDown={drag.onPointerDown}

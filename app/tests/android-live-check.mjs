@@ -495,18 +495,29 @@ async function checkLook() {
   const w = await evalIn(`(function(){
     var qa=function(s){return Array.from(document.querySelectorAll(s))};
     /* 圆角/已完成这两条**用探针元素量**，不依赖真实数据里恰好有没有已完成的任务：
-       类名一样 → 样式一样，插进 body 量完就拆。 */
-    var probe=document.createElement('div');
-    probe.className='task-el task-el--timed done';
-    probe.innerHTML='<div class="ev-head"><span class="ev-title">测</span></div><span class="ev-time">00:00</span>';
-    document.body.appendChild(probe);
-    var pcs=getComputedStyle(probe);
-    var probeRadius=parseFloat(pcs.borderTopLeftRadius);
-    var probeBg=pcs.backgroundColor;
-    var probeLine=getComputedStyle(probe.querySelector('.ev-title')).textDecorationLine;
-    probe.remove();
+       类名一样 → 样式一样，插进 body 量完就拆。
+       圆角要**按高度收**（2026-10-19 用户：矮框太圆、高框还行），所以造一高一矮两个。 */
+    /* 圆角要**按高度收**（2026-10-19 用户：矮框太圆、高框还行），所以造一高一矮两个。
+       半径 = clamp(3px, 卡高 × 30%, --r-lg)，卡高 = --card-h% × --tl-h。 */
+    function probe(hPx, tlPx){
+      var d=document.createElement('div');
+      d.className='task-el task-el--timed done';
+      d.style.height=hPx+'px';
+      d.style.setProperty('--tl-h', tlPx);
+      d.style.setProperty('--card-h', hPx/tlPx*100);
+      d.innerHTML='<div class="ev-head"><span class="ev-title">测</span></div><span class="ev-time">00:00</span>';
+      document.body.appendChild(d);
+      var cs=getComputedStyle(d);
+      var out={r:parseFloat(cs.borderTopLeftRadius), bg:cs.backgroundColor,
+        line:getComputedStyle(d.querySelector('.ev-title')).textDecorationLine};
+      d.remove(); return out;
+    }
+    var tall=probe(80, 600), short=probe(20, 600);
     var todayCol=document.querySelector('.week-col.today');
     var todayBg=todayCol?getComputedStyle(todayCol).backgroundColor:'';
+    /* 周视图标题能不能换行多放几行 */
+    var t=document.querySelector('.week-col .task-el--timed .ev-title');
+    var tcs=t?getComputedStyle(t):null;
     /* 同一列里首尾相接的两张卡，最小缝有多宽（真实数据，没有就跳过） */
     var minGap=null;
     qa('.week-col').forEach(function(col){
@@ -518,28 +529,48 @@ async function checkLook() {
         if(g>=0 && (minGap===null||g<minGap)) minGap=g;
       }
     });
-    return {cardRadius: probeRadius, cardBg: probeBg, doneBg: probeBg,
-      doneLine: probeLine, todayBg: todayBg, minGap: minGap,
-      realCards: qa('.task-el--timed').length};
+    return {tallR: tall.r, shortR: short.r, doneBg: tall.bg, doneLine: tall.line,
+      todayBg: todayBg, minGap: minGap, realCards: qa('.task-el--timed').length,
+      titleWrap: tcs?tcs.whiteSpace:'', titleSize: tcs?tcs.fontSize:''};
   })()`);
-  assert(w.cardRadius >= 10, '日/周视图的大卡圆角更圆了（≥10px）', `${w.cardRadius}px（改之前 7px）`);
+  assert(w.tallR >= 10, '高卡圆角仍是圆的（≥10px）', `${w.tallR}px`);
+  assert(w.shortR < w.tallR && w.shortR <= 8, '矮卡的圆角跟着高度收（不再是个药丸）',
+    `80px 高的 ${w.tallR}px / 20px 高的 ${w.shortR}px`);
   assert(w.minGap === null || w.minGap >= 2, '首尾相接的两条任务之间留出了缝',
     w.minGap === null ? `当前数据里没有相邻的两条卡（这一周 ${w.realCards} 张定时卡）` : `最小缝 ${w.minGap}px`);
   assert(w.doneBg && w.todayBg && w.doneBg !== w.todayBg, '已完成和「今天那一列」不再是同一个颜色',
     `done=${w.doneBg} / today 列=${w.todayBg}`);
   assert(w.doneLine === 'line-through', '已完成任务标题有划线', `text-decoration=${w.doneLine}`);
+  assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
+    `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
 
   /* 月视图：胶囊不能比日/周大卡还圆 */
   await tap('button[data-view="month"]'); await wait(700);
   const m = await evalIn(`(function(){
     var p=document.querySelector('.cell-tasks .task-pill');
     var grid=document.querySelector('.month-grid');
+    /* 月视图的「已完成」要和日/周同一套语言：灰底 + 划线（用户 2026-10-19：
+       「月视图现在无论是不是完成全是白色，和日周不统一」）。同样用探针量。 */
+    var d=document.createElement('div');
+    d.className='task-pill done';
+    d.innerHTML='<span class="pill-title">测</span>';
+    document.body.appendChild(d);
+    var dcs=getComputedStyle(d);
+    var out={doneBg:dcs.backgroundColor, doneOpacity:dcs.opacity,
+      doneLine:getComputedStyle(d.querySelector('.pill-title')).textDecorationLine};
+    d.remove();
     return {pill: p?parseFloat(getComputedStyle(p).borderTopLeftRadius):0,
-      grid: grid?parseFloat(getComputedStyle(grid).borderTopLeftRadius):0};
+      grid: grid?parseFloat(getComputedStyle(grid).borderTopLeftRadius):0,
+      doneBg: out.doneBg, doneOpacity: out.doneOpacity, doneLine: out.doneLine,
+      normalBg: p?getComputedStyle(p).backgroundColor:''};
   })()`);
   assert(m.pill <= 5, '月视图胶囊不再是个药丸（圆角 ≤5px）', `${m.pill}px（改之前 7px）`);
   assert(m.grid > 0 && m.grid < 12, '月视图外框比之前收一档（<12px）', `${m.grid}px（改之前 12px）`);
-  assert(m.pill < 10, '月视图的圆角比日/周大卡更小（视觉分档）', `月 ${m.pill}px / 日周 ${w.cardRadius}px`);
+  assert(m.pill < 10, '月视图的圆角比日/周大卡更小（视觉分档）', `月 ${m.pill}px / 日周 ${w.tallR}px`);
+  assert(m.doneBg !== m.normalBg, '月视图的已完成不再是白底（和日/周同一套语言）',
+    `done=${m.doneBg} / 未完成=${m.normalBg}`);
+  assert(m.doneLine === 'line-through', '月视图已完成标题有划线', `text-decoration=${m.doneLine}`);
+  assert(m.doneOpacity === '1', '已完成不再靠整体变淡（那会和白底混成一个样）', `opacity=${m.doneOpacity}`);
 }
 
 async function checkRepeat() {

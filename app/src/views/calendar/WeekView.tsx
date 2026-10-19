@@ -34,6 +34,7 @@ import { pad2, type LayoutEvent } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate, type DragRange } from './dragCreate.ts';
 import { useTimelineMetrics } from './metrics.ts';
+import { useElementHeight } from '../../ui/hooks.ts';
 
 /** 每列未定时最多露两张。这一行是要给时间轴让地方的，
  *  堆满了整棵周视图就只剩一条缝 */
@@ -143,6 +144,9 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
 
   const colsRef = useRef<HTMLDivElement | null>(null);
   const { hours } = useTimelineMetrics(win, colsRef);
+  /* 容器实测高度给卡片算圆角用（半径 = 卡高 × 30%，见 calendar.css 的
+     .task-el--timed）。卡的高度是百分比，乘上这个 px 才是真正的像素高。 */
+  const colsH = useElementHeight(colsRef);
 
   const drag = useDragCreate({
     win,
@@ -199,7 +203,7 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
-          style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
+          style={{ '--wk-hours': spanOf(win) / 60, '--tl-h': colsH } as CSSProperties}
         >
           {days.map((d, i) => (
             <WeekColumn
