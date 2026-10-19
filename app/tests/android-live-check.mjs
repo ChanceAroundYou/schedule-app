@@ -5,8 +5,8 @@
  * 通过 CDP 驱动真机 WebView，断言同一套核心场景：
  *   core      进应用外壳（日视图时间轴出现）→ 周/月视图渲染 → 零控制台报错
  *   now-line  今天日视图的当前时间线是 --ok 深绿细线、无圆点无时刻文字
- *   month     窄屏月视图：行数只含当月某天、一屏不滚、格子里是文字行、
- *             塞不下的在下方用点表示（点数 = 没显示出来的条数）
+ *   month     窄屏月视图：行数只含当月某天、一屏不滚、每行放得下 4 个汉字、
+ *             左右留白已收窄、塞不下的在最后一条文字尾巴上挂 +N（数得上）
  *   repeat    API 建「每周五、六」系列 → 断言周五+周六实例都落到月视图 → repeatUntil 收尾
  *
  * 与网页端 live-check.mjs 的区别：
@@ -229,6 +229,7 @@ async function checkNowLine() {
 }
 
 async function checkMonth() {
+  await openCalendar();
   await tap('button[data-view="month"]'); await wait(900);
   const m = await evalIn(`(function(){
     var q=function(s){return document.querySelector(s)};
@@ -237,27 +238,46 @@ async function checkMonth() {
     var content=q('#content');
     var cells=qa('.month-cell');
     var texts=cells.filter(function(c){return c.querySelector('.task-pill')});
-    var dotRows=qa('.cell-more');
     var widest=0; cells.forEach(function(c){var p=c.querySelector('.task-pill'); if(p) widest=Math.max(widest,Math.round(p.getBoundingClientRect().width))});
+    /* 量一个汉字的真实宽度（同字体）+ 文字真正拿到的净宽，算一行放得下几个字 */
+    var pill=document.querySelector('.cell-tasks .task-pill');
+    var cs=pill?getComputedStyle(pill):null;
+    var textW=pill?Math.round(pill.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)):0;
+    var probe=document.createElement('span');
+    probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;';
+    probe.style.font=cs?cs.font:'9px sans-serif'; probe.textContent='国国国国国';
+    document.body.appendChild(probe); var cjkW=probe.getBoundingClientRect().width/5; probe.remove();
+    var grid=document.querySelector('.month-grid');
     return {
       rows: rows.size, cells: cells.length,
       contentScroll: content ? content.scrollHeight : 0,
       contentH: content ? Math.round(content.getBoundingClientRect().height) : 0,
       cellHasText: texts.length,
       widestPill: widest,
-      dotRows: dotRows.length,
-      dotsTotal: qa('.more-dot').length,
+      cjkW: Math.round(cjkW*10)/10,
+      textW: textW,
+      charsFit: cjkW?Math.round(textW/cjkW*10)/10:0,
+      moreBadges: qa('.pill-more').length,
+      gridLeft: grid?Math.round(grid.getBoundingClientRect().x):0,
+      viewportW: window.innerWidth,
       pillTextNonEmpty: texts.filter(function(c){return ((c.querySelector('.task-pill').innerText||'').trim().length>0)}).length
     };
   })()`);
   assert(m.rows >= 4 && m.rows <= 6, '月视图行数只含当月某天（4–6 行）', `${m.rows} 行 / ${m.cells} 格`);
   assert(m.contentScroll <= m.contentH + 1, '一屏放完、内容区不滚', `scroll ${m.contentScroll} vs ${m.contentH}`);
   assert(m.cellHasText > 0, '格子里显示的是文字行（不再是只有点）', `${m.cellHasText} 格有文字`);
-  assert(m.widestPill > 20, '文字行有实际宽度', `${m.widestPill}px`);
+  /* 2026-10-19 用户明确要求「一行放四到五个字」（参考图 Google 日历）。
+     改之前文字净宽 31px / 10px 字号只能放 3 个字；现在 46px / 9px 字号。
+     ⚠️ 省略号本身要占一个汉字宽，所以「净宽 ≥ 5 字宽」才代表真能显示 5 个字、
+     「≥ 4 字宽 + 1 个省略号」代表截断时至少还有 4 个字。两个都卡。 */
+  assert(m.textW >= 4 * m.cjkW + m.cjkW - 1, '截断时也放得下 4 个汉字 + 省略号',
+    `净宽 ${m.textW}px（4 字 + 省略号 = ${Math.round(5 * m.cjkW)}px）`);
+  assert(m.charsFit >= 5, '不截断时放得下 5 个汉字', `${m.charsFit} 字（净宽 ${m.textW}px / 字宽 ${m.cjkW}px）`);
   assert(m.pillTextNonEmpty === m.cellHasText, '文字行标题非空');
+  assert(m.gridLeft <= 8, '月视图左右留白已收窄（≤8px）', `左边 ${m.gridLeft}px / 视口 ${m.viewportW}px`);
 
-  /* 点数必须等于「没显示出来的条数」—— 拿本地缓存逐格对账。
-     格子显示 N 行 + 点 M 个，那这一天就该正好有 N+M 条活任务。 */
+  /* 「+N」必须等于「没显示出来的条数」—— 拿本地缓存逐格对账。
+     格子显示 N 行 + 最后一条尾巴上的 +M，那这一天就该正好有 N+M 条活任务。 */
   const acct = await evalIn(`(function(){
     var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');
     var s=j.state||j; var tasks=s.tasks||{};
@@ -266,11 +286,10 @@ async function checkMonth() {
     Array.from(document.querySelectorAll('.month-cell')).forEach(function(c){
       var d=c.getAttribute('data-date');
       var shown=c.querySelectorAll('.task-pill').length;
-      var dots=c.querySelectorAll('.more-dot').length;
-      var n=(c.querySelector('.more-n')||{}).textContent;
-      var moreN = n ? Number(n.replace('+','')) : 0;
-      var total = shown + dots + moreN;
-      if (live[d] !== undefined && total !== live[d]) mismatches.push(d+': 显示'+shown+'+点'+(dots+moreN)+' 应为 '+live[d]);
+      var badge=c.querySelector('.pill-more');
+      var more = badge ? Number((badge.textContent||'').replace('+','')) : 0;
+      var total = shown + more;
+      if (live[d] !== undefined && total !== live[d]) mismatches.push(d+': 显示'+shown+'+'+more+' 应为 '+live[d]);
     });
     return mismatches;
   })()`);
@@ -278,15 +297,16 @@ async function checkMonth() {
   return m;
 }
 
-/* 点那一行必须被**真正触发**才算测到（光靠真实数据对账是空跑：当月最多两三条，
-   还没超过格子容量）。这里在当月挑一天造一条超容量的任务组，跑完清干净。 */
+/* 溢出那一行必须被**真正触发**才算测到（光靠真实数据对账是空跑：当月最多两三条，
+   还没超过格子容量）。这里在当月挑一天造一批超容量任务，跑完清干净。 */
 async function checkMonthOverflow() {
   const me = await apiMe();
   if (!me) { bad('能取到登录 token'); return; }
   const calId = me.cals?.[0]?.id;
   if (!calId) { bad('能取到日程集'); return; }
 
-  /* 挑当月中**本来任务最少**的一天，容量最可控；造满 6 条（窄屏一般 3 行容量）。 */
+  /* 挑当月中**本来任务最少**的一天，容量最可控；造 8 条（窄屏容量 4 行，
+     见 layout.ts 的 monthCellCapacity：格高 108 → 4 行）。 */
   const target = await evalIn(`(function(){
     var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}'); var s=j.state||j;
     var tasks=s.tasks||{}; var cnt={};
@@ -300,14 +320,14 @@ async function checkMonthOverflow() {
   const ids = [];
   const ops = [];
   const now = Date.now();
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const id = 't_e2e_ovf_' + now.toString(36) + '_' + i;
     ids.push(id);
     ops.push({
       opId: 'e2e-ovf-' + id, deviceId: 'e2e-android', ts: now + i, entity: 'task',
       entityId: id, calId,
       fields: {
-        title: 'e2e点行探针-' + i, note: '', date: target, time: null, reminder: null,
+        title: 'e2e溢出探针-' + i, note: '', date: target, time: null, reminder: null,
         duration: null, done: false, doneAt: null, repeat: null, repeatSeq: 0,
         seriesId: null, order: null, ord: null, createdAt: now + i, source: null,
       },
@@ -318,7 +338,7 @@ async function checkMonthOverflow() {
     bad('探针任务能写进服务端', r.body?.rejected?.length ? JSON.stringify(r.body.rejected[0]) : JSON.stringify(r));
     return;
   }
-  ok('探针：在 ' + target + ' 造 6 条任务（原有 ' + existing + ' 条）');
+  ok('探针：在 ' + target + ' 造 8 条任务（原有 ' + existing + ' 条）');
 
   await pullSync();
   await openCalendar();
@@ -326,25 +346,34 @@ async function checkMonthOverflow() {
   const cell = await evalIn(`(function(){
     var c=document.querySelector('.month-cell[data-date=${JSON.stringify(target)}]'); if(!c) return null;
     var pills=c.querySelectorAll('.task-pill').length;
-    var dots=c.querySelectorAll('.more-dot').length;
-    var moreN=(c.querySelector('.more-n')||{}).textContent||'';
-    var row=c.querySelector('.cell-more');
-    var cr=c.getBoundingClientRect(), rr=row?row.getBoundingClientRect():null;
+    var badge=c.querySelector('.pill-more');
+    var bt=(badge&&badge.textContent)||'';
+    var last=c.querySelector('.task-pill:last-of-type');
+    var lr=last?last.getBoundingClientRect():null;
+    var br=badge?badge.getBoundingClientRect():null;
+    var cr=c.getBoundingClientRect();
+    var cs=badge?getComputedStyle(badge):null;
     return {
-      pills, dots, moreN: moreN ? Number(moreN.replace('+','')) : 0,
-      hasMoreRow: !!row,
-      rowInside: !!rr && rr.bottom <= cr.bottom + 1 && rr.top >= cr.top,
+      pills, more: bt?Number(bt.replace('+','')):0,
+      hasBadge: !!badge,
+      /* +N 必须挂在**最后一条**胶囊里面，而不是单独一行 */
+      badgeInsideLast: !!badge && !!last && last.contains(badge),
+      badgeVisible: !!br && br.width>0 && br.height>0,
+      badgeRightInside: !!br && br.right <= cr.right + 1,
+      badgeColor: cs?cs.color:'',
       cellH: Math.round(cr.height),
+      lastRowBottom: lr?Math.round(lr.bottom):0,
       cellScrolls: c.scrollHeight > c.clientHeight + 1,
     };
   })()`);
   if (!cell) { bad('探针那天在月视图里有格子', target); return; }
-  const shownTotal = cell.pills + cell.dots + cell.moreN;
-  const expect = existing + 6;
-  console.log(`       ${target}: 显示 ${cell.pills} 行文字 + 点 ${cell.dots} + ${cell.moreN}（当天应有 ${expect} 条），格高 ${cell.cellH}px`);
-  assert(shownTotal === expect, '点那一行真的被触发且数得上（显示行数 + 点 = 当天任务数）', `显示 ${cell.pills}，点 ${cell.dots + cell.moreN}，应为 ${expect}`);
-  assert(cell.hasMoreRow && cell.dots + cell.moreN > 0, '格子下方确实画了点行（不再是只有一个点）');
-  assert(cell.rowInside, '点那一行在格子内（没被 overflow 裁掉）', `bottom ${cell.rowInside ? '在框内' : '顶出格子'}`);
+  const shownTotal = cell.pills + cell.more;
+  const expect = existing + 8;
+  console.log(`       ${target}: 显示 ${cell.pills} 行文字，最后一条尾巴上 +${cell.more}（当天应有 ${expect} 条），格高 ${cell.cellH}px`);
+  assert(shownTotal === expect, '溢出真的被触发且数得上（显示行数 + +N = 当天任务数）', `显示 ${cell.pills}，+${cell.more}，应为 ${expect}`);
+  assert(cell.hasBadge && cell.more > 0, '最后一条文字尾巴上确实挂了 +N（参考图那样）');
+  assert(cell.badgeInsideLast, '+N 挂在最后一条胶囊里，不是单独占一行');
+  assert(cell.badgeVisible && cell.badgeRightInside, '+N 看得见且在格子内（没被裁掉）');
   assert(!cell.cellScrolls, '格子本身不滚（内容靠省略，不靠滚动）');
 
   /* 收尾：逐条打删除标记，别让探针留在生产库里 */

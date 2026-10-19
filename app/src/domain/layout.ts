@@ -176,11 +176,12 @@ export function snapToHour(min: number): number {
 }
 
 /* ================= 窄屏月视图格子：能塞几行文字 =================
-   窄屏格子塞不下整条任务名，改成「一行一条 + 下方一排点表示没显示出来的条数」。
+   窄屏格子塞不下整条任务名，改成「一行一条 + 最后一条尾巴上挂 +N 表示没显示出来
+   的条数」。+N 是**行内**的（不单独占一行），所以容量只由文字行决定。
    实际显示几行取决于格子实测高度，所以这里是纯算术，量高的活由 MonthView 做。
    这几个常数必须与 responsive.css 窄屏那段对得上（改一处要改另一处）。 */
 
-/** 窄屏一行任务文字占的高度：胶囊 18（14 行高 + 2 内边距 + 2 边框）+ 行间距 2 = 20 */
+/** 窄屏一行任务文字占的高度：胶囊 18（14 行高 + 2 内边距 + 2 上下边框）+ 行间距 2 = 20 */
 export const MONTH_LINE_H = 20;
 /** 最后一行后面没有行间距，算最大行数时要把这 2px 还回去 */
 const MONTH_LAST_ROW_NO_GAP = 2;
@@ -188,24 +189,20 @@ const MONTH_LAST_ROW_NO_GAP = 2;
 export const MONTH_CELL_HEAD_H = 23;
 /** 格子上下内边距合计 */
 export const MONTH_CELL_PAD_H = 6;
-/** 点那一行占的高度（点 4 + 上边距 2 + 行间距 2） */
-export const MONTH_DOTS_H = 8;
 /** 就地新建那个输入框占的高度（16.3 行高 + 4 内边距 + 2 边框 + 2 行间距） */
 export const MONTH_DRAFT_H = 24;
 
 /**
  * 窄屏格子放得下几行任务文字。
  *
- * 两个都要预留时才算得准：点那一行（有东西没显示出来就必须画得下）和
- * 草稿那一行（就地新建的输入框占一行）。不预留点时最后一行后面没有行间距，
- * 那 2px 还回去；要放点就接不上。
+ * 只有一样要预留：草稿那一行（就地新建的输入框占一行，不预留它会把内容顶出格子）。
+ * 最后一行后面没有行间距，那 2px 还回去。
  * 这些常数与 responsive.css 窄屏那段同源（2026-10-19 真机实测），改一处要改另一处。
  */
-export function monthCellCapacity(cellH: number, reserveDots = false, reserveDraft = false): number {
+export function monthCellCapacity(cellH: number, reserveDraft = false): number {
   let avail = cellH - MONTH_CELL_PAD_H - MONTH_CELL_HEAD_H;
-  if (reserveDots) avail -= MONTH_DOTS_H;
   if (reserveDraft) avail -= MONTH_DRAFT_H;
-  if (!reserveDots) avail += MONTH_LAST_ROW_NO_GAP;
+  avail += MONTH_LAST_ROW_NO_GAP;
   if (avail < MONTH_LINE_H) return 0;
   return Math.floor(avail / MONTH_LINE_H);
 }

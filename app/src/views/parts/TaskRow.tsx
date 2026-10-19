@@ -103,7 +103,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
 
 /* ============================== 小胶囊 ============================== */
 
-export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean }) {
+export function TaskPill({ task: t, showTime, moreSuffix }: { task: Task; showTime?: boolean; moreSuffix?: number }) {
   /* 周视图全天行 / 月视图格子共用这一个胶囊，两处都要能拖：
      · 拖进周视图时间列 → 松手生成定时块（默认 1 小时，15 分钟吸附）；
      · 拖到月视图别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
@@ -127,6 +127,14 @@ export function TaskPill({ task: t, showTime }: { task: Task; showTime?: boolean
       <CheckBtn id={t.id} on={!!t.done} sm />
       {showTime && t.time && <span className="pill-time">{t.time}</span>}
       <span className="pill-title">{t.title}</span>
+      {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
+          还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
+          +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
+          挂在 span 上还带 data-jump：点它直接看这一天的完整日程，
+          替代早先那一排可点的圆点。宽屏不传这个 prop，行为完全不变。 */}
+      {moreSuffix ? (
+        <span className="pill-more" data-jump={t.date} title={`还有 ${moreSuffix} 条，点开看这一天`}>+{moreSuffix}</span>
+      ) : null}
     </div>
   );
 }

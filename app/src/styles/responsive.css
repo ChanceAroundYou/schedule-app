@@ -325,10 +325,9 @@ body.sheet-open .tab:active { background: none; }
   .wun-cell .task-el--untimed { padding: 1px 4px; }
 }
 
-/* ---- 月视图：窄屏下格子塞不进文字，改成圆点+计数 ---- */
+/* ---- 月视图：窄屏一屏画完、一行一条任务文字 ---- */
 @media (max-width: 900px) {
   .month-grid { grid-auto-rows: minmax(62px, auto); }
-  .month-cell { padding: 4px 4px 3px; min-height: 62px; }
   .cell-head { margin-bottom: 3px; gap: 3px; }
   .cell-date { width: 20px; height: 20px; flex: 0 0 20px; font-size: 12px; }
   .cell-today { display: none; }
@@ -339,23 +338,37 @@ body.sheet-open .tab:active { background: none; }
     max-width: 30px; text-align: right; flex: 0 0 auto;
   }
   .month-head-cell { font-size: 10.5px; padding: 3px 0; }
-  /* 窄屏格子：一行一条任务（只放得下标题前几个字），塞不下的在下方用一排点
-     表示「还有几条没显示」——一个点 = 一条。行数 = 格子实测高度算出来的
-     （见 domain/layout.ts 的 monthCellCapacity，常数与这段同源）。
-     勾选圈在这一行省掉：47px 宽放不下 14px 的圈 + 字，想勾完成要点开抽屉。 */
-  .month-cell { padding: 3px 4px; min-height: 0; overflow: hidden; }
+  /* 行高默认按内容（最小 62px）；锁单屏那一档（Shell 挂 content-month）由 flex
+     均分，min-height 收回 0、放不下的裁掉 —— 见 calendar.css 的 .content-month。
+     横向内边距压到 1px：360px 视口 7 列摊下来每格只有 48.8px，省 1px 是一个字
+     的 1/9（2026-10-19 实测：改之前格子 47px、文字行 39px、10px 字号只放 3 个汉字）。 */
+  .month-cell { padding: 3px 1px; min-height: 62px; }
+  .content-month .month-cell { min-height: 0; overflow: hidden; }
   .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
+  /* 一行一条任务。横向每一分都要省：内容区留白 6px + 格子 1px×2 + 胶囊 0 +
+     左色条 1px → 每格开销 9px，文字净宽 46px。
+     ⚠️ 胶囊左右内边距必须是 **0**：省略号本身要吃掉一个汉字宽，
+     留 1px 内边距时 5 字（45px）就差 1px 放不下，会退化成「3 字 + …」
+     （2026-10-19 真机实图验证过）。9px 字号下 46px 正好放下 5 个汉字。 */
   .cell-tasks .task-pill {
-    font-size: 10px; padding: 1px 3px; gap: 0; border-left-width: 2px;
+    font-size: 9px; padding: 1px 0; gap: 0; border-left-width: 1px;
     line-height: 14px;
   }
-  /* 这一行宽度只够标题前几个字，时间放不下（39px 里 09:30 就占满），
-     所以窄屏格子里不显示时间 —— 标题优先，这是用户 2026-10-19 要的。 */
+  /* 时间放不下（44px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
+     这两个都是窄屏取舍，不是漏了。 */
   .cell-tasks .task-pill .pill-time { display: none; }
   .cell-tasks .task-pill .check-btn { display: none; }
-  .cell-more { display: flex; align-items: center; gap: 3px; padding-top: 2px; font-size: 9.5px; color: var(--text-3); }
-  .cell-more .more-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); flex: 0 0 4px; }
-  .cell-more .more-n { font-size: 9.5px; line-height: 1; }
+  /* 标题吃省略号，"+N" 角标永远完整可见 —— 参考图（Google 日历）就是
+     「公司+2」这样跟在最后一条可见文字尾巴上，不再单独占一行圆点。 */
+  .cell-tasks .pill-title { flex: 1 1 auto; min-width: 0; }
+  .cell-tasks .pill-more {
+    flex: 0 0 auto; padding-left: 1px;
+    font-size: 8.5px; line-height: 1; color: var(--text-3);
+  }
+  /* 左右留白收回来给格子（用户 2026-10-19：月视图两边还有空白）。
+     ⚠️ 特异度要压过上面那条 `.content { padding: 12px 13px 8px }` ——
+     同特异度时后写的赢，而 responsive.css 是最后导入的，所以写在本文件里。 */
+  .content.content-month { padding-left: 6px; padding-right: 6px; }
 }
 
 @media (max-width: 1100px) and (min-width: 901px) {

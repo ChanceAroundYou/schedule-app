@@ -6,15 +6,17 @@
  * 行高由 flex 均分剩余高度。格子高度确定 → 能塞几行文字是算得出的：
  * `domain/layout.ts` 的 monthCellCapacity，那几个常数与 responsive.css 窄屏那段同源。
  *
- * 格子里一行一条任务（放不下走省略号），塞不下的在**下方用一排点**表示，
- * 一个点 = 一条没显示出来的任务；格子内口径是「未完成在前（按时间），已完成在后」。
+ * 格子里一行一条任务（标题放不下走省略号），塞不下的在**最后一条可见文字尾巴上**
+ * 挂一个 "+N"（参考图 Google 日历：公司+2）—— 行内的，不单独占一行，省下的
+ * 高度能多显示一行。格子内口径是「未完成在前（按时间），已完成在后」。
  * 宽屏格子够宽（≈250px），照旧直接列任务、照旧灰色邻月 —— 用户要求只改手机端。
  *
  * ⚠️ 这里零回调：点邻月日期跳月走 `data-jump-month`、点任务开抽屉走 `.task-el`、
- *   点空格子新建走 `[data-zone-id]`，全由 `#content` 上那一个委托处理
+ *   点 "+N" 看这一天完整日程走它自己身上的 `data-jump`、点空格子新建走
+ *   `[data-zone-id]`，全由 `#content` 上那一个委托处理
  *   （见 app/clickDispatch.ts 与 AGENTS.md「点击事件必须走委托」）。
- * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（47px 宽放不下圈 + 字），想勾完成要点开
- *   抽屉 —— 这是窄屏的取舍，不是漏了。
+ * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（44px 宽放不下圈 + 字），想勾完成要点开
+ *   抽屉；时间也放不下 —— 这两个都是窄屏取舍，不是漏了。
  */
 
 import { useRef } from 'react';
@@ -28,8 +30,6 @@ import { NewCellSlot } from './NewCell.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
 
 const MONTH_CELL_MAX = 8;
-/** 窄屏那一行最多画几个点，再多就写成 +N */
-const MAX_DOTS = 4;
 
 /** 42 天摊成 7 行（宽屏路径） */
 function chunk7(days: string[]): string[][] {
@@ -46,16 +46,14 @@ function cellOrder(list: Task[]): Task[] {
 }
 
 /**
- * 这一格显示几条、下面该画几个点。
+ * 这一格显示几条、还剩几条没显示（挂在最后一条尾巴上成 "+N"）。
  *
- * 先按「不放点」算能放几行；真有溢出才改用「留点位」的口径 —— 少掉的条数
- * 正好就是点的个数，所以点那一行永远画得下。
- * 传入的两个 room 由调用方算，**已经把草稿那一行扣掉了**（见 MonthView 里
- * 逐格调用 monthCellCapacity 的地方），这里不再自己减 —— 减两次会少显示一行。
+ * `room` 由调用方算，**已经把草稿那一行扣掉了**（见 MonthView 里逐格调用
+ * monthCellCapacity 的地方）—— 这里不再自己减，减两次会少显示一行。
+ * 溢出时少掉的那几条正好就是 N，所以 "+N" 永远数得上来。
  */
-function cellCounts(ts: Task[], roomPlain: number, roomWithDots: number): { shown: Task[]; more: number } {
-  if (ts.length <= roomPlain) return { shown: ts, more: 0 };
-  const room = Math.max(0, roomWithDots);
+function cellCounts(ts: Task[], room: number): { shown: Task[]; more: number } {
+  if (ts.length <= room) return { shown: ts, more: 0 };
   return { shown: ts.slice(0, room), more: ts.length - room };
 }
 
@@ -95,21 +93,24 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
         )}
       </div>
       <div className="cell-tasks">
-        {shown.map((t) => (
-          <TaskPill key={t.id} task={t} showTime />
+        {/* 最后一条可见的挂 "+N"（more > 0 时）—— 行内的，不单独占一行。
+            ⚠️ 只有窄屏走这套：宽屏格子够宽，照旧用下面那行「还有 N 项 ›」，
+            两边同时出现就重复了。 */}
+        {shown.map((t, i) => (
+          <TaskPill
+            key={t.id} task={t} showTime
+            moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
+          />
         ))}
         {/* 点空格子 → 任务就建在这一天（月视图不带时间） */}
         <NewCellSlot state={state} zoneId={`day:${d}`} />
-        {more > 0 && (narrow ? (
-          <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>
-            {Array.from({ length: Math.min(more, MAX_DOTS) }).map((_, i) => <i key={i} className="more-dot" />)}
-            {more > MAX_DOTS && <span className="more-n">+{more - MAX_DOTS}</span>}
-          </div>
-        ) : (
+        {/* 宽屏格子够宽，照旧「还有 N 项 ›」单独一行；窄屏的 +N 已经挂在最后
+            一条文字上了，不再画这一行。 */}
+        {more > 0 && !narrow && (
           <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>
             还有 {more} 项 ›
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -140,9 +141,8 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
           /* 草稿那一行必须显式预留，否则输入框会把内容顶出格子（窄屏 overflow:hidden）。
              逐格算：只有开着草稿的那一格才扣。 */
           const draftHere = !!state.ui.draft && state.ui.draft.zone === `day:${d}`;
-          const roomPlain = narrow ? monthCellCapacity(cellH, false, draftHere) : MONTH_CELL_MAX;
-          const roomWithDots = narrow ? monthCellCapacity(cellH, true, draftHere) : MONTH_CELL_MAX;
-          const { shown, more } = cellCounts(ts, roomPlain, roomWithDots);
+          const room = narrow ? monthCellCapacity(cellH, draftHere) : MONTH_CELL_MAX;
+          const { shown, more } = cellCounts(ts, room);
           return (
             <MonthCell
               key={d} state={state} d={d} curMonth={curMonth} today={today}
