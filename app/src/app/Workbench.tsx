@@ -97,6 +97,18 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     return T.watchSystemTheme(() => setTheme(T.applyAppearance(store.get().ui)));
   }, [state.ui.theme]);
 
+  /* 有模态浮层开着 → body 上记一笔，快速添加条整条退场。
+     **为什么必须退场而不是调 z-index**：`.fast-add` 是 z-index 100、抽屉只有
+     50，正面压不过；而它的日期时间面板（when-pop，70）又是它的子节点、会被
+     它的层级框住，单独往下调反而把面板埋进别的浮层底下。用户打开一条任务是
+     去看那条任务的，不是看输入框的（2026-10-19 用户报「快速添加压在编辑框上」）。
+     sheet-open 是「更多」底部抽屉（Shell 那边已经在记），这里只管这三个模态。 */
+  const modalOpen = !!openId || !!delRepeat || !!pjSheet;
+  useEffect(() => {
+    document.body.classList.toggle('drawer-open', modalOpen);
+    return () => document.body.classList.remove('drawer-open');
+  }, [modalOpen]);
+
   /* -------- 桌面小组件快照 --------
    *
    * 数据一变就重写快照。**用整个 state 当依赖**是有意的：改标题、勾完成、

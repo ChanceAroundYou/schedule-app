@@ -15,8 +15,13 @@ import { FastSide } from './FastSide.tsx';
 
 /** 占位符**不随 tab 变** —— 需求 1B：展开后文本不需要跟着所在的 tab 变。
     按 tab 写不同文案的代价是「切个 tab，输入框里的话就变了」，用户会以为
-    自己刚才打的东西被吃了。 */
-const QUICK_PLACEHOLDER = '新建任务，回车保存';
+    自己刚才打的东西被吃了。
+
+    **短文案**（2026-10-19 用户：「不要写这么多，不要这么大，参考打卡的
+    文本框」）—— 打卡那条只有一个「添加一个打卡项」级的短提示，这条原来
+    是「新建任务，回车保存」七个字，配上两行高的框，比内容区第一条任务
+    还高。回车保存这件事由 N 快捷键和保存按钮兜着，不占提示位。 */
+const QUICK_PLACEHOLDER = '新建任务';
 
 /**
  * 快速添加条**不出现**的页面（用户 2026-10-17：「待办箱和今天可以保留这个功能，
@@ -234,12 +239,11 @@ export function QuickAdd({ state, onSubmit }: {
             （实测最大偏移 30.5px），看着就是「异常跳变」。所以动画和圆钮必须分层。 */}
         <div className="fast-add-shell">
           <div className="fast-add-body">
-            {/* 固定两行，超过可内部滚动（需求 1）。用 textarea 而不是 input：
-                要的就是「能多行」。回车仍然是保存，换行让给 Shift + Enter ——
-                这个框里九成九是「一件事」，回车交出去比回车换行常用得多。 */}
+            {/* 单行小框（2026-10-19 用户「参考打卡的文本框」）：九成九是
+                「一件事」，一行装得下。换行让给 Shift + Enter。 */}
             <Textarea
               ref={osbFast}
-              rows={2}
+              rows={1}
               value={text}
               placeholder={QUICK_PLACEHOLDER}
               aria-label="快速添加"

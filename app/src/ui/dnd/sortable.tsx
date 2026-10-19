@@ -26,12 +26,12 @@ import type { Entity } from '../../domain/types.ts';
  */
 export function useSortableItem(id: string) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, over } = useSortable({ id });
-  /* **被拖的那一项自己不算「落点」。** dnd-kit 的每个可排序项同时注册成
-     droppable（拖拽接受区），碰撞检测不会把 active 自己排除掉 —— 提起那
-     一瞬指针还压在原位上，`over.id === id` 于是 `isOver` 在自己身上为真，
-     占位虚影就画在了出发的那一格。判据换成 `over` 的 id 与自己的 id 比，
-     并且要求 `isDragging`（没拖起来时 `over` 可能是上一次残留）。 */
-  const isOver = !!over && over.id !== id;
+  /* 「我正是落点」—— over 指向**指针当前压着的那一格**，只有它该画占位虚影；
+     被拖的那一项自己不算（它正被 `opacity-0` 藏着，再画虚线就是画在空气上）。
+     ⚠️ 这里曾经写反成 `over.id !== id`（不是我）：那对每一格都成立，于是
+     drag-land 落到全部格子上，`.drag-land { opacity: 0 }` 一发，整页只剩浮层
+     里跟着手指的那一份 —— 用户报「拖一下其他任务全消失了」（2026-10-19）。 */
+  const isOver = !!over && over.id === id && !isDragging;
 
   const style: CSSProperties = {
     /* **只取位移，丢掉缩放。** `rectSortingStrategy` 会返回

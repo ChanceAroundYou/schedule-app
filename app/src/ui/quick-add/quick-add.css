@@ -17,14 +17,19 @@
 /* 位置：**内容区上方**（2026-10-17 用户要求统一到顶部）。
    桌面端它是 `.main` 里 topbar 之后的流内元素（见 shell/Shell.tsx 的渲染顺序），
    左右 22px 与 `.content` 的内边距对齐；窄屏走 responsive.css 那条（fixed 底部圆钮）。
-   视觉本身（底色 / 圆角 / 阴影 / 字号）一个字没改。 */
+
+   **单行小条**（2026-10-19 用户：「缩小一些，参考打卡的文本框」）：原来是
+   两行文本框 + 右侧竖排两个按钮，整条 60px 出头，比内容区第一条任务还高，
+   喧宾夺主。现在和打卡页同一副面孔 —— 一行输入框，时钟 / 保存在右边横排。
+   z-index 保持 100（要盖过内容），但**有抽屉 / 浮层开着时整条闪开**
+   （见下面 body.drawer-open 那条）—— 抽屉只有 z 50，正面压不过。 */
 .fast-add {
-  margin: 12px 22px 0;
+  margin: 8px 22px 0;
   z-index: 100;
 }
 .fast-add-shell {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 11px 16px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 5px 7px 5px 12px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
   transition: border-color .16s, box-shadow .16s;
@@ -33,22 +38,28 @@
 .fast-add:focus-within .fast-add-shell { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-md); }
 .fast-add:not(.open) .fast-add-shell { display: none; }
 
-.fast-add-body { flex: 1; }
+.fast-add-body { flex: 1; min-width: 0; }
 .fast-add textarea {
   width: 100%; min-width: 140px; border: none; outline: none; background: none; box-shadow: none;
-  font: inherit; font-size: 13px; line-height: 1.35;
-  padding: 0; margin: 0; resize: none; overflow-y: auto;
-  height: calc(2 * 1.35em);
+  font: inherit; font-size: 13px; line-height: 1.4;
+  padding: 4px 0; margin: 0; resize: none; overflow-y: auto;
 }
+/* 抽屉 / 底部浮层开着的时候整条退场。**必须退场而不是调 z-index**：
+   抽屉(50)本来就该盖过它，而它的面板(when-pop 70)又是它的子节点、
+   会被它的层级框住，往下调反而把日期时间面板埋进别的浮层底下。
+   用户打开一条任务是去看那条任务的，不是看输入框的。 */
+body.drawer-open .fast-add,
+body.sheet-open .fast-add { display: none; }
 .fast-hint { font-size: 11px; color: var(--text-3); }
 
+/* 时钟 / 保存在同一行横排（原来是竖排，把整条撑成两行高） */
 .fast-side {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: row; align-items: center; gap: 6px;
 }
 
 .fast-clock {
-  display: flex; align-items: center; gap: 6px;
-  height: 30px;
+  display: flex; align-items: center; gap: 5px;
+  height: 28px;
   border: var(--border-w) solid var(--input); background: none; color: var(--text-2);
   border-radius: var(--r-md); padding: 0 9px; font-size: 13px; line-height: 1;
   transition: border-color .14s, color .14s, background .14s;
@@ -58,7 +69,7 @@
 
 .fast-save {
   display: flex; align-items: center; justify-content: center;
-  height: 30px; padding: 0 10px;
+  height: 28px; padding: 0 9px;
   border: var(--border-w) solid var(--primary); background: var(--primary);
   color: var(--on-primary); border-radius: var(--r-md);
   line-height: 1; font-weight: 600;
@@ -67,9 +78,11 @@
 .fast-save:hover:not(:disabled) { filter: brightness(1.06); }
 .fast-save:disabled { background: var(--panel-2); border-color: var(--border); color: var(--text-3); }
 
-.fc-when { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.05; }
+/* 日期 + 时间并排显示（原来是上下两行小字，横排布局里并排才不撑高） */
+.fc-when { display: flex; flex-direction: row; align-items: center; gap: 4px; line-height: 1; }
 .fc-when .fc-d, .fc-when .fc-t {
-  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* 共享 @keyframes（fadeUp/fastPop/fastPopOut）在全局 responsive.css，见该文件。 */

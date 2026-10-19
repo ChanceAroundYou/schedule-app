@@ -2520,8 +2520,41 @@ try {
     return document.activeElement === el ? 'ok' : 'no';
   `) === 'ok', '先把光标放在快速添加框里（关掉抽屉之后要还回这儿）');
 
+  /* 单行小条（2026-10-19 用户「缩小一些，不要写这么多，参考打卡的文本框」）：
+     原来是两行文本框 + 竖排两个按钮，六十多 px 高；现在一行 44px 上下。 */
+  const slim = await evalJs(page, `
+    const shell = document.querySelector('.fast-add-shell');
+    const ta = shell && shell.querySelector('textarea');
+    return {
+      h: shell ? Math.round(shell.getBoundingClientRect().height) : null,
+      rows: ta ? ta.rows : null,
+      ph: ta ? ta.placeholder : null,
+    };
+  `);
+  ok(slim.h !== null && slim.h <= 48 && slim.rows === 1 && slim.ph === '新建任务',
+    '快速添加是单行小条、占位文案也短了，实际 ' + JSON.stringify(slim));
+
   await clickEl(page, `document.querySelector('#content .task-el--timed, #content .task-row')`);
   await waitFor(page, `!!document.querySelector('.drawer.open')`, '抽屉打开', 8000);
+
+  /* 2026-10-19 回归：快速添加条以前 z-index 100、抽屉只有 50，永远压在抽屉
+     上面（用户报「新建任务的框压在编辑框上面」）。现在抽屉开着时它整条退场
+     （Workbench 记 body.drawer-open）。同时它已是单行小条 —— 「不要这么大」。
+     顺带验占位文案也短了（原来七个字「新建任务，回车保存」）。 */
+  const qa = await evalJs(page, `
+    const fa = document.querySelector('.fast-add');
+    if (!fa) return { bar: 'no-bar' };
+    const cs = getComputedStyle(fa);
+    return {
+      bodyCls: document.body.className,
+      display: cs.display,
+      shellH: fa.querySelector('.fast-add-shell') ? Math.round(fa.querySelector('.fast-add-shell').getBoundingClientRect().height) : null,
+      placeholder: (fa.querySelector('textarea') || {}).placeholder || null,
+    };
+  `);
+  ok(qa.bodyCls.includes('drawer-open') && qa.display === 'none',
+    '抽屉开着的时候快速添加条整条退场（不再压在编辑框上），实际 '
+      + JSON.stringify({ cls: qa.bodyCls, display: qa.display }));
 
   const sem = await evalJs(page, `
     const d = document.querySelector('.drawer.open');
@@ -3960,6 +3993,14 @@ try {
     '被拖的那一格自己不是占位虚影（虚影跟着落点走，不锁在原位）');
   ok(await evalJs(page, `return ${navRow('today')}.className.includes('drag-land');`),
     '落点那一格是占位虚影（isOver = today）');
+  /* 2026-10-19 回归：`isOver` 的判据曾经写反成 `over.id !== id`，那对每一格
+     都成立 —— drag-land 落到全部格子上，`.drag-land { opacity: 0 }` 一发，
+     拖拽时整页只剩浮层里跟着手指的那一份（用户报「其他任务全消失了」）。
+     既不是被拖项、也不是落点的那几格必须**原样显示**。 */
+  ok(await evalJs(page, `
+    const el = ${navRow('inbox')};
+    return !el.className.includes('drag-land') && Number(getComputedStyle(el).opacity) > 0.5;
+  `), '其他格子在拖拽中原样显示（不占虚影、不透明）');
   /* 让位动画：被拖的那一格**不给** transition（它跟手指走，迟滞半拍就是
      「不跟手」），让位的那几格**要给**（不给就是闪现）。读的是内联样式的
      计算结果 —— `useSortable` 没在拖的时候返回 undefined，压根没有这个属性。 */

@@ -1,10 +1,14 @@
 /**
- * FastSide.tsx —— 快速添加横条右侧的竖排按钮组（时钟 + 保存）
+ * FastSide.tsx —— 快速添加横条右侧的按钮组（时钟 + 保存）
  *
  * 从 `QuickAdd.tsx` 拆出来。这一段自己有一套道具：`clockBtn` ref（锚点）、
  * 生效的日期/时间（画在按钮上）、`submit` 回调。它跟 QuickAdd 的状态机
  * （closing / expanded / outside-close 三级）没有关系 —— 拆出去之后 QuickAdd
  * 主体只剩那一台状态机。
+ *
+ * **横排**（2026-10-19）：原先是上下竖排两个按钮，把整条撑成两行高；
+ * 用户要求「参考打卡的文本框」之后改成一排 —— 布局在 quick-add.css 的
+ * `.fast-side` 上，这里只负责两个按钮自己的内容。
  */
 
 import { Check, Clock } from 'lucide-react';
