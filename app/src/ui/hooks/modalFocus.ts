@@ -29,7 +29,15 @@ export function useModalFocus(panel: RefObject<HTMLElement | null>, open: boolea
     return () => {
       const el = prevFocus.current;
       prevFocus.current = null;
-      if (el && el.isConnected) el.focus({ preventScroll: true });
+      if (!el || !el.isConnected) return;
+      /* **延后到下一帧再还焦点。** cleanup 跑的时候浮层刚决定关、上级还没把
+         「模态开着」的 body 类摘掉（那在另一个 effect 里，本轮 commit 的被动
+         阶段才跑）—— 此刻原来那个元素可能还是 `display: none`（例如快速添加条
+         在抽屉开着时整条退场），对隐藏元素 focus() 是静默失败，焦点会掉到
+         body 上，用户接着按 Tab 从页首开始（2026-10-19 实测踩到）。 */
+      requestAnimationFrame(() => {
+        if (el.isConnected) el.focus({ preventScroll: true });
+      });
     };
   }, [panel, open]);
 }
