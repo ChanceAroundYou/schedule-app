@@ -298,8 +298,13 @@ body.sheet-open .tab:active { background: none; }
   }
   /* 表头、未定时行、时间网格三行一起吃这条最小宽度 —— 作为 flex 项它们默认
      只有容器那么宽（≈一屏），右边三四列的表头会透出下面时间网格的刻度线，
-     看着就是「表头只画了一半」。 */
-  .week-head, .week-un-row, .week-grid { min-width: max-content; }
+     看着就是「表头只画了一半」。
+     ⚠️ 未定时行**不能**用 max-content（2026-10-19 实测翻车）：卡内中文任务名
+     没有断点，13 个字把 max-content 顶到 1543px，而其他两行是 688px ——
+     横滑时三行错位、滑到底一大片空白。它的基准是硬值：
+     44px 刻度列 + 644px 日期列（= 7×92px，与 .week-*-cols 的 min-width 同源）。 */
+  .week-head, .week-grid { min-width: max-content; }
+  .week-un-row { min-width: 688px; }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
     grid-template-columns: 44px minmax(0, 1fr);

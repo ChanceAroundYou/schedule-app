@@ -323,8 +323,14 @@
 .wun-cell:last-child { border-right: none; }
 .wun-cell.today { background: var(--primary-pale); }
 /* 这一行的卡片是**日视图未定时那一张**（task-el--untimed），只是这里横向只能
-   分到七分之一宽，所以字再收一号，"+" 提示用同一个灰度 */
-.wun-cell .task-el--untimed { font-size: 11px; padding: 1px 5px; }
+   分到七分之一宽，所以字再收一号，"+" 提示用同一个灰度。
+   nowrap + 省略号：92px 的列放不下长任务名，**宁可截断也不许撑列** ——
+   中文整串没有断点，max-content 布局下它能把整行顶宽一倍（2026-10-19 实测：
+   未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
+.wun-cell .task-el--untimed {
+  font-size: 11px; padding: 1px 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .wun-more { font-size: 10.5px; color: var(--text-3); padding-left: 2px; }
 .wun-empty { display: block; height: 4px; }
 
