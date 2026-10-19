@@ -1982,7 +1982,10 @@ try {
   `, '没设时长的任务也带着把手', 10000);
   ok(nodur.op > 0.1 && nodur.cursor === 'ns-resize',
     '没设时长的任务，把手也常显可拖（opacity ' + nodur.op.toFixed(2) + '，cursor ' + nodur.cursor + '）');
-  /* 收尾：这条验证用的任务删掉，别影响后面的节 */
+  /* 收尾：这条验证用的任务删掉，别影响后面的节。
+     **必须等它真从界面上消失**再往下走 —— 同步是轮询的，删完立刻翻页的话
+     下一节「时间窗」还会把它算进 coverWindow（11:00 + 默认 60 分钟 = 12:00
+     结束，把一个 11 点截止的窗顶到 12 点）。 */
   await evalJs(page, `
     (async () => {
       const token = localStorage.getItem('schedule-app-token');
@@ -1992,6 +1995,9 @@ try {
       return 1;
     })()
   `);
+  await waitFor(page, `
+    !document.querySelector('.task-el--timed[data-id="' + window.__nodurId + '"]') ? 1 : null
+  `, '验证用的无时长任务已从界面上消失', 15000);
 
   const sel = (act) => `document.querySelector('.task-el--timed[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
   const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;
