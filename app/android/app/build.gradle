@@ -43,7 +43,13 @@ android {
         // 自更新清单地址（nginx 的 /schedule/dl/）。**与前端打包时注入的
         // VITE_API_BASE 同源** —— 换服务器/换域名时这两处要一起改。
         // 见 AppUpdate.java。
-        buildConfigField "String", "UPDATE_BASE", "\"https://home.xiaokubao.space/schedule\""
+        //
+        // 可用环境变量 UPDATE_BASE 覆盖（默认仍是公网域名，不影响正式发布包）：
+        //   家用局域网直连场景（Cloudflare 被丢包时的绕开方案，见
+        //   res/xml/network_security_config.xml 的注释）：
+        //   UPDATE_BASE=http://192.168.1.6/schedule ./deploy/build-apk.sh
+        def updateBase = System.getenv("UPDATE_BASE") ?: "https://home.xiaokubao.space/schedule"
+        buildConfigField "String", "UPDATE_BASE", "\"${updateBase}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

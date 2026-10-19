@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文放行白名单：**只放行 NAS 本机 IP**（192.168.1.6）。
+
+  起因（2026-10-19 真机实测）：家里宽带**直连 Cloudflare 被丢包** ——
+  CapacitorHttp（原生栈）解析 home.xiaokubao.space 拿到 Cloudflare IP，
+  TLS 握手 10 秒后 connection closed；电脑当时能通是靠本地代理。
+  路由器 DHCP 下发的 DNS 已坏，手机被 Android 切成公网备用 DNS，
+  拿不到「域名 → 192.168.1.6」的内网解析；手机也没有 IPv6 默认路由。
+
+  绕开：nginx 80 端口对「IP 字面量 Host」明文伺服 /schedule/
+  （见 NAS 上 conf.d/servers/zz-lan-direct.conf），App 构建时把
+  VITE_API_BASE / UPDATE_BASE 指到 http://192.168.1.6/schedule。
+
+  为什么不用 usesCleartextTraffic="true"：那是**全局**明文，
+  任何 http:// 请求都不再被拦。这里按域名精确放行，域外照旧拦截。
+
+  注意：这个文件对**所有构建**生效（含正式发布包）。它是无害的 ——
+  只放行一个内网 IP 的明文，不影响任何域名请求的 HTTPS 行为；
+  正式包继续用域名基址时，这条规则根本不会被命中。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- NAS（nginx + 后端）本机。家用局域网直连专用。 -->
+        <domain includeSubdomains="false">192.168.1.6</domain>
+    </domain-config>
+</network-security-config>
