@@ -196,6 +196,14 @@
 }
 .task-el--untimed:hover { transform: none; }
 
+/* 卡片内容（标题 / 时间 / 摘要）外面那一层。卡片本身不能 overflow:hidden
+   （会切断跨边界的拖拽），所以「内容超出卡片」由这一层裁 —— 它吃满卡片内高，
+   里面放不下的东西在卡片边界处停住。 */
+.ev-body {
+  display: flex; flex-direction: column; justify-content: center;
+  gap: var(--ev-gap); flex: 1 1 auto; min-height: 0; min-width: 0;
+  overflow: hidden;
+}
 .ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev-time {

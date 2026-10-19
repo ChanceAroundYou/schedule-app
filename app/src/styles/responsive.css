@@ -328,18 +328,34 @@ body.sheet-open .tab:active { background: none; }
      列宽 92px（比月格子 45px 宽一倍），10px 字号一行约 6 个汉字。
      更重要的是**够高的卡允许换行多放几行** —— 以前 `.ev-title` 是 nowrap + 省略号，
      1~2 小时的高卡明明有空间却被截成一行。
-     ⚠️ 顺手把时间行/摘要行在窄屏周视图里藏掉：它们各占一整行，而这块卡最缺的
-     就是行数 —— 时刻本来就由卡片在时间轴上的位置表达（左侧有刻度）。 */
+     2026-10-20 又按用户要求：**去掉打勾圈**（省下的宽度全给字）、**文本居中**、
+     **有空间时还是显示时间**（时间行的显隐由 JS 按卡高判断，见 TaskCard 的 roomy）。 */
   .week-col .task-el--timed { --ev-title-size: 10px; }
-  .week-col .task-el--timed .ev-head {
-    /* flex:1 + min-height:0 + overflow:hidden：标题吃满卡片内高，放不下的在
-       卡片边界处裁掉（卡片自己不能 overflow:hidden —— 会切断跨边界的拖拽） */
-    flex: 1 1 auto; min-height: 0; align-items: flex-start; overflow: hidden;
+  .week-col .task-el--timed .check-btn { display: none; }
+  /* 未定时那一行也去掉勾选圈（2026-10-20 用户：「周视图移动端的打勾也去掉」） */
+  .wun-cell .task-el--untimed .check-btn { display: none; }
+  /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
+     —— 会切断跨边界的拖拽）。
+     ⚠️ `safe center` 不是笔误：普通 center 在内容比盒子高时**上下同时溢出**，
+     首行会被拦腰切一半（实测 38px 的卡里 24px 的标题就是这症状）；
+     加了 safe 就在放不下时退回 flex-start，从第一行开始裁。 */
+  .week-col .task-el--timed .ev-body {
+    justify-content: safe center; min-height: 0; overflow: hidden;
   }
+  /* 标题**可收缩**、时间行**不收缩**：卡片矮的时候宁可少显示一行标题，
+     也要把时间留住（2026-10-20 用户：「有空间还是显示时间」）。
+     收缩的是 head 这一层，里面的字由 overflow 裁掉。 */
+  .week-col .task-el--timed .ev-head {
+    flex: 0 1 auto; min-height: 0; align-items: safe center; overflow: hidden;
+  }
+  .week-col .task-el--timed .ev-time { flex: 0 0 auto; }
   .week-col .task-el--timed .ev-title {
     line-height: 12px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+    text-align: center;
   }
-  .week-col .task-el--timed .ev-time,
+  /* 时间行不再为勾选圈让出 21px，也跟着居中 */
+  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: center; font-size: 9px; }
+  /* 摘要那一行仍然不显示：它只在场卡片里才有，不该为了「可能有」占一行 */
   .week-col .task-el--timed .ev-note { display: none; }
 }
 

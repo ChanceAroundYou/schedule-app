@@ -544,6 +544,45 @@ async function checkLook() {
   assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
     `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
 
+  /* 2026-10-20 四条：去勾选圈 / 文字居中 / 有空间显示时间 / 极窄卡不给把手 */
+  const look = await evalIn(`(function(){
+    var qa=function(s){return Array.from(document.querySelectorAll(s))};
+    var chkT=document.querySelector('.week-col .task-el--timed .check-btn');
+    var chkU=document.querySelector('.wun-cell .task-el--untimed .check-btn');
+    var title=document.querySelector('.week-col .task-el--timed .ev-title');
+    var cards=qa('.week-col .task-el--timed');
+    var tallest=null;
+    cards.forEach(function(c){
+      if(!tallest||c.getBoundingClientRect().height>tallest.getBoundingClientRect().height) tallest=c;
+    });
+    /* 比把手还窄的卡不该再画上下把手（把手各 8px） */
+    var tinyWithHandle=cards.filter(function(c){
+      return c.getBoundingClientRect().height < 24 && c.querySelector('.ev-resize');
+    }).length;
+    var body=document.querySelector('.week-col .task-el--timed .ev-body');
+    return {
+      checkTimed: chkT?getComputedStyle(chkT).display:'(none)',
+      checkUntimed: chkU?getComputedStyle(chkU).display:'(none)',
+      titleAlign: title?getComputedStyle(title).textAlign:'',
+      bodyOverflow: body?getComputedStyle(body).overflow:'',
+      tinyWithHandle: tinyWithHandle, cards: cards.length,
+      tallH: tallest?Math.round(tallest.getBoundingClientRect().height):0,
+      tallHasTime: tallest?!!tallest.querySelector('.ev-time'):null,
+      cardsWithTime: cards.filter(function(c){return c.querySelector('.ev-time')}).length,
+    };
+  })()`);
+  assert(look.checkTimed === 'none', '周视图定时卡去掉了勾选圈', `display=${look.checkTimed}`);
+  assert(look.checkUntimed === 'none', '周视图未定时那一格也去掉了勾选圈', `display=${look.checkUntimed}`);
+  assert(look.titleAlign === 'center', '周视图卡片文字居中', `text-align=${look.titleAlign}`);
+  assert(look.tinyWithHandle === 0, '比把手还窄的卡不再画上下把手',
+    `${look.tinyWithHandle} 张窄卡还带把手（共 ${look.cards} 张）`);
+  assert(look.bodyOverflow === 'hidden', '内容层负责裁剪（超出卡片的东西不外溢）',
+    `overflow=${look.bodyOverflow}`);
+  if (look.tallHasTime !== null) {
+    assert(look.tallHasTime, '有空间时还是显示时间（最高的那张卡要有时间行）',
+      `最高 ${look.tallH}px，${look.cardsWithTime}/${look.cards} 张带时间行`);
+  }
+
   /* 月视图：胶囊不能比日/周大卡还圆 */
   await tap('button[data-view="month"]'); await wait(700);
   const m = await evalIn(`(function(){

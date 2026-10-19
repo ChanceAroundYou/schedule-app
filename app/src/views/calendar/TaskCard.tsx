@@ -24,6 +24,7 @@ import {
 } from '../../domain/layout.ts';
 import { CheckBtn } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
+import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
 
 /**
@@ -67,12 +68,17 @@ export function TaskCard({
       data-id={t.id}
       title={title}
     >
-      <div className="ev-head">
-        <CheckBtn id={t.id} on={!!t.done} sm />
-        <span className="ev-title">{t.title}</span>
+      {/* 内容外面**必须再包一层**：卡片自己不能 overflow:hidden（那会切断
+          跨边界的拖拽），但内容（标题换行 + 时间行）在矮卡里会顶出卡片底部 ——
+          见 2026-10-20 窄屏周视图。裁剪交给 `.ev-body`，拖拽不受影响。 */}
+      <div className="ev-body">
+        <div className="ev-head">
+          <CheckBtn id={t.id} on={!!t.done} sm />
+          <span className="ev-title">{t.title}</span>
+        </div>
+        {timeText && <span className="ev-time">{timeText}</span>}
+        {noteText && <span className="ev-note">{noteText}</span>}
       </div>
-      {timeText && <span className="ev-time">{timeText}</span>}
-      {noteText && <span className="ev-note">{noteText}</span>}
       {resizable && (
         <>
           <span
@@ -111,9 +117,17 @@ export function TimedCard({
   const w = 100 / e.cols;
   const live = isToday && nowMin >= e.start && nowMin < e.end;
   /* 时间段那行只有块够高才画。判据跟着窗口走（收窄时间窗 = 每小时更高），
-     所以不能再拿写死的 px 比 —— 用百分比跟最小可读高度比。 */
-  const roomy = box.height >= 3.4;
+     所以不能再拿写死的 px 比 —— 用百分比跟最小可读高度比。
+     **窄屏周视图的门槛高得多**（2026-10-20 用户：「有空间还是显示时间」）：
+     那里字只有 10px、卡片又窄，时间行要占掉整整一行，所以得先保证标题还剩
+     至少两行才把时间放出来。断点与 CSS 那条 `@media (max-width: 900px)` 同源
+     （都走 `isNarrowNow`）。 */
+  const narrow = isNarrowNow();
+  const roomy = box.height >= (narrow ? 5.4 : 3.4);
   const hasEnd = t.duration != null;
+  /* 上下把手各 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
+     上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。 */
+  const canResize = box.height >= 4.5;
   /* 上下各留一条缝：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
      「任务之间连在一起」）。
      ⚠️ 用**百分比**而不是 `calc(% + 1.5px)`：`top`/`height` 一直是纯数字，
@@ -143,8 +157,9 @@ export function TimedCard({
       /* **每条定时卡都带把手**（2026-10-19 用户报「没地方拖动改时长」）：
          以前 `resizable={hasEnd}` —— 没显式设过时长的任务一个把手都没有，
          而「点一下新建」的任务恰恰占大多数。时长是「默认 60 分钟」的含义，
-         不是「不许改」的含义；拖把手就是把时长落定。 */
-      resizable
+         不是「不许改」的含义；拖把手就是把时长落定。
+         但**比把手还窄的卡不给**（2026-10-20 用户要求）—— 见上面的 canResize。 */
+      resizable={canResize}
       lockX={lockX}
     />
   );
