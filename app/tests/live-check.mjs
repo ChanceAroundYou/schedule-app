@@ -366,8 +366,20 @@ async function checkDrag(page) {
   await page.waitForSelector('button[data-view="day"]', { timeout: 10000 });
   await switchView(page, 'day');
   await page.waitForSelector('.timeline', { timeout: 15000 });
-  const tl = await page.locator('.timeline').boundingBox();
-  const yOf = (hour) => tl.y + (hour / 24) * tl.height;
+  /* ⚠️ 2026-10-22：这里原来假设「时间轴 = 24 小时、且布局已经稳」，实测会飘 45 分钟。
+     两个原因：
+       ① 窗口是**数据驱动**的（coverWindow = 设置窗 ∪ 任务），不能写死 24；
+       ② 刚切到日视图时同步可能还在往回拉数据，未定时那一行一旦长高，
+          时间轴会被整体推下去 —— 先量再拖就拖偏了。
+     所以：等布局稳定 + 从 data-from/data-to 读真实窗口 + **拖之前重新量一次**。 */
+  await page.waitForTimeout(1200);
+  const win = await page.$eval('.timeline', (el) => ({
+    from: Number(el.dataset.from), to: Number(el.dataset.to),
+  }));
+  const span = win.to - win.from;
+  const boxNow = async () => page.locator('.tl-events').boundingBox();
+  let tl = await boxNow();
+  const yOf = (min) => tl.y + ((min - win.from) / span) * tl.height;
   const x = tl.x + tl.width / 2;
 
   /* 找一个竖着都没被占的一小时半：中心那条竖线上没有卡片挡着才行 */
@@ -377,16 +389,18 @@ async function checkDrag(page) {
   }));
   let startHour = -1;
   for (const h of [9, 14, 3, 19, 7, 21]) {
-    const top = yOf(h);
-    const bottom = yOf(h + 1.5);
+    const top = yOf(h * 60);
+    const bottom = yOf((h + 1.5) * 60);
     const hit = busy.some((b) => b.left < x && b.right > x && b.bottom > top && b.top < bottom);
     if (!hit) { startHour = h; break; }
   }
   if (startHour < 0) { bad('时间轴上找得到一段空白用于拖拽'); return; }
 
-  await page.mouse.move(x, yOf(startHour));
+  /* 拖之前再量一次：上面找空位那几步之间布局可能又动了 */
+  tl = await boxNow();
+  await page.mouse.move(x, yOf(startHour * 60));
   await page.mouse.down();
-  await page.mouse.move(x, yOf(startHour + 1.5), { steps: 14 });
+  await page.mouse.move(x, yOf((startHour + 1.5) * 60), { steps: 14 });
   const preview = (await page.locator('.drag-range span').first().innerText()).trim();
   const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${m % 60 === 0 ? '00' : '30'}`;
   const endMin = (startHour + 1.5) * 60;
