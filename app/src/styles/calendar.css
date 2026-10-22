@@ -52,7 +52,7 @@
   --tl-label-width: 44px;
   --tl-event-pad: 3px 7px;
   --ev-title-size: 12px;
-  --ev-time-size: 10px;
+  --ev-time-size: var(--task-time);   /* 时间行比标题小一档（tokens.css） */
   --ev-gap: 0px;
 }
 
@@ -87,7 +87,7 @@
      间距 + 上下留白」精确算出来的 height** —— 卡高在 --row（本区一行的高），
      这样无论 1 条还是 8 条，可见区永远是整数张卡，绝不露半截。
      --row = 标题行高 + 卡片上下 padding（`.task-el--untimed` 1px×2 + 行高 18px）。 */
-  --row: calc(20px + 2 * var(--border-w));   /* 行高 18 + padding 1×2 + 边框 1×2 */
+  --row: calc(var(--task-line-sm) + 2px + 2 * var(--border-w));   /* 小格行高 + padding 1×2 + 边框 */
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 6px);                      /* .allday-zone-pad 的上下两个 3px */
@@ -216,14 +216,18 @@
   min-height: 12px; min-width: 0;
 }
 /* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px。
-   行高必须**写死**（--row 参与容器高度计算，见 .allday-zone）：18px 配
-   12.5px 字距合理，卡片高 = 18 + 1×2 = 20px = --row。 */
+   字号/行高走**小格令牌**（9px/14px，= 月视图手机端 pill；周视图电脑端在
+   .wun-cell 里覆盖成大格）—— 2026-10-22 用户：「日视图的字体也同样缩小，
+   不用加粗」。行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
 .task-el--untimed {
   width: 100%; padding: var(--allday-pill-pad); min-width: 0;
-  font-size: 12.5px; font-weight: 550; overflow: hidden;
-  line-height: 18px;
+  font-size: var(--task-text-sm); overflow: hidden;
+  line-height: var(--task-line-sm);
+  --ev-title-size: var(--task-text-sm);
   transition: background .14s, box-shadow .14s;
 }
+/* 不加粗：与月视图任务名同字重（400） */
+.task-el--untimed .ev-title { font-weight: 400; }
 .task-el--untimed:hover { transform: none; }
 
 /* 卡片内容（标题 / 时间 / 摘要）外面那一层。卡片本身不能 overflow:hidden
@@ -273,7 +277,7 @@
      触摸区 6px 高、横条 2px，用 align-items 把条**推到卡片最边缘** ——
      bottom 把手的条贴底沿、top 把手的条贴顶沿，一眼就知道「拉这里改边」。
      透明度维持上一版的 .16。 */
-  position: absolute; left: 50%; width: 34px; transform: translateX(-50%); bottom: 0;
+  position: absolute; left: 50%; width: 17px; transform: translateX(-50%); bottom: 0;
   height: min(6px, 22%); min-height: 3px;
   cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center;
   opacity: .16; transition: opacity .12s;
@@ -282,7 +286,7 @@
 .ev-resize-top { top: 0; bottom: auto; align-items: flex-start; }
 .task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .5; }
 .ev-resize::after {
-  content: ''; width: 26px; height: 2px; border-radius: var(--r-xs);
+  content: ''; width: 13px; height: 2px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .5);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
@@ -417,7 +421,7 @@
      卡高 --row = 行高 18px + 上下 padding 1px×2 + **上下边框 var(--border-w)×2**
      —— 上一版漏了边框（卡片四面都有 1px 边），四张卡实际比算的高 8px，
      第 4 张被切掉一截（用户 2026-10-22 回归实测抓到）。宽屏卡 12.5px 字。 */
-  --row: calc(20px + 2 * var(--border-w));
+  --row: calc(var(--task-line) + 2px + 2 * var(--border-w));   /* 大格行高 + padding 1×2 + 边框 */
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 4px);                        /* 自身 padding 的上下两个 2px */
@@ -437,10 +441,10 @@
    nowrap：中文整串没有断点，max-content 布局下它能把整行顶宽一倍
    （2026-10-19 实测：未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
 .wun-cell .task-el--untimed {
-  /* **字号/字重与月视图同步**（2026-10-22 回归）：宽屏 12.5px（= 月视图大格
-     `.task-pill`），窄屏 9px 在 responsive.css 覆盖；字重同 pill-title（400）。
-     行高 18px 与日视图未定时卡一致，卡高 = 18 + 1×2 + 2×边框 = --row。 */
-  font-size: 12.5px; line-height: 18px; padding: 1px 0;
+  /* **周视图电脑端用大格**（= 月视图电脑端 pill；窄屏在 responsive.css 覆盖回
+     小格）。行高 18px，卡高 = 18 + 1×2 + 2×边框 = --row。 */
+  font-size: var(--task-text); line-height: var(--task-line); padding: 1px 0;
+  --ev-title-size: var(--task-text);
   white-space: nowrap; overflow: hidden; text-overflow: clip;
   /* ⚠️ **不许被压扁**（2026-10-22 实测的根因）：flex 列默认 `flex-shrink: 1`，
      任务一多，浏览器把每张卡**压缩**到能塞进限高里 —— 于是 scrollHeight 恒等于
@@ -455,8 +459,8 @@
 .week-col .task-el--timed .ev-title { font-weight: 400; }
 /* 周视图定时卡字号也向月视图看齐（宽屏 12.5px；窄屏 9px 在 responsive 覆盖）。
    行高写死 18px：整行裁（useWholeLineClamp）要用它折算整行数。 */
-.week-col .task-el--timed { --ev-title-size: 12.5px; }
-.week-col .task-el--timed .ev-title { line-height: 18px; }
+.week-col .task-el--timed { --ev-title-size: var(--task-text); }
+.week-col .task-el--timed .ev-title { line-height: var(--task-line); }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。
    高度对齐一行卡（16px），不再用 26px。 */

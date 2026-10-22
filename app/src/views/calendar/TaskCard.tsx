@@ -170,22 +170,22 @@ export function TimedCard({
      桌面那一档定得低（3.5%），保证 24h 窗口里的 1 小时任务（≈4.2%）仍有把手
      —— browser-smoke 有一条专门验「时间轴方块带上下两个把手」。 */
   const canResize = box.height >= (narrow ? 6 : 3.5);
-  /* 上下各留一条缝：**首尾相接的两条任务不再糊成一坨**（2026-10-19 用户报
-     「任务之间连在一起」）。
-     ⚠️ 用**百分比**而不是 `calc(% + 1.5px)`：`top`/`height` 一直是纯数字，
-     探针（browser-smoke 的越界检查、位置断言）都靠 `parseFloat(el.style.top)` 读，
-     掺了 calc 就解析成 NaN，测试会静默失效。0.35% 在 ~590px 高的时间轴上
-     大约就是 1.5px。 */
-  const GAP_PCT = 0.35;
-  const topPct = box.top + GAP_PCT / 2;
-  const hPct = Math.max(1.2, Math.max(1.2, box.height) - GAP_PCT);
+  /* 上下各留**固定的 1.5px**：2026-10-22 九条回归，用户点名统一成
+     `height: calc(高度% - 1.5px)` 的写法 —— 以前用 0.35% 的相对缝，窗一缩
+     缝就跟着缩，手机上肉眼看不见；定值缝在任何窗口下都稳定可见。
+     top 保持**纯数字百分比**（探针按 parseFloat(el.style.top) 读，掺 calc 会 NaN），
+     缝全部让给 height/width 的 calc 尾数。 */
+  const topPct = box.top;
+  const hPct = Math.max(1.2, box.height);
   return (
     <TaskCard
       t={t}
       cls={'task-el task-el--timed' + (t.done ? ' done' : '') + (live ? ' live' : '') + (isDragSrc ? ' dragging' : '')}
       style={{
-        top: topPct + '%', height: hPct + '%',
-        left: `${e.col * w}%`, width: `calc(${w}% - 3px)`,
+        top: topPct + '%',
+        height: `calc(${hPct}% - 1.5px)`,
+        left: `${e.col * w}%`,
+        width: `calc(${w}% - 1.5px)`,
         /* 圆角按卡高收（见 calendar.css 的 .task-el--timed）：父级给了容器实高的
            `--tl-h`，这里给百分比高度，两者相乘就是这张卡真正的像素高。 */
         '--card-h': hPct,

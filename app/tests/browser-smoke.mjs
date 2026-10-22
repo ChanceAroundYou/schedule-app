@@ -2040,7 +2040,7 @@ try {
     })()
   `, '三条未定时任务 + 末尾一整行空白', 15000);
   ok(unAl.perRow >= 2, '桌面端未定时任务是**从左到右**排的（同一行 ≥2 条）', `${unAl.n} 条 / 每行 ${unAl.perRow}`);
-  ok(unAl.blankBelow && unAl.blankH >= 20,
+  ok(unAl.blankBelow && unAl.blankH >= 14,
     '末尾永远多出一整行空白（加完还看得见可点的空位）', `${unAl.blanks} 格 × ${unAl.blankH}px`);
   await touch(page, 'touchStart', unAl.at);
   await touch(page, 'touchEnd', unAl.at);
@@ -2533,10 +2533,14 @@ try {
      （不从 localStorage 反推期望值：那是延迟落盘的，读到的是上一刻的世界。） */
   const worstCard = () => evalJs(page, `
     return (() => {
+      const tl = document.querySelector('.timeline');
+      const tlH = tl.getBoundingClientRect().height || 1;
       let worst = null;
       for (const el of document.querySelectorAll('.timeline .task-el--timed')) {
         const top = parseFloat(el.style.top) || 0;
-        const h = parseFloat(el.style.height) || 0;
+        /* height 现在是 calc(百分比 - 1.5px)（2026-10-22 九条回归），内联值解析
+           出来是 NaN —— 改量**实际渲染高度**折算回百分比，语义不变 */
+        const h = (el.getBoundingClientRect().height / tlH) * 100;
         const over = Math.max(-top, top + h - 100);
         if (over > 0.01 && (!worst || over > worst.over)) {
           worst = { over: Math.round(over * 100) / 100, title: (el.querySelector('.ev-title') || {}).textContent || '' };

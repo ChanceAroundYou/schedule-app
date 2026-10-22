@@ -194,7 +194,7 @@ body.sheet-open .tab:active { background: none; }
   .check-btn { width: 22px; height: 22px; flex: 0 0 22px; }
   .check-btn.on::after { width: 5px; height: 9px; }
   .row-title { font-size: 14.5px; }
-  .task-pill { padding: 5px 7px; font-size: 12.5px; }
+  .task-pill { padding: 5px 7px; font-size: var(--task-text); }
 
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
@@ -233,7 +233,7 @@ body.sheet-open .tab:active { background: none; }
     --tl-label-width: 38px;
     --tl-event-pad: 3px 7px;
     --ev-title-size: 12px;
-    --ev-time-size: 10px;
+    --ev-time-size: var(--task-time-sm);   /* 时间行比标题小一档（8px） */
     --ev-gap: 0px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
@@ -346,13 +346,14 @@ body.sheet-open .tab:active { background: none; }
   /* 窄屏周视图整体切到**月视图小格规格**（2026-10-22 回归）：
      9px 字 / 14px 行高 / padding 1px 0 / 圆角 4px —— 与
      `.cell-tasks .task-pill` 一字不差。卡高 = 14 + 1×2 + 边框 1×2 = --row。 */
-  .wun-cell { --row: calc(16px + 2 * var(--border-w)); }
+  .wun-cell { --row: calc(var(--task-line-sm) + 2px + 2 * var(--border-w)); }
   .wun-cell .task-el--untimed {
-    font-size: 9px; line-height: 14px; border-radius: 4px;
+    font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    border-radius: 4px;
   }
   /* 周视图定时卡：字号跟月视图小格（9px），左右留白几乎为 0（用户：
      「参考现在的月视图」= pill 的 padding 1px 0），字尽可能多显示。 */
-  .week-col .task-el--timed { --ev-title-size: 9px; padding: 1px 0; }
+  .week-col .task-el--timed { --ev-title-size: var(--task-text-sm); padding: 1px 0; }
   .week-col .task-el--timed .check-btn { display: none; }
   /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
      和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
@@ -380,11 +381,11 @@ body.sheet-open .tab:active { background: none; }
   .week-col .task-el--timed .ev-title {
     /* 行高 14px 与月视图窄屏同款（9px 字配 14px 行）；**左对齐**（九条第 6 条：
        以前 center，和日/月不一致）；溢出裁掉不出省略号（第 7 条）。 */
-    line-height: 14px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+    line-height: var(--task-line-sm); white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
     text-align: left;
   }
   /* 时间行不再为勾选圈让出 21px，也跟着左对齐 */
-  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: left; font-size: 9px; }
+  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: left; font-size: var(--task-time-sm); }
   /* 摘要那一行仍然不显示：它只在场卡片里才有，不该为了「可能有」占一行 */
   .week-col .task-el--timed .ev-note { display: none; }
 }
@@ -420,8 +421,8 @@ body.sheet-open .tab:active { background: none; }
      剩下的 1px 是四面一样的灰框，不是强调线。
      圆角 7px → 4px：18px 高的小条用 7px 就是个药丸，用户说「月视图太圆」。 */
   .cell-tasks .task-pill {
-    font-size: 9px; padding: 1px 0; gap: 0; border-radius: 4px;
-    line-height: 14px;
+    font-size: var(--task-text-sm); padding: 1px 0; gap: 0; border-radius: 4px;
+    line-height: var(--task-line-sm);
   }
   /* 时间放不下（45px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
      这两个都是窄屏取舍，不是漏了。 */
