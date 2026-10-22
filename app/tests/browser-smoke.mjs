@@ -2112,6 +2112,61 @@ try {
   ok(ovf.scrolled > 0, '这一格**自己滚得动**（scrollTop 能设上去）', `scrollTop=${ovf.scrolled}`);
   ok(Math.abs(ovf.grid - gridBefore) <= 2,
     '任务从 3 条加到 8 条，**时间轴高度一点没变**', `${gridBefore}px → ${ovf.grid}px`);
+
+  /* ---- 橡皮筋阻尼（2026-10-22 用户：滚到头要有阻尼）----
+     这里正好是一个**真溢出**的格子，拿它验：滚到顶再往下拖，内容跟手让开
+     一段；松手弹回原位；往上拖（还在顶上）不许有位移。
+     ⚠️ 触摸模拟在这一节之前已经关掉了（第八节收尾关的），要自己开回来。 */
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const anchor = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    if (!cell) return null;
+    cell.scrollTop = 0;
+    const r = cell.getBoundingClientRect();
+    return {
+      x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 8),
+      top: Math.round(cell.firstElementChild.getBoundingClientRect().top),
+    };
+  `);
+  const readDamp = () => evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    return {
+      pull: cell.style.getPropertyValue('--pull'),
+      live: cell.hasAttribute('data-pull'),
+      top: Math.round(cell.firstElementChild.getBoundingClientRect().top),
+      scrollTop: Math.round(cell.scrollTop),
+    };
+  `);
+
+  await touch(page, 'touchStart', { x: anchor.x, y: anchor.y });
+  await touch(page, 'touchMove', { x: anchor.x, y: anchor.y + 34 });
+  await new Promise((r) => setTimeout(r, 80));   // 位移在 rAF 里写，等一帧
+  const pulled = await readDamp();
+  ok(pulled.live && parseFloat(pulled.pull) > 6,
+    '滚到顶还往下拖：内容被**拉出一段**（阻尼跟手）',
+    `--pull=${pulled.pull || '未设置'} · data-pull=${pulled.live}`);
+  ok(pulled.top > anchor.top + 5,
+    '让开的是**内容**，格子边框没动', `内容顶 ${anchor.top}px → ${pulled.top}px`);
+  ok(pulled.top - anchor.top < 34,
+    '拖 34px 只让开一点（有阻尼，不是 1:1 硬跟）', `实际让开 ${pulled.top - anchor.top}px`);
+
+  await touch(page, 'touchEnd');
+  await new Promise((r) => setTimeout(r, 480));  // 260ms 过渡 + 余量
+  const settled = await readDamp();
+  ok(!settled.live && Math.abs(settled.top - anchor.top) <= 1,
+    '松手后**弹回原位**', `--pull=${settled.pull || '已清'} · 内容顶 ${settled.top}px`);
+
+  // 反方向：还在顶上，往上拖 = 正常滚动，不该有橡皮筋
+  await touch(page, 'touchStart', { x: anchor.x, y: anchor.y });
+  await touch(page, 'touchMove', { x: anchor.x, y: anchor.y - 30 });
+  await new Promise((r) => setTimeout(r, 80));
+  const upward = await readDamp();
+  ok(!upward.live, '在顶部往上拖（正常滚动方向）**不触发**橡皮筋', `data-pull=${upward.live}`);
+  await touch(page, 'touchEnd');
+  await new Promise((r) => setTimeout(r, 120));
+  await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+
   await evalJs(page, `
     const token = localStorage.getItem('schedule-app-token');
     const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();

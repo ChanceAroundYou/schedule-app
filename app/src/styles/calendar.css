@@ -418,6 +418,20 @@
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。 */
 .wun-blank { min-height: 26px; flex: 1 1 auto; }
 
+/* -------- 滚到边界时的橡皮筋（app/touchDamp.ts 写 --pull） --------
+   位移挂在**内容**上而不是容器上：容器有边框和底色，挪容器等于把格子扯走。
+   用独立的 `translate` 属性（不是 transform），这样和拖拽卡片自己的 transform
+   是叠加关系，谁也不会覆盖谁。
+   `data-pull` 只在手指拉着的那一小段存在 —— 有它就没有过渡（必须跟手），
+   松手时属性被摘掉，过渡接管、弹回去。 */
+.allday-zone > *,
+.wun-cell > * { translate: 0 var(--pull, 0px); }
+.allday-zone:not([data-pull]) > *,
+.wun-cell:not([data-pull]) > * { transition: translate 260ms cubic-bezier(.22, .9, .26, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .allday-zone > *, .wun-cell > * { transition: none; }
+}
+
 /* ---- 按住拉出来的那一段时间（views/calendar/dragCreate.ts）----
    它在还没有实体时出现，所以**不是**任务卡：不挂 `.task-el`，
    也不吃指针事件（那会让 pointerup 落不到时间轴上）。
