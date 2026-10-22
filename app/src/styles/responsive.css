@@ -314,21 +314,22 @@ body.sheet-open .tab:active { background: none; }
      横滑时三行错位、滑到底一大片空白。它的基准是硬值：
      44px 刻度列 + 644px 日期列（= 7×92px，与 .week-*-cols 的 min-width 同源）。 */
   .week-head, .week-grid { min-width: max-content; }
-  /* 一屏看几天由这里定：44px 刻度列 + 7×64px = 492px。
-     视口 360px 时 → (360-44)/64 ≈ 4.9 列，也就是**一屏能看见五天**，
-     第六天露出一点边，提示右边还有（2026-10-22 用户：「只能显示三日，
-     希望多显示几日」）。原来列宽 92px，一屏只有 3.4 天。 */
-  .week-un-row { min-width: 492px; }
+  /* 一屏看几天由这里定：44px 刻度列 + 7×72px = 548px。
+     视口 360px 时 → (360-44)/72 ≈ 4.4 列，**一屏看得见四天半**（2026-10-22 晚
+     用户「每列再宽一点点，别像一开始那么宽」：64px 太挤 → 72px，仍 > 4 天；
+     最初的 92px 只有 3.4 天，被否过）。 */
+  .week-un-row { min-width: 548px; }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
     grid-template-columns: 44px minmax(0, 1fr);
   }
   .week-head-cols, .week-un-cols, .week-cols {
-    /* 每列至少 64px，7 列 ≈ 448px，靠横滑看全周。
-       64px 里减掉卡片左右内边距还有 ~47px，10px 字号约 4.5 个汉字 ——
-       和月视图格子的密度接近，不至于为了多看两天把字挤没。 */
-    grid-template-columns: repeat(7, minmax(64px, 1fr));
-    min-width: 448px;
+    /* 每列至少 72px，7 列 = 504px，靠横滑看全周。
+       72px 里减掉卡片左右内边距还有 ~56px，10px 字号约 5.5 个汉字 ——
+       比月视图格子（45px）宽一档，2026-10-22 晚用户要求「每列再宽一点点」：
+       64px 时一行只能放 ~4.5 个字，稍长一点的任务名就认不出来。 */
+    grid-template-columns: repeat(7, minmax(72px, 1fr));
+    min-width: 504px;
   }
   /* 左侧刻度列跟着横向滚动会露出来，钉在左边。
      ⚠️ z-index 必须是 5，不能和 `.tl-now`（3）一样：两者同值时**后出现的赢**，
