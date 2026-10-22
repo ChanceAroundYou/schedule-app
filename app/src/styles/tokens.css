@@ -74,7 +74,15 @@
   /* toast 是反色的小黑条，深浅两档都长这样，所以它自带三个值 */
   --toast-bg: #1b1f28; --toast-fg: #fff; --toast-link: #9db4ff;
 
-  --font: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  /* ⚠️ **带拉丁字形的中文字体必须排在最前**（2026-10-22）。
+     以前开头是 system-ui：Android 上它指 Roboto，而 Roboto **没有中文字形** ——
+     浏览器只能按字拆字体：中文走 Noto CJK、英文/数字走 Roboto，两套字高不同，
+     于是同一句话里那个英文单词或数字看着「大小不一样」（用户报
+     「联系包老师，问清楚澳洲移民3年」里的 3、「研究粘粘包去申请offshore」）。
+     PingFang / 思源 / 微软雅黑都自带一整套拉丁字形，排在最前就能整句统一。 */
+  --font: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC",
+    "Source Han Sans SC", "Microsoft YaHei", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 
   /* 方向与 --shadow* 相反的三条：底栏 / 抽屉 / 更多浮层往上投，
      周视图未定时行那条只有 2px 的贴边阴影。它们没法用 --shadow* 表达。 */

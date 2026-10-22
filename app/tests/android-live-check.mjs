@@ -213,6 +213,39 @@ async function checkCore() {
   assert(cells >= 28, '月视图渲染（日期格 ≥28）', `${cells} 格`);
 
   await tap('button[data-view="day"]'); await wait(400);
+
+  /* 2026-10-22 未定时区：
+     ① 卡片是**紧凑一行**（不是「一小时高」——那时候加一条就吃掉一小时空间）；
+     ② 有任务时末尾有个虚线「＋」格，点它能就地开草稿；
+     ③ 字体栈里带拉丁字形的中文字体排在 system-ui 前面（否则中英混排两套字）。 */
+  const al = await evalIn(`(function(){
+    var cards=Array.from(document.querySelectorAll('.allday-items .task-el'));
+    var add=document.querySelector('.zone-add');
+    var h=cards.length?Math.round(cards[0].getBoundingClientRect().height):0;
+    var font=getComputedStyle(document.body).fontFamily;
+    return {n:cards.length, h:h, hasAdd:!!add, font:font};
+  })()`);
+  if (al.n > 0) {
+    assert(al.h > 0 && al.h <= 30, '未定时卡片是紧凑一行（不再是一小时高）', `高 ${al.h}px / ${al.n} 条`);
+    assert(al.hasAdd, '未定时区末尾有「＋」格（随时能再加一条）');
+    const before = await evalIn(`document.querySelectorAll('.new-cell').length`);
+    await evalIn(`(function(){var a=document.querySelector('.zone-add');if(!a)return 0;
+      var b=a.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2;
+      var t=document.elementFromPoint(x,y);var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};
+      t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));
+      t.dispatchEvent(new MouseEvent('click',o));return 1})()`);
+    await wait(300);
+    const after = await evalIn(`document.querySelectorAll('.new-cell').length`);
+    assert(after > before, '点「＋」格能就地开草稿', `草稿框 ${before} → ${after}`);
+    await evalIn(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    await wait(200);
+  } else {
+    ok('未定时区当前没有任务，跳过紧凑度检查');
+  }
+  assert(/PingFang|Noto Sans CJK|Microsoft YaHei|Source Han/.test(al.font) &&
+    al.font.indexOf('PingFang') < al.font.indexOf('system-ui'),
+    '字体栈把中文字体排在 system-ui 前面（中英混排同一套字）', al.font.slice(0, 60));
+
   // 排除已知良性噪声：Capacitor safe-area 插件在 WebView 加载时往一个
   // 临时为 null 的节点注入样式报错，属第三方插件现象，非产品逻辑问题。
   const real = () => consoleErrors.filter((e) => !/safe area CSS/i.test(e));

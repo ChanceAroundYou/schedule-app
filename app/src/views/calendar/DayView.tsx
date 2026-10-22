@@ -88,22 +88,22 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* 刻度疏密跟周视图同一套：见 metrics.ts。
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
-  const { pxPerHour, hours } = useTimelineMetrics(win, tlRef);
+  const { hours } = useTimelineMetrics(win, tlRef);
   /* 容器实测高度给卡片算圆角用（见 calendar.css 的 .task-el--timed） */
   const tlH = useElementHeight(tlRef);
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
   /* ---- 未定时网格：两行，第 3 个起三列 ---- */
-  const cols = allday.length > 2 ? 3 : 1;
+  /* 列数：给末尾那个「＋」永远留一格，所以按「已有条数 + 1」算，最多 3 列 */
+  const cols = Math.min(3, allday.length + 1);
   const shown = allday.slice(0, UNTIMED_MAX);
   const hidden = allday.length - shown.length;
-  /* 卡片高度 = 一小时（时间轴上的一小时像素数）。**用掉 2px 当上下边距**：
-     用户 2026-10-11 要求「卡片内部上下各留 1px，不占额外空间但变窄一点」——
-     用高度收，不用 margin（margin 会把固定两行的区域撑破，第三行溢出去
-     盖住时间轴）。卡片之间于是有 2px 的缝，肉眼几乎看不出。 */
-  const cardH = pxPerHour > 0 ? pxPerHour : 40;
-  const cardStyle: CSSProperties = { height: cardH - 2, marginBlock: 1 };
+  /* 未定时卡片**一行高**（2026-10-22 用户报：「加了一个就再没有空白处加第二个」）。
+     以前卡片高度 = 时间轴上一小时，加两条就吃掉两小时的高度，下面时间轴被挤扁、
+     而且整行铺满没有可点的空位。现在固定 24px 一行 + 右侧永远留一个「＋」格：
+     加一条只花 24px，随时还看得见「这里能再加」。 */
+  const cardStyle: CSSProperties = { height: 24, marginBlock: 1 };
 
   return (
     <>
@@ -129,6 +129,11 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
             ))}
             {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
             <NewCellSlot state={state} zoneId={`allday:${iso}`} />
+            {/* 有任务时**永远留一个虚线的「＋」格**：它就是「还能再加一条」的可见入口。
+                草稿框开着时不出现 —— 那会儿你已经在一个输入框里了。 */}
+            {allday.length > 0 && !draftAllday && (
+              <div className="zone-add" title="加一条未定时间的任务">＋</div>
+            )}
             {!!hidden && <div className="zone-more">还有 {hidden} 个未定时间的任务</div>}
             {/* 空提示与草稿框不同时出现：正要往这里建东西的时候，
                 「没有未定时间的任务」这句话是句废话 */}

@@ -10,12 +10,17 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/AppTheme">
 
+        <!-- 键盘不压缩界面（2026-10-22 用户要求）：以前走系统默认的 adjustResize，
+             键盘一弹起就把 WebView 变矮、日/周视图的时间轴被压扁。改成 adjustNothing
+             后界面保持原样、键盘盖在下面；真正需要避让的输入框（登录页 / 详情抽屉）
+             靠 App 自己按键盘高度抬起来（见 app/src/app/kb.ts 里的 kb 变量）。 -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustNothing"
             android:exported="true">
 
             <intent-filter>
