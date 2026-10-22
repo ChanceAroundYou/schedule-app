@@ -62,7 +62,12 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return;
 
-    void fetch('/schedule/dl/version.json')
+    // ⚠️ 时间戳不是装饰：这份清单**必须**每次都是网络上那一份。
+    // Service Worker 曾经把它当普通同源 GET 缓存住（v3 的 staleWhileRevalidate），
+    // 于是「下载 App」永远指向缓存那一天的那一版（用户拿到 2.1.4）。
+    // sw.js 里已经把 dl/ 整个前缀排除了，加时间戳是给**还没换到新 worker**的
+    // 浏览器兜一层：URL 都不一样了，旧缓存根本命中不了。
+    void fetch(`/schedule/dl/version.json?v=${Date.now()}`)
       .then((response) => response.ok ? response.json() : null)
       .then((manifest: { url?: string; versionName?: string } | null) => {
         if (!manifest?.url) return;

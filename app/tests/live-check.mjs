@@ -188,6 +188,11 @@ async function checkDownload(page) {
     const res = await page.request.head(new URL(href, BASE).href);
     assertOk(res.status() === 200, '安装包 URL 可下载', `HTTP ${res.status()}`);
   }
+
+  // 这一节把页面带到了「设置 → 关于」，后面几节都从日历视图开始量，
+  // 不还回去会死在「找不到 button[data-view=day]」上。
+  await page.locator('[data-nav="calendar"]:visible').first().click().catch(() => undefined);
+  await waitShell(page);
 }
 
 /** now-line：今天的时间轴「当前时间线」是深绿细线，无圆点、无时刻文字 */
@@ -514,11 +519,12 @@ async function checkDrag(page) {
     ok(`登录成功（${how === 'register' ? '首次注册了机器人账号' : '用已有机器人账号登录'}）`);
 
     if (FEATURES.has('core')) await checkCore(page, consoleErrors);
-    if (FEATURES.has('download')) await checkDownload(page);
     if (FEATURES.has('now-line')) await checkNowLine(page);
     if (FEATURES.has('week')) await checkWeek(page);
     if (FEATURES.has('repeat')) await checkRepeat(page);
     if (FEATURES.has('drag')) await checkDrag(page);
+    // 排在最后：这一节要点进设置页，跑完才还回日历，不让它打乱别的视图断言
+    if (FEATURES.has('download')) await checkDownload(page);
 
     // 收尾再扫一遍报错（写操作之后也可能冒）
     if (FEATURES.has('core')) {
