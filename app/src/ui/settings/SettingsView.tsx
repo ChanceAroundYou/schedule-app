@@ -153,7 +153,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
             </Field>
           )}
           <Field label="技术栈">
-            <span className="text-[12.5px]">React + Node + SQLite</span>
+            <span className="text-[12.5px]">Node + SQLite</span>
           </Field>
           {apkUrl && (
             <Field label="下载 App">

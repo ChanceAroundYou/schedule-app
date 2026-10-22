@@ -31,6 +31,9 @@ const MAX_PULL = 96;
  *  6 → 4（2026-10-22「太硬」）：6px 的死区之后才动，起步那一下是"跳"出去的。 */
 const SLOP = 4;
 
+/** 浮条淡出前等多久（ms）。滚动一停就开始计时 */
+const THUMB_IDLE = 800;
+
 export function installTouchDamp(root: HTMLElement): () => void {
   /** 本次触摸锁定的容器（null = 这次触摸不归我们管） */
   let el: HTMLElement | null = null;
@@ -110,4 +113,50 @@ export function installTouchDamp(root: HTMLElement): () => void {
     root.removeEventListener('touchend', onEnd);
     root.removeEventListener('touchcancel', onEnd);
   };
+}
+
+/* ---------------------------------------------------------------- 滚动条浮条 */
+
+/**
+ * 浮动滚动指示条（2026-10-22 九条第 1 条）。
+ *
+ * 系统滚动条已经被 CSS 藏掉（不占布局宽度），这里在容器滚动的**时候**把
+ * ::after 那根 3px 浮条的位置和长短写进 `--thumb-y / --thumb-h`，并把
+ * `data-thumb` 置 on 让它淡入；停止滚动 THUMB_IDLE 毫秒后摘掉，自动淡出。
+ *
+ * 监听装在 root 上（capture —— scroll 事件不冒泡，只能捕获），和橡皮筋同一套
+ * 委托思路：视图照旧零回调。
+ */
+export function attachScrollThumb(root: HTMLElement): () => void {
+  const timers = new WeakMap<HTMLElement, number>();
+
+  const paint = (el: HTMLElement) => {
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight + 1) {
+      // 没溢出就没有「条」可言
+      el.removeAttribute('data-thumb');
+      el.style.removeProperty('--thumb-h');
+      el.style.removeProperty('--thumb-y');
+      return;
+    }
+    const h = Math.max(24, (clientHeight / scrollHeight) * clientHeight);
+    const y = (scrollTop / scrollHeight) * clientHeight;
+    el.style.setProperty('--thumb-h', h.toFixed(1) + 'px');
+    el.style.setProperty('--thumb-y', Math.min(y, clientHeight - h).toFixed(1) + 'px');
+    el.setAttribute('data-thumb', 'on');
+    window.clearTimeout(timers.get(el));
+    timers.set(el, window.setTimeout(() => {
+      el.removeAttribute('data-thumb');
+    }, THUMB_IDLE));
+  };
+
+  const onScroll = (ev: Event) => {
+    const t = ev.target as Element | null;
+    if (!t || typeof t.closest !== 'function' || !(t instanceof HTMLElement)) return;
+    if (!t.matches(TARGETS)) return;
+    paint(t);
+  };
+
+  root.addEventListener('scroll', onScroll, { capture: true, passive: true });
+  return () => root.removeEventListener('scroll', onScroll, { capture: true });
 }

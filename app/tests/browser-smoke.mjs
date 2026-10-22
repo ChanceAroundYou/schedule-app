@@ -2029,7 +2029,7 @@ try {
         mine: all.filter((c) => ids.includes(c.dataset.id)).length,
         more: !!cell.querySelector('.wun-more'),
         blankH: Math.round(rb.height),
-        maxH: getComputedStyle(cell).maxHeight,
+        fixedH: getComputedStyle(cell).height,
         at: { x: Math.round(rb.left + rb.width / 2), y: Math.round(rb.top + rb.height / 2) },
       };
     })()
@@ -2037,8 +2037,11 @@ try {
   ok(wun.mine === 3 && !wun.more,
     '周视图把未定时任务**全部**显示出来（自己那 3 条都在，没有「+N」）',
     `自带 ${wun.mine}/3 条 · 该格共 ${wun.n} 条 · more=${wun.more}`);
-  ok(wun.blankH >= 20 && wun.maxH !== 'none',
-    '周视图未定时格末尾多一整行空白，且整格有高度上限（超出自己滚）', `空 ${wun.blankH}px / max-h ${wun.maxH}`);
+  /* 九条之后格高是**精确算出的 height**（4 整卡 + 间距 + 留白 = 74px），不再用
+     max-height 拍上限 —— 判据跟着改成「高度是定值 + 空白行 = 一行卡（16px）」。 */
+  ok(wun.blankH >= 14 && wun.fixedH === '74px',
+    '周视图未定时格末尾多一整行空白，且格高是按 4 整卡精确算出的定值（超出自己滚）',
+    `空 ${wun.blankH}px / 格高 ${wun.fixedH}`);
 
   /* 坐标**现量**：上面刚往这格里加了 5 条又删掉，`wun.at` 是那之前算的
      （2026-10-22 就栽在这 —— 拿着旧坐标去点，点到了任务卡上）。 */
@@ -2097,7 +2100,7 @@ try {
         n,
         sh: cell.scrollHeight, ch: cell.clientHeight,
         h: Math.round(cell.getBoundingClientRect().height),
-        maxH: parseFloat(cs.maxHeight) || 0,
+        fixedH: Math.round(parseFloat(cs.height) || 0),
         scrolled,
         grid: Math.round(document.querySelector('.week-grid').getBoundingClientRect().height),
         shrink: getComputedStyle(cell.querySelector('.task-el--untimed')).flexGrow + '/' + getComputedStyle(cell.querySelector('.task-el--untimed')).flexShrink,
@@ -2107,8 +2110,8 @@ try {
   ok(ovf.sh > ovf.ch + 4,
     '未定时内容真的**溢出**了（不是把卡片压扁塞进去）',
     `内容 ${ovf.sh} / 可见 ${ovf.ch} · 卡片 flex ${ovf.shrink}`);
-  ok(ovf.h <= ovf.maxH + 1,
-    '格高被上限拦住（再多也不往上长）', `高 ${ovf.h}px / max-h ${ovf.maxH}px`);
+  ok(Math.abs(ovf.h - ovf.fixedH) <= 1 && ovf.fixedH === 74,
+    '格高是按 4 整卡精确算出的定值（再多也不往上长）', `高 ${ovf.h}px / 定值 ${ovf.fixedH}px`);
   ok(ovf.scrolled > 0, '这一格**自己滚得动**（scrollTop 能设上去）', `scrollTop=${ovf.scrolled}`);
   ok(Math.abs(ovf.grid - gridBefore) <= 2,
     '任务从 3 条加到 8 条，**时间轴高度一点没变**', `${gridBefore}px → ${ovf.grid}px`);
@@ -2166,6 +2169,42 @@ try {
   await new Promise((r) => setTimeout(r, 120));
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+
+  /* ---- 九条规范（2026-10-22）：滚动条不占宽 / 无省略号 / 左对齐 / 整行裁 / 浮条 ---- */
+  const nine = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    if (!cell) return null;
+    const card = cell.querySelector('.task-el--untimed');
+    const title = card.querySelector('.ev-title');
+    const csT = getComputedStyle(title);
+    const csC = getComputedStyle(cell);
+    const r = cell.getBoundingClientRect();
+    // 滚动条若占位，clientWidth 会比「border 内宽」窄一根滚动条的宽度
+    //（clientWidth = 内容 + padding，不含 border；border-box 下 = width - 两条边框）
+    const innerW = r.width - (parseFloat(csC.borderLeftWidth) || 0) - (parseFloat(csC.borderRightWidth) || 0);
+    return {
+      gutter: Math.round(innerW - cell.clientWidth),
+      clip: csT.textOverflow,
+      align: csT.textAlign,
+      mh: parseFloat(title.style.maxHeight) || 0,
+      lh: parseFloat(csT.lineHeight) || 0,
+    };
+  `);
+  ok(nine.gutter === 0, '滚动条**不占布局宽度**（浮在卡片上）', `内宽 - clientWidth = ${nine.gutter}px`);
+  ok(nine.clip === 'clip', '溢出**不出省略号**（直接裁掉，与月视图同版式）', nine.clip);
+  ok(nine.align === 'start' || nine.align === 'left', '文字**左对齐**（周/日/月统一）', nine.align);
+  ok(nine.lh > 0 && nine.mh > 0
+     && Math.abs(nine.mh / nine.lh - Math.round(nine.mh / nine.lh)) < 0.01,
+    '标题按**整行**裁（max-height 钉在行高的整数倍上，不露半截字）',
+    `max ${nine.mh}px / 行高 ${nine.lh}px`);
+  await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 40; return 1;`);
+  await new Promise((r) => setTimeout(r, 150));
+  const thumbOn = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    return cell.hasAttribute('data-thumb');
+  `);
+  ok(thumbOn, '滚动时**浮条出现**（压在卡片上的滚动指示）', 'data-thumb=on');
+  await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
 
   await evalJs(page, `
     const token = localStorage.getItem('schedule-app-token');

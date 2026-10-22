@@ -29,10 +29,13 @@
    @media (max-width: 900px) 里只改变量值，规则本身不重复写。 */
 :root {
   --allday-zone-pad: 3px 12px 3px 60px;
-  /* 行间距 1px → 6px：2026-10-19 用户报「任务之间连在一起」，1px 的缝看着就是
-     糊成一坨。多列时列间距仍是 6px。 */
-  --allday-items-gap: 6px;
-  --allday-pill-pad: 3px 7px;
+  /* 卡与卡之间的缝 = --un-gap（tokens.css，2px，与周视图/月视图同一把尺）。
+     2026-10-19 曾拉到 6px，「任务之间连在一起」；现在卡与卡靠 --un-gap，
+     这里不再另设一把。 */
+  /* 未定时卡上下 padding 1px：卡高必须正好 = 行高 18 + 1×2 = 20px
+     （.allday-zone 的 --row 参与容器高度计算，多 1px 就露半截）。
+     3px → 1px（2026-10-22 九条统一规范）。 */
+  --allday-pill-pad: 1px 7px;
   --allday-min-h: 14px;
   /* 卡片圆角用（见 .task-el--timed）：`--tl-h` 是时间轴容器的**实测像素高**，
      由 WeekView / DayView 写进容器；`--card-h` 是这张卡的**百分比高度**，
@@ -79,24 +82,37 @@
   border-bottom: var(--border-w) solid var(--border);
   /* **任务全部显示、区自己滚**（2026-10-22 用户裁决）。以前是截断 + 「还有 N 个」，
      那条提示既占地方又看不清；现在改成限高滚动：区域最多占这么高，多的一条不少，
-     时间轴高度也不受影响。 */
-  max-height: var(--allday-max-h, 190px);
+     时间轴高度也不受影响。
+     2026-10-22 九条再定：上限不是拍脑袋的 max-height，而是**按「4 整条卡 +
+     间距 + 上下留白」精确算出来的 height** —— 卡高在 --row（本区一行的高），
+     这样无论 1 条还是 8 条，可见区永远是整数张卡，绝不露半截。
+     --row = 标题行高 + 卡片上下 padding（`.task-el--untimed` 1px×2 + 行高 18px）。 */
+  --row: 20px;
+  height: calc(var(--un-visible) * var(--row)
+             + (var(--un-visible) - 1) * var(--un-gap)
+             + 6px);                      /* .allday-zone-pad 的上下两个 3px */
   overflow-y: auto; overscroll-behavior: contain;
+  /* 滚动条**浮在卡片上**，不占布局宽度（2026-10-22 九条）：
+     系统那根先藏掉，浮条由 ::after 画 —— 位置/长短由 touchDamp.ts 在滚动时
+     写进 --thumb-y / --thumb-h，出现 0.8s 后自动淡出。 */
+  position: relative;
+  scrollbar-width: none;
 }
-/* 未定时任务区。两行，第 3 个起三列（--cols 由渲染时按数量给）。
-   **高度固定、不滚**：卡片高度等于时间轴上一小时，多了就截断并提示
-   「还有 N 个」——多出来的渲染了只会溢出盖住时间轴。 */
+.allday-zone::-webkit-scrollbar { display: none; }
+/* 未定时任务区。两行，第 3 个起三列（--cols 由渲染时按数量给）。 */
 .allday-items {
   display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  gap: var(--allday-items-gap); min-height: var(--allday-min-h); align-content: start;
+  gap: var(--un-gap); min-height: var(--allday-min-h); align-content: start;
 }
 .zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1;
   min-height: 24px; display: flex; align-items: center; }
 /* 未定时区末尾**那一整行空白**：没有文字、没有边框 —— 它就是一块可点的空地，
    点下去在这一区开草稿（见 app/clickDispatch.ts 第 4 步）。
    2026-10-22 用户把虚线「＋」格换成了这个：真机上点那个格子没反应，而空白行
-   本来就是「点空白新建」那条老路的入口，不需要额外的东西。 */
-.allday-blank { min-height: 26px; }
+   本来就是「点空白新建」那条老路的入口，不需要额外的东西。
+   高度对齐一行卡（--row），别再用 26px —— 空行比任务行高出去一截，
+   「统一规范」就破在这里。 */
+.allday-blank { min-height: var(--row, 20px); }
 
 .tl-wrap {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
@@ -199,10 +215,13 @@
   position: absolute; padding: var(--tl-event-pad);
   min-height: 12px; min-width: 0;
 }
-/* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px */
+/* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px。
+   行高必须**写死**（--row 参与容器高度计算，见 .allday-zone）：18px 配
+   12.5px 字距合理，卡片高 = 18 + 1×2 = 20px = --row。 */
 .task-el--untimed {
   width: 100%; padding: var(--allday-pill-pad); min-width: 0;
   font-size: 12.5px; font-weight: 550; overflow: hidden;
+  line-height: 18px;
   transition: background .14s, box-shadow .14s;
 }
 .task-el--untimed:hover { transform: none; }
@@ -216,7 +235,9 @@
   overflow: hidden;
 }
 .ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
+   字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
+.ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .ev-time {
   font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
   font-variant-numeric: tabular-nums; letter-spacing: .1px;
@@ -248,16 +269,19 @@
        ③ 视觉指示 `.ev-resize::after`：40px 横条，用户看得到「哪里能拉」
           和「哪里只能拖」的边界。 */
 .ev-resize {
-  position: absolute; left: 50%; width: 72px; transform: translateX(-50%); bottom: 0;
-  height: min(9px, 30%); min-height: 4px;
+  /* **靠边、更细、更透明**（2026-10-22 九条）：以前居中 72px 一大条横在卡片
+     正中，存在感太强。现在贴左边缘、横条缩到 26×2px、默认透明度压到 .16，
+     只在仔细看时才注意到「这里能拉」，悬停提到 .5 也不抢字。 */
+  position: absolute; left: 5px; width: 34px; bottom: 0;
+  height: min(8px, 26%); min-height: 4px;
   cursor: ns-resize; display: flex; align-items: center; justify-content: center;
-  opacity: .3; transition: opacity .12s;
+  opacity: .16; transition: opacity .12s;
   touch-action: none;
 }
 .ev-resize-top { top: 0; bottom: auto; }
-.task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .8; }
+.task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .5; }
 .ev-resize::after {
-  content: ''; width: 40px; height: 3px; border-radius: var(--r-xs);
+  content: ''; width: 26px; height: 2px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .5);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
@@ -381,23 +405,29 @@
 }
 .week-un-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .wun-cell {
-  min-width: 0; padding: 3px;
-  /* 2px → 5px：2026-10-19 用户报「任务之间连在一起」。这一行卡片本来就是同一
-     底色，缝再小就分不出是两条任务。 */
-  display: flex; flex-direction: column; gap: 5px; align-content: start;
+  min-width: 0;
+  /* 上下留白 2px（九条：以前 3px 但卡间距 5px，比日视图还松 —— 现在
+     卡间距 --un-gap 2px、上下 2px，整套和日视图同一组倍数）。 */
+  padding: 2px 3px;
+  display: flex; flex-direction: column; gap: var(--un-gap); align-content: start;
   border-right: 1px solid var(--border);
   min-height: 26px;
-  /* 全部显示 + **格内滚动**（2026-10-22 用户裁决，和日视图同一套）：
-     以前只露两条、多出来折成「+3」。整行高度仍由这一行统一决定，
-     所以七列的刻度线照样横向对齐。
-     ⚠️ 上限必须**小**：190px 时时间轴被顶矮 130px（桌面实测 604 → 473），
-     用户要的是「别占太多、多的自己滚」，所以压到 4 行左右。 */
-  max-height: var(--wun-max-h, 124px);
+  /* **高度按「4 整条 + 间距 + 留白」精确算**（九条，与 .allday-zone 同一套公式）：
+     卡高 --row = 行高 14px + 上下 padding 1px×2 = 16px。
+     第 5 条起滚动，永远不露半张卡。 */
+  --row: 16px;
+  height: calc(var(--un-visible) * var(--row)
+             + (var(--un-visible) - 1) * var(--un-gap)
+             + 4px);                        /* 自身 padding 的上下两个 2px */
   /* 纵向滚动交给浏览器自己处理（overflow-y: auto 就够了）。
      ⚠️ 别加 `touch-action: pan-y`：加了以后点这一格空白不开草稿了
      （2026-10-22 深测里那条「点空白行能就地新建」当场变红）。 */
   overflow-y: auto; overscroll-behavior: contain;
+  /* 滚动条浮层化：同 .allday-zone，浮条由 ::after 画 */
+  position: relative;
+  scrollbar-width: none;
 }
+.wun-cell::-webkit-scrollbar { display: none; }
 .wun-cell:last-child { border-right: none; }
 /* 未定时那一格同样不加底色（同上：会和任务卡抢视觉） */
 /* 这一行的卡片是**日视图未定时那一张**（task-el--untimed），只是这里横向只能
@@ -406,8 +436,13 @@
    中文整串没有断点，max-content 布局下它能把整行顶宽一倍（2026-10-19 实测：
    未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
 .wun-cell .task-el--untimed {
-  font-size: 11px; padding: 1px 5px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* **向月视图看齐**（九条第 5 条）：字号 9px、行高 14px、左右 padding 0、
+     圆角 4px —— 与窄屏月视图 `.cell-tasks .task-pill` 完全同一套
+     （宽屏月格 12.5px 是大格子才用的，周视图七分之一宽，一律按小格规格走）。
+     卡高 = 14 + 1×2 = 16px = .wun-cell 的 --row。 */
+  font-size: 9px; line-height: 14px; padding: 1px 0;
+  border-radius: var(--r-xs);
+  white-space: nowrap; overflow: hidden; text-overflow: clip;
   /* ⚠️ **不许被压扁**（2026-10-22 实测的根因）：flex 列默认 `flex-shrink: 1`，
      任务一多，浏览器把每张卡**压缩**到能塞进限高里 —— 于是 scrollHeight 恒等于
      clientHeight，「超出的自己滚」永远不触发，用户看到的是一行行贴着挤在一起。
@@ -415,8 +450,26 @@
   flex: 0 0 auto;
 }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
-   `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。 */
-.wun-blank { min-height: 26px; flex: 1 1 auto; }
+   `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。
+   高度对齐一行卡（16px），不再用 26px。 */
+.wun-blank { min-height: var(--row, 16px); flex: 1 1 auto; }
+
+/* -------- 滚动条浮条（九条第 1 条，touchDamp.ts 写 --thumb-y / --thumb-h）--------
+   系统滚动条已被藏掉（scrollbar-width:none + ::-webkit-scrollbar），占位为 0；
+   这里用 ::after 画一根 3px 半透明浮条，**绝对定位压在卡片上**，不占任何布局
+   空间。滚动时 data-thumb="on" 淡入，0.8s 没动静自动淡出（计时在 JS 侧）。 */
+.allday-zone::after,
+.wun-cell::after {
+  content: ''; position: absolute; right: 1px; top: 0;
+  width: 3px; height: var(--thumb-h, 0px);
+  transform: translateY(var(--thumb-y, 0px));
+  border-radius: var(--r-xs);
+  background: rgb(from var(--text-2) r g b / .28);
+  opacity: 0; transition: opacity .3s;
+  pointer-events: none;
+}
+.allday-zone[data-thumb="on"]::after,
+.wun-cell[data-thumb="on"]::after { opacity: 1; }
 
 /* -------- 滚到边界时的橡皮筋（app/touchDamp.ts 写 --pull） --------
    位移挂在**内容**上而不是容器上：容器有边框和底色，挪容器等于把格子扯走。

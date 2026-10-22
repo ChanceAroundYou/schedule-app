@@ -221,15 +221,12 @@ body.sheet-open .tab:active { background: none; }
   /* 日程时间轴：移动端只改变量值，规则本身在 calendar.css 里用 var() 引用。 */
   :root {
     --allday-zone-pad: 3px 8px 3px 48px;
-    --allday-items-gap: 1px 4px;
     /* 未定时区在窄屏**一条一行、占满整行**（用户 2026-10-22：两列时每条只剩
        半行宽，标题只看得见前几个字）。列数由 DayView 按 isNarrowNow 算成 1，
-       这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。 */
-    --allday-pill-pad: 3px 6px;
-    /* 手机上未定时区最多占四行多一点，再多就在区里滚；
-       周视图那一格更窄，一列给三行半（≈104px）就够看，多的自己滚 */
-    --allday-max-h: 120px;
-    --wun-max-h: 104px;
+       这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。
+       上下 padding 3px → 1px（九条统一规范）：卡高必须等于 .allday-zone 的
+       --row（20px），多 1px 就会露半截。 */
+    --allday-pill-pad: 1px 6px;
     --allday-min-h: 13px;
     --tl-wrap-pad: 10px 8px 10px 48px;
     --tl-label-left: -44px;
@@ -345,25 +342,18 @@ body.sheet-open .tab:active { background: none; }
   .wh-day { font-size: 15px; width: 24px; height: 24px; min-width: 24px; }
   /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式 */
   .allday-items[data-cols="1"] .task-el--untimed { padding: 1px 8px; }
-  .wun-cell { padding: 3px; }
-  /* ⚠️ 字号必须给**变量**，不能只给容器 `font-size`（2026-10-22 用户报
-     「未定时的字比定了时的大一点」）：`.ev-title` 写的是
-     `font-size: var(--ev-title-size)`，容器上的 font-size 根本传不进去 ——
-     它回退成 :root 的 12px，而定时卡那边（`.week-col .task-el--timed`）
-     已经把这个变量压到 10px 了。两边要一样，就得改同一个变量。 */
-  .wun-cell .task-el--untimed {
-    padding: 1px 4px;
-    --ev-title-size: 10px;
-    --ev-time-size: 10px;
-  }
+  .wun-cell { padding: 2px 3px; }
+  /* 周视图未定时卡的字号/版式**整体搬进 calendar.css**（九条第 5 条：向月视图
+     看齐，9px / 行高 14px / padding 1px 0 / clip），宽窄屏同一套，这里不再重复。 */
 
   /* 周视图的卡片跟月视图一个路子：**小字号、尽量多放字**（2026-10-19 用户要求）。
      列宽 92px（比月格子 45px 宽一倍），10px 字号一行约 6 个汉字。
      更重要的是**够高的卡允许换行多放几行** —— 以前 `.ev-title` 是 nowrap + 省略号，
      1~2 小时的高卡明明有空间却被截成一行。
      2026-10-20 又按用户要求：**去掉打勾圈**（省下的宽度全给字）、**文本居中**、
-     **有空间时还是显示时间**（时间行的显隐由 JS 按卡高判断，见 TaskCard 的 roomy）。 */
-  .week-col .task-el--timed { --ev-title-size: 10px; }
+     **有空间时还是显示时间**（时间行的显隐由 JS 按卡高判断，见 TaskCard 的 roomy）。
+     2026-10-22 九条：**居中改左对齐**（与日/月统一）、字号压到月视图的 9px。 */
+  .week-col .task-el--timed { --ev-title-size: 9px; }
   .week-col .task-el--timed .check-btn { display: none; }
   /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
      和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
@@ -389,11 +379,13 @@ body.sheet-open .tab:active { background: none; }
   }
   .week-col .task-el--timed .ev-time { flex: 0 0 auto; }
   .week-col .task-el--timed .ev-title {
-    line-height: 12px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
-    text-align: center;
+    /* 行高 14px 与月视图窄屏同款（9px 字配 14px 行）；**左对齐**（九条第 6 条：
+       以前 center，和日/月不一致）；溢出裁掉不出省略号（第 7 条）。 */
+    line-height: 14px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+    text-align: left;
   }
-  /* 时间行不再为勾选圈让出 21px，也跟着居中 */
-  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: center; font-size: 9px; }
+  /* 时间行不再为勾选圈让出 21px，也跟着左对齐 */
+  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: left; font-size: 9px; }
   /* 摘要那一行仍然不显示：它只在场卡片里才有，不该为了「可能有」占一行 */
   .week-col .task-el--timed .ev-note { display: none; }
 }

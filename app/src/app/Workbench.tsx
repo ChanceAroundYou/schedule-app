@@ -46,7 +46,7 @@ import { useResizeTimeline } from './resizeTimeline.ts';
 import { useKeyboard } from './keyboard.ts';
 import { useBackup } from './backup.ts';
 import { contentDispatch } from './contentDispatch.tsx';
-import { installTouchDamp } from './touchDamp.ts';
+import { installTouchDamp, attachScrollThumb } from './touchDamp.ts';
 import { initKeyboard } from './kb.ts';
 import { captureTap } from './tapSnap.ts';
 import { settleDraftAndSet, draftEcho } from '../ui/newCell.ts';
@@ -119,10 +119,11 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
    */
   useEffect(() => {
     const offKb = initKeyboard();
-    // 未定时区滚到头的橡皮筋（见 touchDamp.ts）。委托在 #content 上装一次，
-    // 视图里不用管；容器不存在时它自己什么都不做。
+    // 未定时区滚到头的橡皮筋 + 浮动滚动条（见 touchDamp.ts）。委托在 #content
+    // 上装一次，视图里不用管；容器不存在时它们自己什么都不做。
     const content = contentRef.current;
     const offDamp = content ? installTouchDamp(content) : null;
+    const offThumb = content ? attachScrollThumb(content) : null;
     document.addEventListener('pointerdown', captureTap, true);
     const onDocClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
@@ -143,6 +144,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     return () => {
       offKb();
       if (offDamp) offDamp();
+      if (offThumb) offThumb();
       document.removeEventListener('pointerdown', captureTap, true);
       document.removeEventListener('click', onDocClick);
     };

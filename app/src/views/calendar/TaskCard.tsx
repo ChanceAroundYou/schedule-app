@@ -16,6 +16,7 @@
  */
 
 import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { DraftSeed, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
@@ -26,6 +27,40 @@ import { CheckBtn } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
 import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
+
+/**
+ * **标题按整行裁**（2026-10-22 九条第 9 条）：卡片能给内容的高度是任意像素，
+ * 直接 overflow 会把最后一行拦腰切掉半截字。这里量出 ev-body 的实际可用高度，
+ * 折算成「能放下几整个标题行」（行距也算在内），把标题的 max-height 钉在
+ * 行高的整数倍上 —— 装不下一整行就整行不显示，也不留占位。
+ *
+ * 时间/备注那两行由 `roomy` 判定决定要不要渲染（见 TimedCard），这里再给它们
+ * 预留 12px 一行的高度，免得标题把它们的位子吃掉后被拦腰切。
+ *
+ * 用 ResizeObserver 而不是窗口 resize：卡片高度跟着时间轴百分比走，
+ * 时间窗一改、卡片没动窗口也变了；跟着自己尺寸走才准。
+ */
+function useWholeLineClamp(
+  bodyRef: { current: HTMLElement | null },
+  followRows: number,
+) {
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const title = el.querySelector<HTMLElement>('.ev-title');
+    if (!title) return;
+    const apply = () => {
+      const lh = parseFloat(getComputedStyle(title).lineHeight) || 16;
+      const room = el.clientHeight - followRows * 12;
+      const lines = Math.max(1, Math.floor(Math.max(0, room) / lh));
+      title.style.maxHeight = (lines * lh) + 'px';
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [followRows]);
+}
 
 /**
  * 定时与未定时共用这一个组件 —— 位置由父级给的 `style` 决定，
@@ -51,6 +86,10 @@ export function TaskCard({
   lockX?: boolean;
 }) {
   const drag = useDraggableEvent(t.id);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  /* 跟在标题后面的固定行：时间行 + 备注行（没渲染就不占位）。
+     各按一行 12px 预留 —— 与 .ev-time/.ev-note 的 line-height 1.2×10px 对齐。 */
+  useWholeLineClamp(bodyRef, (timeText ? 1 : 0) + (noteText ? 1 : 0));
   return (
     <div
       className={cls + (drag.isDragging ? ' dragging' : '')}
@@ -71,7 +110,7 @@ export function TaskCard({
       {/* 内容外面**必须再包一层**：卡片自己不能 overflow:hidden（那会切断
           跨边界的拖拽），但内容（标题换行 + 时间行）在矮卡里会顶出卡片底部 ——
           见 2026-10-20 窄屏周视图。裁剪交给 `.ev-body`，拖拽不受影响。 */}
-      <div className="ev-body">
+      <div className="ev-body" ref={bodyRef}>
         <div className="ev-head">
           <CheckBtn id={t.id} on={!!t.done} sm />
           <span className="ev-title">{t.title}</span>
