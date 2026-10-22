@@ -139,7 +139,10 @@
 .task-el--timed, .task-el--untimed {
   /* 圆角：大卡（定时块）比小胶囊圆一档 —— 2026-10-19 用户报「日周太方」。
      小胶囊那一行只有 ~20px 高，跟着用大圆角会变成药丸，所以只在下面单独放大卡。 */
-  border-radius: var(--r-sm); background: var(--primary-soft);
+  /* 默认底色用 --primary-pale（比 --primary-soft 再淡一档）—— 2026-10-22 用户：
+     任务底的淡绿和「今天」那列的淡绿太像，两者要拉开层级。今天那列现在干脆
+     不再加底色（只留日期圆圈），卡片用最淡的一档就够了。 */
+  border-radius: var(--r-sm); background: var(--primary-pale);
   border: var(--border-w) solid var(--border);
   cursor: pointer;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
@@ -300,12 +303,15 @@
 .wh-week { font-size: 11px; letter-spacing: .5px; }
 .wh-day {
   font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.2;
-  min-width: 26px; text-align: center; font-variant-numeric: tabular-nums;
+  /* 圆圈的位置**每一天都占着**（背景透明），只有今天填色 —— 否则今天那一格
+     会凭空高出几像素，同一行里别的日期看着就是没对齐（2026-10-19 踩过）。 */
+  width: 26px; height: 26px; min-width: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-variant-numeric: tabular-nums;
 }
-/* 今天**只把数字染成主色**，不要加圆形底色：那一格会凭空高出 9px，
-   同一行里其他日期的数字看着就是没对齐。「今天是哪天」由下面
-   .week-col.today 的 --primary-pale 整列淡底负责，表头不重复做。 */
-.week-head-cell.today .wh-day { color: var(--primary); }
+/* 今天：和月视图同一个方式 —— 深绿实心圆把**日期数字**圈起来。
+   注意**只圈日期**，不圈上面那行「周四」（2026-10-22 用户明确要求）。 */
+.week-head-cell.today .wh-day { background: var(--primary); color: var(--on-primary); }
 
 /* 时间网格本体：左刻度 + 右 7 列。**高度全部交给 flex** ——
    `.week-grid` 是 `.week-view` 的 flex 子项、`flex:1 + min-height:0`，
@@ -347,7 +353,10 @@
     to bottom, var(--border) 0 1px, transparent 1px calc(100% / var(--wk-hours)));
 }
 .week-col:last-child { border-right: none; }
-.week-col.today { background-color: var(--primary-pale); }
+/* 今天**不加整列底色**（2026-10-22 用户）—— 和任务卡的淡绿撞在一起，
+   分不清哪块是「今天」哪块是「任务」。改由 `.week-head-cell.today .wh-day`
+   那个深绿圆圈标日期。所以 `.week-col.today` 这个类现在**没有样式**，
+   留在 DOM 里只是给探针/调试用。 */
 
 /* 未定时任务：独立一行，横向列宽和下面的时间网格共用一条基线。
    左侧不留字 —— 日视图的全天区也没有标题，这一行是什么一看便知。
@@ -372,7 +381,7 @@
   min-height: 26px;
 }
 .wun-cell:last-child { border-right: none; }
-.wun-cell.today { background: var(--primary-pale); }
+/* 未定时那一格同样不加底色（同上：会和任务卡抢视觉） */
 /* 这一行的卡片是**日视图未定时那一张**（task-el--untimed），只是这里横向只能
    分到七分之一宽，所以字再收一号，"+" 提示用同一个灰度。
    nowrap + 省略号：92px 的列放不下长任务名，**宁可截断也不许撑列** ——
@@ -424,9 +433,10 @@ body.is-drag-range { user-select: none; }
 .month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
 .month-cell:hover { background: var(--panel-2); }
 .month-cell.out { background: var(--panel-3); color: var(--text-3); }
-.month-cell.today { background: var(--primary-pale); }
-.month-cell.lv2 { box-shadow: inset 0 -3px 0 var(--warn); }
-.month-cell.lv3 { box-shadow: inset 0 -3px 0 var(--danger); }
+/* 月视图的今天**只靠日期圆圈**表示，不加整格底色（2026-10-22 用户） */
+/* 格子底部那条「负载条」（4~8 小时棕、>8 小时红）2026-10-22 按用户要求
+   **手机端和电脑端都去掉**。忙碌程度仍由格子里右上角那行小字（如「4时」）表达，
+   `lv2/lv3` 这两个类名保留 —— `.month-cell.lv3 .cell-load` 还在用它们染字色。 */
 .cell-head { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
 .cell-date {
   width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
@@ -479,7 +489,7 @@ body.is-drag-range { user-select: none; }
      底色用 --primary-soft，与日/周视图的卡片**同一套语言** —— 2026-10-19 用户报
      「月视图无论是否完成全是白的，和日周不统一」：原来是 --panel-2（≈白），
      跟 --panel-3（已完成）差得太近，两种状态都看不出来。 */
-  padding: 4px 8px; border-radius: var(--r-sm); background: var(--primary-soft);
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--primary-pale);
   border: var(--border-w) solid var(--border);
   font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;

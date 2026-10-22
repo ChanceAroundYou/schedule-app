@@ -5105,8 +5105,11 @@ try {
       whLoad: document.querySelectorAll('.wh-load').length,
       whCount: document.querySelectorAll('.wh-count').length,
       unBorderTop: getComputedStyle(document.querySelector('.week-un-row')).borderTopWidth,
-      // 今天的数字**只染色**，不加圆底 —— 圆底会让那一格凭空高出 9px
+      // 2026-10-22 改口径：今天用**深绿圆圈**圈住日期（和月视图一致）。
+      // 以前怕圆底让那格凭空高出 9px 所以只染色 —— 现在圆圈的位置每天都占着
+      // （背景透明），只有今天填色，对齐不受影响。
       todayBg: todayCell ? getComputedStyle(todayCell).backgroundColor : 'no-today-cell',
+      todayRadius: todayCell ? getComputedStyle(todayCell).borderTopLeftRadius : '',
       // 刻度列与日视图同一副面孔：无底色、左格无字
       gutterBg: getComputedStyle(document.querySelector('.week-gutter')).backgroundColor,
       unText: (document.querySelector('.week-un-gutter') || {}).textContent || '',
@@ -5114,7 +5117,8 @@ try {
   `);
   ok(wk.whLoad === 0 && wk.whCount === 0, '表头不再有负载横条与任务计数，实际 ' + wk.whLoad + ' / ' + wk.whCount);
   ok(parseFloat(wk.unBorderTop) >= 1, '未定时行**上边**也有一条分割线，实际 ' + wk.unBorderTop);
-  ok(wk.todayBg === 'rgba(0, 0, 0, 0)', '今天的数字没有圆底（只染色），实际 ' + wk.todayBg);
+  ok(wk.todayBg !== 'rgba(0, 0, 0, 0)' && wk.todayRadius === '50%',
+    '今天的日期数字被深绿圆圈圈住（与月视图一致），实际 ' + wk.todayBg + ' / ' + wk.todayRadius);
   ok(wk.gutterBg === 'rgba(0, 0, 0, 0)', '刻度列没有自己的底色（跟日视图一样是白底），实际 ' + wk.gutterBg);
   ok(wk.unText === '', '未定时那一行的左格不写字，实际「' + wk.unText + '」');
 

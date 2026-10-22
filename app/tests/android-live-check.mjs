@@ -515,6 +515,10 @@ async function checkLook() {
     var tall=probe(80, 600), short=probe(20, 600);
     var todayCol=document.querySelector('.week-col.today');
     var todayBg=todayCol?getComputedStyle(todayCol).backgroundColor:'';
+    /* 今天该由**表头那个深绿圆圈**标出来，且只圈日期数字、不圈「周四」那行 */
+    var circle=document.querySelector('.week-head-cell.today .wh-day');
+    var weekLab=document.querySelector('.week-head-cell.today .wh-week');
+    var ccs=circle?getComputedStyle(circle):null;
     /* 周视图标题能不能换行多放几行 */
     var t=document.querySelector('.week-col .task-el--timed .ev-title');
     var tcs=t?getComputedStyle(t):null;
@@ -531,6 +535,8 @@ async function checkLook() {
     });
     return {tallR: tall.r, shortR: short.r, doneBg: tall.bg, doneLine: tall.line,
       todayBg: todayBg, minGap: minGap, realCards: qa('.task-el--timed').length,
+      circleBg: ccs?ccs.backgroundColor:'', circleRadius: ccs?ccs.borderTopLeftRadius:'',
+      weekLabBg: weekLab?getComputedStyle(weekLab).backgroundColor:'',
       titleWrap: tcs?tcs.whiteSpace:'', titleSize: tcs?tcs.fontSize:''};
   })()`);
   assert(w.tallR >= 10, '高卡圆角仍是圆的（≥10px）', `${w.tallR}px`);
@@ -538,8 +544,14 @@ async function checkLook() {
     `80px 高的 ${w.tallR}px / 20px 高的 ${w.shortR}px`);
   assert(w.minGap === null || w.minGap >= 2, '首尾相接的两条任务之间留出了缝',
     w.minGap === null ? `当前数据里没有相邻的两条卡（这一周 ${w.realCards} 张定时卡）` : `最小缝 ${w.minGap}px`);
-  assert(w.doneBg && w.todayBg && w.doneBg !== w.todayBg, '已完成和「今天那一列」不再是同一个颜色',
-    `done=${w.doneBg} / today 列=${w.todayBg}`);
+  /* 2026-10-22：今天不再加整列/整格底色，改成一个深绿圆圈圈住日期数字 */
+  assert(w.todayBg === 'rgba(0, 0, 0, 0)', '「今天」那一列不再加底色（和任务卡的淡绿彻底分开）',
+    `today 列=${w.todayBg}`);
+  assert(w.circleBg && w.circleBg !== 'rgba(0, 0, 0, 0)', '周视图用深绿圆圈圈住今天的日期',
+    `wh-day=${w.circleBg}`);
+  assert(w.circleRadius === '50%', '圆圈是圆的', `border-radius=${w.circleRadius}`);
+  assert(w.weekLabBg === 'rgba(0, 0, 0, 0)', '圆圈只圈日期、不圈「周几」那行',
+    `wh-week=${w.weekLabBg}`);
   assert(w.doneLine === 'line-through', '已完成任务标题有划线', `text-decoration=${w.doneLine}`);
   assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
     `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
@@ -598,8 +610,12 @@ async function checkLook() {
     var out={doneBg:dcs.backgroundColor, doneOpacity:dcs.opacity,
       doneLine:getComputedStyle(d.querySelector('.pill-title')).textDecorationLine};
     d.remove();
+    var tcell=document.querySelector('.month-cell.today');
+    var lv=document.querySelector('.month-cell.lv2, .month-cell.lv3');
     return {pill: p?parseFloat(getComputedStyle(p).borderTopLeftRadius):0,
       grid: grid?parseFloat(getComputedStyle(grid).borderTopLeftRadius):0,
+      todayCellBg: tcell?getComputedStyle(tcell).backgroundColor:'',
+      lvBar: lv?getComputedStyle(lv).boxShadow:'(没有忙的格子)',
       doneBg: out.doneBg, doneOpacity: out.doneOpacity, doneLine: out.doneLine,
       normalBg: p?getComputedStyle(p).backgroundColor:''};
   })()`);
@@ -610,6 +626,10 @@ async function checkLook() {
     `done=${m.doneBg} / 未完成=${m.normalBg}`);
   assert(m.doneLine === 'line-through', '月视图已完成标题有划线', `text-decoration=${m.doneLine}`);
   assert(m.doneOpacity === '1', '已完成不再靠整体变淡（那会和白底混成一个样）', `opacity=${m.doneOpacity}`);
+  assert(m.todayCellBg === 'rgba(0, 0, 0, 0)', '月视图今天格子不再加底色（只留日期圆圈）',
+    `today 格=${m.todayCellBg}`);
+  assert(m.lvBar === 'none' || m.lvBar === '(没有忙的格子)', '月视图去掉了格子底部的负载条',
+    `box-shadow=${m.lvBar}`);
 }
 
 async function checkRepeat() {
