@@ -598,7 +598,9 @@ async function checkLook() {
   /* 月视图：胶囊不能比日/周大卡还圆 */
   await tap('button[data-view="month"]'); await wait(700);
   const m = await evalIn(`(function(){
-    var p=document.querySelector('.cell-tasks .task-pill');
+    /* ⚠️ 必须挑**未完成**的那条来比色：DOM 里第一个胶囊可能正好是已完成的
+       （用户这个月 16/17 号就全是已完成），那样两边取到同一个元素，断言白测。 */
+    var p=document.querySelector('.cell-tasks .task-pill:not(.done)');
     var grid=document.querySelector('.month-grid');
     /* 月视图的「已完成」要和日/周同一套语言：灰底 + 划线（用户 2026-10-19：
        「月视图现在无论是不是完成全是白色，和日周不统一」）。同样用探针量。 */
@@ -611,10 +613,12 @@ async function checkLook() {
       doneLine:getComputedStyle(d.querySelector('.pill-title')).textDecorationLine};
     d.remove();
     var tcell=document.querySelector('.month-cell.today');
+    var plain=document.querySelector('.month-cell:not(.today):not(.out)');
     var lv=document.querySelector('.month-cell.lv2, .month-cell.lv3');
     return {pill: p?parseFloat(getComputedStyle(p).borderTopLeftRadius):0,
       grid: grid?parseFloat(getComputedStyle(grid).borderTopLeftRadius):0,
       todayCellBg: tcell?getComputedStyle(tcell).backgroundColor:'',
+      plainCellBg: plain?getComputedStyle(plain).backgroundColor:'',
       lvBar: lv?getComputedStyle(lv).boxShadow:'(没有忙的格子)',
       doneBg: out.doneBg, doneOpacity: out.doneOpacity, doneLine: out.doneLine,
       normalBg: p?getComputedStyle(p).backgroundColor:''};
@@ -622,12 +626,13 @@ async function checkLook() {
   assert(m.pill <= 5, '月视图胶囊不再是个药丸（圆角 ≤5px）', `${m.pill}px（改之前 7px）`);
   assert(m.grid > 0 && m.grid < 12, '月视图外框比之前收一档（<12px）', `${m.grid}px（改之前 12px）`);
   assert(m.pill < 10, '月视图的圆角比日/周大卡更小（视觉分档）', `月 ${m.pill}px / 日周 ${w.tallR}px`);
-  assert(m.doneBg !== m.normalBg, '月视图的已完成不再是白底（和日/周同一套语言）',
+  assert(m.normalBg && m.doneBg !== m.normalBg, '月视图的已完成不再是白底（和日/周同一套语言）',
     `done=${m.doneBg} / 未完成=${m.normalBg}`);
   assert(m.doneLine === 'line-through', '月视图已完成标题有划线', `text-decoration=${m.doneLine}`);
   assert(m.doneOpacity === '1', '已完成不再靠整体变淡（那会和白底混成一个样）', `opacity=${m.doneOpacity}`);
-  assert(m.todayCellBg === 'rgba(0, 0, 0, 0)', '月视图今天格子不再加底色（只留日期圆圈）',
-    `today 格=${m.todayCellBg}`);
+  /* 今天那格现在回落到和普通格子一样的底色（--panel），不再有额外淡绿 */
+  assert(m.todayCellBg === m.plainCellBg, '月视图今天格子不再加底色（只留日期圆圈）',
+    `today 格=${m.todayCellBg} / 普通格=${m.plainCellBg}`);
   assert(m.lvBar === 'none' || m.lvBar === '(没有忙的格子)', '月视图去掉了格子底部的负载条',
     `box-shadow=${m.lvBar}`);
 }
