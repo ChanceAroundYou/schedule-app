@@ -51,6 +51,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# 版本号在这里就读出来，**别只放在第 4 段里**：`--install-only` / `--no-build`
+# 会整段跳过，而装机校验、发布下载地址都要用它（2026-10-22 踩到 unbound variable）。
+LOCAL_CODE="$(grep -oE 'versionCode [0-9]+' app/android/app/build.gradle 2>/dev/null | head -1 | awk '{print $2}')"
+LOCAL_NAME="$(grep -oE 'versionName "[^"]+"' app/android/app/build.gradle 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')"
+
 FAILED=()
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 fail() { FAILED+=("$1"); printf '\033[31m   ✗ %s\033[0m\n' "$1"; }
@@ -87,8 +92,6 @@ if [ "$INSTALL_ONLY" = "0" ]; then
   # ============================================================== 4 版本号自检
   # 移动端最容易漏的就是这一步：versionCode 没加，用户永远收不到更新提示。
   step "4/7 版本号自检（versionCode 必须递增，versionName 与网页同源）"
-  LOCAL_CODE="$(grep -oE 'versionCode [0-9]+' app/android/app/build.gradle | head -1 | awk '{print $2}')"
-  LOCAL_NAME="$(grep -oE 'versionName "[^"]+"' app/android/app/build.gradle | head -1 | sed 's/.*"\(.*\)"/\1/')"
   WEB_NAME="$(grep -oE '"version": *"[^"]+"' app/package.json | head -1 | sed 's/.*"\(.*\)"/\1/')"
   LIVE_JSON="$(curl -sS "$BASE/dl/version.json" 2>/dev/null || true)"
   LIVE_CODE="$(echo "$LIVE_JSON" | grep -oE '"versionCode": *[0-9]+' | grep -oE '[0-9]+' | head -1)"
@@ -162,11 +165,21 @@ if [ -n "$DEVICE" ]; then
 
   if [ -n "$APK" ] && [ -f "$APK" ]; then
     step "6/7b 装机 + 版本校验"
-    MSYS_NO_PATHCONV=1 "$ADB" install -r "$APK" 2>&1 | tail -2 | sed 's/^/  /'
+    # ⚠️ adb 是 **Windows 程序**：这条命令带着 MSYS_NO_PATHCONV=1（为了不让 adb 的
+    # 远端 Unix 参数被改写），本地路径就必须自己写成盘符形式，否则走的是 `/c/...`
+    # → 「failed to stat …: No such file or directory」，装的是手机上原来那个包
+    # （2026-10-22 实测踩到，症状是 versionCode 校验失败 + 报「装成了调试包」）。
+    APK_WIN="$(cd "$(dirname "$APK")" && pwd -W)/$(basename "$APK")"
+    MSYS_NO_PATHCONV=1 "$ADB" install -r "$APK_WIN" 2>&1 | tail -2 | sed 's/^/  /'
     INFO="$(MSYS_NO_PATHCONV=1 "$ADB" shell "dumpsys package $PKG 2>/dev/null" | grep -E 'versionCode=|versionName=|pkgFlags' | head -3)"
     echo "$INFO" | sed 's/^/  /'
     echo "$INFO" | grep -q "versionCode=$LOCAL_CODE" && ok "versionCode 对上了" || fail "装机后的 versionCode 不是 $LOCAL_CODE"
-    case "$INFO" in *DEBUGGABLE*) [ "$USE_DEBUG" = "1" ] || fail "装成了调试包（pkgFlags 有 DEBUGGABLE）";; esac
+    # 本地包本来就是 assembleDebug 出来的（build-apk.sh 只出 debug 包），
+    # 比对「是不是调试包」只对发到线上的 release 包有意义。
+    case "$APK" in
+      *app-debug.apk) : ;;
+      *) case "$INFO" in *DEBUGGABLE*) fail "装成了调试包（pkgFlags 有 DEBUGGABLE）";; esac ;;
+    esac
   fi
 fi
 

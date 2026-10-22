@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { commitDraftTask, setDraftNull } from '../../ui/newCell.ts';
 import { isNarrowNow } from '../../ui/hooks.ts';
-import { isNativeShell } from '../../app/kb.ts';
+import { isNativeShell, visibleBottom } from '../../app/kb.ts';
 import type { DraftSeed, LocalState } from '../../domain/types.ts';
 
 
@@ -143,7 +143,8 @@ export function NewCell({
           getComputedStyle(document.documentElement).getPropertyValue('--kb'),
         ) || 0;
         if (kb < 80) return;                       // 没真弹起来（或数值还没到）
-        const over = el.getBoundingClientRect().bottom - (window.innerHeight - kb - 8);
+        /* 看得见的底边：窗口被系统压小的机型要按满屏算（见 kb.ts 的 visibleBottom） */
+        const over = el.getBoundingClientRect().bottom - (visibleBottom() - 8);
         if (over <= 0) return;                     // 已经露在键盘上面
         let p: HTMLElement | null = el.parentElement;
         while (p) {

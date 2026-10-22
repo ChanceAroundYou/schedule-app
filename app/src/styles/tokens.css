@@ -25,6 +25,10 @@
      「一格 = 一小时」翻译成百分比，所以它只在这里有默认值。 */
   --cols: 1;
   --kb: 0px;
+  /* 键盘把**窗口**压小了多少（Android 15/16 边到边会强制 resize，清单里的
+     adjustNothing 拦不住）。JS 实测后写进来，`.app` 把它加回去，让布局
+     一动不动、被键盘盖住的那段直接裁掉（见 app/kb.ts 的 applyFix）。 */
+  --kb-fix: 0px;
   --wk-hours: 24;
   --bg: #f6f5f3;
   --panel: #fffefc;

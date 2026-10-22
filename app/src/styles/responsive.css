@@ -133,8 +133,11 @@ body.sheet-open .tab:active { background: none; }
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .tabbar:not([hidden]) { display: flex; }
-  .app { height: 100dvh; }
-  html, body { height: 100dvh; }
+  /* 键盘弹起时系统会把窗口压小 282px（2026-10-22 真机实测：792→510）。
+     `--kb-fix` 就是那个压小量，加回去 = 布局按整屏算，多出来的那段落在
+     键盘底下、直接裁掉 —— 用户要的就是「时间表保持原样，键盘盖住它」。 */
+  .app { height: calc(100dvh + var(--kb-fix, 0px)); overflow: hidden; }
+  html, body { height: 100dvh; overflow: hidden; }
   /* 内容区给底部标签栏让位 */
   .main { padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
   .content { padding: 12px 13px 8px; }
