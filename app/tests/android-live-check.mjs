@@ -608,6 +608,28 @@ async function checkLook() {
   /* 2026-10-22：一屏至少能看到四天（原来列宽 92px 只能看 3.4 天） */
   assert(look.daysVisible >= 4, '窄屏一屏至少看得见 4 天',
     `${look.daysVisible} 天（列宽 ${look.colW}px）`);
+
+  /* 「现在」线不能糊到左边那根刻度列上（用户横向拖动时会露出来）。
+     做法是**真的横向滚一下**，再在刻度列里、线的同一高度取一点，看命中的是不是线。 */
+  await evalIn(`(function(){var v=document.querySelector('.week-view');
+    if(v){v.dataset.e2eScroll=String(v.scrollLeft);v.scrollLeft=200;}return 1})()`);
+  await wait(200);
+  const nowClip = await evalIn(`(function(){
+    var line=document.querySelector('.week-cols > .tl-now');
+    var g=document.querySelector('.week-gutter');
+    if(!line||!g) return null;
+    var lr=line.getBoundingClientRect(), gr=g.getBoundingClientRect();
+    var hit=document.elementFromPoint(Math.round(gr.left+gr.width/2), Math.round(lr.top));
+    return {hit: hit?(hit.className||'').toString():'(none)',
+      scrolled: Math.round(document.querySelector('.week-view').scrollLeft),
+      gutterRight: Math.round(gr.right), lineLeft: Math.round(lr.left)};
+  })()`);
+  assert(nowClip && nowClip.hit.indexOf('tl-now') < 0,
+    '横向滚动后「现在」线不会糊到左侧刻度列上',
+    nowClip ? `滚到 ${nowClip.scrolled}px，刻度列中间命中的是「${nowClip.hit}」` : '没找到线或刻度列');
+  await evalIn(`(function(){var v=document.querySelector('.week-view');
+    if(v&&v.dataset.e2eScroll!==undefined){v.scrollLeft=Number(v.dataset.e2eScroll);delete v.dataset.e2eScroll;}return 1})()`);
+  await wait(150);
   if (look.tallHasTime !== null) {
     assert(look.tallHasTime, '有空间时还是显示时间（最高的那张卡要有时间行）',
       `最高 ${look.tallH}px，${look.cardsWithTime}/${look.cards} 张带时间行`);

@@ -320,9 +320,14 @@ body.sheet-open .tab:active { background: none; }
     grid-template-columns: repeat(7, minmax(64px, 1fr));
     min-width: 448px;
   }
-  /* 左侧刻度列跟着横向滚动会露出来，钉在左边 */
+  /* 左侧刻度列跟着横向滚动会露出来，钉在左边。
+     ⚠️ z-index 必须是 5，不能和 `.tl-now`（3）一样：两者同值时**后出现的赢**，
+     而「现在」线在 DOM 里排在刻度列后面，于是横向滚动时那条绿线会糊在
+     刻度列（09:00 那一列）上 —— 2026-10-22 用户报的就是这个。
+     5 这个值：盖住「现在」线(3) 和悬停卡片(4)，又低于改时长(8)/拖拽(9)，
+     拖着的卡片照样能从刻度列上面过去。 */
   .week-head-gutter, .week-un-gutter, .week-gutter {
-    position: sticky; left: 0; z-index: 3; background: var(--panel);
+    position: sticky; left: 0; z-index: 5; background: var(--panel);
   }
   .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
   .week-head-cell { padding: 7px 2px 5px; }
