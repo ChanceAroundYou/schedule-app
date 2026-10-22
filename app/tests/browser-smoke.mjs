@@ -2039,13 +2039,93 @@ try {
     `自带 ${wun.mine}/3 条 · 该格共 ${wun.n} 条 · more=${wun.more}`);
   ok(wun.blankH >= 20 && wun.maxH !== 'none',
     '周视图未定时格末尾多一整行空白，且整格有高度上限（超出自己滚）', `空 ${wun.blankH}px / max-h ${wun.maxH}`);
-  await touch(page, 'touchStart', wun.at);
-  await touch(page, 'touchEnd', wun.at);
+
+  /* 坐标**现量**：上面刚往这格里加了 5 条又删掉，`wun.at` 是那之前算的
+     （2026-10-22 就栽在这 —— 拿着旧坐标去点，点到了任务卡上）。 */
+  const blankAt = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    /* 3 条 + 末尾空白已经顶到上限了，空白行在可见区**下面** —— 真实用户也是
+       先滑到底再点它，所以这里照做（2026-10-22：不滑的话点的是被裁掉的区域，
+       事件落到隔壁，永远开不出草稿）。 */
+    if (cell) cell.scrollTop = cell.scrollHeight;
+    const b = cell && cell.querySelector('.wun-blank');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  `);
+  await touch(page, 'touchStart', blankAt);
+  await touch(page, 'touchEnd', blankAt);
   await waitFor(page, `document.querySelector('.wun-cell .new-cell') ? 1 : null`,
     '点周视图那行空白 → 就地开出草稿框', 6000);
   ok(true, '周视图点空白行也能就地新建未定时任务（真实触摸）');
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.wun-cell .new-cell') ? null : 1`, '周视图草稿框收起', 6000);
+
+  /* ---- 2026-10-22 第二轮（用户：周视图的「格子里滚」没生效，电脑端也要）----
+     光有 max-height 不算数：flex 列默认会把卡片**压扁**塞进限高里，
+     scrollHeight 恒等于 clientHeight，「溢出滚动」永远不触发。
+     这里再加 5 条（共 8 条，肯定超过上限），断言三件事：
+       ① 内容真的溢出（scrollHeight 明显大于 clientHeight）→ 才滚得起来；
+       ② 格高被上限拦住（不超过 max-height）；
+       ③ 时间轴高度一点没变 —— 这才是用户真正要的。 */
+  const gridBefore = await evalJs(page, `return Math.round(document.querySelector('.week-grid').getBoundingClientRect().height);`);
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const ids = [0, 1, 2, 3, 4].map((i) => 't_smoke_wunmore' + i + '_' + Date.now().toString(36));
+    window.__unMore = ids;
+    const ops = ids.map((id, i) => ({
+      opId: 'o' + id, deviceId: 'smoke', ts: Date.now() + i, entity: 'task',
+      entityId: id, calId: me.cals[0].id, fields: { title: '挤' + (i + 1), date: window.__unDate },
+    }));
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  const ovf = await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const n = cell.querySelectorAll('.task-el--untimed').length;
+      if (n < 8) return null;
+      const cs = getComputedStyle(cell);
+      cell.scrollTop = 60;                       // 真能滚的话它会停在 60
+      const scrolled = cell.scrollTop;
+      cell.scrollTop = 0;
+      return {
+        n,
+        sh: cell.scrollHeight, ch: cell.clientHeight,
+        h: Math.round(cell.getBoundingClientRect().height),
+        maxH: parseFloat(cs.maxHeight) || 0,
+        scrolled,
+        grid: Math.round(document.querySelector('.week-grid').getBoundingClientRect().height),
+        shrink: getComputedStyle(cell.querySelector('.task-el--untimed')).flexGrow + '/' + getComputedStyle(cell.querySelector('.task-el--untimed')).flexShrink,
+      };
+    })()
+  `, '8 条未定时任务落进周视图那一格', 15000);
+  ok(ovf.sh > ovf.ch + 4,
+    '未定时内容真的**溢出**了（不是把卡片压扁塞进去）',
+    `内容 ${ovf.sh} / 可见 ${ovf.ch} · 卡片 flex ${ovf.shrink}`);
+  ok(ovf.h <= ovf.maxH + 1,
+    '格高被上限拦住（再多也不往上长）', `高 ${ovf.h}px / max-h ${ovf.maxH}px`);
+  ok(ovf.scrolled > 0, '这一格**自己滚得动**（scrollTop 能设上去）', `scrollTop=${ovf.scrolled}`);
+  ok(Math.abs(ovf.grid - gridBefore) <= 2,
+    '任务从 3 条加到 8 条，**时间轴高度一点没变**', `${gridBefore}px → ${ovf.grid}px`);
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const ops = (window.__unMore || []).map((id) => ({
+      opId: 'd' + id, deviceId: 'smoke', ts: Date.now(), entity: 'task',
+      entityId: id, calId: me.cals[0].id, fields: { deleted: true, deletedAt: Date.now() },
+    }));
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  await waitGone(page, `(window.__unMore || []).every((id) => !document.querySelector('.wun-cell .task-el[data-id="' + id + '"]'))`,
+    '8 条验证用的未定时任务已收回');
   // 回日视图，后面的节按日视图写的
   await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
   await waitFor(page, `document.querySelector('.allday-items') ? 1 : null`, '回到日视图', 8000);

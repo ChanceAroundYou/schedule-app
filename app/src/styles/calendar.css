@@ -387,10 +387,15 @@
   display: flex; flex-direction: column; gap: 5px; align-content: start;
   border-right: 1px solid var(--border);
   min-height: 26px;
-  /* 全部显示 + 格内滚动（同 .allday-zone，2026-10-22 用户裁决）：
+  /* 全部显示 + **格内滚动**（2026-10-22 用户裁决，和日视图同一套）：
      以前只露两条、多出来折成「+3」。整行高度仍由这一行统一决定，
-     所以七列的刻度线照样横向对齐。 */
-  max-height: var(--wun-max-h, 190px);
+     所以七列的刻度线照样横向对齐。
+     ⚠️ 上限必须**小**：190px 时时间轴被顶矮 130px（桌面实测 604 → 473），
+     用户要的是「别占太多、多的自己滚」，所以压到 4 行左右。 */
+  max-height: var(--wun-max-h, 124px);
+  /* 纵向滚动交给浏览器自己处理（overflow-y: auto 就够了）。
+     ⚠️ 别加 `touch-action: pan-y`：加了以后点这一格空白不开草稿了
+     （2026-10-22 深测里那条「点空白行能就地新建」当场变红）。 */
   overflow-y: auto; overscroll-behavior: contain;
 }
 .wun-cell:last-child { border-right: none; }
@@ -403,6 +408,11 @@
 .wun-cell .task-el--untimed {
   font-size: 11px; padding: 1px 5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* ⚠️ **不许被压扁**（2026-10-22 实测的根因）：flex 列默认 `flex-shrink: 1`，
+     任务一多，浏览器把每张卡**压缩**到能塞进限高里 —— 于是 scrollHeight 恒等于
+     clientHeight，「超出的自己滚」永远不触发，用户看到的是一行行贴着挤在一起。
+     改成不参与收缩，内容才会真的溢出、才滚得起来。 */
+  flex: 0 0 auto;
 }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。 */

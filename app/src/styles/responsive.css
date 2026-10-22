@@ -226,9 +226,10 @@ body.sheet-open .tab:active { background: none; }
        半行宽，标题只看得见前几个字）。列数由 DayView 按 isNarrowNow 算成 1，
        这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。 */
     --allday-pill-pad: 3px 6px;
-    /* 手机上未定时区最多占四行多一点，再多就在区里滚 */
+    /* 手机上未定时区最多占四行多一点，再多就在区里滚；
+       周视图那一格更窄，一列给三行半（≈104px）就够看，多的自己滚 */
     --allday-max-h: 120px;
-    --wun-max-h: 120px;
+    --wun-max-h: 104px;
     --allday-min-h: 13px;
     --tl-wrap-pad: 10px 8px 10px 48px;
     --tl-label-left: -44px;
