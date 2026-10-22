@@ -552,7 +552,7 @@ async function checkLook() {
   assert(w.circleRadius === '50%', '圆圈是圆的', `border-radius=${w.circleRadius}`);
   assert(w.weekLabBg === 'rgba(0, 0, 0, 0)', '圆圈只圈日期、不圈「周几」那行',
     `wh-week=${w.weekLabBg}`);
-  assert(w.doneLine === 'line-through', '已完成任务标题有划线', `text-decoration=${w.doneLine}`);
+  assert(w.doneLine === 'none', '已完成任务不再画删除线（只靠变灰）', `text-decoration=${w.doneLine}`);
   assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
     `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
 
@@ -572,6 +572,12 @@ async function checkLook() {
       return c.getBoundingClientRect().height < 24 && c.querySelector('.ev-resize');
     }).length;
     var body=document.querySelector('.week-col .task-el--timed .ev-body');
+    /* 2026-10-22：现在线改成**整周一条**（画在 .week-cols 上），不是每列一段 */
+    var cols=document.querySelector('.week-cols');
+    var nowLine=cols?cols.querySelector(':scope > .tl-now'):null;
+    var perColNow=document.querySelectorAll('.week-col .tl-now').length;
+    var colW=(document.querySelector('.week-col')||{getBoundingClientRect:function(){return {width:0}}}).getBoundingClientRect().width;
+    var gutter=(document.querySelector('.week-gutter')||{getBoundingClientRect:function(){return {width:0}}}).getBoundingClientRect().width;
     return {
       checkTimed: chkT?getComputedStyle(chkT).display:'(none)',
       checkUntimed: chkU?getComputedStyle(chkU).display:'(none)',
@@ -581,6 +587,11 @@ async function checkLook() {
       tallH: tallest?Math.round(tallest.getBoundingClientRect().height):0,
       tallHasTime: tallest?!!tallest.querySelector('.ev-time'):null,
       cardsWithTime: cards.filter(function(c){return c.querySelector('.ev-time')}).length,
+      nowLineW: nowLine?Math.round(nowLine.getBoundingClientRect().width):0,
+      colsW: cols?Math.round(cols.getBoundingClientRect().width):0,
+      perColNow: perColNow,
+      daysVisible: colW?Math.round((window.innerWidth - gutter)/colW*10)/10:0,
+      colW: Math.round(colW),
     };
   })()`);
   assert(look.checkTimed === 'none', '周视图定时卡去掉了勾选圈', `display=${look.checkTimed}`);
@@ -590,6 +601,13 @@ async function checkLook() {
     `${look.tinyWithHandle} 张窄卡还带把手（共 ${look.cards} 张）`);
   assert(look.bodyOverflow === 'hidden', '内容层负责裁剪（超出卡片的东西不外溢）',
     `overflow=${look.bodyOverflow}`);
+  /* 2026-10-22：现在线横贯整周（从周一到周日），不再是每天各画一段 */
+  assert(look.perColNow === 0, '「现在」线不再是一个列画一段', `${look.perColNow} 列还各画了一段`);
+  assert(look.nowLineW > 0 && look.nowLineW >= look.colsW - 2, '「现在」线横贯整周',
+    `线宽 ${look.nowLineW}px / 七列总宽 ${look.colsW}px`);
+  /* 2026-10-22：一屏至少能看到四天（原来列宽 92px 只能看 3.4 天） */
+  assert(look.daysVisible >= 4, '窄屏一屏至少看得见 4 天',
+    `${look.daysVisible} 天（列宽 ${look.colW}px）`);
   if (look.tallHasTime !== null) {
     assert(look.tallHasTime, '有空间时还是显示时间（最高的那张卡要有时间行）',
       `最高 ${look.tallH}px，${look.cardsWithTime}/${look.cards} 张带时间行`);
@@ -628,7 +646,7 @@ async function checkLook() {
   assert(m.pill < 10, '月视图的圆角比日/周大卡更小（视觉分档）', `月 ${m.pill}px / 日周 ${w.tallR}px`);
   assert(m.normalBg && m.doneBg !== m.normalBg, '月视图的已完成不再是白底（和日/周同一套语言）',
     `done=${m.doneBg} / 未完成=${m.normalBg}`);
-  assert(m.doneLine === 'line-through', '月视图已完成标题有划线', `text-decoration=${m.doneLine}`);
+  assert(m.doneLine === 'none', '月视图已完成标题也没有删除线（所有视图统一）', `text-decoration=${m.doneLine}`);
   assert(m.doneOpacity === '1', '已完成不再靠整体变淡（那会和白底混成一个样）', `opacity=${m.doneOpacity}`);
   /* 今天那格现在回落到和普通格子一样的底色（--panel），不再有额外淡绿 */
   assert(m.todayCellBg === m.plainCellBg, '月视图今天格子不再加底色（只留日期圆圈）',

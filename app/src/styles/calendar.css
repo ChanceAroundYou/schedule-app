@@ -176,11 +176,9 @@
   border-color: var(--border);
   box-shadow: none;
 }
-.task-el--timed.done .ev-title, .task-el--untimed.done .ev-title {
-  color: var(--text-3);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
+/* 已完成**只靠变灰**表达，不画删除线（2026-10-22 用户要求，所有视图统一）。
+   灰底 + 灰字已经足够说明「这条做完了」，横线反而让 10px 的小字更难认。 */
+.task-el--timed.done .ev-title, .task-el--untimed.done .ev-title { color: var(--text-3); }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { color: var(--text-3); }
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
@@ -498,7 +496,7 @@ body.is-drag-range { user-select: none; }
 .task-pill:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
 /* 已完成：与日/周视图同一套语言 —— 中性灰底 + 标题划线，不再靠半透明。 */
 .task-pill.done { opacity: 1; background: var(--panel-3); }
-.task-pill.done .pill-title { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.task-pill.done .pill-title { color: var(--text-3); }
 .pill-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill-time { color: var(--text-2); font-size: 11px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 

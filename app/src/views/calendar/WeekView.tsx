@@ -68,9 +68,6 @@ function WeekColumn({
   const { activeId } = useDragSession();
   const seed = draftOn(state.ui, `week:${d}`);
   const dragBox = range ? pctRange(range.start, range.end, win) : null;
-  /* 「现在」这条线**只画在今天那一列**。横跨七列等于说「七天的此刻都一样」，
-     那是假的 —— 日历里横向是另一天，不是同一天的另一个角度。 */
-  const nowPct = d === today ? minToPct(nowMin, win) : null;
 
   return (
     <div
@@ -78,8 +75,6 @@ function WeekColumn({
       ref={zone.ref} data-zone-id={`week:${d}`} data-date={d}
       data-from={win.from} data-to={win.to} data-timeline=""
     >
-      {nowPct !== null && <div className="tl-now" style={{ top: nowPct + '%' }} />}
-
       <div className="tl-events">
         {events.map((e) => (
           <TimedCard
@@ -212,6 +207,12 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
               range={drag.range && drag.range.date === d ? drag.range : null}
             />
           ))}
+          {/* 「现在」这条线**横贯整周**（2026-10-22 用户要求：从周一到周日）。
+              画在 .week-cols 上而不是每一列各画一段 —— 各画一段会在列与列之间
+              的 1px 分隔线上断开，看着是七根短线。今天不在这一周时整条不画。 */}
+          {days.includes(today) && (
+            <div className="tl-now week-now" style={{ top: minToPct(nowMin, win) + '%' }} />
+          )}
         </div>
       </div>
     </div>

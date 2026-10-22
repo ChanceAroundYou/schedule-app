@@ -456,7 +456,7 @@
   font-size: 12.5px;
 }
 .pj-card:active { cursor: grabbing; }
-.pj-card.done .pj-card-t { color: var(--text-3); text-decoration: line-through; }
+.pj-card.done .pj-card-t { color: var(--text-3); }
 .pj-card-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pj-card-d { flex: none; font-size: 10.5px; color: var(--text-3); }
 
