@@ -58,9 +58,12 @@ async function main() {
   await page.waitForSelector('.week-cols', { timeout: 15000 });
   await page.waitForTimeout(700);
 
-  /* 未定时区空着就临时建一条，否则量不到字号 */
+  /* 缺哪种就补哪种（别只用「未定时有没有」当总开关 —— 2026-10-22 就因此
+     量到「定时标题 null」，白跑一轮）。 */
   const made = await page.evaluate(async () => {
-    if (document.querySelector('.wun-cell .task-el--untimed')) return null;
+    const needUn = !document.querySelector('.wun-cell .task-el--untimed');
+    const needTimed = !document.querySelector('.week-col .task-el--timed');
+    if (!needUn && !needTimed) return null;
     const token = localStorage.getItem('schedule-app-token');
     const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
     const u = (JSON.parse(localStorage.getItem('schedule-app-v4') || '{}').ui) || {};
@@ -69,12 +72,12 @@ async function main() {
     await fetch('api/sync', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify({ cursor: 1, ops: [
-        { opId: 'o' + id, deviceId: 'look', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { title: '量字号的任务', date: u.cursor } },
-        { opId: 'o' + idT, deviceId: 'look', ts: Date.now() + 1, entity: 'task', entityId: idT, calId: me.cals[0].id, fields: { title: '定时三小时', date: u.cursor, time: '09:00', duration: 180 } },
+        ...(needUn ? [{ opId: 'o' + id, deviceId: 'look', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { title: '量字号的任务', date: u.cursor } }] : []),
+        ...(needTimed ? [{ opId: 'o' + idT, deviceId: 'look', ts: Date.now() + 1, entity: 'task', entityId: idT, calId: me.cals[0].id, fields: { title: '定时三小时', date: u.cursor, time: '09:00', duration: 180 } }] : []),
       ] }),
     });
     window.dispatchEvent(new Event('focus'));
-    return [id, idT];
+    return [...(needUn ? [id] : []), ...(needTimed ? [idT] : [])];
   });
   if (made) { await page.waitForTimeout(2800); }
 
