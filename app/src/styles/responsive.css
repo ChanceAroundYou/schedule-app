@@ -219,10 +219,9 @@ body.sheet-open .tab:active { background: none; }
   :root {
     --allday-zone-pad: 3px 8px 3px 48px;
     --allday-items-gap: 1px 4px;
-    /* 未定时区在窄屏**固定两列**（不看 DayView 算出来的 --cols）：
-       三列时每格只有 80px、标题剩 4 个字；两列约 150px，能放 8~10 个字，
-       而且末尾那个「＋」照样有位置（2026-10-22）。 */
-    --allday-cols-narrow: 2;
+    /* 未定时区在窄屏**一条一行、占满整行**（用户 2026-10-22：两列时每条只剩
+       半行宽，标题只看得见前几个字）。列数由 DayView 按 isNarrowNow 算成 1，
+       这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。 */
     --allday-pill-pad: 3px 6px;
     --allday-min-h: 13px;
     --tl-wrap-pad: 10px 8px 10px 48px;
@@ -336,7 +335,8 @@ body.sheet-open .tab:active { background: none; }
   .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
   .week-head-cell { padding: 7px 2px 5px; }
   .wh-day { font-size: 15px; width: 24px; height: 24px; min-width: 24px; }
-  .allday-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式 */
+  .allday-items[data-cols="1"] .task-el--untimed { padding: 1px 8px; }
   .wun-cell { padding: 3px; }
   .wun-cell .task-el--untimed { padding: 1px 4px; font-size: 10px; }
 

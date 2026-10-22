@@ -214,29 +214,39 @@ async function checkCore() {
 
   await tap('button[data-view="day"]'); await wait(400);
 
-  /* 2026-10-22 未定时区：
+  /* 2026-10-22 未定时区（三条用户要求）：
      ① 卡片是**紧凑一行**（不是「一小时高」——那时候加一条就吃掉一小时空间）；
-     ② 有任务时末尾有个虚线「＋」格，点它能就地开草稿；
-     ③ 字体栈里带拉丁字形的中文字体排在 system-ui 前面（否则中英混排两套字）。 */
+     ② 手机端**一条一行、占满整行**（以前两列、每条只剩半行宽）；
+     ③ 末尾**永远多一整行空白**，点它就开草稿 —— 虚线「＋」格已按用户要求删掉
+        （真机上点那个格子没反应）。 */
   const al = await evalIn(`(function(){
+    var wrap=document.querySelector('.allday-items');
     var cards=Array.from(document.querySelectorAll('.allday-items .task-el'));
-    var add=document.querySelector('.zone-add');
+    var blanks=Array.from(document.querySelectorAll('.allday-blank'));
     var h=cards.length?Math.round(cards[0].getBoundingClientRect().height):0;
+    var cw=cards.length?Math.round(cards[0].getBoundingClientRect().width):0;
+    var ww=wrap?Math.round(wrap.getBoundingClientRect().width):0;
+    var bh=blanks.length?Math.round(blanks[0].getBoundingClientRect().height):0;
     var font=getComputedStyle(document.body).fontFamily;
-    return {n:cards.length, h:h, hasAdd:!!add, font:font};
+    return {n:cards.length,h:h,cw:cw,ww:ww,cols:wrap?+wrap.dataset.cols:0,
+            blanks:blanks.length,bh:bh,hasAdd:!!document.querySelector('.zone-add'),font:font};
   })()`);
+  assert(!al.hasAdd, '虚线「＋」格已移除（改成空白行）');
   if (al.n > 0) {
     assert(al.h > 0 && al.h <= 30, '未定时卡片是紧凑一行（不再是一小时高）', `高 ${al.h}px / ${al.n} 条`);
-    assert(al.hasAdd, '未定时区末尾有「＋」格（随时能再加一条）');
+    assert(al.cols === 1, '手机端未定时区是 1 列', `cols=${al.cols}`);
+    assert(al.cw > al.ww * 0.85, '未定时卡片占满整行（不再被挤成半行）', `卡 ${al.cw}px / 区 ${al.ww}px`);
+    assert(al.blanks > 0 && al.bh >= 20, '末尾永远留一整行空白', `空 ${al.blanks} 格 × ${al.bh}px`);
     const before = await evalIn(`document.querySelectorAll('.new-cell').length`);
-    await evalIn(`(function(){var a=document.querySelector('.zone-add');if(!a)return 0;
-      var b=a.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2;
-      var t=document.elementFromPoint(x,y);var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};
-      t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));
-      t.dispatchEvent(new MouseEvent('click',o));return 1})()`);
+    await evalIn(`(function(){var a=document.querySelectorAll('.allday-blank');
+      if(!a.length)return 0;var t=a[a.length-1];
+      var b=t.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2;
+      var el=document.elementFromPoint(x,y);var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};
+      el.dispatchEvent(new MouseEvent('mousedown',o));el.dispatchEvent(new MouseEvent('mouseup',o));
+      el.dispatchEvent(new MouseEvent('click',o));return 1})()`);
     await wait(300);
     const after = await evalIn(`document.querySelectorAll('.new-cell').length`);
-    assert(after > before, '点「＋」格能就地开草稿', `草稿框 ${before} → ${after}`);
+    assert(after > before, '点那行空白能就地开草稿', `草稿框 ${before} → ${after}`);
     await evalIn(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     await wait(200);
   } else {

@@ -85,16 +85,13 @@
   display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: var(--allday-items-gap); min-height: var(--allday-min-h); align-content: start;
 }
-.zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
-/* 未定时区末尾那个「＋」格：虚线框，点它就开一个新草稿。
-   它占一格的位置，所以「还能再加」这件事永远看得见（见 DayView 的 cols 算法）。 */
-.zone-add {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 22px; height: 24px; margin-block: 1px;
-  border: 1px dashed var(--border); border-radius: var(--r-sm);
-  color: var(--text-3); font-size: 13px; line-height: 1; user-select: none;
-}
-.zone-add:hover { border-color: var(--primary); color: var(--primary); }
+.zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1;
+  min-height: 24px; display: flex; align-items: center; }
+/* 未定时区末尾**那一整行空白**：没有文字、没有边框 —— 它就是一块可点的空地，
+   点下去在这一区开草稿（见 app/clickDispatch.ts 第 4 步）。
+   2026-10-22 用户把虚线「＋」格换成了这个：真机上点那个格子没反应，而空白行
+   本来就是「点空白新建」那条老路的入口，不需要额外的东西。 */
+.allday-blank { min-height: 26px; }
 .zone-more { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
 .tl-wrap {

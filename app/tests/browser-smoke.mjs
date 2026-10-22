@@ -277,6 +277,28 @@ async function quickAdd(page, text) {
     `document.querySelectorAll('[data-scope="inbox"] .task-el').length > ${n}`, '任务出现');
 }
 
+/**
+ * 等某个东西从界面上消失 —— 期间**不断催一次同步**。
+ *
+ * 为什么要催：客户端的拉取不是定时的（`sync/lifecycle.ts` 的轮询只在 outbox
+ * 非空时才 syncNow），纯用 API 写进去的删除墓碑没人拉就永远不生效。
+ * 探针里没有本地改动可推，所以只能自己戳 `focus`（等同切回前台 → 立即 syncNow）。
+ * 单次戳可能撞上「上一趟同步还在飞」，所以每 900ms 补一脚，直到它真的让位。
+ */
+async function waitGone(page, exprGone, what, ms = 20000) {
+  return waitFor(page, `
+    (() => {
+      if (${exprGone}) return 1;
+      const now = Date.now();
+      if (!window.__lastNudge || now - window.__lastNudge > 900) {
+        window.__lastNudge = now;
+        window.dispatchEvent(new Event('focus'));
+      }
+      return null;
+    })()
+  `, what, ms);
+}
+
 /* ------------------------------------------------------------ 主流程 */
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'sched-browser-'));
@@ -1933,6 +1955,77 @@ try {
   await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
   // 回到今天：日视图看的是 ui.cursor，前面几节切来切去可能已经不在了
   await clickEl(page, `document.querySelector('.date-nav [aria-pressed]')`);
+
+  /* ---- 2026-10-22 未定时区（用户三条）----
+     ① 桌面端从左到右排（3 列）；② 末尾**永远多一整行空白**，虚线「＋」格已删；
+     ③ 点那行空白要能开草稿。
+     ③ 用 CDP 合成**真实触摸**而不是在页面里 dispatchEvent 一个 MouseEvent ——
+     用户报的原话是「加号点了一点反应都没有」，而当时那条安卓断言是靠在页面
+     里派发 click 通过的：合成 click 绕过了触摸→点击那条链，等于没测。 */
+  const unIds = await evalJs(page, `
+    const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const d = new Date();
+    const date = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const ids = ['t_smoke_un1_' + Date.now().toString(36), 't_smoke_un2_' + Date.now().toString(36)];
+    window.__unIds = ids;
+    const ops = ids.map((id, i) => ({
+      opId: 'o' + id, deviceId: 'smoke', ts: Date.now() + i, entity: 'task',
+      entityId: id, calId: me.cals[0].id, fields: { title: '未定时' + (i + 1), date },
+    }));
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops }) });
+    return ids;
+  `);
+  ok(Array.isArray(unIds) && unIds.length === 2, '建出两条未定时任务（API）', JSON.stringify(unIds));
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return 1;`);
+  const unAl = await waitFor(page, `
+    (() => {
+      const ids = window.__unIds || [];
+      const cards = [...document.querySelectorAll('.allday-items .task-el')];
+      if (!cards.some((c) => ids.includes(c.dataset.id))) return null;
+      const blanks = [...document.querySelectorAll('.allday-blank')];
+      if (!blanks.length) return null;
+      const rects = cards.map((c) => c.getBoundingClientRect());
+      const byRow = {};
+      rects.forEach((r) => { const k = Math.round(r.top / 4); byRow[k] = (byRow[k] || 0) + 1; });
+      const perRow = Math.max(...Object.values(byRow));
+      const bottom = Math.max(...rects.map((r) => r.bottom));
+      const rb = blanks[blanks.length - 1].getBoundingClientRect();
+      return {
+        n: cards.length, perRow, blanks: blanks.length,
+        blankH: Math.round(rb.height), blankBelow: rb.top >= bottom - 2,
+        at: { x: Math.round(rb.left + rb.width / 2), y: Math.round(rb.top + rb.height / 2) },
+      };
+    })()
+  `, '两条未定时任务 + 末尾一整行空白', 15000);
+  ok(unAl.perRow >= 2, '桌面端未定时任务是**从左到右**排的（同一行 ≥2 条）', `${unAl.n} 条 / 每行 ${unAl.perRow}`);
+  ok(unAl.blankBelow && unAl.blankH >= 20,
+    '末尾永远多出一整行空白（加完还看得见可点的空位）', `${unAl.blanks} 格 × ${unAl.blankH}px`);
+  await touch(page, 'touchStart', unAl.at);
+  await touch(page, 'touchEnd', unAl.at);
+  await waitFor(page, `document.querySelector('.allday-items .new-cell') ? 1 : null`,
+    '真手指点那行空白 → 就地开出草稿框', 6000);
+  ok(true, '点空白行能就地新建未定时任务（走的真实触摸，不是合成 click）');
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.allday-items .new-cell') ? null : 1`, '草稿框收起', 6000);
+  /* 收尾：这两条验证用的任务删掉，别影响后面的节（`.allday-zone` 是
+     `flex: 0 0 auto`，多一行就是把时间轴少一行） */
+  await evalJs(page, `
+    const token2 = localStorage.getItem('schedule-app-token');
+    const me2 = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token2 } })).json();
+    const ops2 = window.__unIds.map((id) => ({
+      opId: 'del' + id, deviceId: 'smoke', ts: Date.now(), entity: 'task',
+      entityId: id, calId: me2.cals[0].id, fields: { deleted: true, deletedAt: Date.now() },
+    }));
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token2 },
+      body: JSON.stringify({ cursor: 1, ops: ops2 }) });
+    return 1;
+  `);
+  await waitGone(page, `(window.__unIds || []).every((id) => !document.querySelector('.allday-items .task-el[data-id="' + id + '"]'))`,
+    '验证用的未定时任务已从界面上消失');
+
   const block = await waitFor(page, `
     (() => {
       const e = [...document.querySelectorAll('.task-el--timed')].find((x) => x.textContent.includes('微调试试'));
@@ -1957,19 +2050,27 @@ try {
      「点一下新建」的任务 duration 是空的（默认 1 小时不等于写死了 1 小时），
      而以前 `resizable={hasEnd}` 让这些卡**一个把手都没有** —— 用户根本没处拖。
      这里真建一条没时长的任务，验证它照样有把手、且看得见。 */
-  await evalJs(page, `
-    (async () => {
+  const nodurMade = await evalJs(page, `
+    try {
       const pad = (n) => (n < 10 ? '0' + n : '' + n);
       const token = localStorage.getItem('schedule-app-token');
       const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+      if (!me.cals || !me.cals.length) return 'me 没有日程集：' + JSON.stringify(me).slice(0, 120);
       const d = new Date();
       const id = 't_smoke_nodur_' + Date.now().toString(36);
       window.__nodurId = id;
-      await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      const r = await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id, deviceId: 'smoke', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { title: '没时长的卡', date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), time: '11:00' } }] }) });
-      return 1;
-    })()
+      return r.ok ? 'ok' : ('sync ' + r.status + ' ' + (await r.text()).slice(0, 120));
+    } catch (e) { return '抛了：' + e.message; }
   `);
+  /* ⚠️ 这条以前是 `(async () => {…})()` 包一层就完事 —— evalJs 外面还有一层
+     异步壳，里面那个 IIFE 根本没人 await，建失败了也静默。改成直接 await 并
+     把失败原因带回来，别让它再装成「等不到元素」。 */
+  ok(nodurMade === 'ok', '建出一条没时长的任务（API）', String(nodurMade));
+  /* 客户端不是定时拉了：`sync/lifecycle.ts` 的轮询只在 outbox 非空时才 syncNow，
+     纯靠 API 建出来的条目没人拉就永远看不见。这里补一次 wake（等同切回前台）。 */
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return 1;`);
   const nodur = await waitFor(page, `
     (() => {
       const e = document.querySelector('.task-el--timed[data-id="' + window.__nodurId + '"]');
@@ -1995,9 +2096,9 @@ try {
       return 1;
     })()
   `);
-  await waitFor(page, `
-    !document.querySelector('.task-el--timed[data-id="' + window.__nodurId + '"]') ? 1 : null
-  `, '验证用的无时长任务已从界面上消失', 15000);
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return 1;`);
+  await waitGone(page, `!document.querySelector('.task-el--timed[data-id="' + window.__nodurId + '"]')`,
+    '验证用的无时长任务已从界面上消失');
 
   const sel = (act) => `document.querySelector('.task-el--timed[data-id=${JSON.stringify(block.id)}] [data-act="${act}"]')`;
   const taskOf = `Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks).find((t) => t.id === ${JSON.stringify(block.id)})`;

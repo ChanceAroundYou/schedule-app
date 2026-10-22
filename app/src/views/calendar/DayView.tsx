@@ -38,12 +38,14 @@ import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
 import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { useTimelineMetrics } from './metrics.ts';
-import { useElementHeight } from '../../ui/hooks.ts';
+import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 
-/** 未定时区最多露几卡。两行 × 三列 = 6 —— 用户 2026-10-11 定的格子。
- *  超出的一律不渲染：区域高度**固定两块**，多渲染只会溢出到时间轴上盖住它。
- *  静默截断等于丢数据，所以末尾补一行「还有 N 个」。 */
+/** 未定时区最多露几卡。桌面三列 × 两行 = 6；窄屏一列，只露 4 行
+ *  （再多就把时间轴挤没了）。超出的一律不渲染：区域高度**固定几块**，
+ *  多渲染只会溢出到时间轴上盖住它。静默截断等于丢数据，所以末尾补一行
+ *  「还有 N 个」。 */
 const UNTIMED_MAX = 6;
+const UNTIMED_MAX_NARROW = 4;
 
 export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const tasks = tasksOn(state, iso);
@@ -94,15 +96,24 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
-  /* ---- 未定时网格：两行，第 3 个起三列 ---- */
-  /* 列数：给末尾那个「＋」永远留一格，所以按「已有条数 + 1」算，最多 3 列 */
-  const cols = Math.min(3, allday.length + 1);
-  const shown = allday.slice(0, UNTIMED_MAX);
+  /* ---- 未定时网格 ----
+   * **桌面从左到右排（3 列），窄屏一条一行**（用户 2026-10-22：手机屏太窄，
+   *  三列只能看见半个标题）。列数由这里算，CSS 只负责照 `--cols` 铺格子 ——
+   *  渲染的孔位数量必须和列数同源，否则窄屏会多出一堆空行。
+   *
+   * **末尾永远留一整行空白**（`blanks`）：点它就是「再加一条未定时任务」。
+   *  以前这里是画一个虚线的「＋」格，但真机上点它没反应（草稿其实开了，
+   *  只是被键盘一顶、界面上看不出变化），用户明确要求换掉 —— 空白行本身就是
+   *  最自然的入口，而且它走的还是「点区域空白处开草稿」那条老路。 */
+  const narrow = isNarrowNow();
+  const cols = narrow ? 1 : 3;
+  const shown = allday.slice(0, narrow ? UNTIMED_MAX_NARROW : UNTIMED_MAX);
   const hidden = allday.length - shown.length;
+  /* 凑满「当前行 + 一整行」：n=1/3 列 → 6 格（整行空白）；n=4 → 3 + 3 格 */
+  const blanks = shown.length ? (Math.ceil(shown.length / cols) + 1) * cols - shown.length : 0;
   /* 未定时卡片**一行高**（2026-10-22 用户报：「加了一个就再没有空白处加第二个」）。
      以前卡片高度 = 时间轴上一小时，加两条就吃掉两小时的高度，下面时间轴被挤扁、
-     而且整行铺满没有可点的空位。现在固定 24px 一行 + 右侧永远留一个「＋」格：
-     加一条只花 24px，随时还看得见「这里能再加」。 */
+     而且整行铺满没有可点的空位。现在固定 24px 一行。 */
   const cardStyle: CSSProperties = { height: 24, marginBlock: 1 };
 
   return (
@@ -129,11 +140,12 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
             ))}
             {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
             <NewCellSlot state={state} zoneId={`allday:${iso}`} />
-            {/* 有任务时**永远留一个虚线的「＋」格**：它就是「还能再加一条」的可见入口。
-                草稿框开着时不出现 —— 那会儿你已经在一个输入框里了。 */}
-            {allday.length > 0 && !draftAllday && (
-              <div className="zone-add" title="加一条未定时间的任务">＋</div>
-            )}
+            {/* **永远多留一整行空白**。它没有文字、没有边框 —— 就是一块可点的空地，
+                点下去开草稿（见 clickDispatch 的第 4 步）。
+                草稿开着时少铺一格：输入框自己占了一个孔位，高度不该跟着跳。 */}
+            {Array.from({ length: Math.max(0, blanks - (draftAllday ? 1 : 0)) }, (_, i) => (
+              <div className="allday-blank" key={`blank-${i}`} aria-hidden="true" />
+            ))}
             {!!hidden && <div className="zone-more">还有 {hidden} 个未定时间的任务</div>}
             {/* 空提示与草稿框不同时出现：正要往这里建东西的时候，
                 「没有未定时间的任务」这句话是句废话 */}

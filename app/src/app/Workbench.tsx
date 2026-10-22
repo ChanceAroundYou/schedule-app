@@ -48,7 +48,7 @@ import { useBackup } from './backup.ts';
 import { contentDispatch } from './contentDispatch.tsx';
 import { initKeyboard } from './kb.ts';
 import { captureTap } from './tapSnap.ts';
-import { settleDraftAndSet } from '../ui/newCell.ts';
+import { settleDraftAndSet, draftEcho } from '../ui/newCell.ts';
 import { publishWidgetSnapshot } from '../data/widget.ts';
 
 function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
@@ -109,8 +109,8 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
   /* -------- 键盘 + 落点快照 --------
    *
    * 1. `initKeyboard()`：原生壳里订阅系统的键盘弹起/收起（见 app/kb.ts）。
-   *    没有它，「收起键盘 → 撤掉空草稿」就永远触发不了 —— 因为 App 是
-   *    adjustResize，拿 visualViewport 差值算键盘高度恒等于 0。
+   *    没有它，「收起键盘 → 撤掉空草稿」就永远触发不了 ——
+   *    （原生壳里键盘是盖在界面上的，拿 visualViewport 差值算恒等于 0）。
    * 2. `captureTap`：在 pointerdown（布局还没变）把「这是几点」算完存起来。
    *    click 里只取结果，避免「按下时的坐标 + 抬起时的布局」混用。
    * 3. 兜底结算：点 `#content` 之外的地方（底部导航、顶栏）也要收掉草稿；
@@ -124,6 +124,14 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
       if (!t) return;
       if (t.closest('.new-cell')) return;
       if (t.closest('#content')) return;     // 内部由 clickDispatch 收尾，别重复
+      /* ⚠️ **回声**（2026-10-22 抓到的真 bug，用户报的是「点加号没反应」）：
+         开草稿那次渲染会把手指点中的那一格换掉（`.allday-blank` 少一个孔位），
+         浏览器于是把这一下 click 补发给最近的祖先（body）—— 对这条兜底来说
+         跟「用户点了侧栏」一模一样，刚开出来的草稿被自己那一下当场关掉，
+         一帧都看不见。刚开过草稿的那 450ms 里，这一下不算数。详见 newCell.ts。 */
+      if (draftEcho()) return;
+      /* 目标根本不是元素（document / body / html）：同样只可能是补发的尾巴 */
+      if (t === document.body || t === document.documentElement) return;
       settleDraftAndSet(null);
     };
     document.addEventListener('click', onDocClick);

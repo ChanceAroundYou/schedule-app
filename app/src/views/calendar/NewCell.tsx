@@ -128,6 +128,39 @@ export function NewCell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* 原生壳里键盘是**盖在**界面上（capacitor.config.ts 关掉了 resizeOnFullScreen，
+     2026-10-22 用户要的就是「别推上去，让键盘盖住时间表」）。代价是：框要是正好
+     落在下半屏，就会被键盘整个挡住、只能盲打。所以弹起后把它挪到键盘上沿之上 ——
+     **只滚最近的那个能滚的容器**，不碰布局，时间轴的高度一个像素都不变。 */
+  useEffect(() => {
+    if (!isNativeShell()) return;
+    const onShow = () => {
+      // 键盘动画约 200~300ms，量早了拿到的是弹起前的位置
+      window.setTimeout(() => {
+        const el = ref.current;
+        if (!el) return;
+        const kb = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--kb'),
+        ) || 0;
+        if (kb < 80) return;                       // 没真弹起来（或数值还没到）
+        const over = el.getBoundingClientRect().bottom - (window.innerHeight - kb - 8);
+        if (over <= 0) return;                     // 已经露在键盘上面
+        let p: HTMLElement | null = el.parentElement;
+        while (p) {
+          const oy = getComputedStyle(p).overflowY;
+          if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 1) {
+            p.scrollTop += over;
+            return;
+          }
+          p = p.parentElement;
+        }
+        window.scrollBy(0, over);                  // 都不滚就试整页
+      }, 280);
+    };
+    window.addEventListener('kb:show', onShow);
+    return () => window.removeEventListener('kb:show', onShow);
+  }, []);
+
   /* 网页版（没有原生壳）保留 visualViewport 兜底 —— 手机浏览器里这条是有效的：
      键盘只压可视视口，布局视口不动，差值算得出真实高度。
      原生壳里直接跳过，否则它会把原生写好的 --kb 覆盖回 0、并误判收键盘。 */

@@ -33,9 +33,16 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
-    // 软键盘弹起时把界面顶上去，别盖住输入框（网页版那条避让逻辑在这同样要）
+    /* ⚠️ 必须是 **false**（2026-10-22 真机定案）。
+       这个开关为 true 时，@capacitor/keyboard 会在键盘弹出的瞬间**主动把
+       WebView 的高度改成「可用高度」**（Keyboard.java 的 possiblyResizeChildOfContent：
+       `frameLayoutParams.height = usableHeight`）—— 它盖过 AndroidManifest 里的
+       `windowSoftInputMode`，所以只把清单改成 adjustNothing 没有用：界面照样被
+       压扁，时间轴挤成一团（用户报了两轮的就是这个）。
+       关掉之后：键盘**盖在**界面上，布局一动不动；键盘高度仍然由插件的
+       keyboardWillShow 事件写进 `--kb`，登录页 / 抽屉 / 草稿框的避让照常。 */
     Keyboard: {
-      resizeOnFullScreen: true,
+      resizeOnFullScreen: false,
     },
     // Android 15/16 对 target SDK 35+ 强制边到边，状态栏会压到内容上
     StatusBar: {
