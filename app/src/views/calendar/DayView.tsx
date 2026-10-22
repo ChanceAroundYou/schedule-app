@@ -40,12 +40,6 @@ import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 
-/** 未定时区最多露几卡。桌面三列 × 两行 = 6；窄屏一列，只露 4 行
- *  （再多就把时间轴挤没了）。超出的一律不渲染：区域高度**固定几块**，
- *  多渲染只会溢出到时间轴上盖住它。静默截断等于丢数据，所以末尾补一行
- *  「还有 N 个」。 */
-const UNTIMED_MAX = 6;
-const UNTIMED_MAX_NARROW = 4;
 
 export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const tasks = tasksOn(state, iso);
@@ -107,8 +101,9 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
    *  最自然的入口，而且它走的还是「点区域空白处开草稿」那条老路。 */
   const narrow = isNarrowNow();
   const cols = narrow ? 1 : 3;
-  const shown = allday.slice(0, narrow ? UNTIMED_MAX_NARROW : UNTIMED_MAX);
-  const hidden = allday.length - shown.length;
+  /* **一条都不截断**（2026-10-22 用户：要全部显示，不要「还有 N 个」）。
+     区域高度由 CSS 的 max-height 兜住，超出在那区里自己滚 —— 时间轴高度不受影响。 */
+  const shown = allday;
   /* 凑满「当前行 + 一整行」：n=1/3 列 → 6 格（整行空白）；n=4 → 3 + 3 格 */
   const blanks = shown.length ? (Math.ceil(shown.length / cols) + 1) * cols - shown.length : 0;
   /* 未定时卡片**一行高**（2026-10-22 用户报：「加了一个就再没有空白处加第二个」）。
@@ -146,7 +141,6 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
             {Array.from({ length: Math.max(0, blanks - (draftAllday ? 1 : 0)) }, (_, i) => (
               <div className="allday-blank" key={`blank-${i}`} aria-hidden="true" />
             ))}
-            {!!hidden && <div className="zone-more">还有 {hidden} 个未定时间的任务</div>}
             {/* 空提示与草稿框不同时出现：正要往这里建东西的时候，
                 「没有未定时间的任务」这句话是句废话 */}
             {!allday.length && !draftAllday && <div className="zone-empty">没有未定时间的任务</div>}

@@ -208,6 +208,45 @@ async function checkCore() {
   const wk = await evalIn(`!!document.querySelector('.week-cols')`);
   assert(wk, '周视图渲染（.week-cols）');
 
+  /* 2026-10-22 用户报的两条（周视图未定时区）：
+     ① 3 条以上不再折成「+3」，**全部显示**；
+     ② 末尾同样**永远多一整行空白**，点它能就地开草稿；
+     ③ 整格有高度上限、超了在格子里自己滚（时间轴高度不受影响）。 */
+  const wun = await evalIn(`(function(){
+    var cells = Array.from(document.querySelectorAll('.wun-cell'));
+    var cell = cells.filter(function(c){
+      return c.querySelectorAll('.task-el--untimed').length > 0;
+    }).sort(function(a,b){
+      return b.querySelectorAll('.task-el--untimed').length - a.querySelectorAll('.task-el--untimed').length;
+    })[0] || cells[0];
+    if (!cell) return null;
+    var blank = cell.querySelector('.wun-blank');
+    var r = blank ? blank.getBoundingClientRect() : null;
+    return {
+      n: cell.querySelectorAll('.task-el--untimed').length,
+      more: !!cell.querySelector('.wun-more'),
+      blank: !!blank,
+      maxH: getComputedStyle(cell).maxHeight,
+      scrollable: cell.scrollHeight > cell.clientHeight + 1,
+      at: r ? { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) } : null,
+    };
+  })()`);
+  if (wun) {
+    assert(!wun.more, '周视图不再把未定时任务折成「+N」');
+    assert(wun.blank, '周视图未定时格末尾有多一整行空白');
+    assert(wun.maxH !== 'none', '周视图未定时格有高度上限（超了自己滚）', `max-h ${wun.maxH}`);
+    if (wun.n > 0 && wun.at) {
+      const before = await evalIn(`document.querySelectorAll('.wun-cell .new-cell').length`);
+      await tapAt(wun.at.x, wun.at.y); await wait(400);
+      const after = await evalIn(`document.querySelectorAll('.wun-cell .new-cell').length`);
+      assert(after > before, '点周视图那行空白能就地开草稿', `草稿 ${before} → ${after}`);
+      await evalIn(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); 1`);
+      await wait(200);
+    }
+  } else {
+    ok('周视图没有未定时格，跳过');
+  }
+
   await tap('button[data-view="month"]'); await wait(500);
   const cells = await evalIn(`document.querySelectorAll('[data-date]').length`);
   assert(cells >= 28, '月视图渲染（日期格 ≥28）', `${cells} 格`);

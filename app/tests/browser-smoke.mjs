@@ -76,9 +76,10 @@ const MIME = {
 };
 
 let failures = 0;
-const ok = (cond, what) => {
-  if (cond) console.log('  ok   ' + what);
-  else { failures++; console.log('  FAIL ' + what); }
+const ok = (cond, what, detail) => {
+  const tail = detail === undefined || detail === '' ? '' : '（' + detail + '）';
+  if (cond) console.log('  ok   ' + what + tail);
+  else { failures++; console.log('  FAIL ' + what + tail); }
 };
 
 /* ---------------------------------------------------- 静态服务 + 代理 */
@@ -1908,9 +1909,8 @@ try {
   // 时间是唯一入口）—— 所以这里走真实 UI 分两步：
   //   ① 「今天」页快速添加造一条（该页 defaultDate = 今天，无时间）；
   //   ② 在列表里点它开抽屉，拨盘设开始 09:00、结束 10:00 → duration = 60。
-  // 为什么在「今天」页造而不是日程页：日程页新建的未定时任务进未定时区，
-  // 那区只画前 6 条（DayView 的 UNTIMED_MAX），这一条未必露得出来；
-  // 今天列表全量展示，点哪条都不会落空。
+  // 为什么在「今天」页造而不是日程页：今天列表全量展示，点哪条都不会落空；
+  // 日程页的未定时区是限高可滚的（2026-10-22 起），新条目可能正好在滚动视野外。
   await evalJs(page, `document.querySelector('[data-nav="today"]').click(); return true;`);
   await evalJs(page, `
     const inp = document.querySelector('.fast-add textarea');
@@ -1968,8 +1968,9 @@ try {
     const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
     const d = new Date();
     const date = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-    const ids = ['t_smoke_un1_' + Date.now().toString(36), 't_smoke_un2_' + Date.now().toString(36)];
+    const ids = [1, 2, 3].map((k) => 't_smoke_un' + k + '_' + Date.now().toString(36));
     window.__unIds = ids;
+    window.__unDate = date;
     const ops = ids.map((id, i) => ({
       opId: 'o' + id, deviceId: 'smoke', ts: Date.now() + i, entity: 'task',
       entityId: id, calId: me.cals[0].id, fields: { title: '未定时' + (i + 1), date },
@@ -1978,7 +1979,7 @@ try {
       body: JSON.stringify({ cursor: 1, ops }) });
     return ids;
   `);
-  ok(Array.isArray(unIds) && unIds.length === 2, '建出两条未定时任务（API）', JSON.stringify(unIds));
+  ok(Array.isArray(unIds) && unIds.length === 3, '建出三条未定时任务（API）', JSON.stringify(unIds));
   await evalJs(page, `window.dispatchEvent(new Event('focus')); return 1;`);
   const unAl = await waitFor(page, `
     (() => {
@@ -1999,7 +2000,7 @@ try {
         at: { x: Math.round(rb.left + rb.width / 2), y: Math.round(rb.top + rb.height / 2) },
       };
     })()
-  `, '两条未定时任务 + 末尾一整行空白', 15000);
+  `, '三条未定时任务 + 末尾一整行空白', 15000);
   ok(unAl.perRow >= 2, '桌面端未定时任务是**从左到右**排的（同一行 ≥2 条）', `${unAl.n} 条 / 每行 ${unAl.perRow}`);
   ok(unAl.blankBelow && unAl.blankH >= 20,
     '末尾永远多出一整行空白（加完还看得见可点的空位）', `${unAl.blanks} 格 × ${unAl.blankH}px`);
@@ -2010,6 +2011,44 @@ try {
   ok(true, '点空白行能就地新建未定时任务（走的真实触摸，不是合成 click）');
   await key(page, 'Escape', 'Escape', 27);
   await waitFor(page, `document.querySelector('.allday-items .new-cell') ? null : 1`, '草稿框收起', 6000);
+
+  /* ---- 2026-10-22 用户报的周视图两条 ----
+     ① 3 条以上不再折成「+3」，**全部显示**；② 末尾同样**永远多一整行空白**。 */
+  await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
+  const wun = await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const blank = cell.querySelector('.wun-blank');
+      if (!blank) return null;
+      const rb = blank.getBoundingClientRect();
+      const all = [...cell.querySelectorAll('.task-el--untimed')];
+      const ids = window.__unIds || [];
+      return {
+        n: all.length,
+        mine: all.filter((c) => ids.includes(c.dataset.id)).length,
+        more: !!cell.querySelector('.wun-more'),
+        blankH: Math.round(rb.height),
+        maxH: getComputedStyle(cell).maxHeight,
+        at: { x: Math.round(rb.left + rb.width / 2), y: Math.round(rb.top + rb.height / 2) },
+      };
+    })()
+  `, '周视图那一格的未定时任务与末尾空白', 12000);
+  ok(wun.mine === 3 && !wun.more,
+    '周视图把未定时任务**全部**显示出来（自己那 3 条都在，没有「+N」）',
+    `自带 ${wun.mine}/3 条 · 该格共 ${wun.n} 条 · more=${wun.more}`);
+  ok(wun.blankH >= 20 && wun.maxH !== 'none',
+    '周视图未定时格末尾多一整行空白，且整格有高度上限（超出自己滚）', `空 ${wun.blankH}px / max-h ${wun.maxH}`);
+  await touch(page, 'touchStart', wun.at);
+  await touch(page, 'touchEnd', wun.at);
+  await waitFor(page, `document.querySelector('.wun-cell .new-cell') ? 1 : null`,
+    '点周视图那行空白 → 就地开出草稿框', 6000);
+  ok(true, '周视图点空白行也能就地新建未定时任务（真实触摸）');
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `document.querySelector('.wun-cell .new-cell') ? null : 1`, '周视图草稿框收起', 6000);
+  // 回日视图，后面的节按日视图写的
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  await waitFor(page, `document.querySelector('.allday-items') ? 1 : null`, '回到日视图', 8000);
   /* 收尾：这两条验证用的任务删掉，别影响后面的节（`.allday-zone` 是
      `flex: 0 0 auto`，多一行就是把时间轴少一行） */
   await evalJs(page, `

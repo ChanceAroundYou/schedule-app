@@ -36,10 +36,6 @@ import { useDragCreate, type DragRange } from './dragCreate.ts';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight } from '../../ui/hooks.ts';
 
-/** 每列未定时最多露两张。这一行是要给时间轴让地方的，
- *  堆满了整棵周视图就只剩一条缝 */
-const WUN_MAX = 2;
-
 function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
   const slots: Slot<Task>[] = tasksOn(state, iso).filter((t) => t.time).map((t) => {
     const start = D.timeToMin(t.time) || 0;
@@ -101,16 +97,24 @@ function WeekColumn({
   );
 }
 
-/** 未定时那一格。卡片复用日视图未定时那张（`task-el--untimed`），
- *  多出来的用「+N」收口 —— 这一行是给时间轴让地方的，不能由着它长 */
+/**
+ * 未定时那一格。卡片复用日视图未定时那张（`task-el--untimed`）。
+ *
+ * **一条都不截断**（2026-10-22 用户：3 条以上时只给个「+3」看不懂，要全部露出来）。
+ * 高度由 CSS 的 `max-height` + `overflow-y` 兜住：这一行是给时间轴让地方的，
+ * 任务多的时候**在格子里自己上下滚**，不让整棵周视图被顶扁。
+ *
+ * 末尾**永远多留一整行空白**（`.wun-blank`，和日视图同一个约定）：点它就是
+ * 「这一天再加一条未定时的」。有 `flex: 1`，所以某一列任务少、这一行被别的列
+ * 撑高时，它会把剩下的空白一起接住 —— 整格都是可点的空位。
+ */
 function WunCell({ state, d, today }: { state: LocalState; d: string; today: string }) {
   const zone = useDroppableZone(`allday:${d}`);
   const un = untimedOn(state, d);
-  const shown = un.slice(0, WUN_MAX);
-  const hidden = un.length - shown.length;
+  const draft = draftOn(state.ui, `allday:${d}`);
   return (
     <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}>
-      {shown.map((t) => (
+      {un.map((t) => (
         <TaskCard
           key={t.id} t={t}
           cls={'task-el task-el--untimed' + (t.done ? ' done' : '')}
@@ -118,10 +122,9 @@ function WunCell({ state, d, today }: { state: LocalState; d: string; today: str
           title={t.title} resizable={false} lockX={false}
         />
       ))}
-      {!!hidden && <span className="wun-more">+{hidden}</span>}
-      {/* 点这一格的任何空位 → 未定时任务就建在这一天 */}
-      {!un.length && <span className="wun-empty" />}
       <NewCellSlot state={state} zoneId={`allday:${d}`} />
+      {/* 草稿开着时少铺一格：输入框自己占了一格，高度不该跟着跳 */}
+      {!draft && <div className="wun-blank" aria-hidden="true" />}
     </div>
   );
 }

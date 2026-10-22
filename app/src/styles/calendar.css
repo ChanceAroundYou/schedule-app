@@ -77,6 +77,11 @@
   flex: 0 0 auto;
   padding: var(--allday-zone-pad);
   border-bottom: var(--border-w) solid var(--border);
+  /* **任务全部显示、区自己滚**（2026-10-22 用户裁决）。以前是截断 + 「还有 N 个」，
+     那条提示既占地方又看不清；现在改成限高滚动：区域最多占这么高，多的一条不少，
+     时间轴高度也不受影响。 */
+  max-height: var(--allday-max-h, 190px);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 /* 未定时任务区。两行，第 3 个起三列（--cols 由渲染时按数量给）。
    **高度固定、不滚**：卡片高度等于时间轴上一小时，多了就截断并提示
@@ -92,7 +97,6 @@
    2026-10-22 用户把虚线「＋」格换成了这个：真机上点那个格子没反应，而空白行
    本来就是「点空白新建」那条老路的入口，不需要额外的东西。 */
 .allday-blank { min-height: 26px; }
-.zone-more { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1; }
 
 .tl-wrap {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
@@ -383,6 +387,11 @@
   display: flex; flex-direction: column; gap: 5px; align-content: start;
   border-right: 1px solid var(--border);
   min-height: 26px;
+  /* 全部显示 + 格内滚动（同 .allday-zone，2026-10-22 用户裁决）：
+     以前只露两条、多出来折成「+3」。整行高度仍由这一行统一决定，
+     所以七列的刻度线照样横向对齐。 */
+  max-height: var(--wun-max-h, 190px);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .wun-cell:last-child { border-right: none; }
 /* 未定时那一格同样不加底色（同上：会和任务卡抢视觉） */
@@ -395,8 +404,9 @@
   font-size: 11px; padding: 1px 5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.wun-more { font-size: 10.5px; color: var(--text-3); padding-left: 2px; }
-.wun-empty { display: block; height: 4px; }
+/* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
+   `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。 */
+.wun-blank { min-height: 26px; flex: 1 1 auto; }
 
 /* ---- 按住拉出来的那一段时间（views/calendar/dragCreate.ts）----
    它在还没有实体时出现，所以**不是**任务卡：不挂 `.task-el`，

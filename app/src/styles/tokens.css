@@ -29,6 +29,11 @@
      adjustNothing 拦不住）。JS 实测后写进来，`.app` 把它加回去，让布局
      一动不动、被键盘盖住的那段直接裁掉（见 app/kb.ts 的 applyFix）。 */
   --kb-fix: 0px;
+  /* 未定时区的**高度上限**（日视图 `.allday-zone` / 周视图 `.wun-cell`）。
+     任务一条不截断，超出的在区里自己滚；上限保证时间轴不被挤扁。
+     窄屏在 responsive.css 里压到 120px。 */
+  --allday-max-h: 190px;
+  --wun-max-h: 190px;
   --wk-hours: 24;
   --bg: #f6f5f3;
   --panel: #fffefc;
