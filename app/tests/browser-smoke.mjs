@@ -1922,11 +1922,11 @@ try {
   ok(!mv.err && mv.rows >= 4 && mv.rows <= 6 && mv.pureOut === 0,
     '月视图没有纯下月空白行（' + mv.rows + ' 行，纯下月 ' + mv.pureOut + ' 行）'
     + (mv.err ? '　诊断：' + JSON.stringify(mv) : ''));
-  ok(mv.heights.length === 1 && mv.h0 > 40,
+  ok(!mv.err && mv.heights && mv.heights.length === 1 && mv.h0 > 40,
     '每行高度一致且固定（' + mv.rows + ' 行都是 ' + mv.h0 + 'px —— 任务多寡不改行高）');
-  ok(mv.overflowY === 'auto' && mv.scrollbarWidth === 'none' && mv.position === 'relative',
+  ok(!mv.err && mv.overflowY === 'auto' && mv.scrollbarWidth === 'none' && mv.position === 'relative',
     '宽屏格子溢出格内滚动、系统滚动条已藏（浮条不占横向宽度）');
-  ok(mv.gridH <= mv.viewH, '月视图网格不超出一屏（' + mv.gridH + ' ≤ ' + mv.viewH + '）');
+  ok(!mv.err && mv.gridH <= mv.viewH, '月视图网格不超出一屏（' + mv.gridH + ' ≤ ' + mv.viewH + '）');
 
   console.log('\n十四、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
   //
