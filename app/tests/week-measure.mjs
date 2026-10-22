@@ -98,8 +98,12 @@ async function main() {
   console.log(`\n视口 ${VW}×${VH} · ${BASE}`);
 
   await login(page);
-  await page.click('[data-nav="calendar"]');
-  await page.waitForSelector('button[data-view="week"]', { timeout: 15000 });
+  /* 桌面壳的导航是侧栏 `[data-nav=calendar]`；窄屏是底部 `button.tab`（文字「日程」）。
+     两套都要照顾，否则窄屏会卡在点击上（2026-10-22 白等过 5 分钟）。 */
+  await page.locator('[data-nav="calendar"], button.tab', { hasText: '日程' }).first().click({ timeout: 15000 }).catch(async () => {
+    await page.click('[data-nav="calendar"]', { timeout: 5000 });
+  });
+  await page.waitForSelector(`button[data-view="${VIEW}"]`, { timeout: 15000 });
   await page.click(`button[data-view="${VIEW}"]`);
   await page.waitForSelector(VIEW === 'day' ? '.allday-zone' : '.week-un-row', { timeout: 15000 });
   await page.waitForTimeout(600);
