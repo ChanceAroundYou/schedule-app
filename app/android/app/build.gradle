@@ -38,8 +38,8 @@ android {
         // versionName 与**网页版同源**：网页上「设置 → 关于」显示的是
         // app/package.json 的 version（vite.config.ts 注入成 __APP_VERSION__），
         // 改一个就要改另一个 —— 两边漂开的话，用户报「我这是几版」时对不上号。
-        versionCode 18
-        versionName "2.1.4"
+        versionCode 19
+        versionName "2.1.5"
         // 自更新清单地址（nginx 的 /schedule/dl/）。**与前端打包时注入的
         // VITE_API_BASE 同源** —— 换服务器/换域名时这两处要一起改。
         // 见 AppUpdate.java。
