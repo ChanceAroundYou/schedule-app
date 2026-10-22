@@ -171,7 +171,8 @@ async function checkDownload(page) {
   assertOk(where === null, '下载清单没被 Service Worker 缓存',
     where ? `仍留在 ${where}` : '未缓存');
 
-  await page.locator('[data-nav="settings"]').first().click();
+  // 侧栏与底栏各有一个「设置」入口，宽屏时底栏是隐藏的 —— 只点看得见的那个
+  await page.locator('[data-nav="settings"]:visible').first().click();
   await page.locator('[data-settings-tab="about"]').click();
   const link = page.locator('[data-about="apk-download"]');
   await link.waitFor({ state: 'attached', timeout: 10000 });
