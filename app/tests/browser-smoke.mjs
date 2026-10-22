@@ -2039,7 +2039,7 @@ try {
     `自带 ${wun.mine}/3 条 · 该格共 ${wun.n} 条 · more=${wun.more}`);
   /* 九条之后格高是**精确算出的 height**（4 整卡 + 间距 + 留白 = 74px），不再用
      max-height 拍上限 —— 判据跟着改成「高度是定值 + 空白行 = 一行卡（16px）」。 */
-  ok(wun.blankH >= 14 && wun.fixedH === '74px',
+  ok(wun.blankH >= 14 && wun.fixedH === '98px',
     '周视图未定时格末尾多一整行空白，且格高是按 4 整卡精确算出的定值（超出自己滚）',
     `空 ${wun.blankH}px / 格高 ${wun.fixedH}`);
 
@@ -2110,7 +2110,7 @@ try {
   ok(ovf.sh > ovf.ch + 4,
     '未定时内容真的**溢出**了（不是把卡片压扁塞进去）',
     `内容 ${ovf.sh} / 可见 ${ovf.ch} · 卡片 flex ${ovf.shrink}`);
-  ok(Math.abs(ovf.h - ovf.fixedH) <= 1 && ovf.fixedH === 74,
+  ok(Math.abs(ovf.h - ovf.fixedH) <= 1 && ovf.fixedH === 98,
     '格高是按 4 整卡精确算出的定值（再多也不往上长）', `高 ${ovf.h}px / 定值 ${ovf.fixedH}px`);
   ok(ovf.scrolled > 0, '这一格**自己滚得动**（scrollTop 能设上去）', `scrollTop=${ovf.scrolled}`);
   ok(Math.abs(ovf.grid - gridBefore) <= 2,
@@ -2186,6 +2186,8 @@ try {
       gutter: Math.round(innerW - cell.clientWidth),
       clip: csT.textOverflow,
       align: csT.textAlign,
+      fw: csT.fontWeight,
+      radius: getComputedStyle(card).borderRadius,
       mh: parseFloat(title.style.maxHeight) || 0,
       lh: parseFloat(csT.lineHeight) || 0,
     };
@@ -2197,6 +2199,8 @@ try {
      && Math.abs(nine.mh / nine.lh - Math.round(nine.mh / nine.lh)) < 0.01,
     '标题按**整行**裁（max-height 钉在行高的整数倍上，不露半截字）',
     `max ${nine.mh}px / 行高 ${nine.lh}px`);
+  ok(nine.fw === '400', '字重与月视图任务名一致（400）', nine.fw);
+  ok(parseFloat(nine.radius) >= 4, '圆角和月视图小卡一样是 4px 档', nine.radius);
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 40; return 1;`);
   await new Promise((r) => setTimeout(r, 150));
   const thumbOn = await evalJs(page, `

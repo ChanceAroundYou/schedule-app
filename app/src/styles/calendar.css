@@ -87,7 +87,7 @@
      间距 + 上下留白」精确算出来的 height** —— 卡高在 --row（本区一行的高），
      这样无论 1 条还是 8 条，可见区永远是整数张卡，绝不露半截。
      --row = 标题行高 + 卡片上下 padding（`.task-el--untimed` 1px×2 + 行高 18px）。 */
-  --row: 20px;
+  --row: calc(20px + 2 * var(--border-w));   /* 行高 18 + padding 1×2 + 边框 1×2 */
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 6px);                      /* .allday-zone-pad 的上下两个 3px */
@@ -269,16 +269,17 @@
        ③ 视觉指示 `.ev-resize::after`：40px 横条，用户看得到「哪里能拉」
           和「哪里只能拖」的边界。 */
 .ev-resize {
-  /* **靠边、更细、更透明**（2026-10-22 九条）：以前居中 72px 一大条横在卡片
-     正中，存在感太强。现在贴左边缘、横条缩到 26×2px、默认透明度压到 .16，
-     只在仔细看时才注意到「这里能拉」，悬停提到 .5 也不抢字。 */
-  position: absolute; left: 5px; width: 34px; bottom: 0;
-  height: min(8px, 26%); min-height: 4px;
-  cursor: ns-resize; display: flex; align-items: center; justify-content: center;
+  /* **水平居中、竖直贴边**（2026-10-22 回归：上一版改成贴左是理解偏了）。
+     触摸区 6px 高、横条 2px，用 align-items 把条**推到卡片最边缘** ——
+     bottom 把手的条贴底沿、top 把手的条贴顶沿，一眼就知道「拉这里改边」。
+     透明度维持上一版的 .16。 */
+  position: absolute; left: 50%; width: 34px; transform: translateX(-50%); bottom: 0;
+  height: min(6px, 22%); min-height: 3px;
+  cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center;
   opacity: .16; transition: opacity .12s;
   touch-action: none;
 }
-.ev-resize-top { top: 0; bottom: auto; }
+.ev-resize-top { top: 0; bottom: auto; align-items: flex-start; }
 .task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .5; }
 .ev-resize::after {
   content: ''; width: 26px; height: 2px; border-radius: var(--r-xs);
@@ -413,9 +414,10 @@
   border-right: 1px solid var(--border);
   min-height: 26px;
   /* **高度按「4 整条 + 间距 + 留白」精确算**（九条，与 .allday-zone 同一套公式）：
-     卡高 --row = 行高 14px + 上下 padding 1px×2 = 16px。
-     第 5 条起滚动，永远不露半张卡。 */
-  --row: 16px;
+     卡高 --row = 行高 18px + 上下 padding 1px×2 + **上下边框 var(--border-w)×2**
+     —— 上一版漏了边框（卡片四面都有 1px 边），四张卡实际比算的高 8px，
+     第 4 张被切掉一截（用户 2026-10-22 回归实测抓到）。宽屏卡 12.5px 字。 */
+  --row: calc(20px + 2 * var(--border-w));
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 4px);                        /* 自身 padding 的上下两个 2px */
@@ -431,17 +433,14 @@
 .wun-cell:last-child { border-right: none; }
 /* 未定时那一格同样不加底色（同上：会和任务卡抢视觉） */
 /* 这一行的卡片是**日视图未定时那一张**（task-el--untimed），只是这里横向只能
-   分到七分之一宽，所以字再收一号，"+" 提示用同一个灰度。
-   nowrap + 省略号：92px 的列放不下长任务名，**宁可截断也不许撑列** ——
-   中文整串没有断点，max-content 布局下它能把整行顶宽一倍（2026-10-19 实测：
-   未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
+   分到七分之一宽。
+   nowrap：中文整串没有断点，max-content 布局下它能把整行顶宽一倍
+   （2026-10-19 实测：未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
 .wun-cell .task-el--untimed {
-  /* **向月视图看齐**（九条第 5 条）：字号 9px、行高 14px、左右 padding 0、
-     圆角 4px —— 与窄屏月视图 `.cell-tasks .task-pill` 完全同一套
-     （宽屏月格 12.5px 是大格子才用的，周视图七分之一宽，一律按小格规格走）。
-     卡高 = 14 + 1×2 = 16px = .wun-cell 的 --row。 */
-  font-size: 9px; line-height: 14px; padding: 1px 0;
-  border-radius: var(--r-xs);
+  /* **字号/字重与月视图同步**（2026-10-22 回归）：宽屏 12.5px（= 月视图大格
+     `.task-pill`），窄屏 9px 在 responsive.css 覆盖；字重同 pill-title（400）。
+     行高 18px 与日视图未定时卡一致，卡高 = 18 + 1×2 + 2×边框 = --row。 */
+  font-size: 12.5px; line-height: 18px; padding: 1px 0;
   white-space: nowrap; overflow: hidden; text-overflow: clip;
   /* ⚠️ **不许被压扁**（2026-10-22 实测的根因）：flex 列默认 `flex-shrink: 1`，
      任务一多，浏览器把每张卡**压缩**到能塞进限高里 —— 于是 scrollHeight 恒等于
@@ -449,6 +448,15 @@
      改成不参与收缩，内容才会真的溢出、才滚得起来。 */
   flex: 0 0 auto;
 }
+/* 字重对齐月视图任务名（pill-title 没写 font-weight = 400）：
+   卡片基础是 550，周视图两种卡都压回 400 —— 用户 2026-10-22：
+   「未定时和定时也不一致，请全部统一成月视图的字号和字重」。 */
+.wun-cell .task-el--untimed .ev-title,
+.week-col .task-el--timed .ev-title { font-weight: 400; }
+/* 周视图定时卡字号也向月视图看齐（宽屏 12.5px；窄屏 9px 在 responsive 覆盖）。
+   行高写死 18px：整行裁（useWholeLineClamp）要用它折算整行数。 */
+.week-col .task-el--timed { --ev-title-size: 12.5px; }
+.week-col .task-el--timed .ev-title { line-height: 18px; }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。
    高度对齐一行卡（16px），不再用 26px。 */

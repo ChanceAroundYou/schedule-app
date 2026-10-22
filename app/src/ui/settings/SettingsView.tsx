@@ -152,9 +152,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               </Btn>
             </Field>
           )}
-          <Field label="技术栈">
-            <span className="text-[12.5px]">Node + SQLite</span>
-          </Field>
+          {/* 「技术栈」一整行已删（2026-10-22 用户：完全不写，连 Node + SQLite 也不留） */}
           {apkUrl && (
             <Field label="下载 App">
               <a
