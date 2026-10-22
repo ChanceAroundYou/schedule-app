@@ -668,7 +668,22 @@ async function checkLook() {
       tinyWithHandle: tinyWithHandle, cards: cards.length,
       tallH: tallest?Math.round(tallest.getBoundingClientRect().height):0,
       tallHasTime: tallest?!!tallest.querySelector('.ev-time'):null,
-      cardsWithTime: cards.filter(function(c){return c.querySelector('.ev-time')}).length,
+      /* 2026-10-22 晚：手机端周视图**不显示时间**，这里的「有 .ev-time 元素」
+         不再等于「看得见」——要量 display，JS 给的 timeText 在不在都不算数。 */
+      cardsWithTime: cards.filter(function(c){
+        var t=c.querySelector('.ev-time');
+        return t && getComputedStyle(t).display!=='none';
+      }).length,
+      /* 未定时那一栏的标题字号必须和定时卡标题一致（同一个 --ev-title-size） */
+      untimedTitleSize: (function(){
+        var u=document.querySelector('.wun-cell .task-el--untimed .ev-title');
+        return u?getComputedStyle(u).fontSize:'';
+      })(),
+      timedTitleSize: (function(){
+        var u=document.querySelector('.week-col .task-el--timed .ev-title');
+        return u?getComputedStyle(u).fontSize:'';
+      })(),
+      untimedCards: document.querySelectorAll('.wun-cell .task-el--untimed').length,
       nowLineW: nowLine?Math.round(nowLine.getBoundingClientRect().width):0,
       colsW: cols?Math.round(cols.getBoundingClientRect().width):0,
       perColNow: perColNow,
@@ -712,9 +727,16 @@ async function checkLook() {
   await evalIn(`(function(){var v=document.querySelector('.week-view');
     if(v&&v.dataset.e2eScroll!==undefined){v.scrollLeft=Number(v.dataset.e2eScroll);delete v.dataset.e2eScroll;}return 1})()`);
   await wait(150);
-  if (look.tallHasTime !== null) {
-    assert(look.tallHasTime, '有空间时还是显示时间（最高的那张卡要有时间行）',
-      `最高 ${look.tallH}px，${look.cardsWithTime}/${look.cards} 张带时间行`);
+  /* 2026-10-22 晚（用户第二次改口）：手机端周视图**不再显示时间**，
+     72px 宽的格子只放任务名。（原来那条「有空间时显示时间」已作废。） */
+  assert(look.cardsWithTime === 0, '手机端周视图的定时卡不显示时间（只留任务名）',
+    `${look.cardsWithTime}/${look.cards} 张还带着时间行（最高 ${look.tallH}px）`);
+  if (look.untimedCards > 0) {
+    assert(!!look.untimedTitleSize && look.untimedTitleSize === look.timedTitleSize,
+      '未定时任务的标题字号和定时任务一致',
+      `未定时 ${look.untimedTitleSize} / 定时 ${look.timedTitleSize}（${look.untimedCards} 张未定时卡）`);
+  } else {
+    ok('今天没有未定时任务，跳过字号对比');
   }
 
   /* 月视图：胶囊不能比日/周大卡还圆 */

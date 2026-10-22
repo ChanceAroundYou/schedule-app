@@ -346,7 +346,16 @@ body.sheet-open .tab:active { background: none; }
   /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式 */
   .allday-items[data-cols="1"] .task-el--untimed { padding: 1px 8px; }
   .wun-cell { padding: 3px; }
-  .wun-cell .task-el--untimed { padding: 1px 4px; font-size: 10px; }
+  /* ⚠️ 字号必须给**变量**，不能只给容器 `font-size`（2026-10-22 用户报
+     「未定时的字比定了时的大一点」）：`.ev-title` 写的是
+     `font-size: var(--ev-title-size)`，容器上的 font-size 根本传不进去 ——
+     它回退成 :root 的 12px，而定时卡那边（`.week-col .task-el--timed`）
+     已经把这个变量压到 10px 了。两边要一样，就得改同一个变量。 */
+  .wun-cell .task-el--untimed {
+    padding: 1px 4px;
+    --ev-title-size: 10px;
+    --ev-time-size: 10px;
+  }
 
   /* 周视图的卡片跟月视图一个路子：**小字号、尽量多放字**（2026-10-19 用户要求）。
      列宽 92px（比月格子 45px 宽一倍），10px 字号一行约 6 个汉字。
@@ -356,6 +365,12 @@ body.sheet-open .tab:active { background: none; }
      **有空间时还是显示时间**（时间行的显隐由 JS 按卡高判断，见 TaskCard 的 roomy）。 */
   .week-col .task-el--timed { --ev-title-size: 10px; }
   .week-col .task-el--timed .check-btn { display: none; }
+  /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
+     和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
+     用 CSS 藏而不是改 JS：卡片够高时那行本来就会出现（`roomy`），
+     这里一律不显示，规则更简单，也不会在窗口缩放时忽隐忽现。
+     电脑端不受影响（这条在 max-width:900px 里面）。 */
+  .week-col .task-el--timed .ev-time { display: none; }
   /* 未定时那一行也去掉勾选圈（2026-10-20 用户：「周视图移动端的打勾也去掉」） */
   .wun-cell .task-el--untimed .check-btn { display: none; }
   /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
