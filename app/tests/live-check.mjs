@@ -34,7 +34,7 @@ const HEADED = process.env.HEADED === '1';
 const argv = process.argv.slice(2);
 const featArg = argv.find((a) => a.startsWith('--features=')) || argv[argv.indexOf('--features') + 1];
 const FEATURES = new Set(
-  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,week,repeat,drag')
+  (featArg ? String(featArg).replace(/^--features=/, '') : 'core,now-line,week,repeat,drag,download')
     .split(',').map((s) => s.trim()).filter(Boolean),
 );
 
@@ -145,6 +145,48 @@ async function checkCore(page, consoleErrors) {
   await switchView(page, 'day');
   assertOk(consoleErrors.length === 0, '零控制台报错',
     consoleErrors.length ? consoleErrors.slice(0, 3).join(' | ') : '无');
+}
+
+/** download：网页版「下载 App」必须指向清单里的最新安装包，且清单不许被 SW 缓存 */
+async function checkDownload(page) {
+  const manifest = await page.evaluate(async (base) => {
+    const r = await fetch(base + 'dl/version.json', { cache: 'no-store' });
+    return r.ok ? r.json() : null;
+  }, BASE);
+  if (!manifest || !manifest.url) { bad('读到 dl/version.json'); return; }
+  ok('读到更新清单', `v${manifest.versionCode} / ${manifest.versionName} → ${manifest.url}`);
+
+  // **核心回归**：清单一旦进了 Cache Storage，下载按钮就永远指向缓存那天的版本
+  // （2026-10-22：用户从网页下载到 2.1.4 就是这个原因，SW 把它当普通
+  //  同源 GET 用 staleWhileRevalidate 存了一份）。
+  const where = await page.evaluate(async (base) => {
+    const abs = new URL('dl/version.json', base).href;
+    for (const k of await caches.keys()) {
+      try {
+        if (await (await caches.open(k)).match(abs)) return k;
+      } catch (_) { /* 打不开这个缓存就跳过 */ }
+    }
+    return null;
+  }, BASE);
+  assertOk(where === null, '下载清单没被 Service Worker 缓存',
+    where ? `仍留在 ${where}` : '未缓存');
+
+  await page.locator('[data-nav="settings"]').first().click();
+  await page.locator('[data-settings-tab="about"]').click();
+  const link = page.locator('[data-about="apk-download"]');
+  await link.waitFor({ state: 'attached', timeout: 10000 });
+
+  const href = await link.getAttribute('href');
+  const text = (await link.innerText()).trim();
+  assertOk(!!href && href.endsWith('/' + manifest.url), '下载链接指向最新安装包',
+    `${href}（清单：${manifest.url}）`);
+  assertOk(text.includes(manifest.versionName), '下载链接上写的是最新版本号',
+    `「${text}」应含 ${manifest.versionName}`);
+
+  if (href) {
+    const res = await page.request.head(new URL(href, BASE).href);
+    assertOk(res.status() === 200, '安装包 URL 可下载', `HTTP ${res.status()}`);
+  }
 }
 
 /** now-line：今天的时间轴「当前时间线」是深绿细线，无圆点、无时刻文字 */
@@ -471,6 +513,7 @@ async function checkDrag(page) {
     ok(`登录成功（${how === 'register' ? '首次注册了机器人账号' : '用已有机器人账号登录'}）`);
 
     if (FEATURES.has('core')) await checkCore(page, consoleErrors);
+    if (FEATURES.has('download')) await checkDownload(page);
     if (FEATURES.has('now-line')) await checkNowLine(page);
     if (FEATURES.has('week')) await checkWeek(page);
     if (FEATURES.has('repeat')) await checkRepeat(page);

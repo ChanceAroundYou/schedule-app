@@ -8,6 +8,10 @@
  *
  *   ../api/*      **一律不碰。** 同步引擎自己管重试和发件箱；缓存一个接口响应
  *                 会让用户看到过期数据却以为是最新的
+ *   ../dl/*       **一律不碰。** 里面是 version.json 与安装包本身：清单里写着
+ *                 最新版的 url，缓存住一份就等于「网页上的下载按钮永远指向
+ *                 发版那一天的那一版」（2026-10-22 用户下载到 2.1.4 的原因）。
+ *                 安装包几十 MB，更不该往 Cache Storage 里塞
  *   导航请求      网络优先 + 回落缓存里的 index.html。**不能反过来** ——
  *                 缓存优先正是旧版那个「怎么刷新都是旧界面」的病根
  *   ../assets/*   缓存优先。文件名带内容哈希，内容一变名字就变，
@@ -29,12 +33,20 @@
  * 而且它自己不会好（缓存里的 HTML 引的是旧 assets）。抬版本号 = 新 worker
  * 装上后 activate 会把 v2 整份删掉，客户端最迟下一次联网导航就重新预缓存。
  * 配合 `data/update-guard.ts`（比 bundle 名，不一致就提示刷新）双保险。 */
-const CACHE = 'sched-shell-v3';
+
+/* v3 → v4（2026-10-22）：用户报「网页版下载下来的还是 2.1.4」。v3 把
+ * /schedule/dl/version.json 当成普通同源 GET，用 staleWhileRevalidate 存了一份：
+ * 之后点下载，拿到的是那份旧清单里的 `schedule-14.apk`。现在 dl/ 整个前缀
+ * 都不进 SW（见下面的 fetch 分支），抬版本号是为了把已经躺在 v3 里的
+ * 旧清单连同整份壳一起清掉 —— 光改代码不清缓存，旧条目虽然不再被使用，
+ * 但留着迟早是个坑。 */
+const CACHE = 'sched-shell-v4';
 
 /** 这些都要按 sw.js 自己的位置算 —— 应用挂在 /schedule/ 下，不是根 */
 const INDEX = new URL('./index.html', self.location.href).href;
 const API = new URL('./api/', self.location.href).pathname;
 const ASSETS = new URL('./assets/', self.location.href).pathname;
+const DL = new URL('./dl/', self.location.href).pathname;
 
 /** 第一次打开就在离线状态、缓存里什么都没有时的兜底页 */
 const COLD_OFFLINE = '<!doctype html><meta charset="utf-8">'
@@ -107,6 +119,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith(API)) return;      // 接口交给引擎，别插手
+  // 下载清单与安装包：**必须走网络**，否则「下载最新版」会永远给出缓存里那一天
+  // 的那一版（用户 2026-10-22 遇到的就是这个）
+  if (url.pathname.startsWith(DL)) return;
 
   if (req.mode === 'navigate') { e.respondWith(navFirst(req)); return; }
   if (url.pathname.startsWith(ASSETS)) { e.respondWith(cacheFirst(req)); return; }
