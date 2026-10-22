@@ -465,9 +465,12 @@
 /* -------- 滚动条浮条（九条第 1 条，touchDamp.ts 写 --thumb-y / --thumb-h）--------
    系统滚动条已被藏掉（scrollbar-width:none + ::-webkit-scrollbar），占位为 0；
    这里用 ::after 画一根 3px 半透明浮条，**绝对定位压在卡片上**，不占任何布局
-   空间。滚动时 data-thumb="on" 淡入，0.8s 没动静自动淡出（计时在 JS 侧）。 */
+   空间。滚动时 data-thumb="on" 淡入，0.8s 没动静自动淡出（计时在 JS 侧）。
+   三处容器：日视图未定时区 / 周视图未定时格 / **月视图格子**（.cell-tasks，
+   2026-10-22 宽屏格内滚动）。 */
 .allday-zone::after,
-.wun-cell::after {
+.wun-cell::after,
+.cell-tasks::after {
   content: ''; position: absolute; right: 1px; top: 0;
   width: 3px; height: var(--thumb-h, 0px);
   transform: translateY(var(--thumb-y, 0px));
@@ -477,7 +480,8 @@
   pointer-events: none;
 }
 .allday-zone[data-thumb="on"]::after,
-.wun-cell[data-thumb="on"]::after { opacity: 1; }
+.wun-cell[data-thumb="on"]::after,
+.cell-tasks[data-thumb="on"]::after { opacity: 1; }
 
 /* -------- 滚到边界时的橡皮筋（app/touchDamp.ts 写 --pull） --------
    位移挂在**内容**上而不是容器上：容器有边框和底色，挪容器等于把格子扯走。
@@ -513,15 +517,20 @@ body.is-drag-range { user-select: none; }
 
 /* ================= 月视图 ================= */
 
-/* 高度由 JS 按可见区域算好（见 Views.fitMonthHeight）：
-   窗口高就撑满整屏、行高均分；窗口矮就按最小行高撑开，页面照常滚动，不会截掉最后一行 */
+/* 高度全是 CSS：`.content-month` 挂上后（Shell 对月视图**宽窄都挂**，2026-10-22
+   宽屏也锁单屏），这里 flex:1 吃掉剩余高度，`.month-grid` 行高 1fr 均分 ——
+   窗口高就撑满整屏、行行等高。以前那套「JS 量高度写内联 minmax(104,auto)」
+   随 views/calendar/layout.ts 的 fit() 一起删了。min-height 480px 只是非
+   content-month 时的兜底。 */
 .month-view { display: flex; flex-direction: column; min-height: 480px; }
 /* 窄屏（Shell 挂 content-month）锁单屏不滚：行高由 flex 均分，所以这里把
-   min-height 收回 0、网格吃掉剩余高度。JS 那边（domain/layout.ts 的 fit）看到
-   content-month 就不再写 gridAutoRows，否则会把 6 周的月份顶出屏幕。 */
+   min-height 收回 0、网格吃掉剩余高度。 */
 .content-month { overflow: hidden; display: flex; flex-direction: column; }
 .content-month .month-view { min-height: 0; flex: 1 1 auto; min-height: 0; }
 .content-month .month-grid { flex: 1 1 auto; min-height: 0; grid-auto-rows: 1fr; }
+/* 格子的 min-height 也收回 0（宽窄通用）：行高由 1fr 均分说了算，104px 的下限
+   会让短窗口下网格超出容器、被 .month-grid 的 overflow:hidden 裁掉最后一行。 */
+.content-month .month-cell { min-height: 0; }
 .month-head { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
 .month-head-cell { text-align: center; font-size: 11.5px; color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
 .month-grid {
@@ -531,14 +540,17 @@ body.is-drag-range { user-select: none; }
      12px 的一整块看着像个大药丸，9px 收住了仍不失圆润。 */
   border: var(--border-w) solid var(--border); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow);
 }
-.month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; }
+/* flex 列：`.cell-tasks` 才能「吃掉剩余高度 + 自己滚」。块级布局下它的高度
+   跟内容走，溢出会直接画出格子外（被 .month-grid 的 overflow:hidden 裁掉），
+   滚不起来。 */
+.month-cell { background: var(--panel); padding: 6px 7px; cursor: pointer; min-height: 104px; display: flex; flex-direction: column; }
 .month-cell:hover { background: var(--panel-2); }
 .month-cell.out { background: var(--panel-3); color: var(--text-3); }
 /* 月视图的今天**只靠日期圆圈**表示，不加整格底色（2026-10-22 用户） */
 /* 格子底部那条「负载条」（4~8 小时棕、>8 小时红）2026-10-22 按用户要求
    **手机端和电脑端都去掉**。忙碌程度仍由格子里右上角那行小字（如「4时」）表达，
    `lv2/lv3` 这两个类名保留 —— `.month-cell.lv3 .cell-load` 还在用它们染字色。 */
-.cell-head { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+.cell-head { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; flex: 0 0 auto; }
 .cell-date {
   width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; font-size: 12.5px; font-weight: 500; flex: 0 0 22px;
@@ -550,12 +562,21 @@ body.is-drag-range { user-select: none; }
 .cell-today { font-size: 10px; background: var(--primary); color: var(--on-primary); border-radius: var(--r-sm); padding: 0 5px; }
 .cell-load { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .month-cell.lv3 .cell-load { color: var(--danger); }
-.cell-tasks { display: flex; flex-direction: column; gap: 3px; }
-.cell-more {
-  font-size: 10.5px; color: var(--text-3); padding: 2px 0 0 2px;
-  cursor: pointer; transition: color .12s;
+.cell-tasks {
+  display: flex; flex-direction: column; gap: 3px;
+  /* 宽屏格子限高（行高 1fr 均分）→ 溢出在**格内滚动**看全部（2026-10-22 用户：
+     显示不完就滚，不截断、不 +N）。窄屏在 responsive.css 覆盖回 overflow:hidden，
+     走 +N 角标路线（那条在后引入，同特异度压得住）。 */
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  position: relative;            /* 浮条 ::after 的定位锚 */
+  scrollbar-width: none;         /* 藏系统滚动条：不占格内宽度 */
 }
-.cell-more:hover { color: var(--primary); }
+.cell-tasks::-webkit-scrollbar { display: none; }
+/* 子项不许被压扁：flex 列默认 flex-shrink:1，任务一多浏览器就把每条压扁塞进
+   限高 → scrollHeight 恒等于 clientHeight，「超出的自己滚」永远不触发
+   （.wun-cell 2026-10-22 踩过同一个坑）。 */
+.cell-tasks .task-pill { flex: 0 0 auto; }
 
 /* ================= 就地新建：点空格子冒出来的那个框 =================
    日 / 周 / 月三视图共用 `views/calendar/NewCell.tsx` 出的这一个 `<textarea>`，

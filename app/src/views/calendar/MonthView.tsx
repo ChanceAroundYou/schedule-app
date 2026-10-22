@@ -1,16 +1,19 @@
 /**
  * MonthView.tsx —— 月视图
  *
- * 窄屏（手机）下这一页是「一屏画完、不滚」的：行数只算**含当月某天的那些周**
- * （见 domain/date.ts 的 monthWeeks —— 10 月是 5 行，不再多画一整行 11/2–11/8），
- * 行高由 flex 均分剩余高度。格子高度确定 → 能塞几行文字是算得出的：
- * `domain/layout.ts` 的 monthCellCapacity，那几个常数与 responsive.css 窄屏那段同源。
+ * 这一页**宽窄屏都是「一屏画完、不滚」**的：行数只算**含当月某天的那些周**
+ * （见 domain/date.ts 的 monthWeeks —— 10 月是 5 行，不再多画一整行 11/2–11/8；
+ * 2026-10-22 起宽屏也走这条，纯下月的空白行宽窄都不画），行高由 flex 均分剩余
+ * 高度。格子高度确定 → 窄屏能塞几行文字是算得出的：`domain/layout.ts` 的
+ * monthCellCapacity，那几个常数与 responsive.css 窄屏那段同源。
  *
  * 格子里一行一条任务（标题放不下**直接裁掉**，不用省略号 —— 省略号要占整整一个
- * 汉字宽，去掉它一行能多显示一个字），塞不下的在**最后一条可见文字尾巴上**
+ * 汉字宽，去掉它一行能多显示一个字）。**窄屏**塞不下的在**最后一条可见文字尾巴上**
  * 挂一个 "+N"（参考图 Google 日历：公司+2）—— 行内的，不单独占一行，省下的
- * 高度能多显示一行。格子内口径是「未完成在前（按时间），已完成在后」。
- * 宽屏格子够宽（≈250px），照旧直接列任务、照旧灰色邻月 —— 用户要求只改手机端。
+ * 高度能多显示一行。**宽屏不截断**（2026-10-22 用户：显示不完就格内滚动看全部）：
+ * 全部渲染，溢出交给 `.cell-tasks` 自己滚（浮条滚动条，不占格内宽度）。
+ * 格子内口径是「未完成在前（按时间），已完成在后」。
+ * 宽屏照旧灰色邻月格（`.out`）—— 邻月格照画、照能点。
  *
  * ⚠️ 这里零回调，全由 `#content` 上那一个委托处理（见 app/clickDispatch.ts
  *   与 AGENTS.md「点击事件必须走委托」）：
@@ -31,15 +34,6 @@ import { monthCellCapacity } from '../../domain/layout.ts';
 import { TaskPill, loadLevel } from '../parts.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
-
-const MONTH_CELL_MAX = 8;
-
-/** 42 天摊成 7 行（宽屏路径） */
-function chunk7(days: string[]): string[][] {
-  const rows: string[][] = [];
-  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
-  return rows;
-}
 
 /** 格子内口径：未完成在前（按时间），已完成在后 —— 只在月视图这一处用 */
 function cellOrder(list: Task[]): Task[] {
@@ -105,8 +99,8 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
       </div>
       <div className="cell-tasks">
         {/* 最后一条可见的挂 "+N"（more > 0 时）—— 行内的，不单独占一行。
-            ⚠️ 只有窄屏走这套：宽屏格子够宽，照旧用下面那行「还有 N 项 ›」，
-            两边同时出现就重复了。
+            ⚠️ 只有窄屏走这套：宽屏格子不截断（全部渲染 + `.cell-tasks` 格内滚动，
+            2026-10-22 用户「显示不完就滚着看全部」），没有 more 可言。
             点这一行 = 去看那一天的**日视图**（jumpDay），不是开任务抽屉
             —— 用户 2026-10-19 明确要求。 */}
         {shown.map((t, i) => (
@@ -115,13 +109,6 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
           />
         ))}
-        {/* 宽屏格子够宽，照旧「还有 N 项 ›」单独一行；窄屏的 +N 已经挂在最后
-            一条文字上了，不再画这一行。 */}
-        {more > 0 && !narrow && (
-          <div className="cell-more" data-jump={d} title={'查看 ' + D.fmtMD(d) + ' 的完整日程'}>
-            还有 {more} 项 ›
-          </div>
-        )}
       </div>
     </div>
   );
@@ -131,8 +118,9 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
   const narrow = useIsNarrow();
   const gridRef = useRef<HTMLDivElement>(null);
   const h = useElementHeight(gridRef);
-  /* 窄屏只画含当月某天的那些周（10 月是 5 行）；宽屏照旧整 6 周 */
-  const weeks = narrow ? D.monthWeeks(iso) : chunk7(D.monthMatrix(iso));
+  /* 只画含当月某天的那些周（10 月是 5 行）。2026-10-22 起宽屏也走这条 ——
+     以前宽屏死画 6 周，10 月末尾多一整行纯下月（11/2–11/8）的空白行。 */
+  const weeks = D.monthWeeks(iso);
   const curMonth = D.parseISO(iso).getMonth();
   const today = D.today();
   /* 窄屏是 flex 均分 → 每格高确定（网格高减行间距再除行数）。首帧量不到
@@ -152,8 +140,12 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
           /* 草稿那一行必须显式预留，否则输入框会把内容顶出格子（窄屏 overflow:hidden）。
              逐格算：只有开着草稿的那一格才扣。 */
           const draftHere = !!state.ui.draft && state.ui.draft.zone === `day:${d}`;
-          const room = narrow ? monthCellCapacity(cellH, draftHere) : MONTH_CELL_MAX;
-          const { shown, more } = cellCounts(ts, room);
+          /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
+             尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
+             看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */
+          const { shown, more } = narrow
+            ? cellCounts(ts, monthCellCapacity(cellH, draftHere))
+            : { shown: ts, more: 0 };
           return (
             <MonthCell
               key={d} state={state} d={d} curMonth={curMonth} today={today}

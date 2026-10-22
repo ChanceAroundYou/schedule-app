@@ -408,6 +408,9 @@ body.sheet-open .tab:active { background: none; }
      的 1/9（2026-10-19 实测：改之前格子 47px、文字行 39px、10px 字号只放 3 个汉字）。 */
   .month-cell { padding: 3px 1px; min-height: 62px; }
   .content-month .month-cell { min-height: 0; overflow: hidden; }
+  /* 窄屏**不走格内滚动**（手机上是 +N 角标路线）—— 把 calendar.css 宽屏那条
+     `.cell-tasks { overflow-y: auto }` 覆盖回 hidden（本文件后引入，同特异度
+     压得住）。flex:1 照吃：格子剩余高度归它，内容由 monthCellCapacity 兜住。 */
   .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
   /* 一行一条任务。横向每一分都要省：47px 的胶囊减掉左右各 1px 的**中性边框**
      （`border: 1px solid var(--border)` 四面都有，不只是顶底）就是 45px，

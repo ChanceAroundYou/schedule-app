@@ -67,11 +67,11 @@ export function Shell({
             列表页与月视图照常滚。周视图 2026-10-17 起也是一屏：它的一周七天
             横向铺开，纵向 24 小时摊在一屏里，滚下来只是把晚上看一半再滚去看
             那一半，没有意义。
-            窄屏月视图也是一屏（2026-10-19）：行数只画含当月某天的那些周，
-            行高由 flex 均分，格子才能算出「放得下几行任务文字」——所以这里
-            必须锁单屏，不能滚。宽屏月视图格子够宽，照常滚。 */}
+            月视图锁单屏（2026-10-19 窄屏先做，2026-10-22 宽屏统一）：行数只画
+            含当月某天的那些周、行高由 flex 均分 —— 窄屏格子才能算出「放得下几行
+            任务文字」，宽屏格子则格内滚动看全部。所以这里必须锁单屏，不能滚。 */}
         <div
-          className={'content osb' + (state.ui.nav === 'calendar' && (state.ui.view === 'day' || state.ui.view === 'week') ? ' content-day' : '') + (state.ui.nav === 'calendar' && state.ui.view === 'month' && narrow ? ' content-month' : '')}
+          className={'content osb' + (state.ui.nav === 'calendar' && (state.ui.view === 'day' || state.ui.view === 'week') ? ' content-day' : '') + (state.ui.nav === 'calendar' && state.ui.view === 'month' ? ' content-month' : '')}
           id="content"
           ref={osbContent}
         >{children}</div>

@@ -19,8 +19,11 @@
  * 视图仍然是纯展示。
  */
 
-/** 两处限高滚动的容器 —— 改选择器记得同步 styles/calendar.css 的 `> *` 规则 */
-const TARGETS = '.allday-zone, .wun-cell';
+/** 橡皮筋（拉到边界的阻尼）只给这两处 —— 改选择器记得同步 styles/calendar.css 的 `> *` 规则 */
+const DAMP_TARGETS = '.allday-zone, .wun-cell';
+
+/** 浮条（滚动指示条）多给月视图格子 `.cell-tasks`（宽屏格内滚动，2026-10-22） */
+const THUMB_TARGETS = '.allday-zone, .wun-cell, .cell-tasks';
 
 /** 最多能拉开多少（CSS px）。再大就成"把格子扯掉"了。
  *  56 → 96（2026-10-22 用户反馈「太硬」）：上限太近会让手指很快就拉不动，
@@ -56,7 +59,7 @@ export function installTouchDamp(root: HTMLElement): () => void {
     if (ev.touches.length !== 1) { if (el) { reset(el); el = null; } return; }
     const t = ev.target as Element | null;
     const hit = t && typeof t.closest === 'function'
-      ? (t.closest(TARGETS) as HTMLElement | null)
+      ? (t.closest(DAMP_TARGETS) as HTMLElement | null)
       : null;
     if (!hit) return;
     // 约束 1：没溢出就别掺和
@@ -126,6 +129,9 @@ export function installTouchDamp(root: HTMLElement): () => void {
  *
  * 监听装在 root 上（capture —— scroll 事件不冒泡，只能捕获），和橡皮筋同一套
  * 委托思路：视图照旧零回调。
+ *
+ * ⚠️ 与橡皮筋的 DAMP_TARGETS 不是一张单子：月视图 `.cell-tasks` 要浮条、
+ * 不要橡皮筋（格子拉到边扯整格内容，和「点格子跳日视图」打架）。
  */
 export function attachScrollThumb(root: HTMLElement): () => void {
   const timers = new WeakMap<HTMLElement, number>();
@@ -153,7 +159,7 @@ export function attachScrollThumb(root: HTMLElement): () => void {
   const onScroll = (ev: Event) => {
     const t = ev.target as Element | null;
     if (!t || typeof t.closest !== 'function' || !(t instanceof HTMLElement)) return;
-    if (!t.matches(TARGETS)) return;
+    if (!t.matches(THUMB_TARGETS)) return;
     paint(t);
   };
 

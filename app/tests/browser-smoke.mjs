@@ -1890,6 +1890,44 @@ try {
   ok(month.bad.length === 0, '月视图格子里的勾选圈也是真按钮'
     + (month.bad.length ? '：\n      ' + month.bad.join('\n      ') : ''));
 
+  // 2026-10-22 用户三条（月视图宽屏）：①「改了这么多次还是有完全属于下个月的
+  // 空白行」②「每行高度保持一致且固定，不被任务撑开或压扁」③「显示不完格内
+  // 滚动，滚动条浮动不占横向空间」。三条一起锁在这：
+  const mv = await evalJs(page, `return (() => {
+    const cells = [...document.querySelectorAll('.month-cell')];
+    if (!cells.length) return { err: 'no-cells' };
+    // 行 = 按 y 聚类（网格同一行的格子 y 相同）
+    const rows = new Map();
+    for (const c of cells) {
+      const y = Math.round(c.getBoundingClientRect().y);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push(c);
+    }
+    const rowList = [...rows.values()]
+      .sort((a, b) => a[0].getBoundingClientRect().y - b[0].getBoundingClientRect().y);
+    // 纯下月行 = 整行都是 .out（邻月灰格）—— monthWeeks 不该产出这种行
+    const pureOut = rowList.filter((row) => row.every((c) => c.classList.contains('out'))).length;
+    const heights = [...new Set(rowList.map((row) => Math.round(row[0].getBoundingClientRect().height)))];
+    const ct = document.querySelector('.cell-tasks');
+    const cs = ct ? getComputedStyle(ct) : null;
+    const grid = document.querySelector('.month-grid').getBoundingClientRect();
+    return {
+      rows: rowList.length, pureOut, heights, h0: heights[0],
+      overflowY: cs ? cs.overflowY : null,
+      scrollbarWidth: cs ? cs.scrollbarWidth : null,
+      position: cs ? cs.position : null,
+      gridH: Math.round(grid.height), viewH: window.innerHeight,
+    };
+  })();`);
+  ok(!mv.err && mv.rows >= 4 && mv.rows <= 6 && mv.pureOut === 0,
+    '月视图没有纯下月空白行（' + mv.rows + ' 行，纯下月 ' + mv.pureOut + ' 行）'
+    + (mv.err ? '　诊断：' + JSON.stringify(mv) : ''));
+  ok(mv.heights.length === 1 && mv.h0 > 40,
+    '每行高度一致且固定（' + mv.rows + ' 行都是 ' + mv.h0 + 'px —— 任务多寡不改行高）');
+  ok(mv.overflowY === 'auto' && mv.scrollbarWidth === 'none' && mv.position === 'relative',
+    '宽屏格子溢出格内滚动、系统滚动条已藏（浮条不占横向宽度）');
+  ok(mv.gridH <= mv.viewH, '月视图网格不超出一屏（' + mv.gridH + ' ≤ ' + mv.viewH + '）');
+
   console.log('\n十四、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
   //
   // 上下沿那两个把手是**页面上仅有的两个不可点、只能拖的控件**（其余 data-act

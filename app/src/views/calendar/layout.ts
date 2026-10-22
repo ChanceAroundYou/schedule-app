@@ -1,19 +1,14 @@
 /**
- * layout.ts —— 视图尺寸 / 滚动位置
+ * layout.ts —— 视图滚动位置
+ *
+ * 尺寸**不归这里管**：日/周/月三视图的高度全是纯 CSS（flex: 1 + min-height: 0
+ * 填满内容区，月视图行高 grid-auto-rows: 1fr 均分）。以前这里量内容区高度再写成
+ * 内联 style，窗口一缩就只剩写死的下限；2026-10-22 月视图宽窄屏统一锁单屏后，
+ * 那套（fit + MONTH_ROW_MIN/MAX）整个删掉，让 CSS 说话。
  */
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import * as D from '../../domain/date.ts';
-
-const MONTH_ROW_MIN = 104;
-const MONTH_ROW_MAX = 132;
-const MONTH_HEAD_H = 30;
-
-/** 量出内容区减去内边距的净高。不写 calc(100vh - N)：工具栏 / 缩放 / 系统字号都会让 N 猜错 */
-function availHeight(el: HTMLElement): number {
-  const cs = getComputedStyle(el);
-  return el.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-}
 
 /**
  * 窄屏下周视图 7 列要横滑，把「今天 / 选中的那天」摆到可视区中间 ——
@@ -43,7 +38,7 @@ function centerWeekDay(g: HTMLElement, iso: string) {
 }
 
 /**
- * 视图尺寸 + 滚动位置。
+ * 视图滚动位置（尺寸归 CSS，见文件头）。
  *
  * 滚动位置必须在**渲染阶段**读：React 是先跑完整棵树的 render、再统一改 DOM，
  * 所以 render 期间 DOM 还是旧的，这时读到的才是重绘前的位置。
@@ -61,42 +56,10 @@ export function useViewLayout(
 
   if (el) {
     saved.current.scroll = el.scrollTop;
-    /* 周视图现在只留横向位置（纵向不再滚 —— 见 fit 里那句注释） */
+    /* 周视图现在只留横向位置（纵向不再滚 —— 三视图都锁单屏，见文件头注释） */
     const g = el.querySelector<HTMLElement>('.week-view');
     saved.current.week = g ? g.scrollLeft : 0;
   }
-
-  useLayoutEffect(() => {
-    const host = contentRef.current;
-    if (!host) return;
-
-    const fit = () => {
-      /* 周视图的高度**不用 JS 写**：它现在是 `#content` 的 flex 子项，
-         `flex: 1 + min-height: 0` 自己就填满剩余空间（2026-10-17 锁单屏）。
-         以前这里量 availHeight 再写成内联 style，窗口一缩就只剩 420 的下限。 */
-      const grid = host.querySelector<HTMLElement>('.month-grid');
-      if (!grid) return;
-      /* 窄屏月视图走的是同一套 flex（见 calendar.css 的 .content-month）——
-         这里写的内联 gridAutoRows 会压过 CSS 的 1fr，把占满 6 周的月份顶出屏幕，
-         与「一屏画完不滚」直接打架。所以窄屏让 CSS 说话，这里不插手。 */
-      if (host.classList.contains('content-month')) {
-        grid.style.gridAutoRows = '';
-        return;
-      }
-      const row = Math.round(Math.max(
-        MONTH_ROW_MIN,
-        Math.min(MONTH_ROW_MAX, (availHeight(host) - MONTH_HEAD_H) / 6),
-      ));
-      grid.style.gridTemplateRows = '';
-      // minmax(下限, auto)：下限保证尽量占满一屏，auto 让内容多的行自己长高 → 能滚
-      grid.style.gridAutoRows = `minmax(${row}px, auto)`;
-    };
-
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-    // 每次渲染都重跑：切视图 / 改窗口宽高都要重算，而这里是纯读写的便宜操作
-  });
 
   useEffect(() => {
     const host = contentRef.current;
