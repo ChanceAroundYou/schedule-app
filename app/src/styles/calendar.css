@@ -423,11 +423,13 @@
    用独立的 `translate` 属性（不是 transform），这样和拖拽卡片自己的 transform
    是叠加关系，谁也不会覆盖谁。
    `data-pull` 只在手指拉着的那一小段存在 —— 有它就没有过渡（必须跟手），
-   松手时属性被摘掉，过渡接管、弹回去。 */
+   松手时属性被摘掉，过渡接管、弹回去。
+   260ms → 320ms（2026-10-22 用户「太硬」）：短促的弹回像被弹簧抽回去，
+   拖长一点、缓出更足，才是"松手后慢慢归位"的手感。 */
 .allday-zone > *,
 .wun-cell > * { translate: 0 var(--pull, 0px); }
 .allday-zone:not([data-pull]) > *,
-.wun-cell:not([data-pull]) > * { transition: translate 260ms cubic-bezier(.22, .9, .26, 1); }
+.wun-cell:not([data-pull]) > * { transition: translate 320ms cubic-bezier(.18, .85, .24, 1); }
 @media (prefers-reduced-motion: reduce) {
   .allday-zone > *, .wun-cell > * { transition: none; }
 }

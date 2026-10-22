@@ -22,11 +22,14 @@
 /** 两处限高滚动的容器 —— 改选择器记得同步 styles/calendar.css 的 `> *` 规则 */
 const TARGETS = '.allday-zone, .wun-cell';
 
-/** 最多能拉开多少（CSS px）。再大就成"把格子扯掉"了 */
-const MAX_PULL = 56;
+/** 最多能拉开多少（CSS px）。再大就成"把格子扯掉"了。
+ *  56 → 96（2026-10-22 用户反馈「太硬」）：上限太近会让手指很快就拉不动，
+ *  手感像撞在一条橡胶墙上。放宽之后同样的位移跟手更多，末端才慢慢吃劲。 */
+const MAX_PULL = 96;
 
-/** 小于这个位移压根不算拉 —— 手指轻颤不该让内容动 */
-const SLOP = 6;
+/** 小于这个位移压根不算拉 —— 手指轻颤不该让内容动。
+ *  6 → 4（2026-10-22「太硬」）：6px 的死区之后才动，起步那一下是"跳"出去的。 */
+const SLOP = 4;
 
 export function installTouchDamp(root: HTMLElement): () => void {
   /** 本次触摸锁定的容器（null = 这次触摸不归我们管） */
@@ -71,8 +74,10 @@ export function installTouchDamp(root: HTMLElement): () => void {
     else if (dy < -SLOP && atBottom) pull = -damp(-dy - SLOP);
 
     if (pull === 0) {
-      // 拉回滚动区间内（或者方向反过来）→ 立刻归零，让原生滚动接手
-      if (node.hasAttribute('data-pull')) { node.removeAttribute('data-pull'); node.style.setProperty('--pull', '0px'); }
+      // 拉回滚动区间内（或者方向反过来）→ 归零，但**保持 data-pull**：
+      // 这里要跟手归零，不能把过渡打开 —— 打开就会"啪"地弹一下，正是那种
+      // 硬邦邦的感觉。真正的弹回只在抬手时（onEnd → reset）发生。
+      if (node.hasAttribute('data-pull')) node.style.setProperty('--pull', '0px');
       return;
     }
 
