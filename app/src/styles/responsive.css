@@ -237,10 +237,6 @@ body.sheet-open .tab:active { background: none; }
     --ev-title-size: var(--task-text-sm);
     --ev-time-size: var(--task-time-sm);   /* 时间行比标题小一档（8px） */
     --ev-gap: 0px;
-    /* 周视图手机端每小时的高度（.week-cols 的 min-height 用它 × 小时数算出）。
-       2026-10-23 用户：锁单屏时 16 小时压一屏每小时只剩 ~28px 太挤，
-       放开纵向滚动换宽松 —— 48px 每小时，往上滑看后半段。 */
-    --wk-hour-h: 48px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
   .ev-resize { opacity: .5; }
@@ -301,36 +297,14 @@ body.sheet-open .tab:active { background: none; }
   .ci-item { padding: 8px 11px; }
 }
 
-/* ---- 周视图：窄屏放开纵向滚动，横向滚动保留 ----
-   2026-10-17 曾锁单屏不纵向滚；2026-10-23 用户改裁决：手机端 16 小时压一屏
-   每小时只剩 ~28px 太挤，**放开纵向滚动换宽松** —— 每小时 48px，一屏看一部分，
-   往上滑看后面（表头与未定时行钉在顶部不跟着滚，见 .week-pin）。
+/* ---- 周视图：窄屏改成横向滚动，列宽锁死 ----
+   纵向**不滚**（2026-10-17）：整天已经摊在一屏里，滚动只会把一天切成两截。
    横向必须留 —— 手机上 7 列并排每列不到 50px，看不清。 */
 @media (max-width: 900px) {
   .week-view {
     -webkit-overflow-scrolling: touch;
-    /* 双轴都是自己滚：横向看全周（原有的），纵向看时间窗后半段（新的）。
-       contain 防止滚到头把滚动链传给页面（下拉刷新那种）。 */
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
   }
-  /* 表头 + 未定时行钉在顶部：纵向滚多少，日期和未定时任务都看得见。
-     z-index 6 —— 盖住刻度列(5)和「现在」线(3)，低于拖拽中的卡片(9)，
-     卡片拖到顶部区域时照样看得见。宽屏 display:contents（见 calendar.css）。 */
-  .week-pin {
-    display: block; position: sticky; top: 0; z-index: 6;
-  }
-  /* 每小时 48px（原锁单屏时 ~28px）：列的最小高 = 时间窗小时数 × 48。
-     ⚠️ 用 min-height 不用 height —— 时间窗收得很窄（比如 2 小时）时，
-     内容不足一屏要让行**继续撑满**剩余空间（行为与宽屏锁单屏时一致）；
-     窗口大时 min-height 把内容顶到超出容器，滚动才发生。
-     --wk-hours 由 WeekView 写在 .week-cols 的内联样式上。 */
-  .week-cols { min-height: calc(var(--wk-hours) * var(--wk-hour-h)); }
-  /* ⚠️ **不许被压扁**（flex 收缩的老坑，见 MEMORY）：.week-grid 是 flex 子项、
-     默认 flex-shrink:1 + min-height:0 —— 内容变高后会被压缩回容器高，
-     scrollHeight 永远等于 clientHeight，上面的滚动根本不发生。
-     关掉收缩，内容才真的溢出、才滚得起来。 */
-  .week-grid { flex-shrink: 0; }
   /* 表头、未定时行、时间网格三行一起吃这条最小宽度 —— 作为 flex 项它们默认
      只有容器那么宽（≈一屏），右边三四列的表头会透出下面时间网格的刻度线，
      看着就是「表头只画了一半」。

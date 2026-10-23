@@ -310,11 +310,9 @@
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
 
 /* ================= 周视图 =================
-   **与日视图是同一根时间轴**：事件卡就是日视图那张（views/calendar/TaskCard.tsx）、
-   刻度线与当前时间线复用 .tl-hour / .tl-label / .tl-now。周视图自己独有的
-   只有 —— 七天横向并排。
-   纵向：宽屏仍锁单屏不滚（2026-10-17 起）；**窄屏 2026-10-23 放开**，见
-   responsive.css 的窄屏周视图块。
+   **与日视图是同一根时间轴**：锁单屏不纵向滚、事件卡就是日视图那张
+   （views/calendar/TaskCard.tsx）、刻度线与当前时间线复用 .tl-hour /
+   .tl-label / .tl-now。周视图自己独有的只有一件事 —— 七天横向并排。
 
    2026-10-17 之前它是一套平行实现（自己的 .wk-* 皮肤、写死 24 小时
    1536px、可以纵向滚），任何改动都要问「日视图要不要跟上」。 */
@@ -329,10 +327,6 @@
   /* 与 .day-panel 同一个道理：整块一个堆叠上下文，卡片跨列拖起来不被裁 */
   isolation: isolate;
 }
-/* 表头 + 未定时行的包装（WeekView.tsx 的 .week-pin）。宽屏 display:contents
-   —— 包装盒不生成，两个孩子照旧是 .week-view 的 flex 项，布局与没有它完全
-   一样。窄屏在 responsive.css 里翻成 sticky 块（手机端纵向滚动时钉在顶部）。 */
-.week-pin { display: contents; }
 /* 表头 / 未定时行 / 左刻度 + 七列：**行宽共用一条基线**，
    会不会错位只看这一处在不在同一个容器里 */
 .week-head {

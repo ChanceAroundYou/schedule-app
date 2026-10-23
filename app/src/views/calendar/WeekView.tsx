@@ -161,10 +161,6 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
 
   return (
     <div className="week-view osb" id="weekView" ref={osbWeek}>
-      {/* 表头 + 未定时行包成一个**竖向 sticky 块**（仅窄屏生效，见 responsive.css）：
-          手机端 .week-view 放开纵向滚动后，这两行钉在顶部不跟着滚。
-          宽屏 display:contents，包装盒不生成，布局与没有它时完全一样。 */}
-      <div className="week-pin">
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
         <div className="week-head-cols">
@@ -192,7 +188,6 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
           ))}
         </div>
       </div>
-      </div>{/* /.week-pin */}
 
       <div className="week-grid">
         {/* 左侧刻度列。**标签用的是日视图那两个类**（.tl-hour / .tl-label），
