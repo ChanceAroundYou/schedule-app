@@ -12,7 +12,7 @@ export type { MetaLike } from './hydrate.ts';
 export { isGone, isTrashed, allTasks, allHabits } from './visibility.ts';
 export { roleOf, hasCals, inCal } from './permission.ts';
 export {
-  liveTasks, trashedTasks, taskById, tasksOn, untimedOn,
+  liveTasks, trashedTasks, taskById, tasksOn, untimedOn, openFirst,
   inboxTasks, todayTasks, todayDoneTasks, overdueTasks, overdueCount,
   doneTasks, dayLoad, orderCmp, taskCmp, sortTasks, ordCmp, nextOrder,
 } from './tasks.ts';

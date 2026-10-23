@@ -26,7 +26,7 @@ import {
   layoutOverlap, minToPct, pctRange, spanOf, timeRange, coverWindow, windowOf,
   type DayWindow, type Slot,
 } from '../../domain/layout.ts';
-import { tasksOn, untimedOn } from '../../domain/model.ts';
+import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
 import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { useDragSession, useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
@@ -110,7 +110,9 @@ function WeekColumn({
  */
 function WunCell({ state, d, today }: { state: LocalState; d: string; today: string }) {
   const zone = useDroppableZone(`allday:${d}`);
-  const un = untimedOn(state, d);
+  /* 含已完成的（2026-10-23 用户）：勾完留在原处变灰、排在未完成后面 ——
+     以前 untimedOn 把 done 过滤掉，勾完这条就从周视图消失。 */
+  const un = openFirst(untimedOn(state, d));
   const draft = draftOn(state.ui, `allday:${d}`);
   return (
     <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}>

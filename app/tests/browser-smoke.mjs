@@ -2248,6 +2248,77 @@ try {
   ok(thumbOn, '滚动时**浮条出现**（压在卡片上的滚动指示）', 'data-thumb=on');
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
 
+  /* ---- 2026-10-23 用户：完成的未定时任务不该从日程表消失 ----
+     定时任务勾完是「留在原处变灰」，未定时任务以前被 untimedOn / DayView 的
+     !t.done 过滤掉、直接消失。现在统一：留下变灰 + 排在未完成后面。
+     勾选用 API 落库（确定性；勾选圈→落库那条链别的节锁过），日/周两路各验一次。 */
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const id = window.__unIds[0];
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id + 'done', deviceId: 'smoke', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { done: true } }] }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  const wkDone = await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const cards = [...cell.querySelectorAll('.task-el--untimed')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || !mine.classList.contains('done')) return null;
+      const open = cards.find((c) => !c.classList.contains('done'));
+      return {
+        n: cards.length,
+        last: cards[cards.length - 1] === mine,
+        bgDiff: !!open && getComputedStyle(mine).backgroundColor !== getComputedStyle(open).backgroundColor,
+        titleColor: getComputedStyle(mine.querySelector('.ev-title')).color,
+      };
+    })()
+  `, '周视图：完成的未定时任务留在原地（带 done 类）', 12000);
+  ok(wkDone.n >= 8 && wkDone.last,
+    '【周视图】完成的未定时任务**不消失**，且排在未完成后面',
+    `共 ${wkDone.n} 条 · 是最后一条=${wkDone.last}`);
+  ok(wkDone.bgDiff, '【周视图】留下的已完成卡**变灰**了（底色与未完成的不同）', wkDone.titleColor);
+
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  const dayDone = await waitFor(page, `
+    (() => {
+      const cards = [...document.querySelectorAll('.allday-items .task-el')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || !mine.classList.contains('done')) return null;
+      return { n: cards.length, last: cards[cards.length - 1] === mine };
+    })()
+  `, '日视图：完成的未定时任务仍在（以前这里就消失了）', 12000);
+  ok(dayDone.n >= 8 && dayDone.last,
+    '【日视图】完成的未定时任务**不消失**，排在未完成后面',
+    `共 ${dayDone.n} 条 · 是最后一条=${dayDone.last}`);
+
+  // 取消完成 → 回到未完成组（还能再勾），条数不变
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const id = window.__unIds[0];
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id + 'undone', deviceId: 'smoke', ts: Date.now() + 1, entity: 'task', entityId: id, calId: me.cals[0].id, fields: { done: false } }] }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  const backOpen = await waitFor(page, `
+    (() => {
+      const cards = [...document.querySelectorAll('.allday-items .task-el')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || mine.classList.contains('done')) return null;
+      return { n: cards.length };
+    })()
+  `, '取消完成后回到未完成组', 12000);
+  ok(backOpen.n >= 8, '取消完成 → 变回未完成（还能再勾），条数不变', `${backOpen.n} 条`);
+
+  // 后面几节还在周视图上量东西 —— 切回去
+  await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
+  await new Promise((r) => setTimeout(r, 400));
+
   await evalJs(page, `
     const token = localStorage.getItem('schedule-app-token');
     const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();

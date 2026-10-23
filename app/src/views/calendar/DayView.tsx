@@ -31,7 +31,7 @@ import {
   coverWindow, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf,
   type Slot,
 } from '../../domain/layout.ts';
-import { tasksOn } from '../../domain/model.ts';
+import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
 import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { pad2 } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
@@ -44,8 +44,10 @@ import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const tasks = tasksOn(state, iso);
   const timed = tasks.filter((t) => t.time);
-  // 已完成的未定时任务不再占日程位置 —— 它去了「今天 › 今天已完成」
-  const allday = tasks.filter((t) => !t.time && !t.done);
+  /* 已完成的未定时任务**也留在日程上**（2026-10-23 用户：和定时任务统一 ——
+     勾完不消失、留在原处变灰，用 openFirst 排到未完成后面，与月视图格子同一口径）。
+     以前这里写的是 `!t.time && !t.done`，勾完就看不见了。 */
+  const allday = openFirst(untimedOn(state, iso));
 
   /* 时间窗由设置决定（默认整天）。**再按内容自动往外让一圈**（coverWindow）——
      设置在 8–20 点、却有任务排在窗外时，宁可格子矮一点也不让那条任务消失。 */
