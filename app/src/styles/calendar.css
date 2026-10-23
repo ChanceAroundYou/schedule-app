@@ -37,22 +37,37 @@
      3px → 1px（2026-10-22 九条统一规范）。 */
   --allday-pill-pad: 1px 7px;
   --allday-min-h: 14px;
-  /* 卡片圆角用（见 .task-el--timed）：`--tl-h` 是时间轴容器的**实测像素高**，
-     由 WeekView / DayView 写进容器；`--card-h` 是这张卡的**百分比高度**，
-     由 TimedCard 写在卡上。两者相乘 = 这张卡真正的像素高，半径取它的 30%。
+  /* 卡片圆角用（见 .task-el--timed / .task-el--untimed）：半径 = **这张卡自己的
+     像素高 × 30%**，夹在 3px 与 --r-lg 之间。
+     · 定时卡：`--card-px` 由 TimedCard 写（百分比高 × 容器实高 − 卡缝）
+     · 未定时卡：`--row` 由下面的 `max(自然行高, --row-hour)` 算出来，
+       `--row-hour` 由 DayView / WeekView 按「这一屏上的一小时（整天口径）」写（untimedRowPx）
+     两者同一个小时单位 ⇒ 1 小时卡与未定时卡的圆角必然同值（2026-10-24 三问题统一）。
+     以前的 `--tl-h × --card-h` 两跳换算已删 —— 换成 JS 直接给像素高。
      ⚠️ 不能用 `min(12px, 30%)`：百分比半径在计算样式里是**未求值**的字符串，
      探针读不到数、也断言不了「矮卡更方」。 */
-  --tl-h: 0;
-  --card-h: 5;
+  --card-px: 20px;
+  /* 未定时那一行的两半：
+     · `--row-natural` = 一行字 + 卡片上下 padding + 上下边框（矮屏幕上的下限，别让卡比字还窄）
+     · `--row-hour`    = JS 给的「这一屏上的一小时」（整天口径）
+     `--row` 取两者的大值 —— 默认整天视图下等于一小时（与 1 小时定时卡同高），
+     屏幕特别矮时退回一行字。CSS 里的 `--row`（.allday-zone / .wun-cell）就是这条。 */
+  --row-natural: calc(var(--task-line-sm) + 2px + 2 * var(--border-w));
+  /* JS 还没量到容器时这一半是 0 ⇒ --row 退回下限（首帧不塌）。
+     DayView / WeekView 量到之后在容器上写内联值覆盖它。 */
+  --row-hour: 0px;
+  --row: var(--row-natural);
   /* **两个 z 变量已删**（原先 --tl-wrap-z / --allday-zone-z）：两个区现在同处
      `.day-panel` 这一个堆叠上下文，区自己不再建上下文，这两档没有意义了。
-     堆叠只在卡片之间发生，用的写死的 `.task-el.dragging { z-index: 9 }`。 */
+     堆叠只在卡片之间发生，用的写死的 `.task-el.dragging { z-index: 9999 }`（见下）。 */
   --tl-wrap-pad: 8px 12px 10px 60px;
   --tl-label-left: -56px;
   --tl-label-width: 44px;
-  --tl-event-pad: 3px 7px;
-  --ev-title-size: var(--fs-title);
-  --ev-time-size: var(--fs-meta);   /* 时间行比标题小一档 */
+  --tl-event-pad: 1px 7px;
+  /* 周视图两张卡的左右留白（同一档）。**两种卡共用这一条**：以前定时卡吃
+     `--tl-event-pad` 7px、未定时卡吃 `padding: 1px 0`，同一列里文字起点差 7px，
+     看着就是两版皮肤（2026-10-24 三问题）。窄屏在 responsive.css 收成 1px 0。 */
+  --week-card-pad: 1px 7px;
   --ev-gap: 0px;
 }
 
@@ -64,14 +79,16 @@
 }
 
 /* ================= 日视图：唯一一个堆叠上下文 =================
-   **未定时区与时间轴处在同一个堆叠上下文里，谁都不 clip。**
+   **未定时区与时间轴处在同一个堆叠上下文里。**
+   平时各区自己滚（`overflow-y: auto` 照常裁剪）；拖拽中 `:has(.task-el.dragging)`
+   把所在区切到 `overflow: visible` 放行，跨区拖不被裁（见文件末尾那条 `:has` 规则）。
    原先两个区各自 `position: relative; z-index: N` + `.allday-zone` 上
    `overflow-y: clip` —— 那等于给它们各建一个堆叠上下文，于是：
      · 上拖的卡片被下面的区（更高 z-index / 更靠后）挡回来；
      · 下拖的卡片在区的边界上被 clip 切掉半截；
      · 未定时卡片横向没人管，能飘到面板外。
    砍掉之后 `z-index` 只在 `.day-panel` 这一个上下文里有意义：拖起来的
-   卡片 `z-index: 9` 无条件下胜于任何静态内容，也不会被谁裁掉。
+   卡片 `z-index: 9999`（见 `.task-el.dragging`）无条件下胜于任何静态内容。
    `isolation: isolate` 就是「在这里建一个堆叠上下文」的显式写法，
    比靠 `z-index: 0` 的副作用可靠（后者在某些浏览器下会被优化掉）。 */
 .day-panel { isolation: isolate; }
@@ -86,8 +103,9 @@
      2026-10-22 九条再定：上限不是拍脑袋的 max-height，而是**按「4 整条卡 +
      间距 + 上下留白」精确算出来的 height** —— 卡高在 --row（本区一行的高），
      这样无论 1 条还是 8 条，可见区永远是整数张卡，绝不露半截。
-     --row = 标题行高 + 卡片上下 padding（`.task-el--untimed` 1px×2 + 行高 18px）。 */
-  --row: calc(var(--task-line-sm) + 2px + 2 * var(--border-w));   /* 小格行高 + padding 1×2 + 边框 */
+     --row = max(一行字 + 卡片上下 padding + 上下边框, JS 给的「这一屏上的一小时」)
+     —— 后者由 DayView 写进 --row-hour（untimedRowPx，整天口径）。 */
+  --row: max(var(--row-natural), var(--row-hour, 0px));
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 6px);                      /* .allday-zone-pad 的上下两个 3px */
@@ -104,7 +122,7 @@
   display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: var(--un-gap); min-height: var(--allday-min-h); align-content: start;
 }
-.zone-empty { font-size: 12px; color: var(--text-3); padding: 2px 0; grid-column: 1 / -1;
+.zone-empty { font-size: var(--fs-meta); color: var(--text-3); padding: 2px 0; grid-column: 1 / -1;
   min-height: 24px; display: flex; align-items: center; }
 /* 未定时区末尾**那一整行空白**：没有文字、没有边框 —— 它就是一块可点的空地，
    点下去在这一区开草稿（见 app/clickDispatch.ts 第 4 步）。
@@ -135,10 +153,12 @@
    颜色用 --ok（深绿）而不是 --danger（红）：「当前」不是危险状态；
    --ok 是唯一**主题无关**的深绿（--primary 会跟着 6 色板变蓝/变棕/变紫，
    不能拿来表示固定语义）。 */
-/* 现在时刻线：贯穿整行的绿色实线 + 左端绿球 */
+/* 现在时刻线：贯穿整行的绿色实线 + 左端绿球。
+   球心落时间轴与任务区交界线：9px 球 + 1.5px 线 → top = −(9 − 1.5) / 2 = −3.75px。
+   （2026-10-22 前长期是 −4px 估值，P0-3 抽 NowLine 时按算式扶正。） */
 .tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px solid var(--ok); z-index: 3; pointer-events: none; }
 .tl-now::before {
-  content: ''; position: absolute; left: 0; top: -4px;
+  content: ''; position: absolute; left: -4.5px; top: -3.75px;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--ok); box-shadow: 0 0 0 3px rgb(from var(--ok) r g b / .16);
 }
@@ -189,10 +209,13 @@
    算法：半径 = 卡高 × 30%，上下夹在 3px 与 --r-lg 之间。
    ⚠️ **不用 `min(12px, 30%)`**：百分比半径在 `getComputedStyle` 里是**未求值**
    的字符串（实测返回 "min(12px, 30%)"），探针读不到数、也没法断言「矮卡更方」。
-   所以由父级（WeekView / DayView）把实测的容器高写进 `--tl-h`，
-   卡自己把百分比高度写进 `--card-h`，两边相乘换成 px —— 计算样式就是实打实的 px。 */
+   所以像素高由 TimedCard 直接写进 `--card-px`（百分比高 × 容器实高 − 卡缝），
+   这里只做一次乘法 —— 与未定时卡的 `--row` 同一个小时单位。
+   ⚠️ 这条**不许在后面再被覆盖**：原先 `.task-el--timed` 那段（往下）又写了一次
+   `border-radius: var(--r-sm)`，同特异度后写的赢，于是定时卡回到固定 7px，
+   而未定时卡走 30% 算式 —— 2026-10-24 用户报「圆角程度也不一样」的根因。 */
 .task-el--timed {
-  border-radius: clamp(3px, calc(var(--card-h, 5) * var(--tl-h, 0) * 0.003 * 1px), var(--r-lg));
+  border-radius: clamp(3px, calc(var(--card-px, 20px) * 0.3), var(--r-lg));
 }
 .task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
 /* 正在进行的卡：只靠外发光点出来（左侧那条绿线 2026-10-19 按用户要求全去掉了） */
@@ -216,24 +239,37 @@
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
 /* 定时卡片：绝对定位到时间轴上。**不许 overflow: hidden** ——
-   一裁，跨过容器边界的拖动就被切掉半截（用户 2026-10-11 报「向上拖被分割线挡」）。 */
+   一裁，跨过容器边界的拖动就被切掉半截（用户 2026-10-11 报「向上拖被分割线挡」）。
+   内边距 / 字号 / 行高与未定时卡**同一套**（2026-10-23 三问题第 1 条）：
+   外高由时间百分比定（1h ≈ 26.6px），内容行高与未定时卡同为 --task-line-sm，
+   多出来的纵向空间由 justify-content:center 居中消化，不再靠大 padding 撑出
+   第二套内容高度。 */
 .task-el--timed {
   position: absolute; padding: var(--tl-event-pad);
+  font-size: var(--fs-title);
+  line-height: var(--task-line-sm);
   min-height: 12px; min-width: 0;
 }
 /* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px。
-   字号/行高走**小格令牌**（9px/14px，= 月视图手机端 pill；周视图电脑端在
-   .wun-cell 里覆盖成大格）—— 2026-10-22 用户：「日视图的字体也同样缩小，
+   字号/行高走 `--fs-title` / `--task-line-sm`（周视图电脑端在 .wun-cell 里覆盖成
+   `--task-text` / `--task-line`）—— 2026-10-22 用户：「日视图的字体也同样缩小，
    不用加粗」。行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
 .task-el--untimed {
   width: 100%; padding: var(--allday-pill-pad); min-width: 0;
   font-size: var(--fs-title); overflow: hidden;
+  /* 高度走 `--row`。--row 由所在容器算：`max(一行字 + padding + 边框, --row-hour)`，
+     `--row-hour` 是 DayView / WeekView 按「这一屏上的一小时」写进来的（untimedRowPx，
+     2026-10-24 三问题统一）—— 以前卡高由行高推出来（16 + 1×2 + 1×2 = 20px），
+     定时卡高由时间槽推出来，两套公式让 1 小时卡与未定时卡处处不一致
+     （实测 22.28 vs 20）。现在两种卡同一个小时单位，`max` 那半保证矮屏幕上
+     不会把卡压得比一行字还窄。JS 还没量到容器时退回下限（首帧不塌）。 */
+  height: var(--row);
   line-height: var(--task-line-sm);
-  --ev-title-size: var(--fs-title);
+  /* 圆角与定时卡同一条算式：自身高的 30%，夹在 3px 与 --r-lg 之间。
+     卡高同为小时单位 ⇒ 1 小时卡与未定时卡的圆角必然同值。 */
+  border-radius: clamp(3px, calc(var(--row, 20px) * 0.3), var(--r-lg));
   transition: background .14s, box-shadow .14s;
 }
-/* 不加粗：与月视图任务名同字重（400） */
-.task-el--untimed .ev-title { font-weight: 400; }
 .task-el--untimed:hover { transform: none; }
 
 /* 卡片内容（标题 / 时间 / 摘要）外面那一层。卡片本身不能 overflow:hidden
@@ -244,7 +280,9 @@
   gap: var(--ev-gap); flex: 1 1 auto; min-height: 0; min-width: 0;
   overflow: hidden;
 }
-.ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 勾选圈与标题的间距 2px（2026-10-24 三问题第 3 条：以前 6px，两种卡上看着都松）。
+   只在这里定一次，别到 lists.css 再覆盖一遍（靠导入顺序赢的写法最容易漂）。 */
+.ev-head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
 .ev-title { flex: 1; min-width: 0; font-size: var(--fs-title); font-weight: 400; overflow: hidden; text-overflow: clip; white-space: nowrap; }
@@ -304,9 +342,9 @@
    影子走全站统一的 `--drag-shadow`（中性淡影），不再是主色的绿光 ——
    原先 `0 10px 24px primary/.32` 在浅色主题下就是一片绿，用户报「过分吓人」。
    **日视图两种卡片 + 周视图共用这一条**：它们都带 `.task-el`，所以只有这一处，
-   原先 `.tl-event.dragging` 和 `.allday-items .task-pill.dragging` 各写一遍、各自漂移。 */
+   原先 `.tl-event.dragging` 和 `.allday-items .task-pill.dragging` 各写一遍、各自漂移。
+   （规则定义见上 `.task-el.dragging`，此处不重复。） */
   /* `.wk-event` 已于 2026-10-17 删除：周视图改用这一张卡 */
-.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
 /* ================= 周视图 =================
    **与日视图是同一根时间轴**：锁单屏不纵向滚、事件卡就是日视图那张
@@ -343,7 +381,7 @@
 }
 .week-head-cell:hover { background: var(--panel-3); color: var(--text); }
 .week-head-cell.weekend { color: var(--text-3); }
-.wh-week { font-size: 11px; letter-spacing: .5px; }
+.wh-week { font-size: var(--fs-meta); letter-spacing: .5px; }
 .wh-day {
   font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.2;
   /* 圆圈的位置**每一天都占着**（背景透明），只有今天填色 —— 否则今天那一格
@@ -382,6 +420,7 @@
 
 .week-cols {
   position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0;
+  overflow: visible;
   /* 底边那根结束线：渐变画不到 100%，由这条补上 —— 与日视图的 24:00
      那根线同源，也让最底下的数字有确切的线可骑。 */
   border-bottom: 1px solid var(--border);
@@ -418,16 +457,22 @@
 .wun-cell {
   min-width: 0;
   /* 上下留白 2px（九条：以前 3px 但卡间距 5px，比日视图还松 —— 现在
-     卡间距 --un-gap 2px、上下 2px，整套和日视图同一组倍数）。 */
-  padding: 2px 3px;
+     卡间距 --un-gap 2px、上下 2px，整套和日视图同一组倍数）。
+     **横向 0**（2026-10-24 三问题）：以前这里留 3px，而下面的时间列
+     `.week-col` 不留 —— 同一列里未定时卡比定时卡窄 6px、右边线错开 3px，
+     用户截图上「左右 margin 不一致」就是这个 3px。横向留白统一交给卡片自己
+     （--week-card-pad），两个容器一律 0，列边界才会对齐。 */
+  padding: 2px 0;
   display: flex; flex-direction: column; gap: var(--un-gap); align-content: start;
   border-right: 1px solid var(--border);
   min-height: 26px;
   /* **高度按「4 整条 + 间距 + 留白」精确算**（九条，与 .allday-zone 同一套公式）：
-     卡高 --row = 行高 18px + 上下 padding 1px×2 + **上下边框 var(--border-w)×2**
-     —— 上一版漏了边框（卡片四面都有 1px 边），四张卡实际比算的高 8px，
+     卡高 --row = max(一行字 + 上下 padding 1px×2 + **上下边框 var(--border-w)×2**,
+     JS 给的「这一屏上的一小时」) —— 后者由 WeekView 写进 --row-hour（untimedRowPx），
+     和同一列里定时卡那个小时同一个来源 ⇒ 两种卡同高、同圆角（2026-10-24 三问题）。
+     下限那半不许漏边框（卡片四面都有 1px 边）：上一版漏了，四张卡实际比算的高 8px，
      第 4 张被切掉一截（用户 2026-10-22 回归实测抓到）。宽屏卡 12.5px 字。 */
-  --row: calc(var(--task-line) + 2px + 2 * var(--border-w));   /* 大格行高 + padding 1×2 + 边框 */
+  --row: max(calc(var(--task-line) + 2px + 2 * var(--border-w)), var(--row-hour, 0px));
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 4px);                        /* 自身 padding 的上下两个 2px */
@@ -447,10 +492,10 @@
    nowrap：中文整串没有断点，max-content 布局下它能把整行顶宽一倍
    （2026-10-19 实测：未定时行 1543px vs 其他两行 688px，横滑三行错位）。 */
 .wun-cell .task-el--untimed {
-  /* **周视图电脑端用大格**（= 月视图电脑端 pill；窄屏在 responsive.css 覆盖回
-     小格）。行高 18px，卡高 = 18 + 1×2 + 2×边框 = --row。 */
-  font-size: var(--task-text); line-height: var(--task-line); padding: 1px 0;
-  --ev-title-size: var(--task-text);
+  /* **周视图电脑端用大档字**（= 月视图电脑端 pill；窄屏在 responsive.css 覆盖回
+     小档）。卡高由 JS 写进 --row（= 时间轴上的一小时，untimedRowPx），
+     与同一列里定时卡的一小时高同一个来源。 */
+  font-size: var(--task-text); line-height: var(--task-line);
   white-space: nowrap; overflow: hidden; text-overflow: clip;
   /* ⚠️ **不许被压扁**（2026-10-22 实测的根因）：flex 列默认 `flex-shrink: 1`，
      任务一多，浏览器把每张卡**压缩**到能塞进限高里 —— 于是 scrollHeight 恒等于
@@ -458,14 +503,15 @@
      改成不参与收缩，内容才会真的溢出、才滚得起来。 */
   flex: 0 0 auto;
 }
+/* **周视图两种卡共用同一份左右留白**（2026-10-24 三问题）：以前定时卡吃
+   `--tl-event-pad`（7px）、未定时卡吃 `1px 0`，同一列里文字起点差 7px。
+   窄屏在 responsive.css 把 --week-card-pad 收成 `1px 0`（72px 的列，每一分都要省）。 */
+.week-col .task-el--timed,
+.wun-cell .task-el--untimed { padding: var(--week-card-pad); }
 /* 字重对齐月视图任务名（pill-title 没写 font-weight = 400）：
    卡片基础是 550，周视图两种卡都压回 400 —— 用户 2026-10-22：
    「未定时和定时也不一致，请全部统一成月视图的字号和字重」。 */
 .wun-cell .task-el--untimed .ev-title,
-.week-col .task-el--timed .ev-title { font-weight: 400; }
-/* 周视图定时卡字号也向月视图看齐（宽屏 12.5px；窄屏 9px 在 responsive 覆盖）。
-   行高写死 18px：整行裁（useWholeLineClamp）要用它折算整行数。 */
-.week-col .task-el--timed { --ev-title-size: var(--task-text); }
 .week-col .task-el--timed .ev-title { line-height: var(--task-line); }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。
@@ -545,7 +591,7 @@ body.is-drag-range { user-select: none; }
    会让短窗口下网格超出容器、被 .month-grid 的 overflow:hidden 裁掉最后一行。 */
 .content-month .month-cell { min-height: 0; }
 .month-head { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
-.month-head-cell { text-align: center; font-size: 11.5px; color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
+.month-head-cell { text-align: center; font-size: var(--fs-meta); color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
 .month-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
   gap: 1px; background: var(--border);
@@ -566,7 +612,7 @@ body.is-drag-range { user-select: none; }
 .cell-head { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; flex: 0 0 auto; }
 .cell-date {
   width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; font-size: 12.5px; font-weight: 500; flex: 0 0 22px;
+  border-radius: 50%; font-size: var(--fs-title); font-weight: 500; flex: 0 0 22px;
   font-variant-numeric: tabular-nums; transition: background .14s, color .14s;
 }
 .cell-date:hover { background: var(--primary-soft); color: var(--primary); }
@@ -604,7 +650,7 @@ body.is-drag-range { user-select: none; }
   display: block; box-sizing: border-box;
   width: 100%; min-height: 26px; padding: 4px 8px;
   resize: none; overflow: hidden;
-  font: inherit; font-size: 12.5px; line-height: 1.3; color: var(--text);
+  font-size: var(--fs-title); line-height: 1.3; color: var(--text);
   background: var(--panel);
   border: var(--border-w) solid var(--primary);
   border-radius: var(--r-sm); box-shadow: var(--shadow-md);
@@ -626,7 +672,7 @@ body.is-drag-range { user-select: none; }
      跟 --panel-3（已完成）差得太近，两种状态都看不出来。 */
   padding: 4px 8px; border-radius: var(--r-sm); background: var(--primary-pale);
   border: var(--border-w) solid var(--border);
-  font-size: 12.5px; cursor: pointer; max-width: 100%; overflow: hidden;
+  font-size: var(--fs-title); cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;
 }
 /* 悬停只加投影，不改底色（日/周也是这么做的）—— 底色一变就盖住「任务色」了 */
@@ -635,7 +681,7 @@ body.is-drag-range { user-select: none; }
 .task-pill.done { opacity: 1; background: var(--panel-3); }
 .task-pill.done .pill-title { color: var(--text-3); }
 .pill-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill-time { color: var(--text-2); font-size: 11px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.pill-time { color: var(--text-2); font-size: var(--fs-meta); flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 
 /* ================= 宽屏：列表分列 =================
    .mc 是任务流的容器（按页面语义显式加的类，不是靠子元素猜）。

@@ -2068,6 +2068,13 @@ try {
         more: !!cell.querySelector('.wun-more'),
         blankH: Math.round(rb.height),
         fixedH: getComputedStyle(cell).height,
+        /* 判据不写死像素：格高 = 4 整卡 + 3 个间距 + 上下留白，
+           卡高与间距都从界面上量回来（2026-10-24 未定时行高改成按小时算之后，
+           以前写死的 98px 就成了假基准） */
+        cardH: (cell.querySelector('.task-el--untimed') || { getBoundingClientRect: () => ({ height: 0 }) }).getBoundingClientRect().height,
+        gap: parseFloat(getComputedStyle(cell).rowGap || getComputedStyle(cell).gap) || 0,
+        visible: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--un-visible')) || 0,
+        padY: (parseFloat(getComputedStyle(cell).paddingTop) || 0) + (parseFloat(getComputedStyle(cell).paddingBottom) || 0),
         at: { x: Math.round(rb.left + rb.width / 2), y: Math.round(rb.top + rb.height / 2) },
       };
     })()
@@ -2075,11 +2082,16 @@ try {
   ok(wun.mine === 3 && !wun.more,
     '周视图把未定时任务**全部**显示出来（自己那 3 条都在，没有「+N」）',
     `自带 ${wun.mine}/3 条 · 该格共 ${wun.n} 条 · more=${wun.more}`);
-  /* 九条之后格高是**精确算出的 height**（4 整卡 + 间距 + 留白 = 74px），不再用
-     max-height 拍上限 —— 判据跟着改成「高度是定值 + 空白行 = 一行卡（16px）」。 */
-  ok(wun.blankH >= 14 && wun.fixedH === '98px',
-    '周视图未定时格末尾多一整行空白，且格高是按 4 整卡精确算出的定值（超出自己滚）',
-    `空 ${wun.blankH}px / 格高 ${wun.fixedH}`);
+  /* 格高是**精确算出的定值**（4 整卡 + 间距 + 留白），不再用 max-height 拍上限 ——
+     判据 = 「高度是定值」+「空白行有一整行卡高」+「正好等于 4 整卡那一套」。 */
+  /* 期望值全部从界面上量回来：格高 = --un-visible × 卡高 + (--un-visible − 1) × 间距
+     + 自身上下留白（算式在 calendar.css 的 .wun-cell）。**不写死像素** ——
+     卡高现在按小时算，写死的 98px 上一轮就已经是假基准了。 */
+  const wunWant = wun.visible * wun.cardH + (wun.visible - 1) * wun.gap + wun.padY;
+  ok(wun.blankH >= 14 && parseFloat(wun.fixedH) > 0
+     && Math.abs(parseFloat(wun.fixedH) - wunWant) <= 1,
+    '周视图未定时格末尾多一整行空白，且格高是按整卡数精确算出的定值（超出自己滚）',
+    `空 ${wun.blankH}px / 格高 ${wun.fixedH}（${wun.visible} 张 ${wun.cardH.toFixed(2)}px 卡算该是 ${wunWant.toFixed(2)}）`);
 
   /* 坐标**现量**：上面刚往这格里加了 5 条又删掉，`wun.at` 是那之前算的
      （2026-10-22 就栽在这 —— 拿着旧坐标去点，点到了任务卡上）。 */
@@ -2139,6 +2151,10 @@ try {
         sh: cell.scrollHeight, ch: cell.clientHeight,
         h: Math.round(cell.getBoundingClientRect().height),
         fixedH: Math.round(parseFloat(cs.height) || 0),
+        cardH: cell.querySelector('.task-el--untimed').getBoundingClientRect().height,
+        gap: parseFloat(cs.rowGap || cs.gap) || 0,
+        visible: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--un-visible')) || 0,
+        padY: (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0),
         scrolled,
         grid: Math.round(document.querySelector('.week-grid').getBoundingClientRect().height),
         shrink: getComputedStyle(cell.querySelector('.task-el--untimed')).flexGrow + '/' + getComputedStyle(cell.querySelector('.task-el--untimed')).flexShrink,
@@ -2148,8 +2164,10 @@ try {
   ok(ovf.sh > ovf.ch + 4,
     '未定时内容真的**溢出**了（不是把卡片压扁塞进去）',
     `内容 ${ovf.sh} / 可见 ${ovf.ch} · 卡片 flex ${ovf.shrink}`);
-  ok(Math.abs(ovf.h - ovf.fixedH) <= 1 && ovf.fixedH === 98,
-    '格高是按 4 整卡精确算出的定值（再多也不往上长）', `高 ${ovf.h}px / 定值 ${ovf.fixedH}px`);
+  const ovfWant = ovf.visible * ovf.cardH + (ovf.visible - 1) * ovf.gap + ovf.padY;
+  ok(Math.abs(ovf.h - ovf.fixedH) <= 1 && Math.abs(ovf.fixedH - ovfWant) <= 1,
+    '格高是按整卡数精确算出的定值（再多也不往上长）',
+    `高 ${ovf.h}px / 定值 ${ovf.fixedH}px（${ovf.visible} 张 ${ovf.cardH.toFixed(2)}px 卡算该是 ${ovfWant.toFixed(2)}）`);
   ok(ovf.scrolled > 0, '这一格**自己滚得动**（scrollTop 能设上去）', `scrollTop=${ovf.scrolled}`);
   ok(Math.abs(ovf.grid - gridBefore) <= 2,
     '任务从 3 条加到 8 条，**时间轴高度一点没变**', `${gridBefore}px → ${ovf.grid}px`);
@@ -2226,6 +2244,7 @@ try {
       align: csT.textAlign,
       fw: csT.fontWeight,
       radius: getComputedStyle(card).borderRadius,
+      cardH: card.getBoundingClientRect().height,
       mh: parseFloat(title.style.maxHeight) || 0,
       lh: parseFloat(csT.lineHeight) || 0,
     };
@@ -2238,7 +2257,12 @@ try {
     '标题按**整行**裁（max-height 钉在行高的整数倍上，不露半截字）',
     `max ${nine.mh}px / 行高 ${nine.lh}px`);
   ok(nine.fw === '400', '字重与月视图任务名一致（400）', nine.fw);
-  ok(parseFloat(nine.radius) >= 4, '圆角和月视图小卡一样是 4px 档', nine.radius);
+  /* 2026-10-24 三问题第 2 条：圆角不是定值档，是**这张卡自身高的 30%**
+     （夹在 3px 与 --r-lg 之间）—— 以前写死 4px，卡一换档就看着不对。
+     判据跟着改成「半径 ÷ 卡高 = 0.3」。 */
+  ok(Math.abs(parseFloat(nine.radius) / nine.cardH - 0.3) < 0.02,
+    '圆角 = 自身高的 30%（与定时卡同一条算式）',
+    `${nine.radius} / 卡高 ${nine.cardH.toFixed(2)} = ${(parseFloat(nine.radius) / nine.cardH).toFixed(3)}`);
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 40; return 1;`);
   await new Promise((r) => setTimeout(r, 150));
   const thumbOn = await evalJs(page, `

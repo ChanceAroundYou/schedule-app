@@ -137,14 +137,13 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
       <div className="month-grid" ref={gridRef}>
         {weeks.map((row) => row.map((d) => {
           const ts = cellOrder(tasksOn(state, d));
-          /* 草稿那一行必须显式预留，否则输入框会把内容顶出格子（窄屏 overflow:hidden）。
-             逐格算：只有开着草稿的那一格才扣。 */
-          const draftHere = !!state.ui.draft && state.ui.draft.zone === `day:${d}`;
+          /* 月格 `data-no-draft` 根本不开草稿（clickDispatch 见之返回 null），
+             无需预留草稿行 —— 传默认值 false。 */
           /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
              尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
              看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */
           const { shown, more } = narrow
-            ? cellCounts(ts, monthCellCapacity(cellH, draftHere))
+            ? cellCounts(ts, monthCellCapacity(cellH))
             : { shown: ts, more: 0 };
           return (
             <MonthCell

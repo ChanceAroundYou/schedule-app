@@ -5,7 +5,7 @@
  * 逻辑，复用同一套组件，只是位置不同和有没有时间」）。统一的是三样：
  *
  *   1. **一个卡片组件** `TaskCard`。勾选圈、标题、把手、done / dragging 样式
- *      只有一份；差别全在父级算好的 `style` / `cls` / `timeText` 里 ——
+ *      只有一份；差别全在父级给的 `style` / `variant` / `timeText` 里 ——
  *      有 `time` 的按时间轴百分比定位，没有的按未定时网格槽位定位。
  *   2. **一张卡上的拖拽开关**。日视图里的卡片只在时间轴上下挪，横向是锁死的；
  *      周视图要能跨天拖，同一个开关不能两个值 —— 所以由父级给（见 TaskCard.tsx）。
@@ -25,18 +25,17 @@
  */
 
 import { useRef, type CSSProperties } from 'react';
-import type { LocalState, Task } from '../../domain/types.ts';
+import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
-  coverWindow, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf,
-  type Slot,
+  coverWindow, dayTimeline, minToPct, pctRange, spanOf, untimedBlanks, untimedRowPx, windowOf,
 } from '../../domain/layout.ts';
 import { tasksOn } from '../../domain/model.ts';
 import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
-import { pad2 } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
-import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
+import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
+import { TimeGutter, NowLine, DragRangePreview, BlankRow } from './timeline.tsx';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 
@@ -50,12 +49,8 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* 时间窗由设置决定（默认整天）。**再按内容自动往外让一圈**（coverWindow）——
      设置在 8–20 点、却有任务排在窗外时，宁可格子矮一点也不让那条任务消失。 */
   const winSetting = windowOf(state.ui);
-  const slots: Slot<Task>[] = timed.map((t) => {
-    const start = D.timeToMin(t.time) || 0;
-    return { item: t, start, end: start + D.durOf(t.duration) };
-  });
-  const win = coverWindow(winSetting, slots);
-  const events = layoutOverlap(slots);
+  const events = dayTimeline(timed);
+  const win = coverWindow(winSetting, events);
 
   const isToday = iso === D.today();
   const nowMin = D.nowMin();
@@ -75,8 +70,6 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
       return { zone: `timeline:${iso}`, date: iso, frame: z };
     },
   });
-  const dragBox = drag.range ? pctRange(drag.range.start, drag.range.end, win) : null;
-
   /* 就地新建的草稿落在哪一区 —— 两区的 zone id 不同，天然互斥 */
   const draftTl = draftOn(state.ui, `timeline:${iso}`);
   const draftAllday = draftOn(state.ui, `allday:${iso}`);
@@ -85,8 +78,13 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
   const { hours } = useTimelineMetrics(win, tlRef);
-  /* 容器实测高度给卡片算圆角用（见 calendar.css 的 .task-el--timed） */
+  /* 容器实测高度两用：给定时卡算圆角，也给未定时行高定单位（见 untimedRowPx）。
+     **未定时行高 = 这一屏上的「一小时」**（2026-10-24 三问题统一）—— 以前未定时卡
+     高由行高定（20px），定时卡高由时间槽定（1h ≈ 26.6px），两套公式让两种卡
+     的高 / 圆角 / 间距处处不一致。写进 --row-hour 后，CSS 的 `--row` 取
+     max(一行字, 这个小时)，容器高度算式跟着走。 */
   const tlH = useElementHeight(tlRef);
+  const rowH = untimedRowPx(tlH, spanOf(win));
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
@@ -104,12 +102,9 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* **一条都不截断**（2026-10-22 用户：要全部显示，不要「还有 N 个」）。
      区域高度由 CSS 的 max-height 兜住，超出在那区里自己滚 —— 时间轴高度不受影响。 */
   const shown = allday;
-  /* 凑满「当前行 + 一整行」：n=1/3 列 → 6 格（整行空白）；n=4 → 3 + 3 格 */
-  const blanks = shown.length ? (Math.ceil(shown.length / cols) + 1) * cols - shown.length : 0;
-  /* 未定时卡片**一行高**（2026-10-22 用户报：「加了一个就再没有空白处加第二个」）。
-     以前卡片高度 = 时间轴上一小时，加两条就吃掉两小时的高度，下面时间轴被挤扁、
-     而且整行铺满没有可点的空位。现在固定 24px 一行。 */
-  const cardStyle: CSSProperties = { height: 24, marginBlock: 1 };
+  /* 凑满「当前行 + 一整行」：n=1/3 列 → 6 格（整行空白）；n=4 → 3 + 3 格。
+     算式收进 domain（`untimedBlanks`），周视图同款，改一处两边一起变。 */
+  const blanks = untimedBlanks(shown.length, cols);
 
   return (
     <>
@@ -117,30 +112,18 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         <div
           className="allday-zone" ref={alldayZone.ref}
           data-zone-id={`allday:${iso}`} data-date={iso}
+          style={rowH > 0 ? ({ '--row-hour': `${rowH}px` } as CSSProperties) : undefined}
         >
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
             {shown.map((t) => (
-              <TaskCard
-                key={t.id}
-                t={t}
-                cls={'task-el task-el--untimed' + (t.done ? ' done' : '')}
-                style={cardStyle}
-                timeText={null}
-                /* 未定时卡是一行高度的小药丸，塞不进第二行 ——
-                   它的详细内容只在列表与抽屉里露面 */
-                noteText={null}
-                title={t.title}
-                resizable={false}
-              />
+              <UntimedCard key={t.id} t={t} title={t.title} />
             ))}
             {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
             <NewCellSlot state={state} zoneId={`allday:${iso}`} />
             {/* **永远多留一整行空白**。它没有文字、没有边框 —— 就是一块可点的空地，
                 点下去开草稿（见 clickDispatch 的第 4 步）。
                 草稿开着时少铺一格：输入框自己占了一个孔位，高度不该跟着跳。 */}
-            {Array.from({ length: Math.max(0, blanks - (draftAllday ? 1 : 0)) }, (_, i) => (
-              <div className="allday-blank" key={`blank-${i}`} aria-hidden="true" />
-            ))}
+            <BlankRow n={Math.max(0, blanks - (draftAllday ? 1 : 0))} cls="allday-blank" />
             {/* 空提示与草稿框不同时出现：正要往这里建东西的时候，
                 「没有未定时间的任务」这句话是句废话 */}
             {!allday.length && !draftAllday && <div className="zone-empty">没有未定时间的任务</div>}
@@ -150,16 +133,11 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         <div className="tl-wrap">
           <div
             className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
-            style={{ '--tl-h': tlH } as CSSProperties}
             data-zone-id={`timeline:${iso}`}
             data-date={iso} data-from={win.from} data-to={win.to}
             onPointerDown={drag.onPointerDown}
           >
-          {hours.map((h) => (
-            <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / spanOf(win)) * 100 + '%' }}>
-              <span className="tl-label">{pad2(h)}:00</span>
-            </div>
-          ))}
+          <TimeGutter hours={hours} win={win} />
 
           <div className="tl-layer">
             {events.map((e) => {
@@ -184,14 +162,14 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
           {/* 当前时间线：**只要一条线**（用户 2026-10-17：「不要显示具体
               的时间，只是有一条线就够了」）。圆点和时刻文字都去掉了，
-              只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。 */}
-          {isToday && nowPct !== null && (
-            <div className="tl-now" style={{ top: nowPct + '%' }} />
-          )}
+              只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。
+              窗外不画（`NowLine` 收到 null 返回 null）—— 落在窗外的位置，
+              画出来是贴边的一条假线。 */}
+          {isToday && <NowLine pct={nowPct} />}
 
           <div className="tl-events">
             {events.map((e) => (
-              <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} isDragSrc={activeId === e.item.id} />
+              <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH} />
             ))}
           </div>
 
@@ -204,11 +182,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
           )}
 
           {/* 拉时间段的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
-          {drag.range && dragBox && (
-            <div className="drag-range" style={{ top: dragBox.top + '%', height: dragBox.height + '%' }}>
-              <span>{timeRange(drag.range.start, drag.range.end - drag.range.start)}</span>
-            </div>
-          )}
+          <DragRangePreview range={drag.range} win={win} />
         </div>
         </div>
       </div>

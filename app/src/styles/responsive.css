@@ -231,9 +231,10 @@ body.sheet-open .tab:active { background: none; }
     --tl-wrap-pad: 10px 8px 10px 48px;
     --tl-label-left: -44px;
     --tl-label-width: 38px;
-    --tl-event-pad: 3px 7px;
-    --ev-title-size: 12px;
-    --ev-time-size: var(--task-time-sm);   /* 时间行比标题小一档（8px） */
+    --tl-event-pad: 1px 6px;
+    /* 窄屏周视图两种卡：左右留白几乎为 0（用户：「参考现在的月视图」= pill 的
+       1px 0），字尽可能多显示。两种卡同一个值，别分头写。 */
+    --week-card-pad: 1px 0;
     --ev-gap: 0px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
@@ -340,29 +341,30 @@ body.sheet-open .tab:active { background: none; }
   .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
   .week-head-cell { padding: 7px 2px 5px; }
   .wh-day { font-size: 15px; width: 24px; height: 24px; min-width: 24px; }
-  /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式 */
-  .allday-items[data-cols="1"] .task-el--untimed { padding: 1px 8px; }
-  .wun-cell { padding: 2px 3px; }
-  /* 窄屏周视图整体切到**月视图小格规格**（2026-10-22 回归）：
-     9px 字 / 14px 行高 / padding 1px 0 / 圆角 4px —— 与
-     `.cell-tasks .task-pill` 一字不差。卡高 = 14 + 1×2 + 边框 1×2 = --row。 */
-  .wun-cell { --row: calc(var(--task-line-sm) + 2px + 2 * var(--border-w)); }
+  /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式。
+     **不再单独给 padding** —— 窄屏 --allday-pill-pad 与 --tl-event-pad 都是
+     `1px 6px`（见上面的 :root），两种卡左右留白才会一致（2026-10-24 三问题）。 */
+  /* 未定时格的横向留白一律 0（与 calendar.css 的 .wun-cell 同一值）：
+     横向留白只由卡片自己给（--week-card-pad），两个容器都给 0，
+     未定时行与时间列的卡片左右边界才会对上（2026-10-24 三问题）。
+     --row 的下限跟着切到**小档**（16 + 2 + 2）：宽屏那条是 18 + 2 + 2 = 22，
+     窄屏字小、卡也小，下限不跟着降就会把卡顶得比同一列里的定时卡高 2px。 */
+  .wun-cell {
+    padding: 2px 0;
+    --row: max(calc(var(--task-line-sm) + 2px + 2 * var(--border-w)), var(--row-hour, 0px));
+  }
+  /* 窄屏周视图整体切到**月视图小档规格**（2026-10-22 回归）：小档字 / 行高小档。
+     圆角不再写死 4px —— 与定时卡共用「自身高的 30%」那条算式（见 calendar.css），
+     两种卡在窄屏才会一样圆。 */
   .wun-cell .task-el--untimed {
     font-size: var(--task-text-sm); line-height: var(--task-line-sm);
-    border-radius: 4px;
   }
-  /* 周视图定时卡：字号跟月视图小格（9px），左右留白几乎为 0（用户：
-     「参考现在的月视图」= pill 的 padding 1px 0），字尽可能多显示。 */
-  .week-col .task-el--timed { --ev-title-size: var(--task-text-sm); padding: 1px 0; }
-  .week-col .task-el--timed .check-btn { display: none; }
   /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
      和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
      用 CSS 藏而不是改 JS：卡片够高时那行本来就会出现（`roomy`），
      这里一律不显示，规则更简单，也不会在窗口缩放时忽隐忽现。
      电脑端不受影响（这条在 max-width:900px 里面）。 */
   .week-col .task-el--timed .ev-time { display: none; }
-  /* 未定时那一行也去掉勾选圈（2026-10-20 用户：「周视图移动端的打勾也去掉」） */
-  .wun-cell .task-el--untimed .check-btn { display: none; }
   /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
      —— 会切断跨边界的拖拽）。
      ⚠️ `safe center` 不是笔误：普通 center 在内容比盒子高时**上下同时溢出**，
@@ -379,7 +381,7 @@ body.sheet-open .tab:active { background: none; }
   }
   .week-col .task-el--timed .ev-time { flex: 0 0 auto; }
   .week-col .task-el--timed .ev-title {
-    /* 行高 14px 与月视图窄屏同款（9px 字配 14px 行）；**左对齐**（九条第 6 条：
+    /* 行高与月视图窄屏同款（--task-line-sm）；**左对齐**（九条第 6 条：
        以前 center，和日/月不一致）；溢出裁掉不出省略号（第 7 条）。 */
     line-height: var(--task-line-sm); white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
     text-align: left;
@@ -395,16 +397,15 @@ body.sheet-open .tab:active { background: none; }
   :root { --fs-title: 11px; --fs-meta: 9.5px; --fs-head-date: 12px; }
   .month-grid { grid-auto-rows: minmax(62px, auto); }
   .cell-head { margin-bottom: 3px; gap: 3px; }
-  .cell-date { width: 18px; height: 18px; flex: 0 0 18px; font-size: 10px; }
+  .cell-date { width: 18px; height: 18px; flex: 0 0 18px; font-size: var(--fs-meta); }
   .cell-load { display: none; }
   .cell-today { display: none; }
   /* 负载文字在窄格里用简写（见 Views.shortLoad），留一点余量即可 */
-  .cell-load {
-    margin-left: auto; font-size: 9.5px; line-height: 1;
+  .cell-load { margin-left: auto; font-size: var(--fs-meta); line-height: 1;
     white-space: nowrap; overflow: hidden;
     max-width: 30px; text-align: right; flex: 0 0 auto;
   }
-  .month-head-cell { font-size: 10.5px; padding: 3px 0; }
+  .month-head-cell { font-size: var(--fs-meta); padding: 3px 0; }
   /* 行高默认按内容（最小 62px）；锁单屏那一档（Shell 挂 content-month）由 flex
      均分，min-height 收回 0、放不下的裁掉 —— 见 calendar.css 的 .content-month。
      横向内边距压到 1px：360px 视口 7 列摊下来每格只有 48.8px，省 1px 是一个字
@@ -451,7 +452,7 @@ body.sheet-open .tab:active { background: none; }
 }
 @media (max-width: 1000px) and (min-width: 901px) {
   .sidebar { width: 208px; flex-basis: 208px; }
-  .week-head-cell, .month-head-cell { font-size: 11px; }
+  .week-head-cell, .month-head-cell { font-size: var(--fs-meta); }
 }
 
 @media (prefers-reduced-motion: reduce) {

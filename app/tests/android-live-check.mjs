@@ -638,7 +638,9 @@ async function checkLook() {
   assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
     `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
 
-  /* 2026-10-20 四条：去勾选圈 / 文字居中 / 有空间显示时间 / 极窄卡不给把手 */
+  /* 2026-10-20 四条 + 2026-10-24 三问题修订：
+     勾选圈**两种卡都要有**（原来是「窄屏藏圈」，用户要求统一加回）；
+     卡片文字左对齐（原来是居中）；有空间显示时间；极窄卡不给把手。 */
   const look = await evalIn(`(function(){
     var qa=function(s){return Array.from(document.querySelectorAll(s))};
     var chkT=document.querySelector('.week-col .task-el--timed .check-btn');
@@ -684,6 +686,21 @@ async function checkLook() {
         return u?getComputedStyle(u).fontSize:'';
       })(),
       untimedCards: document.querySelectorAll('.wun-cell .task-el--untimed').length,
+      /* 2026-10-24 三问题：一小时定时卡与无定时卡必须**处处一样**。
+         量的是同一列里的两张卡：外高、左右留白、圆角、卡片左边界。
+         高允许 1px 误差（百分比高度受亚像素取整），其余按同值判。 */
+      pair: (function(){
+        var t=document.querySelector('.week-col .task-el--timed');
+        var u=document.querySelector('.wun-cell .task-el--untimed');
+        if(!t||!u) return null;
+        var a=t.getBoundingClientRect(), b=u.getBoundingClientRect();
+        var ca=getComputedStyle(t), cb=getComputedStyle(u);
+        return {
+          th:a.height, uh:b.height, tw:a.width, uw:b.width, tx:a.x, ux:b.x,
+          tbr:parseFloat(ca.borderRadius), ubr:parseFloat(cb.borderRadius),
+          tpad:ca.paddingLeft+' '+ca.paddingRight, upad:cb.paddingLeft+' '+cb.paddingRight,
+        };
+      })(),
       nowLineW: nowLine?Math.round(nowLine.getBoundingClientRect().width):0,
       colsW: cols?Math.round(cols.getBoundingClientRect().width):0,
       perColNow: perColNow,
@@ -691,9 +708,22 @@ async function checkLook() {
       colW: Math.round(colW),
     };
   })()`);
-  assert(look.checkTimed === 'none', '周视图定时卡去掉了勾选圈', `display=${look.checkTimed}`);
-  assert(look.checkUntimed === 'none', '周视图未定时那一格也去掉了勾选圈', `display=${look.checkUntimed}`);
-  assert(look.titleAlign === 'center', '周视图卡片文字居中', `text-align=${look.titleAlign}`);
+  /* 2026-10-24 用户：「任务的打勾按钮统一都加回去」—— 周视图两种卡都要有勾选圈
+     （以前窄屏把这两个圈 CSS 藏掉了，改成一律显示）。 */
+  assert(look.checkTimed === 'block', '周视图定时卡带勾选圈', `display=${look.checkTimed}`);
+  assert(look.checkUntimed === 'block', '周视图未定时那一格也带勾选圈', `display=${look.checkUntimed}`);
+  assert(look.titleAlign === 'left', '周视图卡片文字左对齐（九条第 6 条：以前居中）',
+    `text-align=${look.titleAlign}`);
+  /* 三问题第 1 + 2 条：一小时卡与无定时卡同高、同左右留白、同圆角、同一左边界 */
+  if (look.pair) {
+    const p = look.pair;
+    assert(Math.abs(p.th - p.uh) <= 1, '一小时卡与无定时卡同高', `定时 ${p.th.toFixed(2)} / 未定时 ${p.uh.toFixed(2)}`);
+    assert(Math.abs(p.tw - p.uw) <= 1, '同一列里两种卡同宽', `定时 ${p.tw.toFixed(2)} / 未定时 ${p.uw.toFixed(2)}`);
+    assert(Math.abs(p.tx - p.ux) <= 1, '两种卡左边界对齐', `定时 x=${p.tx.toFixed(2)} / 未定时 x=${p.ux.toFixed(2)}`);
+    assert(Math.abs(p.tbr - p.ubr) <= 0.1, '两种卡圆角同值（半径 = 自身高 × 30%）',
+      `定时 ${p.tbr} / 未定时 ${p.ubr}`);
+    assert(p.tpad === p.upad, '两种卡左右留白同一份', `定时 ${p.tpad} / 未定时 ${p.upad}`);
+  }
   assert(look.tinyWithHandle === 0, '比把手还窄的卡不再画上下把手',
     `${look.tinyWithHandle} 张窄卡还带把手（共 ${look.cards} 张）`);
   assert(look.bodyOverflow === 'hidden', '内容层负责裁剪（超出卡片的东西不外溢）',

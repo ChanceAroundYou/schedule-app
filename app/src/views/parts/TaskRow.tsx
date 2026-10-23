@@ -8,7 +8,7 @@ import type { Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
-import { useDraggableEvent } from '../../ui/dndkit.tsx';
+import { CompactCard } from '../calendar/TaskCard.tsx';
 
 /* ============================== 分隔点 ============================== */
 
@@ -101,7 +101,11 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
   );
 }
 
-/* ============================== 小胶囊 ============================== */
+/* ============================== 小胶囊 ==============================
+   `TaskCard variant="compact"`（`CompactCard`）的薄包装 —— 唯一渲染 `.task-pill` 的
+   地方收进 TaskCard.tsx，DOM（`.pill-title/.pill-time/.pill-more/data-jump/
+   data-untimed`/CheckBtn）一字不动，探针口径不变。周视图已切 `UntimedCard`，
+   现在只剩月视图格子在用。 */
 
 export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
   task: Task; showTime?: boolean; moreSuffix?: number;
@@ -113,39 +117,7 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
    */
   jumpDay?: string;
 }) {
-  /* 周视图全天行 / 月视图格子共用这一个胶囊，两处都要能拖：
-     · 拖进周视图时间列 → 松手生成定时块（默认 1 小时，15 分钟吸附）；
-     · 拖到月视图别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
-     落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。TaskPill 只有这两个
-     使用处，无条件启用是安全的（列表行走的是 useSortableItem，另一套）。 */
-  const drag = useDraggableEvent(t.id);
-  return (
-    <div
-      className={'task-pill task-el' + (t.done ? ' done' : '')}
-      ref={drag.ref}
-      style={drag.style}
-      {...drag.attributes}
-      {...drag.listeners}
-      data-id={t.id}
-      data-untimed={t.time ? undefined : '1'}
-      data-jump={jumpDay}
-      title={t.title}
-    >
-      {/* 月 / 周视图格子里唯一一个勾选入口。**必须是 <button>**：
-          原先这里是 <span>，于是既进不了 Tab 序列、也没有按钮角色、
-          读屏也念不出它是什么 —— 而另外五个同样的勾选都是 button。 */}
-      <CheckBtn id={t.id} on={!!t.done} sm />
-      {showTime && t.time && <span className="pill-time">{t.time}</span>}
-      <span className="pill-title">{t.title}</span>
-      {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
-          还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
-          +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
-          它不用自己挂 data-jump：外面这条胶囊已经有，点哪儿都跳同一天。 */}
-      {moreSuffix ? (
-        <span className="pill-more" title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
-      ) : null}
-    </div>
-  );
+  return <CompactCard t={t} showTime={showTime} moreSuffix={moreSuffix} jumpDay={jumpDay} />;
 }
 
 /* ============================== 空状态 ============================== */

@@ -20,28 +20,25 @@
  */
 
 import { useRef, type CSSProperties } from 'react';
-import type { LocalState, Task } from '../../domain/types.ts';
+import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
-  layoutOverlap, minToPct, pctRange, spanOf, timeRange, coverWindow, windowOf,
-  type DayWindow, type Slot,
+  dayTimeline, minToPct, coverWindow, spanOf, untimedBlanks, untimedRowPx, windowOf,
+  type DayWindow,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn } from '../../domain/model.ts';
-import { TaskCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { useDragSession, useDroppableZone } from '../../ui/dndkit.tsx';
+import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
+import { TimeGutter, NowLine, DragRangePreview, BlankRow } from './timeline.tsx';
+import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
-import { pad2, type LayoutEvent } from './shared.ts';
+import type { LayoutEvent } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate, type DragRange } from './dragCreate.ts';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight } from '../../ui/hooks.ts';
 
 function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
-  const slots: Slot<Task>[] = tasksOn(state, iso).filter((t) => t.time).map((t) => {
-    const start = D.timeToMin(t.time) || 0;
-    return { item: t, start, end: start + D.durOf(t.duration) };
-  });
-  return layoutOverlap(slots);
+  return dayTimeline(tasksOn(state, iso));
 }
 
 /**
@@ -52,18 +49,17 @@ function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
  * 卡片百分比定位三者不必再区分日和周 —— 都按同一个 rect 走。
  */
 function WeekColumn({
-  state, d, today, win, events, nowMin, range,
+  state, d, today, win, events, nowMin, range, boxH,
 }: {
   state: LocalState; d: string; today: string;
   win: DayWindow;
   events: LayoutEvent[];
   nowMin: number;
   range: DragRange | null;
+  boxH: number;
 }) {
   const zone = useDroppableZone(`week:${d}`);
-  const { activeId } = useDragSession();
   const seed = draftOn(state.ui, `week:${d}`);
-  const dragBox = range ? pctRange(range.start, range.end, win) : null;
 
   return (
     <div
@@ -75,7 +71,7 @@ function WeekColumn({
         {events.map((e) => (
           <TimedCard
             key={e.item.id} e={e} isToday={d === today} nowMin={nowMin}
-            win={win} isDragSrc={activeId === e.item.id} lockX={false}
+            win={win} boxH={boxH} lockX={false}
           />
         ))}
       </div>
@@ -88,11 +84,7 @@ function WeekColumn({
         />
       )}
       {/* 拉时间段时的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
-      {range && dragBox && (
-        <div className="drag-range" style={{ top: dragBox.top + '%', height: dragBox.height + '%' }}>
-          <span>{timeRange(range.start, range.end - range.start)}</span>
-        </div>
-      )}
+      <DragRangePreview range={range} win={win} />
     </div>
   );
 }
@@ -108,23 +100,24 @@ function WeekColumn({
  * 「这一天再加一条未定时的」。有 `flex: 1`，所以某一列任务少、这一行被别的列
  * 撑高时，它会把剩下的空白一起接住 —— 整格都是可点的空位。
  */
-function WunCell({ state, d, today }: { state: LocalState; d: string; today: string }) {
+function WunCell({ state, d, today, rowH }: { state: LocalState; d: string; today: string; rowH: number }) {
   const zone = useDroppableZone(`allday:${d}`);
   const un = untimedOn(state, d);
   const draft = draftOn(state.ui, `allday:${d}`);
+  /* 空白新建位与日视图同一算式（单列 cols=1，有卡时恒补 1 格；空天留 1 格可点区，
+     日视图空区由 zone-empty 文案占位所以 blanks=0）。草稿开着少铺一格。 */
+  const blanks = un.length ? untimedBlanks(un.length, 1) : 1;
   return (
-    <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}>
+    <div className={'wun-cell' + (d === today ? ' today' : '')} ref={zone.ref} data-zone-id={`allday:${d}`} data-date={d}
+      /* 未定时行高与日视图同源：这一屏上的「一小时」（untimedRowPx / DayView） */
+      style={rowH > 0 ? ({ '--row-hour': `${rowH}px` } as CSSProperties) : undefined}
+    >
       {un.map((t) => (
-        <TaskCard
-          key={t.id} t={t}
-          cls={'task-el task-el--untimed' + (t.done ? ' done' : '')}
-          style={{}} timeText={null} noteText={null}
-          title={t.title} resizable={false} lockX={false}
-        />
+        <UntimedCard key={t.id} t={t} title={t.title} lockX={false} />
       ))}
       <NewCellSlot state={state} zoneId={`allday:${d}`} />
       {/* 草稿开着时少铺一格：输入框自己占了一格，高度不该跟着跳 */}
-      {!draft && <div className="wun-blank" aria-hidden="true" />}
+      <BlankRow n={Math.max(0, blanks - (draft ? 1 : 0))} cls="wun-blank" />
     </div>
   );
 }
@@ -142,9 +135,11 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
 
   const colsRef = useRef<HTMLDivElement | null>(null);
   const { hours } = useTimelineMetrics(win, colsRef);
-  /* 容器实测高度给卡片算圆角用（半径 = 卡高 × 30%，见 calendar.css 的
-     .task-el--timed）。卡的高度是百分比，乘上这个 px 才是真正的像素高。 */
+  /* 容器实测高度给卡片算圆角 + 未定时行高用（半径 = 卡高 × 30%，见 calendar.css 的
+     .task-el--timed）。卡的高度是百分比，乘上这个 px 才是真正的像素高。
+     未定时那一行与日视图同源：行高 = 这一屏上的「一小时」（untimedRowPx）。 */
   const colsH = useElementHeight(colsRef);
+  const rowH = untimedRowPx(colsH, spanOf(win));
 
   const drag = useDragCreate({
     win,
@@ -182,7 +177,7 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
         <div className="week-un-gutter" />
         <div className="week-un-cols">
           {days.map((d) => (
-            <WunCell key={d} state={state} d={d} today={today} />
+            <WunCell key={d} state={state} d={d} today={today} rowH={rowH} />
           ))}
         </div>
       </div>
@@ -192,30 +187,24 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
             只是把「挂在轴外」改成「贴在格子内」—— 这里右边是七天的起点，
             没有位置往左伸。 */}
         <div className="week-gutter">
-          {hours.map((h) => (
-            <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / spanOf(win)) * 100 + '%' }}>
-              <span className="tl-label">{pad2(h)}:00</span>
-            </div>
-          ))}
+          <TimeGutter hours={hours} win={win} />
         </div>
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
-          style={{ '--wk-hours': spanOf(win) / 60, '--tl-h': colsH } as CSSProperties}
+          style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
         >
           {days.map((d, i) => (
             <WeekColumn
               key={d} state={state} d={d} today={today} win={win}
-              events={perDay[i]} nowMin={nowMin}
+              events={perDay[i]} nowMin={nowMin} boxH={colsH}
               range={drag.range && drag.range.date === d ? drag.range : null}
             />
           ))}
           {/* 「现在」这条线**横贯整周**（2026-10-22 用户要求：从周一到周日）。
               画在 .week-cols 上而不是每一列各画一段 —— 各画一段会在列与列之间
               的 1px 分隔线上断开，看着是七根短线。今天不在这一周时整条不画。 */}
-          {days.includes(today) && (
-            <div className="tl-now week-now" style={{ top: minToPct(nowMin, win) + '%' }} />
-          )}
+          {days.includes(today) && <NowLine pct={minToPct(nowMin, win)} week />}
         </div>
       </div>
     </div>

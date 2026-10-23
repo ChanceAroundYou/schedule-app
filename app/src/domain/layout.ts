@@ -181,15 +181,16 @@ export function snapToHour(min: number): number {
    实际显示几行取决于格子实测高度，所以这里是纯算术，量高的活由 MonthView 做。
    这几个常数必须与 responsive.css 窄屏那段对得上（改一处要改另一处）。 */
 
-/** 窄屏一行任务文字占的高度：胶囊 18（14 行高 + 2 内边距 + 2 上下边框）+ 行间距 2 = 20 */
-export const MONTH_LINE_H = 20;
+/** 窄屏一行任务文字占的高度：胶囊 20（16 行高 + 2 内边距 + 2 上下边框）+ 行间距 2 = 22 */
+export const MONTH_LINE_H = 22;
 /** 最后一行后面没有行间距，算最大行数时要把这 2px 还回去 */
 const MONTH_LAST_ROW_NO_GAP = 2;
-/** 日期那一行占的高度（数字圆 20 + 下边距 3） */
-export const MONTH_CELL_HEAD_H = 23;
-/** 格子上下内边距合计 */
+/** 日期那一行占的高度（窄屏数字圆 18 + 下边距 3 = 21；cell-load/cell-today 窄屏不显示） */
+export const MONTH_CELL_HEAD_H = 21;
+/** 格子上下内边距合计（窄屏 padding 3px 1px → 上下 3+3） */
 export const MONTH_CELL_PAD_H = 6;
-/** 就地新建那个输入框占的高度（16.3 行高 + 4 内边距 + 2 边框 + 2 行间距） */
+/** 就地新建那个输入框占的高度（16.3 行高 + 4 内边距 + 2 边框 + 2 行间距）。
+    月格 `data-no-draft` 根本不开草稿，调用方恒传 false —— 常数保留作签名兼容。 */
 export const MONTH_DRAFT_H = 24;
 
 /**
@@ -253,6 +254,72 @@ export function dragRange(down: number, cur: number, w: DayWindow): { start: num
   start = Math.max(w.from, Math.min(w.to - DRAG_MIN, start));
   end = Math.max(start + DRAG_MIN, Math.min(w.to, end));
   return { start, end };
+}
+
+/**
+ * 未定时网格的空白新建位（P0-2，日/周共用）。
+ *
+ * **永远多留一整行空白**：点它就是「这一天再加一条未定时的」。
+ * 以前日视图用 `blanks` 算式、周视图用 `.wun-blank` 一个格，两边各写各的；
+ * 现在一处算：`count` = 已有卡数，`cols` = 列数（日视图窄屏 1 / 桌面 3，周视图恒 1）。
+ * 草稿开着时调用方减 1（输入框自己占了一个孔位，见 DayView/WunCell）。
+ */
+export function untimedBlanks(count: number, cols: number): number {
+  if (count <= 0) return 0;
+  return (Math.ceil(count / cols) + 1) * cols - count;
+}
+
+/**
+ * 未定时行高 = 这一屏上「一小时」那一段的像素高 − 卡缝（2026-10-24 三问题统一）。
+ *
+ * 以前未定时卡高由**行高**定（`--task-line-sm` + padding + 边框 = 20px），
+ * 定时卡高由**时间槽**定（`calc(百分比 − 1.5px)`）—— 两套公式，1 小时卡与
+ * 未定时卡永远对不齐（窄屏实测 22.28 vs 20，圆角与 padding 跟着各长各的）。
+ * 挂到同一个小时单位上，两张卡的高与圆角（都按自身高的 30%）自动处处一致。
+ *
+ * ## 小时按**整天**摊开，不跟着时间窗收窄放大
+ *
+ * 这一行是**界面行**，不是时间槽：它跟屏幕高度走（容器高的 1/24），但时间窗收到
+ * 08:00–11:00 时不跟着变成 206px —— 那样未定时区会撑到七八百像素，把日面板捅穿、
+ * 定时卡被压扁到只剩 min-height（2026-10-24 browser-smoke 抓到：方块 12px、
+ * 拖拽中卡片跑到面板外面）。默认整天窗口下，它与 1 小时定时卡**严格同高**，
+ * 那正是三问题要的效果；窗收窄只是让定时卡变高，未定时行不动。
+ *
+ * 返回 0 = 「还没量到容器 / 窗口非法」，调用方回落到 CSS 默认的 `--row`，首帧不塌。
+ * 太矮的屏幕（一小时算出来比一行字还窄）由 CSS 那条 `max()` 兜底，不在这里夹。
+ */
+export const CARD_SEAM = 1.5;
+
+/** 整天那档的跨度 —— 未定时行高的换算基准（见 FULL_DAY 与上面的注释） */
+const MAX_SPAN = FULL_DAY.to - FULL_DAY.from;
+
+export function untimedRowPx(timelineH: number, spanMin: number, seam = CARD_SEAM): number {
+  if (!Number.isFinite(timelineH) || timelineH <= 0) return 0;
+  if (!Number.isFinite(spanMin) || spanMin < MIN_SPAN) return 0;
+  /* 取 `max(span, 整天)`：窗比整天窄时按整天算（见上面那段），窗比整天宽（不会发生，
+     夹在 0–1440）时按窗算。 */
+  const v = (60 / Math.max(spanMin, MAX_SPAN)) * timelineH - seam;
+  return v > 0 ? Math.round(v * 100) / 100 : 0;
+}
+
+/**
+ * 当天定时事件摆放（P0-3，日/周共用）。
+ *
+ * `DayView 45-58 ≡ WeekView dayEvents` 那两份逐字代码收口到这里：
+ * 过滤出有 `time` 的 → 转 `Slot`（`timeToMin` / `durOf`）→ `layoutOverlap` 分列。
+ * 输入是任务数组（不是 `LocalState`）—— `tasksOn` 留在视图层，
+ * 这里只做纯算术，保持 `domain/` 零 React / DOM / 网络，且不反向依赖 `model/`。
+ */
+export function dayTimeline<T extends { time: string | null | undefined; duration: number | null }>(
+  tasks: T[],
+): Placed<T>[] {
+  const slots: Slot<T>[] = [];
+  for (const t of tasks) {
+    if (!t.time) continue;
+    const start = D.timeToMin(t.time) || 0;
+    slots.push({ item: t, start, end: start + D.durOf(t.duration) });
+  }
+  return layoutOverlap(slots);
 }
 
 /**

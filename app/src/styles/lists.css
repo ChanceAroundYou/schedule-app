@@ -211,6 +211,9 @@
   width: 24px; height: 24px; transform: translate(-50%, -50%);
 }
 
+/* 勾选圈与标题的间距只在 calendar.css 的 `.ev-head` 定一次（2px）——
+   这里再写一遍就成了「靠导入顺序赢」的第二条规则，最容易漂。 */
+
 /* 完成瞬间的小动效 */
 .task-el.popping { animation: taskPop .3s cubic-bezier(.3, .8, .3, 1) forwards; }
 .task-el.popping .check-btn { animation: checkPop .3s ease; }
@@ -325,7 +328,8 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   border-top: 1.5px dashed var(--primary); z-index: 10; pointer-events: none;
 }
 .tl-guide::before {
-  content: ''; position: absolute; left: 0; top: -4.5px;
+  /* 球心落线：9px 球 + 1.5px 虚线 → top = −(9 − 1.5) / 2 = −3.75px（与 .tl-now 同算式） */
+  content: ''; position: absolute; left: 0; top: -3.75px;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--primary); box-shadow: 0 0 0 3px rgb(from var(--primary) r g b / .16);
 }

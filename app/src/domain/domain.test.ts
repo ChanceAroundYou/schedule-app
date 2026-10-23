@@ -16,7 +16,7 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { coverWindow, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN } from './layout.ts';
+import { coverWindow, dayTimeline, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN, untimedBlanks, untimedRowPx, CARD_SEAM, FULL_DAY } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
@@ -944,4 +944,102 @@ test('fmtSmart（2026-10-12）：今年不写年份，跨年写年份', () => {
   const nextYear = `${y + 1}-07-15`;
   assert.equal(D.fmtSmart(thisYear), '7月15日', '今年不该出现年份');
   assert.equal(D.fmtSmart(nextYear), `${y + 1}年7月15日`, '跨年必须带年份');
+});
+
+/* =============== 未定时空白新建位（untimedBlanks，P0-2）===============
+   日/周共用：永远多留一整行可点空白。空天返回 0 ——
+   日视图空区由 zone-empty 文案占位，周视图 WunCell 另行给 1 格。 */
+
+test('untimedBlanks：空天 0 格，日周调用方各自决定空态怎么画', () => {
+  assert.equal(untimedBlanks(0, 3), 0);
+  assert.equal(untimedBlanks(0, 1), 0);
+});
+
+test('untimedBlanks：凑满「当前行 + 一整行」', () => {
+  // 日视图桌面 3 列：1 张卡 → 当前行剩 2 格 + 一整行 3 格 = 5
+  assert.equal(untimedBlanks(1, 3), 5);
+  // 4 张卡 → 当前行剩 2 格 + 一整行 3 格 = 5
+  assert.equal(untimedBlanks(4, 3), 5);
+  // 整行满 3 张 → 再留一整行 3 格
+  assert.equal(untimedBlanks(3, 3), 3);
+  // 周视图单列：2 张卡 → 当前行剩 0？不，ceil(2/1)=2 行满 → 再留 1 行 = 1
+  assert.equal(untimedBlanks(2, 1), 1);
+  assert.equal(untimedBlanks(1, 1), 1);
+});
+
+/* =============== 未定时行高 = 这一屏上的「一小时」（untimedRowPx，三问题统一）===============
+   定时卡高由**时间槽**定（`calc(百分比 − 1.5px)`），未定时卡以前由**行高**定
+   （行高 16 + padding 1×2 + 边框 1×2 = 20px）—— 两套公式让 1 小时卡与未定时卡
+   永远对不齐（2026-10-24 窄屏实测 22.28 vs 20，圆角 / padding 跟着各长各的）。
+   挂到同一个「一小时」单位上，两张卡的高与圆角（都按自身高的 30%）自动处处一致。
+
+   ⚠️ 「一小时」一律**按整天摊开**算，不跟着时间窗收窄放大（见下面那条窄窗用例）：
+   时间窗可以收到 3 小时，按窗算会把未定时行撑成 188px，未定时区把日面板撑穿
+   （2026-10-24 browser-smoke 抓到：定时卡被压成 12px、拖出面板）。 */
+
+test('untimedRowPx：等于这一屏上按整天摊开的 1 小时卡高（含 1.5px 缝）', () => {
+  // 窄屏实测口径：容器 570.8px → 一小时 23.78px，卡高 22.28px
+  assert.ok(Math.abs(untimedRowPx(570.8, 1440) - 22.28) < 0.02,
+    `570.8 容器应给 22.28，实得 ${untimedRowPx(570.8, 1440)}`);
+  // 桌面实测口径：673.8px 容器 → 26.57
+  assert.ok(Math.abs(untimedRowPx(673.8, 1440) - 26.57) < 0.02,
+    `673.8 容器应给 26.57，实得 ${untimedRowPx(673.8, 1440)}`);
+});
+
+test('untimedRowPx：与 1 小时定时卡的高度同源（pctRange 换算对得上）', () => {
+  const w = FULL_DAY;
+  const tlH = 673.8;
+  const box = pctRange(600, 660, w);
+  assert.ok(box !== null, '10:00–11:00 在整天窗口内该有盒子');
+  const timedH = (box!.height / 100) * tlH - CARD_SEAM;
+  assert.ok(Math.abs(untimedRowPx(tlH, spanOf(w)) - timedH) < 0.01,
+    `未定时行高 ${untimedRowPx(tlH, spanOf(w))} 应等于 1h 定时卡高 ${timedH}`);
+});
+
+test('untimedRowPx：时间窗收窄不许把未定时行撑大（撑大会把日面板捅穿）', () => {
+  const wide = untimedRowPx(620, 1440);
+  const narrowWin = untimedRowPx(620, 180);   // 08:00–11:00：窗里的一小时 = 206px
+  assert.equal(narrowWin, wide,
+    `180 分钟窗口的行高必须和整天口径一致（${narrowWin} vs ${wide}）`);
+  assert.ok(narrowWin < 30, `行高该留在正常一档，实得 ${narrowWin}`);
+});
+
+test('untimedRowPx：容器还没量到 / 窗口非法 → 0（调用方回落 CSS 默认 --row）', () => {
+  assert.equal(untimedRowPx(0, 1440), 0);
+  assert.equal(untimedRowPx(-5, 1440), 0);
+  assert.equal(untimedRowPx(600, 0), 0);
+  assert.equal(untimedRowPx(600, 30), 0);
+  assert.equal(untimedRowPx(Number.NaN, 1440), 0);
+});
+
+/* =============== 当天定时事件摆放（dayTimeline，P0-3）===============
+   DayView 45-58 ≡ WeekView dayEvents 那两份逐字代码收口到这里。
+   未定时（time=null）的过滤掉；默认时长 60 分钟（durOf(null)）。 */
+
+test('dayTimeline：只收有时间的，未定时过滤掉', () => {
+  const tasks = [
+    makeTask({ id: 'a', title: '定时', date: T, time: '09:00', duration: 60 }),
+    makeTask({ id: 'b', title: '未定时', date: T }),
+  ];
+  const placed = dayTimeline(tasks);
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].item.id, 'a');
+  assert.equal(placed[0].start, 540);
+  assert.equal(placed[0].end, 600);
+});
+
+test('dayTimeline：重叠分列与 layoutOverlap 一致', () => {
+  const tasks = [
+    makeTask({ id: 'a', title: '甲', date: T, time: '09:00', duration: 120 }),
+    makeTask({ id: 'b', title: '乙', date: T, time: '09:30', duration: 60 }),
+    makeTask({ id: 'c', title: '丙', date: T, time: '14:00', duration: 30 }),
+  ];
+  const placed = dayTimeline(tasks);
+  assert.equal(placed.length, 3);
+  const byId = Object.fromEntries(placed.map((p) => [p.item.id, p]));
+  // 甲乙重叠 → 同一簇 cols=2；丙独立 → cols=1
+  assert.equal(byId.a.cols, 2);
+  assert.equal(byId.b.cols, 2);
+  assert.equal(byId.c.cols, 1);
+  assert.notEqual(byId.a.col, byId.b.col);
 });
