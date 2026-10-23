@@ -135,7 +135,13 @@
    颜色用 --ok（深绿）而不是 --danger（红）：「当前」不是危险状态；
    --ok 是唯一**主题无关**的深绿（--primary 会跟着 6 色板变蓝/变棕/变紫，
    不能拿来表示固定语义）。 */
-.tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px solid var(--ok); z-index: 3; pointer-events: none; }
+/* 现在时刻线：贯穿整行，虚线 + 左端绿色圆球 */
+.tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px dashed var(--ok); z-index: 3; pointer-events: none; }
+.tl-now::before {
+  content: ''; position: absolute; left: 0; top: -4.5px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ok); box-shadow: 0 0 0 3px rgb(from var(--ok) r g b / .16);
+}
 
 /* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让定时卡片
    比未定时卡片短一截。卡片宽度由 .task-el--timed 的 width 控制。 */

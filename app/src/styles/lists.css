@@ -337,7 +337,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .tl-cursor {
   position: absolute; left: var(--tl-label-left); top: 0;
   width: var(--tl-label-width); text-align: right;
-  font-size: 11px; font-variant-numeric: tabular-nums;
+  font-size: var(--fs-meta); font-variant-numeric: tabular-nums;
   color: var(--primary); pointer-events: none; z-index: 11;
   /* 用 transform 而不是 top: -8px：JS 设置 top 为百分比时，
      CSS 的 top: -8px 会被内联样式覆盖，导致文字掉到线下面。 */
