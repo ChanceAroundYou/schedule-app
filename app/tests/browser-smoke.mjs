@@ -5663,6 +5663,22 @@ try {
   ok(wk.gutterBg === 'rgba(0, 0, 0, 0)', '刻度列没有自己的底色（跟日视图一样是白底），实际 ' + wk.gutterBg);
   ok(wk.unText === '', '未定时那一行的左格不写字，实际「' + wk.unText + '」');
 
+  /* 宽屏周视图锁单屏（2026-10-24 撤销 6504386 后补的护栏，守着别再退回应滚动的版本）：
+     时间窗摊满一屏、纵向永不滚；.week-cols 也没有「小时数 × 48px」的最小高。 */
+  const wkLock = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    return {
+      oy: getComputedStyle(v).overflowY,
+      over: v.scrollHeight - v.clientHeight,
+      minH: getComputedStyle(cols).minHeight,
+    };
+  `);
+  ok(wkLock.oy === 'hidden' && wkLock.over <= 2,
+    '宽屏周视图锁单屏（纵向不滚、内容无溢出）', JSON.stringify(wkLock));
+  ok(wkLock.minH === '0px' || wkLock.minH === 'auto',
+    '列没有被「小时数 × 48px」的最小高撑着', wkLock.minH);
+
   /* ---- 真·窄屏视口（390×854）----
      上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
      窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。
@@ -5710,6 +5726,33 @@ try {
   ok(Math.abs(rnOpen.fabLeft - rnClosed.left) < 1 && Math.abs(rnOpen.fabTop - rnClosed.top) < 1,
     '真窄屏下展开前后圆钮在屏幕上不动：收起 (' + rnClosed.left + ',' + rnClosed.top
     + ') 展开 (' + rnOpen.fabLeft + ',' + rnOpen.fabTop + ')');
+
+  /* ---- 真窄屏 · 周视图锁单屏（2026-10-24 撤销 6504386 后的护栏）----
+     用户 2026-10-24 明确裁决：手机端周视图恢复锁单屏 —— 整天摊在一屏里，
+     纵向不滚。6504386「每小时 48px、可滚动」已 revert，这条断言防它退回去。 */
+  await clickEl(page, `
+    [...document.querySelectorAll('.tabbar .tab')].find((b) => b.textContent.includes('日程'))
+  `);
+  await waitFor(page, `!!document.querySelector('.cal-subhead')`, '真窄屏：切到日程页', 8000);
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === 'week')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view')`, '真窄屏：周视图渲染出来', 8000);
+  await new Promise((r) => setTimeout(r, 300));
+  const wkLockN = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    return {
+      oy: getComputedStyle(v).overflowY,
+      over: v.scrollHeight - v.clientHeight,
+      hourVar: getComputedStyle(cols).getPropertyValue('--wk-hour-h').trim(),
+    };
+  `);
+  ok(wkLockN.oy === 'hidden' && wkLockN.over <= 2,
+    '真窄屏周视图**锁单屏**（纵向不滚、内容无溢出）', JSON.stringify(wkLockN));
+  ok(!wkLockN.hourVar,
+    '没有 --wk-hour-h 了（撤销 6504386 后的原状，不会再按 48px/小时撑高）',
+    '变量值「' + wkLockN.hourVar + '」');
 
   page.close();
 } catch (e) {
