@@ -44,11 +44,15 @@
        日视图未定时卡、周视图手机端都用它
      · 时间行比标题**小一档**（10.5 / 8），保持中性灰 */
   --task-text: 12.5px;
-  --task-text-sm: 9px;
+  --task-text-sm: 11px;
   --task-line: 18px;
-  --task-line-sm: 14px;
+  --task-line-sm: 16px;
   --task-time: 10.5px;
-  --task-time-sm: 8px;
+  --task-time-sm: 9.5px;
+  /* 统一字体令牌：桌面/移动共用，数值按断点在 responsive.css 里切 */
+  --fs-title: 12.5px;
+  --fs-meta: 10.5px;
+  --fs-head-date: 14px;
   /* 下面三个是 **JS 运行时写入**的变量（touchDamp.ts），这里声明兜底值：
      · --pull      橡皮筋越界位移（0 = 不拉）
      · --thumb-h/y 浮动滚动条的长与位置（0 = 不画）

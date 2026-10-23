@@ -51,8 +51,8 @@
   --tl-label-left: -56px;
   --tl-label-width: 44px;
   --tl-event-pad: 3px 7px;
-  --ev-title-size: 12px;
-  --ev-time-size: var(--task-time);   /* 时间行比标题小一档（tokens.css） */
+  --ev-title-size: var(--fs-title);
+  --ev-time-size: var(--fs-meta);   /* 时间行比标题小一档 */
   --ev-gap: 0px;
 }
 
@@ -123,7 +123,7 @@
    **不滚** —— 整天 24 小时一次性摊在一屏里，滚轮在时间轴上是死的。 */
 .timeline { position: relative; height: 640px; }
 .tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
-.tl-label { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: right; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tl-label { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: right; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -221,9 +221,9 @@
    不用加粗」。行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
 .task-el--untimed {
   width: 100%; padding: var(--allday-pill-pad); min-width: 0;
-  font-size: var(--task-text-sm); overflow: hidden;
+  font-size: var(--fs-title); overflow: hidden;
   line-height: var(--task-line-sm);
-  --ev-title-size: var(--task-text-sm);
+  --ev-title-size: var(--fs-title);
   transition: background .14s, box-shadow .14s;
 }
 /* 不加粗：与月视图任务名同字重（400） */
@@ -241,9 +241,9 @@
 .ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
-.ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.ev-title { flex: 1; min-width: 0; font-size: var(--fs-title); font-weight: 550; overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .ev-time {
-  font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
+  font-size: var(--fs-meta); line-height: 1.2; color: var(--text-3);
   font-variant-numeric: tabular-nums; letter-spacing: .1px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
@@ -252,7 +252,7 @@
    这一行是备注。同一张卡上两行的尺寸完全一致，只有深浅不同 —— 层级靠灰度，
    不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。 */
 .ev-note {
-  font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
+  font-size: var(--fs-meta); line-height: 1.2; color: var(--text-3);
   opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-left: 21px;
 }

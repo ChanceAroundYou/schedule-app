@@ -392,6 +392,7 @@ body.sheet-open .tab:active { background: none; }
 
 /* ---- 月视图：窄屏一屏画完、一行一条任务文字 ---- */
 @media (max-width: 900px) {
+  :root { --fs-title: 11px; --fs-meta: 9.5px; --fs-head-date: 12px; }
   .month-grid { grid-auto-rows: minmax(62px, auto); }
   .cell-head { margin-bottom: 3px; gap: 3px; }
   .cell-date { width: 20px; height: 20px; flex: 0 0 20px; font-size: 12px; }
