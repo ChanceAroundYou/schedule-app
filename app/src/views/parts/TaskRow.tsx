@@ -9,6 +9,7 @@ import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
+import { useDragLift } from '../../ui/dnd/lift.ts';
 
 /* ============================== 分隔点 ============================== */
 
@@ -119,11 +120,14 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
      落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。TaskPill 只有这两个
      使用处，无条件启用是安全的（列表行走的是 useSortableItem，另一套）。 */
   const drag = useDraggableEvent(t.id);
+  /* 月视图格子限高可滚（`.cell-tasks` 有 overflow-y:auto）—— 胶囊拖出格子
+     会被裁掉，拖起时改成 fixed 浮起来（同未定时卡，见 ui/dnd/lift.ts）。 */
+  const lift = useDragLift(drag.isDragging);
   return (
     <div
       className={'task-pill task-el' + (t.done ? ' done' : '')}
-      ref={drag.ref}
-      style={drag.style}
+      ref={(el) => { lift.setNodeRef(el); drag.ref(el); }}
+      style={{ ...drag.style, ...lift.liftStyle }}
       {...drag.attributes}
       {...drag.listeners}
       data-id={t.id}

@@ -2368,6 +2368,54 @@ try {
   ok(headGaps.every((g) => g === '2px'),
     '勾选圈与标题的间距是 2px（窄格子把省下的宽度留给字）', JSON.stringify(headGaps));
 
+  /* ---- 2026-10-23 用户：未定时任务「一拖就整个消失」----
+     拖拽不用浮层，被拖的是卡片自己；未定时区限高可滚（overflow:auto），
+     卡片被拖出边界就被容器裁掉，落点却是对的。现在拖起时改成 fixed +
+     原位等高占位块。这里真鼠标拖到时间轴上方，量「半路时卡片还在不在」。 */
+  const unDrag = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    const card = cell && cell.querySelector('.task-el--untimed');
+    if (!card) return null;
+    const r = card.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: unDrag.x, y: unDrag.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  for (const dy of [12, 60, 140]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: unDrag.x, y: unDrag.y + dy, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const dragMid = await evalJs(page, `
+    const card = document.querySelector('.task-el--untimed.dragging');
+    if (!card) return { missing: true };
+    const r = card.getBoundingClientRect();
+    const st = getComputedStyle(card);
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      pos: st.position, z: st.zIndex,
+      inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+      hitSelf: !!hit && (hit === card || card.contains(hit)),
+      ph: !!document.querySelector('.drag-ph'),
+      top: Math.round(r.top), h: Math.round(r.height),
+    };
+  `);
+  ok(dragMid && dragMid.pos === 'fixed' && dragMid.inView && dragMid.hitSelf,
+    '把未定时卡拖出格子时它**仍然可见**（浮到最上层，不被容器裁掉）',
+    JSON.stringify(dragMid));
+  ok(dragMid && dragMid.ph, '原位置留了等高占位块（其余卡片不跳动）',
+    JSON.stringify(dragMid && { top: dragMid.top, h: dragMid.h }));
+  /* 拖回原处松手：不改任何数据 */
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x: unDrag.x, y: unDrag.y, button: 'left', buttons: 1,
+  });
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: unDrag.x, y: unDrag.y, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 400));
+
   await new Promise((r) => setTimeout(r, 300));
 
 

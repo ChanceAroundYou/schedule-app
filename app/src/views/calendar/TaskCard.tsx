@@ -25,6 +25,7 @@ import {
 } from '../../domain/layout.ts';
 import { CheckBtn } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
+import { useDragLift } from '../../ui/dnd/lift.ts';
 import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
 
@@ -86,6 +87,11 @@ export function TaskCard({
   lockX?: boolean;
 }) {
   const drag = useDraggableEvent(t.id);
+  /* 未定时卡在限高可滚的区里（.allday-zone / .wun-cell）—— 拖出边界会被容器
+     裁掉（用户 2026-10-23：「未定时的一拖就整个消失」）。拖起时把它改成
+     fixed 浮起来，见 ui/dnd/lift.ts。定时卡所在的时间轴不裁，保持原样。 */
+  const isUntimed = cls.includes('task-el--untimed');
+  const lift = useDragLift(isUntimed && drag.isDragging);
   const bodyRef = useRef<HTMLDivElement>(null);
   /* 跟在标题后面的固定行：时间行 + 备注行（没渲染就不占位）。
      各按一行 12px 预留 —— 与 .ev-time/.ev-note 的 line-height 1.2×10px 对齐。 */
@@ -93,7 +99,7 @@ export function TaskCard({
   return (
     <div
       className={cls + (drag.isDragging ? ' dragging' : '')}
-      ref={drag.ref}
+      ref={(el) => { lift.setNodeRef(el); drag.ref(el); }}
       style={{
         ...drag.style,
         /* 只取位移，纵向跟手；横向不锁的时候才有自由 */
@@ -101,6 +107,8 @@ export function TaskCard({
           ? `translate3d(0px, ${drag.y}px, 0px)`
           : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
         ...style,
+        /* 拖起后的 fixed 定位（必须最后，盖掉上面那些百分比/高度） */
+        ...lift.liftStyle,
       }}
       {...drag.attributes}
       {...drag.listeners}
