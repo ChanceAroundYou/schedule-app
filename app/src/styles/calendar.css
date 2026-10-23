@@ -207,7 +207,7 @@
 .task-el--timed.done .ev-title, .task-el--untimed.done .ev-title { color: var(--text-3); }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { color: var(--text-3); }
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
-.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
+.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
 /* 定时卡片：绝对定位到时间轴上。**不许 overflow: hidden** ——
    一裁，跨过容器边界的拖动就被切掉半截（用户 2026-10-11 报「向上拖被分割线挡」）。 */
@@ -241,7 +241,7 @@
 .ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
-.ev-title { flex: 1; min-width: 0; font-size: var(--fs-title); font-weight: 550; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.ev-title { flex: 1; min-width: 0; font-size: var(--fs-title); font-weight: 400; overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .ev-time {
   font-size: var(--fs-meta); line-height: 1.2; color: var(--text-3);
   font-variant-numeric: tabular-nums; letter-spacing: .1px;
@@ -300,7 +300,7 @@
    **日视图两种卡片 + 周视图共用这一条**：它们都带 `.task-el`，所以只有这一处，
    原先 `.tl-event.dragging` 和 `.allday-items .task-pill.dragging` 各写一遍、各自漂移。 */
   /* `.wk-event` 已于 2026-10-17 删除：周视图改用这一张卡 */
-.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9; }
+.task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
 /* ================= 周视图 =================
    **与日视图是同一根时间轴**：锁单屏不纵向滚、事件卡就是日视图那张
