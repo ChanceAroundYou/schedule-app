@@ -243,7 +243,9 @@
   gap: var(--ev-gap); flex: 1 1 auto; min-height: 0; min-width: 0;
   overflow: hidden;
 }
-.ev-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 勾选圈与标题的间距：6px → **2px**（2026-10-23 用户：「打勾和文本间隔太大了，
+   2px 就够了」）。窄屏周视图格子只有 72px 宽，省下这 4px 正好多半个字。 */
+.ev-head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
 .ev-title { flex: 1; min-width: 0; font-size: var(--ev-title-size); font-weight: 550; overflow: hidden; text-overflow: clip; white-space: nowrap; }

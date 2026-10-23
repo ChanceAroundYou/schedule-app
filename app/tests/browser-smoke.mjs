@@ -2347,7 +2347,7 @@ try {
     host.appendChild(d);
     const t = d.querySelector('.ev-title');
     const st = getComputedStyle(t);
-    const out = { size: st.fontSize, lh: st.lineHeight };
+    const out = { size: st.fontSize, lh: st.lineHeight, gap: getComputedStyle(d.querySelector('.ev-head')).columnGap };
     d.remove();
     return out;
   `);
@@ -2363,6 +2363,10 @@ try {
   ok(fontSizes.every((s) => s === '12.5px'),
     '【字号统一】日/周视图 × 定时/未定时的任务文字**同一大小**（电脑端 12.5px）',
     JSON.stringify({ 日未定时: dayUn, 日定时: dayTm, 周未定时: wkUn, 周定时: wkTm }));
+  /* 勾选圈与标题的间距（2026-10-23 用户：6px 太大，2px 就够） */
+  const headGaps = [dayUn, dayTm, wkUn, wkTm].map((x) => x && x.gap);
+  ok(headGaps.every((g) => g === '2px'),
+    '勾选圈与标题的间距是 2px（窄格子把省下的宽度留给字）', JSON.stringify(headGaps));
 
   await new Promise((r) => setTimeout(r, 300));
 
