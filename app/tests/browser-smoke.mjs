@@ -5653,6 +5653,16 @@ try {
   ok(wk.gutterBg === 'rgba(0, 0, 0, 0)', '刻度列没有自己的底色（跟日视图一样是白底），实际 ' + wk.gutterBg);
   ok(wk.unText === '', '未定时那一行的左格不写字，实际「' + wk.unText + '」');
 
+  // 窄屏 2026-10-23 放开了纵向滚动（每小时 48px），宽屏必须仍锁单屏：
+  // .week-view 不纵向滚、列没有「小时数 × 48px」的最小高
+  const wkLock = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    return { oy: getComputedStyle(v).overflowY, minH: getComputedStyle(cols).minHeight };
+  `);
+  ok(wkLock.oy === 'hidden' && (wkLock.minH === '0px' || wkLock.minH === 'auto'),
+    '宽屏周视图仍锁单屏（不纵向滚、列没有每小时 48px 的最小高）', JSON.stringify(wkLock));
+
   /* ---- 真·窄屏视口（390×854）----
      上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
      窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。
@@ -5700,6 +5710,57 @@ try {
   ok(Math.abs(rnOpen.fabLeft - rnClosed.left) < 1 && Math.abs(rnOpen.fabTop - rnClosed.top) < 1,
     '真窄屏下展开前后圆钮在屏幕上不动：收起 (' + rnClosed.left + ',' + rnClosed.top
     + ') 展开 (' + rnOpen.fabLeft + ',' + rnOpen.fabTop + ')');
+
+  /* ---- 真窄屏 · 周视图纵向滚动（2026-10-23）----
+     手机端放开纵向滚动换宽松：每小时 48px（--wk-hour-h），表头 + 未定时行
+     钉在顶部（.week-pin sticky）。还跑在 390×854 的真窄屏视口里。 */
+  console.log('\n二十二、真窄屏周视图纵向滚动');
+  await clickEl(page, `
+    [...document.querySelectorAll('.tabbar .tab')].find((b) => b.textContent.includes('日程'))
+  `);
+  await waitFor(page, `!!document.querySelector('.cal-subhead')`, '真窄屏：日程副header渲染出来', 8000);
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === 'week')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view')`, '真窄屏：周视图渲染出来', 8000);
+  await new Promise((r) => setTimeout(r, 300));
+
+  const wkScroll = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    const hours = parseFloat(getComputedStyle(cols).getPropertyValue('--wk-hours')) || 0;
+    return {
+      oy: getComputedStyle(v).overflowY,
+      over: v.scrollHeight - v.clientHeight,
+      colH: Math.round(cols.getBoundingClientRect().height),
+      expectH: Math.round(hours * 48),
+    };
+  `);
+  ok(wkScroll.oy === 'auto' && wkScroll.over > 40,
+    '真窄屏周视图**能纵向滚**（溢出量 > 40px）', JSON.stringify(wkScroll));
+  ok(Math.abs(wkScroll.colH - wkScroll.expectH) <= 2,
+    '列高 = 时间窗小时数 × 48px（每小时放宽到 48）',
+    `高 ${wkScroll.colH}px / 期望 ${wkScroll.expectH}px`);
+
+  // 往上滑 300px（内容上移）之后，表头 + 未定时行还钉在滚动区顶部。
+  // ⚠️ 参照系：rect.top 是**视口**坐标，.week-view 上面还压着顶栏 + 副 header，
+  // 所以钉住时 pin 相对「滚动容器顶边」的偏移才是 0，而不是视口坐标 ≈ 0。
+  await evalJs(page, `document.querySelector('.week-view').scrollTop = 300; return 1;`);
+  await new Promise((r) => setTimeout(r, 150));
+  const wkPin = await evalJs(page, `
+    const pin = document.querySelector('.week-pin');
+    const v = document.querySelector('.week-view');
+    return {
+      st: getComputedStyle(pin).position,
+      rel: +(pin.getBoundingClientRect().top - v.getBoundingClientRect().top).toFixed(1),
+      gridTop: +(document.querySelector('.week-grid').getBoundingClientRect().top
+               - v.getBoundingClientRect().top).toFixed(1),
+    };
+  `);
+  ok(wkPin.st === 'sticky' && Math.abs(wkPin.rel) < 2 && wkPin.gridTop < 0,
+    '滚 300px 后表头 + 未定时行钉在滚动区顶（pin 相对容器 ≈ 0，时间网格已滚上去）',
+    JSON.stringify(wkPin));
+  await evalJs(page, `document.querySelector('.week-view').scrollTop = 0; return 1;`);
 
   page.close();
 } catch (e) {
