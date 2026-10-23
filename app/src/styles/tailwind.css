@@ -13,6 +13,15 @@
  * 新表面和组件样式共用 tokens.css 的设计令牌；不要为了局部效果重新定义一套颜色。
  */
 @import "tailwindcss";
+/* **扫描范围要收口**（2026-10-24）：Tailwind 4 的自动内容检测把工程目录里所有
+   没被 gitignore 的文本都当候选源 —— 包括 `docs/*.md` 与 `tests/*.mjs`。
+   那两边写注释时经常抄一段类名（`color-scan.mjs` 里写「豁免走令牌的圆角写法」、
+   `api-scan.mjs` 里列外观四条轴），构建端就照字面长出一条
+   「圆角等于一个省略号」的废声明，lightningcss 同时报 Unexpected token。
+   文档与探针里的代码片段是给人看的，不是类名。 */
+@source not "../../tests";
+@source not "../../../docs";
+@source not "../../../legacy";
 @import "./tokens.css";
 @import "../ui/shell/shell.css";
 @import "./calendar.css";
