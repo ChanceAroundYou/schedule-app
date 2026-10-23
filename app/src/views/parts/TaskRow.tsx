@@ -9,7 +9,8 @@ import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
-import { useDragLift } from '../../ui/dnd/lift.ts';
+import { useDragGhost } from '../../ui/dnd/lift.ts';
+import { createPortal } from 'react-dom';
 
 /* ============================== 分隔点 ============================== */
 
@@ -121,34 +122,56 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
      使用处，无条件启用是安全的（列表行走的是 useSortableItem，另一套）。 */
   const drag = useDraggableEvent(t.id);
   /* 月视图格子限高可滚（`.cell-tasks` 有 overflow-y:auto）—— 胶囊拖出格子
-     会被裁掉，拖起时改成 fixed 浮起来（同未定时卡，见 ui/dnd/lift.ts）。 */
-  const lift = useDragLift(drag.isDragging);
+     会被裁掉。拖起时把**分身**画到 body 上（不受裁剪），本体原地隐身
+     （占位不变、dnd 位移保持纯指针位移）。同未定时卡，见 ui/dnd/lift.ts。 */
+  const ghost = useDragGhost(drag.isDragging);
+  const pillCls = 'task-pill task-el' + (t.done ? ' done' : '');
   return (
-    <div
-      className={'task-pill task-el' + (t.done ? ' done' : '')}
-      ref={(el) => { lift.setNodeRef(el); drag.ref(el); }}
-      style={{ ...drag.style, ...lift.liftStyle }}
-      {...drag.attributes}
-      {...drag.listeners}
-      data-id={t.id}
-      data-untimed={t.time ? undefined : '1'}
-      data-jump={jumpDay}
-      title={t.title}
-    >
-      {/* 月 / 周视图格子里唯一一个勾选入口。**必须是 <button>**：
-          原先这里是 <span>，于是既进不了 Tab 序列、也没有按钮角色、
-          读屏也念不出它是什么 —— 而另外五个同样的勾选都是 button。 */}
-      <CheckBtn id={t.id} on={!!t.done} sm />
-      {showTime && t.time && <span className="pill-time">{t.time}</span>}
-      <span className="pill-title">{t.title}</span>
-      {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
-          还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
-          +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
-          它不用自己挂 data-jump：外面这条胶囊已经有，点哪儿都跳同一天。 */}
-      {moreSuffix ? (
-        <span className="pill-more" title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
-      ) : null}
-    </div>
+    <>
+      <div
+        className={pillCls + (drag.isDragging ? ' dragging' : '')}
+        ref={(el) => { ghost.setNodeRef(el); drag.ref(el); }}
+        style={{ ...drag.style, ...(drag.isDragging ? { visibility: 'hidden' as const } : null) }}
+        {...drag.attributes}
+        {...drag.listeners}
+        data-id={t.id}
+        data-untimed={t.time ? undefined : '1'}
+        data-jump={jumpDay}
+        title={t.title}
+      >
+        {/* 月 / 周视图格子里唯一一个勾选入口。**必须是 <button>**：
+            原先这里是 <span>，于是既进不了 Tab 序列、也没有按钮角色、
+            读屏也念不出它是什么 —— 而另外五个同样的勾选都是 button。 */}
+        <CheckBtn id={t.id} on={!!t.done} sm />
+        {showTime && t.time && <span className="pill-time">{t.time}</span>}
+        <span className="pill-title">{t.title}</span>
+        {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
+            还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
+            +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
+            它不用自己挂 data-jump：外面这条胶囊已经有，点哪儿都跳同一天。 */}
+        {moreSuffix ? (
+          <span className="pill-more" title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
+        ) : null}
+      </div>
+      {/* 分身：createPortal 到 body，不受 `.cell-tasks` 的 overflow 裁剪 */}
+      {drag.isDragging && ghost.ghostRect && createPortal(
+        <div
+          className={pillCls + ' dragging drag-ghost'}
+          style={{
+            position: 'fixed', left: ghost.ghostRect.left, top: ghost.ghostRect.top,
+            width: ghost.ghostRect.width, height: ghost.ghostRect.height, margin: 0,
+            zIndex: 90, pointerEvents: 'none', transform: drag.style.transform,
+          }}
+          data-id={t.id}
+          aria-hidden="true"
+        >
+          <CheckBtn id={t.id} on={!!t.done} sm />
+          {showTime && t.time && <span className="pill-time">{t.time}</span>}
+          <span className="pill-title">{t.title}</span>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

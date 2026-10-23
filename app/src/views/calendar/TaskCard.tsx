@@ -25,7 +25,8 @@ import {
 } from '../../domain/layout.ts';
 import { CheckBtn } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
-import { useDragLift } from '../../ui/dnd/lift.ts';
+import { useDragGhost } from '../../ui/dnd/lift.ts';
+import { createPortal } from 'react-dom';
 import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
 
@@ -88,57 +89,83 @@ export function TaskCard({
 }) {
   const drag = useDraggableEvent(t.id);
   /* 未定时卡在限高可滚的区里（.allday-zone / .wun-cell）—— 拖出边界会被容器
-     裁掉（用户 2026-10-23：「未定时的一拖就整个消失」）。拖起时把它改成
-     fixed 浮起来，见 ui/dnd/lift.ts。定时卡所在的时间轴不裁，保持原样。 */
+     裁掉（用户 2026-10-23：「未定时的一拖就整个消失」）。拖起时把**分身**画到
+     body 上（不受任何容器裁剪），本体原地隐身（占位不变、其余卡片不跳动，
+     dnd 的位移保持纯指针位移）。见 ui/dnd/lift.ts。定时卡所在的时间轴不裁，
+     保持原样。 */
   const isUntimed = cls.includes('task-el--untimed');
-  const lift = useDragLift(isUntimed && drag.isDragging);
+  const ghost = useDragGhost(isUntimed && drag.isDragging);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /* 跟在标题后面的固定行：时间行 + 备注行（没渲染就不占位）。
-     各按一行 12px 预留 —— 与 .ev-time/.ev-note 的 line-height 1.2×10px 对齐。 */
   useWholeLineClamp(bodyRef, (timeText ? 1 : 0) + (noteText ? 1 : 0));
-  return (
-    <div
-      className={cls + (drag.isDragging ? ' dragging' : '')}
-      ref={(el) => { lift.setNodeRef(el); drag.ref(el); }}
-      style={{
-        ...drag.style,
-        /* 只取位移，纵向跟手；横向不锁的时候才有自由 */
-        transform: lockX
-          ? `translate3d(0px, ${drag.y}px, 0px)`
-          : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
-        ...style,
-        /* 拖起后的 fixed 定位（必须最后，盖掉上面那些百分比/高度） */
-        ...lift.liftStyle,
-      }}
-      {...drag.attributes}
-      {...drag.listeners}
-      data-id={t.id}
-      title={title}
-    >
-      {/* 内容外面**必须再包一层**：卡片自己不能 overflow:hidden（那会切断
-          跨边界的拖拽），但内容（标题换行 + 时间行）在矮卡里会顶出卡片底部 ——
-          见 2026-10-20 窄屏周视图。裁剪交给 `.ev-body`，拖拽不受影响。 */}
-      <div className="ev-body" ref={bodyRef}>
-        <div className="ev-head">
-          <CheckBtn id={t.id} on={!!t.done} sm />
-          <span className="ev-title">{t.title}</span>
-        </div>
-        {timeText && <span className="ev-time">{timeText}</span>}
-        {noteText && <span className="ev-note">{noteText}</span>}
+  /* 卡片内容：本体和分身各渲染一份（body 的 clamp ref 只属于本体） */
+  const inner = (
+    <>
+      <div className="ev-head">
+        <CheckBtn id={t.id} on={!!t.done} sm />
+        <span className="ev-title">{t.title}</span>
       </div>
-      {resizable && (
-        <>
-          <span
-            className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
-            tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
-          />
-          <span
-            className="ev-resize" data-act="resize" data-id={t.id}
-            tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
-          />
-        </>
+      {timeText && <span className="ev-time">{timeText}</span>}
+      {noteText && <span className="ev-note">{noteText}</span>}
+    </>
+  );
+  return (
+    <>
+      <div
+        className={cls + (drag.isDragging ? ' dragging' : '')}
+        ref={(el) => { ghost.setNodeRef(el); drag.ref(el); }}
+        style={{
+          ...drag.style,
+          /* 只取位移，纵向跟手；横向不锁的时候才有自由 */
+          transform: lockX
+            ? `translate3d(0px, ${drag.y}px, 0px)`
+            : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
+          ...style,
+          /* 拖拽中本体**原地隐身**：占位不变（其余卡片不跳），分身替它出场 */
+          ...(isUntimed && drag.isDragging ? { visibility: 'hidden' as const } : null),
+        }}
+        {...drag.attributes}
+        {...drag.listeners}
+        data-id={t.id}
+        title={title}
+      >
+        <div className="ev-body" ref={bodyRef}>
+          {inner}
+        </div>
+        {resizable && (
+          <>
+            <span
+              className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
+              tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
+            />
+            <span
+              className="ev-resize" data-act="resize" data-id={t.id}
+              tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
+            />
+          </>
+        )}
+      </div>
+      {/* 分身：createPortal 到 body —— 不在 .wun-cell / .allday-zone 里，
+          不会被它们的 overflow 裁掉；pointer-events:none 不挡落点判定。
+          timeline.ts 的引导线优先读分身的 rect（本体原地不动）。 */}
+      {isUntimed && drag.isDragging && ghost.ghostRect && createPortal(
+        <div
+          className={cls + ' dragging drag-ghost'}
+          style={{
+            position: 'fixed', left: ghost.ghostRect.left, top: ghost.ghostRect.top,
+            width: ghost.ghostRect.width, height: ghost.ghostRect.height, margin: 0,
+            zIndex: 90, pointerEvents: 'none',
+            transform: lockX
+              ? `translate3d(0px, ${drag.y}px, 0px)`
+              : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
+          }}
+          data-id={t.id}
+          aria-hidden="true"
+        >
+          <div className="ev-body">{inner}</div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 

@@ -2377,7 +2377,9 @@ try {
     const card = cell && cell.querySelector('.task-el--untimed');
     if (!card) return null;
     const r = card.getBoundingClientRect();
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    window.__dragId = card.dataset.id;
+    return { id: card.dataset.id, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+             ol: card.offsetLeft, ot: card.offsetTop };
   `);
   await page.send('Input.dispatchMouseEvent', {
     type: 'mousePressed', x: unDrag.x, y: unDrag.y, button: 'left', clickCount: 1, buttons: 1,
@@ -2389,24 +2391,32 @@ try {
     await new Promise((r) => setTimeout(r, 50));
   }
   const dragMid = await evalJs(page, `
-    const card = document.querySelector('.task-el--untimed.dragging');
-    if (!card) return { missing: true };
-    const r = card.getBoundingClientRect();
-    const st = getComputedStyle(card);
-    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const ghost = document.querySelector('.drag-ghost[data-id="' + window.__dragId + '"]');
+    const orig = document.querySelector('.task-el[data-id="' + window.__dragId + '"]');
+    if (!ghost || !orig) return { ghost: !!ghost, orig: !!orig };
+    const r = ghost.getBoundingClientRect();
+    const ro = orig.getBoundingClientRect();
     return {
-      pos: st.position, z: st.zIndex,
+      pos: getComputedStyle(ghost).position,
+      cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2),
       inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
-      hitSelf: !!hit && (hit === card || card.contains(hit)),
-      ph: !!document.querySelector('.drag-ph'),
-      top: Math.round(r.top), h: Math.round(r.height),
+      origVis: getComputedStyle(orig).visibility,
+      /* 布局位置用 offsetTop/Left —— 不受 transform 影响，量的是“占位”本身 */
+      origLeft: orig.offsetLeft, origTop: orig.offsetTop,
     };
   `);
-  ok(dragMid && dragMid.pos === 'fixed' && dragMid.inView && dragMid.hitSelf,
-    '把未定时卡拖出格子时它**仍然可见**（浮到最上层，不被容器裁掉）',
+  ok(dragMid && dragMid.pos === 'fixed' && dragMid.inView,
+    '把未定时卡拖出格子时**分身仍然可见**（画在 body 层，不被容器裁掉）',
     JSON.stringify(dragMid));
-  ok(dragMid && dragMid.ph, '原位置留了等高占位块（其余卡片不跳动）',
-    JSON.stringify(dragMid && { top: dragMid.top, h: dragMid.h }));
+  /* 卡片是按中心抓起来的 → 拖拽中分身中心必须 ≈ 指针位置。上一版把本体改成
+     fixed，dnd-kit 重测量给 transform 加了布局位移补偿（恒定 +24），卡片比
+     指针偏一大截（用户 2026-10-23：「点击位置和实际移动位置差一大截」）。 */
+  ok(dragMid && Math.abs(dragMid.cx - unDrag.x) <= 8 && Math.abs(dragMid.cy - (unDrag.y + 140)) <= 8,
+    '拖拽中**分身中心跟着指针走**（点击位置 = 移动位置，零偏移）',
+    `分身中心 (${dragMid.cx},${dragMid.cy}) vs 指针 (${unDrag.x},${unDrag.y + 140})`);
+  ok(dragMid && dragMid.origVis === 'hidden' && dragMid.origLeft === unDrag.ol && dragMid.origTop === unDrag.ot,
+    '本体**原地隐身**（占位不变，其余卡片不跳动）',
+    JSON.stringify(dragMid && { origLeft: dragMid.origLeft, origTop: dragMid.origTop }));
   /* 拖回原处松手：不改任何数据 */
   await page.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved', x: unDrag.x, y: unDrag.y, button: 'left', buttons: 1,

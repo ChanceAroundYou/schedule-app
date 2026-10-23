@@ -1,47 +1,52 @@
 /**
- * lift.ts —— 拖拽时把卡片「拎出」滚动容器
+ * lift.ts —— 拖拽时把卡片「分身」画到 body 上，本体原地隐身
  *
- * **为什么需要**：拖拽不用浮层替身，被拖的就是卡片自己（dnd-kit 给一个
- * transform 位移）。但未定时区（`.allday-zone` / `.wun-cell`）和月视图格子
- * （`.cell-tasks`）为了能滚动设了 `overflow-y: auto` —— 卡片一旦被拖出这个框，
- * 就被容器**裁掉**，症状是「一拖就消失」（用户 2026-10-23 报：
- * 定时卡跟手、未定时卡整个消失，落点却还是对的）。
- * 定时卡所在的时间轴/列特意不裁剪（见 calendar.css 的「不许 overflow:hidden」），
- * 所以它没这问题。
+ * **为什么需要**：拖拽不用浮层替身，被拖的就是卡片自己（dnd-kit 给 transform）。
+ * 但未定时区（.allday-zone / .wun-cell）和月视图格子（.cell-tasks）为了能滚
+ * 设了 overflow-y:auto —— 卡片被拖出这个框就被容器**裁掉**，症状是
+ * 「一拖就整个消失」（用户 2026-10-23 报）。
  *
- * **做法**：拖起时把卡片改成 `position: fixed`（按拖起瞬间实测的 rect 定位定宽，
- * 继续吃 dnd-kit 的 transform 位移），并在原位插一个等高占位块 ——
- * 卡片从此不受任何祖先的 overflow 裁剪；占位块让其余卡片不跳动。松手恢复。
+ * **为什么不用 position:fixed 挪本体**：本体一离开文档流，dnd-kit 会重测量
+ * 并给 transform 加上布局位移的补偿（实测恒定 +24 = 一行的行距），卡片从此
+ * 比鼠标偏一大截（同日报「点击位置和实际位置差一大截，灵敏度大大下降」）。
+ * **本体原地不动**（visibility 隐身、占位不变）就完全不触发那套补偿 ——
+ * dnd 的位移是纯指针位移。
+ *
+ * **做法**：pointerdown 那一刻先量好卡片「未位移」的原始位置（此刻还没有
+ * 任何 transform）；拖起后用 createPortal 把一个**分身**画到 body 上
+ * （fixed 定位 + dnd 位移 + pointer-events:none），本体 visibility 隐身。
+ * 分身不受任何祖先裁剪。松手全部恢复。
  *
  * ⚠️ 只在**会被裁的卡片**上启用（未定时卡 / 月视图胶囊），定时卡保持原样。
  */
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function useDragLift(active: boolean) {
+export interface GhostRect { left: number; top: number; width: number; height: number; }
+
+export function useDragGhost(active: boolean) {
   const nodeRef = useRef<HTMLElement | null>(null);
-  const [liftStyle, setLiftStyle] = useState<CSSProperties | null>(null);
+  const rectRef = useRef<GhostRect | null>(null);
+  const [ghostRect, setGhostRect] = useState<GhostRect | null>(null);
 
-  /* 给组件当一个「只记录节点」的 ref —— 和 dnd-kit 的 setNodeRef 一起挂 */
   const setNodeRef = useCallback((el: HTMLElement | null) => { nodeRef.current = el; }, []);
 
+  /* pointerdown 那一刻先量：此刻卡片还没有任何 transform / translate */
   useEffect(() => {
-    if (!active) { setLiftStyle(null); return; }
     const el = nodeRef.current;
-    if (!el || !el.parentElement) return;
-    const r = el.getBoundingClientRect();
-    /* 占位块：撑住原来的格子。flex 容器要 flex:0 0 auto，grid 容器按 DOM 顺序
-       顶替被拖卡片的槽位。 */
-    const ph = document.createElement('div');
-    ph.className = 'drag-ph';
-    ph.style.cssText = `width:${r.width}px;height:${r.height}px;flex:0 0 auto;pointer-events:none;`;
-    el.parentElement.insertBefore(ph, el);
-    setLiftStyle({
-      position: 'fixed', left: r.left, top: r.top, width: r.width, height: r.height,
-      margin: 0, zIndex: 90,
-    });
-    return () => { ph.remove(); };
+    if (!el) return;
+    const onDown = () => {
+      const r = el.getBoundingClientRect();
+      rectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
+    };
+    el.addEventListener('pointerdown', onDown, true);
+    return () => el.removeEventListener('pointerdown', onDown, true);
+  }, []);
+
+  useEffect(() => {
+    if (!active) { setGhostRect(null); return; }
+    setGhostRect(rectRef.current);
   }, [active]);
 
-  return { setNodeRef, liftStyle };
+  return { setNodeRef, ghostRect };
 }
