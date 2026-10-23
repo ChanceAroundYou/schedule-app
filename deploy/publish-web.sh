@@ -123,8 +123,23 @@ fi
 # ---------------------------------------------------------------- 上传
 if [ "$SKIP" = "0" ]; then
 say "4/6 传到远端临时目录"
+# ⚠️ **模式必须在这里归一次**（2026-10-24 P3）：工程目录在 CIFS 上，`dist/` 里的
+# 文件和目录出来就是 `055` —— tar 照原样带过去，远端解包时先建出 `assets/`（`r-x`，
+# **没有写位**）再往里塞文件就 `Permission denied`，`cp -r` 也读不动。
+# 以前每次靠手动 `chmod -R 755` 补救。现在三层各挡一次：
+#   · 本地尽力 chmod（CIFS 上可能是空操作，所以只当 best effort）
+#   · 打包时强制写进归档头（`--mode`，解包端照这个建）
+#   · 解包后再 chmod 一次 + 数一遍文件数（少文件 = 解包被截断，当场报）
+chmod -R u+rwX dist 2>/dev/null || true
 "$SSH" "$SSH_HOST" "rm -rf $REMOTE_WEB.new && mkdir -p $REMOTE_WEB.new"
-tar -czf - -C dist . | "$SSH" "$SSH_HOST" "tar -xzf - -C $REMOTE_WEB.new && echo '    解包 ok'"
+LOCAL_N="$(find dist -type f | wc -l | tr -d ' ')"
+tar -czf - -C dist --mode='u+rwX,go+rX' . \
+  | "$SSH" "$SSH_HOST" "set -e
+tar -xzf - -C $REMOTE_WEB.new
+chmod -R u+rwX,go+rX $REMOTE_WEB.new
+N=\$(find $REMOTE_WEB.new -type f | wc -l)
+[ \"\$N\" = \"$LOCAL_N\" ] || { echo \"    !! 解包后只有 \$N 个文件，本地是 $LOCAL_N 个\" >&2; exit 1; }
+echo '    解包 ok（'\$N' 个文件，模式已归一成 u+rwX,go+rX）'"
 
 # ---------------------------------------------------------------- 备份 + 切换
 say "5/6 备份现有版本 → 切换"
@@ -151,11 +166,24 @@ fi
 say "6/6 回读校验"
 LOCAL_HASHES="$(grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' dist/index.html | sort)"
 printf '  本地 index.html 引用：\n%s\n' "$(printf '%s' "$LOCAL_HASHES" | sed 's/^/    /')"
+
+# ⚠️ **先跟服务器磁盘上那一份比**（2026-10-24 P3）。以前只从公网抓 HTML 再 grep，
+# 于是「线上已经是新 hash、公网那份还是旧的」也报「发布可能没生效」—— 假阴性，
+# 每次都得手动 `grep` 一遍才知道到底成没成。服务器那份才是真相，
+# 公网那一趟降级成链路体检（不一致只提示，不判定失败）。
+REMOTE_HASHES="$("$SSH" "$SSH_HOST" "grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' $REMOTE_WEB/index.html 2>/dev/null | sort" || true)"
+[ "$REMOTE_HASHES" = "$LOCAL_HASHES" ] || die "服务器上的 web/index.html 引用的还是旧 hash
+    线上 $REMOTE_WEB/index.html → $(printf '%s' "${REMOTE_HASHES:-<读不到文件>}" | tr '\n' ' ')
+    本地 dist/index.html      → $(printf '%s' "$LOCAL_HASHES" | tr '\n' ' ')
+    —— 第 4 / 5 步（解包、备份、切换）里有一步没落地，往上翻它的输出"
+printf '  ✓ 服务器那份引用的 hash 与本地一致\n'
+
 CODE="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' "$BASE_URL/")"
 [ "$CODE" = "200" ] || die "线上首页返回 $CODE"
 ONLINE="$(curl -s --noproxy '*' "$BASE_URL/")"
 for h in $LOCAL_HASHES; do
-  printf '%s' "$ONLINE" | grep -q "$h" || die "线上 index.html 里没有 $h —— 发布可能没生效"
+  printf '%s' "$ONLINE" | grep -q "$h" \
+    || printf '  ⚠️ 公网那份 index.html 里没有 %s（反代或 CDN 缓存？服务器侧已核对过）\n' "$h"
 done
 for h in $LOCAL_HASHES; do
   C="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' "$BASE_URL/assets/$h")"
@@ -170,3 +198,9 @@ else
   say "未改动生产（线上已是这份内容）"
 fi
 printf '  回滚：./deploy/publish-web.sh --approve --rollback\n'
+# 用户端要不要清缓存？**不用**（2026-10-24 P3 记在这儿，免得每次发布都问一遍）：
+# `app/public/sw.js`（sched-shell-v4）对导航请求走「网络优先、断了才回落缓存」，
+# 只有带内容哈希的 assets 是缓存优先；`app/src/data/update-guard.ts` 还会比 bundle 名，
+# 不一致就提示刷新。真看到旧界面时的排查顺序：硬刷新 → 看 SW 是不是旧代
+# （activate 只删 `sched-shell-*` 里不是当前 CACHE 的那些）→ 手动注销 SW 并清 `sched-shell-*`。
+printf '  用户端不用清缓存（导航网络优先）；还看到旧界面：硬刷新 → 注销 SW\n'

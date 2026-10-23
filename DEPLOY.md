@@ -248,6 +248,14 @@ git log @{u}.. --oneline   # 必须为空（改动要先推到 dev）
 3. **`app/node_modules` 软链只在 `[ ! -e node_modules ]` 时补**（`-e` 对悬空软链为假，
    正好覆盖「链还在、目标没了」）。它**不是重装依赖** —— 本体在 `deps/`，只在
    `install-deps.sh` 装一次。
+4. **打包时强制 `--mode='u+rwX,go+rX'`，解包后再 chmod 一次并数文件数**（2026-10-24）。
+   工程目录在 CIFS 上，`dist/` 出来就是 `055`：tar 照原样带过去，远端先建出 `assets/`
+   （没有写位）再往里塞文件就 `Permission denied`，`cp -r` 也读不动 —— 以前每次靠手动
+   `chmod -R 755` 补救。文件数对不上会当场报「解包后只有 N 个」，不会再静默少文件。
+5. **回读校验以服务器磁盘上那份 `index.html` 为准**，公网那一趟只当链路体检（不一致只提示）。
+   以前只从公网抓 HTML 再 grep，「服务器已经是新的、公网还是旧的」也报「没生效」——
+   假阴性，每次都得手动 `grep` 一遍。**用户端不用清缓存**：`sw.js`（`sched-shell-v4`）
+   导航走网络优先，只有带哈希的 assets 缓存优先，`data/update-guard.ts` 比 bundle 名不一致会提示刷新。
 
 ### APK 自更新
 
