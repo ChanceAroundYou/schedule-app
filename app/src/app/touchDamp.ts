@@ -146,9 +146,14 @@ export function attachScrollThumb(root: HTMLElement): () => void {
       return;
     }
     const h = Math.max(24, (clientHeight / scrollHeight) * clientHeight);
-    const y = (scrollTop / scrollHeight) * clientHeight;
+    /* 目标视觉位置（相对**可视区**顶部） */
+    const y = Math.min((scrollTop / scrollHeight) * clientHeight, clientHeight - h);
     el.style.setProperty('--thumb-h', h.toFixed(1) + 'px');
-    el.style.setProperty('--thumb-y', Math.min(y, clientHeight - h).toFixed(1) + 'px');
+    /* ⚠️ **必须把 scrollTop 加回去**：浮条是滚动容器自己的 ::after（绝对定位），
+       会**跟着内容一起滚** —— 不补偿的话一往下滑它就被推出可视区上方，看着像
+       「小标永远停在最上面、不跟手」（用户 2026-10-23 报的原话）。
+       加回 scrollTop 之后，视觉位置恒等于 y。 */
+    el.style.setProperty('--thumb-y', (scrollTop + y).toFixed(1) + 'px');
     el.setAttribute('data-thumb', 'on');
     window.clearTimeout(timers.get(el));
     timers.set(el, window.setTimeout(() => {

@@ -43,8 +43,11 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
       /* 最短 26px —— 再短就没法点了 */
       const h = can ? Math.max(26, Math.round((view * view) / full)) : 0;
       thumb.style.height = h + 'px';
+      /* ⚠️ **要加 el.scrollTop**：轨道是滚动容器里的绝对定位子元素，跟着内容
+         一起滚；不补偿的话一滚浮条就跑到可视区上面（同一个病根，见
+         app/touchDamp.ts 的 ::after 浮条，2026-10-23 一并修）。 */
       thumb.style.transform = can && full > view
-        ? `translateY(${Math.round((el.scrollTop / (full - view)) * (view - h))}px)`
+        ? `translateY(${Math.round(el.scrollTop + (el.scrollTop / (full - view)) * (view - h))}px)`
         : 'none';
       track.style.opacity = can ? '1' : '0';
     };

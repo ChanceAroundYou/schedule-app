@@ -2246,6 +2246,25 @@ try {
     return cell.hasAttribute('data-thumb');
   `);
   ok(thumbOn, '滚动时**浮条出现**（压在卡片上的滚动指示）', 'data-thumb=on');
+  /* 浮条必须**跟着滚动一起走**（2026-10-23 用户：「小标一直停在最上面、不跟手」）。
+     它是滚动容器自己的 ::after（绝对定位），默认会跟着内容滚出可视区 ——
+     JS 里把 scrollTop 补偿进了 --thumb-y。这里量**实际视觉位置**：
+     ::after 布局在内容坐标 y=0，视觉 top = -scrollTop + translateY。 */
+  const thumbPos = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    if (!cell) return null;
+    const after = getComputedStyle(cell, '::after');
+    const m = after.transform.match(/matrix\\(([^)]+)\\)/);
+    const ty = m ? parseFloat(m[1].split(',')[5]) : 0;
+    return {
+      scrollTop: Math.round(cell.scrollTop),
+      ty: Math.round(ty),
+      visual: Math.round(-cell.scrollTop + ty),
+      ch: cell.clientHeight,
+    };
+  `);
+  ok(thumbPos && thumbPos.scrollTop > 20 && thumbPos.visual > 0 && thumbPos.visual < thumbPos.ch,
+    '浮条**跟着滚动移动**（不被推出可视区上方）', JSON.stringify(thumbPos));
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
 
   /* ---- 2026-10-23 用户：完成的未定时任务不该从日程表消失 ----

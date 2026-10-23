@@ -232,7 +232,9 @@ body.sheet-open .tab:active { background: none; }
     --tl-label-left: -44px;
     --tl-label-width: 38px;
     --tl-event-pad: 3px 7px;
-    --ev-title-size: 12px;
+    /* 窄屏任务文字统一走小格（9px）：日视图的定时卡原来是写死的 12px、比周视图
+       大一号 —— 2026-10-23 用户「要统一一样大」，按周视图/月视图手机端这档对齐。 */
+    --ev-title-size: var(--task-text-sm);
     --ev-time-size: var(--task-time-sm);   /* 时间行比标题小一档（8px） */
     --ev-gap: 0px;
   }
@@ -364,15 +366,15 @@ body.sheet-open .tab:active { background: none; }
   /* 周视图定时卡：字号跟月视图小格（9px），左右留白几乎为 0（用户：
      「参考现在的月视图」= pill 的 padding 1px 0），字尽可能多显示。 */
   .week-col .task-el--timed { --ev-title-size: var(--task-text-sm); padding: 1px 0; }
-  .week-col .task-el--timed .check-btn { display: none; }
+  /* 勾选圈**保留**（2026-10-23 用户要回来）：10-20 那句「周视图移动端的打勾
+     也去掉」已作废。格子 72px 宽，14px 的小圈 + 标题还能放 4~5 个字。 */
   /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
      和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
      用 CSS 藏而不是改 JS：卡片够高时那行本来就会出现（`roomy`），
      这里一律不显示，规则更简单，也不会在窗口缩放时忽隐忽现。
      电脑端不受影响（这条在 max-width:900px 里面）。 */
   .week-col .task-el--timed .ev-time { display: none; }
-  /* 未定时那一行也去掉勾选圈（2026-10-20 用户：「周视图移动端的打勾也去掉」） */
-  .wun-cell .task-el--untimed .check-btn { display: none; }
+  /* 未定时那一行的勾选圈**保留**（2026-10-23 用户要回来，同上作废 10-20 那条） */
   /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
      —— 会切断跨边界的拖拽）。
      ⚠️ `safe center` 不是笔误：普通 center 在内容比盒子高时**上下同时溢出**，
