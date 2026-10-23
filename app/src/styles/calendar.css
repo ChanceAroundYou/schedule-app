@@ -495,10 +495,13 @@
    松手时属性被摘掉，过渡接管、弹回去。
    260ms → 320ms（2026-10-22 用户「太硬」）：短促的弹回像被弹簧抽回去，
    拖长一点、缓出更足，才是"松手后慢慢归位"的手感。 */
-.allday-zone > *,
-.wun-cell > * { translate: 0 var(--pull, 0px); }
+.allday-zone[data-pull] > *,
+.wun-cell[data-pull] > * { translate: 0 var(--pull, 0px); }
 .allday-zone:not([data-pull]) > *,
 .wun-cell:not([data-pull]) > * { transition: translate 320ms cubic-bezier(.18, .85, .24, 1); }
+/* 拖动中不裁剪未定时区，避免卡片被截断 */
+.allday-zone:has(.task-el.dragging),
+.wun-cell:has(.task-el.dragging) { overflow: visible; }
 @media (prefers-reduced-motion: reduce) {
   .allday-zone > *, .wun-cell > * { transition: none; }
 }

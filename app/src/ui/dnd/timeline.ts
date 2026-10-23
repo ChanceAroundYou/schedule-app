@@ -41,7 +41,7 @@ export function useTimelineDrag() {
      无时间的那片区域里了」）。周视图对应的那块是 `.week-view`。 */
   const clampTimelineDrag: Modifier = ({ active, activeNodeRect, transform }) => {
     if (!active || !activeNodeRect) return transform;
-    const el = document.querySelector<HTMLElement>(`.task-el--timed[data-id="${String(active.id)}"]`);
+    const el = document.querySelector<HTMLElement>(`.task-el[data-id="${String(active.id)}"]`);
     const frame = el?.closest<HTMLElement>('.day-panel, .week-view');
     if (!el || !frame) return transform;
 
