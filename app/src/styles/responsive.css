@@ -395,7 +395,8 @@ body.sheet-open .tab:active { background: none; }
   :root { --fs-title: 11px; --fs-meta: 9.5px; --fs-head-date: 12px; }
   .month-grid { grid-auto-rows: minmax(62px, auto); }
   .cell-head { margin-bottom: 3px; gap: 3px; }
-  .cell-date { width: 20px; height: 20px; flex: 0 0 20px; font-size: 12px; }
+  .cell-date { width: 18px; height: 18px; flex: 0 0 18px; font-size: 10px; }
+  .cell-load { display: none; }
   .cell-today { display: none; }
   /* 负载文字在窄格里用简写（见 Views.shortLoad），留一点余量即可 */
   .cell-load {
