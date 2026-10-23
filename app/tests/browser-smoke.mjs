@@ -2315,9 +2315,38 @@ try {
   `, '取消完成后回到未完成组', 12000);
   ok(backOpen.n >= 8, '取消完成 → 变回未完成（还能再勾），条数不变', `${backOpen.n} 条`);
 
-  // 后面几节还在周视图上量东西 —— 切回去
+  /* ---- 2026-10-23 回归：日/周视图的任务文字大小必须一样 ----
+     上一轮「字号收敛」把未定时卡的基础样式切成小格 9px、只给周视图补了大格
+     覆盖 → 日视图电脑端 9px、周视图 12.5px（用户：「文字大小不一样了」）。
+     用探针卡量四种组合的 computed 字号（不依赖真实数据），电脑端必须全是
+     12.5px / 行高 18px —— 与月视图 pill 同一档。 */
+  const probeFont = (hostSel, html) => evalJs(page, `
+    const host = document.querySelector(${JSON.stringify(hostSel)});
+    if (!host) return null;
+    const d = document.createElement('div');
+    d.innerHTML = ${JSON.stringify(html)};
+    host.appendChild(d);
+    const t = d.querySelector('.ev-title');
+    const st = getComputedStyle(t);
+    const out = { size: st.fontSize, lh: st.lineHeight };
+    d.remove();
+    return out;
+  `);
+  const UNT_HTML = '<div class="task-el task-el--untimed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
+  const TMD_HTML = '<div class="task-el task-el--timed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
+  const dayUn = await probeFont('.allday-items', UNT_HTML);
+  const dayTm = await probeFont('.timeline', TMD_HTML);
   await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 500));
+  const wkUn = await probeFont('.wun-cell', UNT_HTML);
+  const wkTm = await probeFont('.week-col', TMD_HTML);
+  const fontSizes = [dayUn && dayUn.size, dayTm && dayTm.size, wkUn && wkUn.size, wkTm && wkTm.size];
+  ok(fontSizes.every((s) => s === '12.5px'),
+    '【字号统一】日/周视图 × 定时/未定时的任务文字**同一大小**（电脑端 12.5px）',
+    JSON.stringify({ 日未定时: dayUn, 日定时: dayTm, 周未定时: wkUn, 周定时: wkTm }));
+
+  await new Promise((r) => setTimeout(r, 300));
+
 
   await evalJs(page, `
     const token = localStorage.getItem('schedule-app-token');

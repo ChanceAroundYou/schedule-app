@@ -342,6 +342,13 @@ body.sheet-open .tab:active { background: none; }
   .wh-day { font-size: 15px; width: 24px; height: 24px; min-width: 24px; }
   /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式 */
   .allday-items[data-cols="1"] .task-el--untimed { padding: 1px 8px; }
+  /* 窄屏任务卡统一走**小格**（9px / 14px，= 月视图手机端 pill）。
+     2026-10-23：宽屏基础样式恢复成 12.5px 之后，日视图这边必须显式压回小格，
+     否则手机上的日视图字会比周视图大一号（宽屏 12.5 / 窄屏 9 的断点规则）。 */
+  .allday-items .task-el--untimed {
+    font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    --ev-title-size: var(--task-text-sm);
+  }
   .wun-cell { padding: 2px 3px; }
   /* 窄屏周视图整体切到**月视图小格规格**（2026-10-22 回归）：
      9px 字 / 14px 行高 / padding 1px 0 / 圆角 4px —— 与
@@ -349,6 +356,9 @@ body.sheet-open .tab:active { background: none; }
   .wun-cell { --row: calc(var(--task-line-sm) + 2px + 2 * var(--border-w)); }
   .wun-cell .task-el--untimed {
     font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    /* ⚠️ 标题的字号走的是变量（`.ev-title { font-size: var(--ev-title-size) }`），
+       只改卡片的 `font-size` 管不到它 —— 基础样式改回大格后这里必须显式压小。 */
+    --ev-title-size: var(--task-text-sm);
     border-radius: 4px;
   }
   /* 周视图定时卡：字号跟月视图小格（9px），左右留白几乎为 0（用户：

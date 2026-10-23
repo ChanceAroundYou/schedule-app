@@ -51,7 +51,9 @@
   --tl-label-left: -56px;
   --tl-label-width: 44px;
   --tl-event-pad: 3px 7px;
-  --ev-title-size: 12px;
+  /* 定时卡的标题字号：与未定时卡 / 周视图 / 月视图同一档（12.5px）。
+     2026-10-23：这里原来是写死的 12px，比周视图（12.5）小半号，用户能看出来。 */
+  --ev-title-size: var(--task-text);
   --ev-time-size: var(--task-time);   /* 时间行比标题小一档（tokens.css） */
   --ev-gap: 0px;
 }
@@ -216,14 +218,17 @@
   min-height: 12px; min-width: 0;
 }
 /* 未定时卡片：网格流里的一项，撑满自己那一格，上下各让 1px。
-   字号/行高走**小格令牌**（9px/14px，= 月视图手机端 pill；周视图电脑端在
-   .wun-cell 里覆盖成大格）—— 2026-10-22 用户：「日视图的字体也同样缩小，
-   不用加粗」。行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
+   字号/行高：**宽屏走大格令牌（12.5px / 18px），窄屏在 responsive.css 里
+   覆盖成小格（9px / 14px = 月视图手机端 pill）**。
+   ⚠️ 2026-10-23 回归：上一轮「字号收敛」把这里一刀切成小格、只给 `.wun-cell`
+   补了大格覆盖 —— 周视图正常、**日视图电脑端变成 9px**（用户报「日视图和周视图
+   的任务文字大小不一样了」）。基础样式必须是大格，窄屏才往小压。
+   行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
 .task-el--untimed {
   width: 100%; padding: var(--allday-pill-pad); min-width: 0;
-  font-size: var(--task-text-sm); overflow: hidden;
-  line-height: var(--task-line-sm);
-  --ev-title-size: var(--task-text-sm);
+  font-size: var(--task-text); overflow: hidden;
+  line-height: var(--task-line);
+  --ev-title-size: var(--task-text);
   transition: background .14s, box-shadow .14s;
 }
 /* 不加粗：与月视图任务名同字重（400） */
