@@ -348,14 +348,18 @@ test('重叠分列：只有真正重叠的那一簇分列', () => {
   assert.equal(byItem.c.col, 0);
 });
 
-test('重叠分列：三件互相重叠时分三列', () => {
+test('重叠分列：三件互相重叠时**不再分三列**，改整宽层叠（方案 C）', () => {
   const placed = layoutOverlap([
     { item: 'a', start: 540, end: 660 },
     { item: 'b', start: 550, end: 670 },
     { item: 'c', start: 560, end: 680 },
   ]);
-  assert.ok(placed.every((p) => p.cols === 3));
-  assert.deepEqual(placed.map((p) => p.col).sort(), [0, 1, 2]);
+  /* 三件在手机上一列只剩 ~24px，字没法看 —— 2026-10-25 用户裁决改层叠 */
+  assert.ok(placed.every((p) => p.cols === 1 && p.col === 0), '每件都拿整宽');
+  assert.ok(placed.every((p) => p.stack && p.stack.n === 3), '都带层叠标记');
+  assert.deepEqual(placed.map((p) => p.stack?.i), [0, 1, 2], '层叠序 = 开始时间序');
+  const keys = new Set(placed.map((p) => p.stack?.key));
+  assert.equal(keys.size, 1, '同一簇共用一个翻层键');
 });
 
 test('重叠分列：首尾相接不算重叠', () => {

@@ -9,7 +9,6 @@ import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
 import { CompactCard } from '../calendar/TaskCard.tsx';
-/* 🔁 重复任务标志住在独立文件里（TaskCard 也要用，留在本文件会成循环依赖） */
 import { RepeatFlag } from './RepeatFlag.tsx';
 export { RepeatFlag } from './RepeatFlag.tsx';
 
