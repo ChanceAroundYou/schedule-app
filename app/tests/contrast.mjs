@@ -101,6 +101,28 @@ const NONTEXT = [
   { fg: '--input', bgs: ['--panel', '--panel-2', '--panel-3', '--bg'] },
 ];
 
+const walkTree = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkTree(join(d, e.name)) : [join(d, e.name)]));
+
+/**
+ * **运行时由 JS 写进去的变量**：style 对象的键（`'--card-px': …`）和
+ * `setProperty('--kb', …)`。样式模块里搜不到它们，但它们确实有定义 —— 定义在运行时。
+ *
+ * 原先这里是一份手写的名单，写着写着就漏（`--ev-title-lh` / `--ev-time-lh` 这一轮
+ * 就没进去，于是守卫把两条真在用的变量报成「未定义」）。改成从 .tsx 里认，就不会再漏。
+ */
+export function runtimeVars() {
+  const out = new Set();
+  for (const f of walkTree(SRC).filter((f) => /\.tsx?$/.test(f))) {
+    const s = readFileSync(f, 'utf8');
+    for (const m of s.matchAll(/['"](--[\w-]+)['"]\s*:/g)) out.add(m[1]);
+    for (const m of s.matchAll(/setProperty\(\s*['"](--[\w-]+)/g)) out.add(m[1]);
+  }
+  return out;
+}
+
+/** 同一份名单给 fallbackVars 用（那些变量的 CSS 兜底值就是它们的真默认值） */
+const RUNTIME_SET = runtimeVars();
+
 /**
  * 扫 `src/` 里所有 `var(--x)`，报出语义样式模块 / tailwind.css 里**没有定义**的那些。
  *
@@ -116,15 +138,14 @@ export function undefinedVars() {
   const files = [...styleSources().map((p) => join(STYLE_DIR, p.file)), TW];
   for (const f of files) for (const m of readFileSync(f, 'utf8').matchAll(/(--[\w-]+)\s*:/g)) defs.add(m[1]);
 
-  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
   const used = new Map();
-  for (const f of walk(SRC).filter((f) => /\.(tsx?|css)$/.test(f))) {
+  for (const f of walkTree(SRC).filter((f) => /\.(tsx?|css)$/.test(f))) {
     for (const m of readFileSync(f, 'utf8').matchAll(/var\((--[\w-]+)/g)) {
       if (!used.has(m[1])) used.set(m[1], new Set());
       used.get(m[1]).add(f.slice(SRC.length + 1));
     }
   }
-  return [...used].filter(([k]) => !defs.has(k))
+  return [...used].filter(([k]) => !defs.has(k) && !RUNTIME_SET.has(k))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, files]) => ({ name, files: [...files].sort() }));
 }
@@ -143,7 +164,8 @@ export function fallbackVars() {
   for (const f of walk(SRC).filter((f) => /\.tsx?$/.test(f))) {
     for (const m of readFileSync(f, 'utf8').matchAll(/var\((--[\w-]+)\s*,[^)]*\)/g)) {
       // RUNTIME_SET 里的那几个和 CSS 里的兜底值是同一回事：**那个兜底就是真默认值**
-      // （没软键盘时 --kb 本来就该是 0），不是「变量名写错了在静默降级」。
+      // （没软键盘时 --kb 本来就该是 0、卡高还没量到时 --card-px 本来就该回落），
+      // 不是「变量名写错了在静默降级」。名单从 .tsx 自己认出来，见 runtimeVars。
       if (RUNTIME_SET[m[1]]) continue;
       out.push({ name: m[1], files: [f.slice(SRC.length + 1)], snippet: m[0] });
     }

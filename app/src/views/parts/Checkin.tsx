@@ -31,7 +31,7 @@ export function CheckinStrip({ habits }: { habits: Habit[] }) {
           const st = habitStreak(h);
           return (
             <div className={'ci-item' + (hd ? ' done' : '')} key={h.id} data-habit={h.id}>
-              <CheckBtn id={h.id} on={hd} act="habit" sm />
+              <CheckBtn id={h.id} on={hd} act="habit" />
               <span className="ci-title">{h.title}</span>
               {st > 1 && (
                 <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>

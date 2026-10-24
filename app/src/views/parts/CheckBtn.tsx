@@ -11,15 +11,19 @@
  * 收成一个组件，这些漂移就不可能再发生。
  *
  * 必须是 `<button>`：这是全应用点得最多的控件，得能 Tab 到、得能回车触发。
- * 尺寸 / 内外边距 / 边框 / 圆角全由 `.check-btn` 显式定死，不会带进 UA 默认样式。
+ * 内外边距 / 边框 / 圆角全由 `.check-btn` 显式定死，不会带进 UA 默认样式。
  * 24×24 的命中区由 `styles/lists.css` 里 `.check-btn::before` 撑出来（视觉尺寸不变）。
+ *
+ * **没有 `sm` 这一档了**（2026-10-24 第四轮）：圈径由所在那一行的字号算出来
+ * （lists.css 的 `--check-size` = 字号 × `--check-k`，夹在 min / max 之间）。
+ * 原先 `sm` 写死 14px、基础档写死 18px、窄屏又覆写 22px —— 三处各定各的，
+ * 于是「圈比任务名还大」。以后要圈跟着变，改那一行的字号或 `--check-k`。
  */
-export function CheckBtn({ id, on, act = 'toggle', sm }: {
+export function CheckBtn({ id, on, act = 'toggle' }: {
   id: string;
   on?: boolean;
   /** 'toggle' = 勾任务，'habit' = 勾打卡。决定 title 的文案 */
   act?: 'toggle' | 'habit';
-  sm?: boolean;
 }) {
   const label = act === 'habit'
     ? (on ? '取消今日打卡' : '今日打卡')
@@ -27,7 +31,7 @@ export function CheckBtn({ id, on, act = 'toggle', sm }: {
   return (
     <button
       type="button"
-      className={'check-btn' + (sm ? ' sm' : '') + (on ? ' on' : '')}
+      className={'check-btn' + (on ? ' on' : '')}
       data-act={act}
       data-id={id}
       title={label}

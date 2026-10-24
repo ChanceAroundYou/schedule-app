@@ -105,7 +105,7 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
             —— 用户 2026-10-19 明确要求。 */}
         {shown.map((t, i) => (
           <TaskPill
-            key={t.id} task={t} showTime jumpDay={d}
+            key={t.id} task={t} jumpDay={d}
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
           />
         ))}

@@ -3,13 +3,19 @@
  *
  *   CHROME=/path/to/chrome node app/tests/card-geometry.mjs
  *
- * ## 盯的是哪几条约定（2026-10-24 五项反馈）
+ * ## 盯的是哪几条约定
  *
+ * 2026-10-24 五项反馈：
  *   ② 打勾圈左侧的间距（= 卡片左 padding + 左边框）三视图同值
  *   ③ 圆角由**卡片自己的短边**推出：radius ≈ 短边 × K，不写死像素档
  *   ④ 周视图表头（日期数字 / 圆圈 / 表头总高）在桌面与窄屏**两档同步**收小
  *   ⑤ 触屏长按拽起卡片后**只拖卡片**，承载区域不再跟着滑；不长按时区域照常滚
  *   ⑥ 卡片上不被文字选中 / 复制
+ *
+ * 同日第四轮（第三节）：
+ *   ① 时间行的左端 = 标题**文字**的左端（不是卡片左边缘、不是勾选圈）
+ *   ② 勾选圈直径 = 所在行字号 × 0.85（夹 9~16px），且中心落在「标题 + 时间」那一整块的中线上
+ *   ③ 时间行**只由时长决定**：> 60 分钟必须有且完整可见，≤ 60 分钟必须没有，月视图永远没有
  *
  * 与 browser-cards.mjs 一样是**完全隔离**的：临时后端 + 临时库 + 临时 Chrome profile。
  * 视口用 CDP 的 `Emulation.setDeviceMetricsOverride` 切，一趟量完桌面(1400)与窄屏(390)。
@@ -37,6 +43,11 @@ const RADIUS_MIN = 2;
 /** 允许的误差：半径比 0.03；左内边距 0.5px；两档表头高的差按比例 */
 const TOL_RATIO = 0.03;
 const TOL_PAD = 0.5;
+
+/** 第四轮② 勾选圈：直径 = 所在行字号 × CHECK_K，夹在 CHECK_MIN / CHECK_MAX（与 tokens.css 同步） */
+const CHECK_K = 0.85;
+const CHECK_MIN = 9;
+const CHECK_MAX = 16;
 
 /** ④ 周表头目标（桌面 / 窄屏）：日期字号、圆圈边长、表头总高上限 */
 const WEEK_HEAD = {
@@ -246,6 +257,20 @@ try {
   await waitFor(page, `!!document.querySelector('[data-nav="calendar"]')`, '登录后的外壳（有导航）', 15000);
 
   /* 新账户的 ui.cal / ui.cals 是空的（App 不自动勾集）—— 环境准备，不是被测行为 */
+  /* 定时的一条要**跨时长档**造（2026-10-24 第四轮，规则「时长 > 60 分钟必须有时间行」）：
+     120 / 90 / 75 / 61 是「必须有」，60 / 45 是「必须没有」。61 而不是 60+1 分钟以上
+     的随便一条 —— 边界那一格最容易写错（`>` 写成 `>=` 就是整小时那档多出第二行）。
+     时间都摆在 09:00–21:45 这段：默认时间窗是 0–24 整日，coverWindow 只往外让，
+     所以加几条不会改动时间轴每小时的像素高（第一节那些数才不至于跟着漂）。 */
+  const SEED_TIMED = [
+    { id: 't_geom_timed', time: '09:00', duration: 120, title: '定时两小时' },
+    { id: 't_geom_t90', time: '13:00', duration: 90, title: '定时九十分钟' },
+    { id: 't_geom_t75', time: '15:00', duration: 75, title: '定时七十五分' },
+    { id: 't_geom_t61', time: '17:00', duration: 61, title: '定时六十一分' },
+    { id: 't_geom_t60', time: '19:00', duration: 60, title: '定时整一小时' },
+    { id: 't_geom_t45', time: '21:00', duration: 45, title: '定时四十五分' },
+  ];
+  const DUR = Object.fromEntries(SEED_TIMED.map((r) => [r.id, r.duration]));
   const seed = await evalJs(page, `
     const tok = localStorage.getItem('schedule-app-token');
     const me = await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + tok } })).json();
@@ -255,8 +280,8 @@ try {
     const today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
     const none = { unit: 'none', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
     const rows = [
-      { id: 't_geom_timed', time: '09:00', duration: 120, title: '定时两小时' },
-      /* 未定的一条 + 九条：容器恒 3.2 行高，够多了才 overflow，
+      ...${JSON.stringify(SEED_TIMED)},
+      /* 未定的一条 + 二十五条：容器恒 3.2 行高，够多了才 overflow，
          「拖卡时区域滑不滑」这件事才有得测 */
       ...Array.from({ length: 25 }, (_, i) => (
         { id: 't_geom_untimed_' + i, time: null, duration: null, title: '未定时刻' + (i + 1) }
@@ -283,8 +308,8 @@ try {
     return { calId: cal.id, calName: cal.name, today, accepted: (j.applied || []).length, rejected: j.rejected || [] };
   `);
   if (!seed || seed.accepted < 22) throw new Error('造任务失败：' + JSON.stringify(seed));
-  console.log('  已造任务：定时 09:00–11:00 一条 + 未定 25 条（' + seed.today
-    + '，日程集「' + seed.calName + '」）');
+  console.log('  已造任务：定时 ' + SEED_TIMED.map((r) => r.duration).join('/') + ' 分钟各一条'
+    + ' + 未定 25 条（' + seed.today + '，日程集「' + seed.calName + '」）');
 
   /* 新账户的 ui.cal / ui.cals 是空的（App 不自动勾集）—— 环境准备，不是被测行为 */
   await evalJs(page, `
@@ -360,12 +385,74 @@ try {
     await waitFor(page, `!!document.querySelector('.content-day, .content-month')`, '日程页');
   };
 
+  /** 逐张卡的细节（第三节全靠它）：时间行在不在、在不在卡里、圈多大、圈中心对没对上文字块中心 */
+  const measureDetail = () => evalJs(page, `
+    const R = (el) => {
+      const b = el.getBoundingClientRect();
+      return { l: +b.left.toFixed(2), t: +b.top.toFixed(2), b: +b.bottom.toFixed(2),
+               w: +b.width.toFixed(2), h: +b.height.toFixed(2) };
+    };
+    const one = (el) => {
+      const title = el.querySelector('.ev-title');
+      const time = el.querySelector('.ev-time');
+      const note = el.querySelector('.ev-note');
+      const check = el.querySelector('.check-btn');
+      const cb = check ? R(check) : null;
+      const tb = title ? R(title) : null;
+      const mr = time ? R(time) : null;
+      const nr = note ? R(note) : null;
+      const texts = [tb, mr, nr].filter(Boolean);
+      const body = el.querySelector('.ev-body');
+      return {
+        id: el.getAttribute('data-id'),
+        card: R(el),
+        titleFs: title ? +parseFloat(getComputedStyle(title).fontSize).toFixed(2) : null,
+        timeFs: time ? +parseFloat(getComputedStyle(time).fontSize).toFixed(2) : null,
+        /* display:none 与「没有这个元素」是两件事：前者是 CSS 藏掉了，后者是没渲染 */
+        timeDisplay: time ? getComputedStyle(time).display : null,
+        timeText: time ? (time.textContent || '').trim() : null,
+        titleL: tb ? tb.l : null, timeL: mr ? mr.l : null,
+        timeTop: mr ? mr.t : null, timeBottom: mr ? mr.b : null,
+        checkW: cb ? cb.w : null,
+        checkCy: cb ? +(cb.t + cb.h / 2).toFixed(2) : null,
+        textTop: texts.length ? Math.min(...texts.map((x) => x.t)) : null,
+        textBottom: texts.length ? Math.max(...texts.map((x) => x.b)) : null,
+        bodyAlign: body ? getComputedStyle(body).alignContent : null,
+        titleMaxH: title ? (title.style.maxHeight || null) : null,
+        minHeight: el.style.minHeight || null,
+      };
+    };
+    return {
+      timed: [...document.querySelectorAll('.content .task-el--timed')].map(one),
+      untimed: [...document.querySelectorAll('.content .task-el--untimed')].map(one),
+      pills: [...document.querySelectorAll('.content .task-pill')].map((el) => {
+        const c = el.querySelector('.check-btn');
+        const cb = c ? c.getBoundingClientRect() : null;
+        const t = el.querySelector('.pill-title');
+        return {
+          id: el.getAttribute('data-id'),
+          untimed: el.getAttribute('data-untimed') === '1',
+          hasTimeEl: !!el.querySelector('.pill-time, .ev-time'),
+          tip: el.getAttribute('title') || '',
+          checkW: cb && cb.width > 0 ? +cb.width.toFixed(2) : null,
+          titleFs: t ? +parseFloat(getComputedStyle(t).fontSize).toFixed(2) : null,
+        };
+      }),
+      /* 全页扫一遍：「.pill-time」这个元素现在**根本不该存在**（CompactCard 不画）
+         —— 注意这段跑在浏览器里，注释里不能出现反引号（会把外层模板截断） */
+      pillTimeEls: document.querySelectorAll('.pill-time').length,
+      evTimeEls: document.querySelectorAll('.ev-time').length,
+    };
+  `);
+
   const VIEWPORTS = [
     { name: '桌面 1400', w: 1400, h: 900, mobile: false },
     { name: '窄屏 390', w: 390, h: 844, mobile: true },
   ];
   const VIEWS = ['day', 'week', 'month'];
   const table = {};
+  /** 逐张卡的读数（第三节用），与 table 同一套 key */
+  const detail = {};
 
   for (const vp of VIEWPORTS) {
     await page.send('Emulation.setDeviceMetricsOverride', {
@@ -407,7 +494,9 @@ try {
       }
       /* 卡片几何在 JS 量完容器高度后才落定（--row-hour / --card-px），多等一拍 */
       await sleep(450);
-      table[vp.name + ' / ' + view] = await measure();
+      const key = vp.name + ' / ' + view;
+      table[key] = await measure();
+      detail[key] = await measureDetail();
     }
   }
 
@@ -470,7 +559,77 @@ try {
     }
   }
 
-  console.log('\n三、断言：周视图表头两档同步收小');
+  console.log('\n三、断言：时间行只由时长决定 · 圈径跟字号走 · 文字左对齐 · 圈跨行居中');
+  console.log('    规则（2026-10-24 第四轮用户定）：时长 > 60 分钟 → 时间行**必须有**且完整在卡里；'
+    + '≤ 60 分钟 → 必须没有；月视图**永远**没有');
+  for (const [key, d] of Object.entries(detail)) {
+    if (key.indexOf('month') >= 0) {
+      /* 月视图只查两件事：**不画时间**，而且时间没丢（挂在气泡上） */
+      ok(d.pillTimeEls === 0, '  ' + key + ' 没有 .pill-time 元素（全页扫到 ' + d.pillTimeEls + ' 个）');
+      ok(d.evTimeEls === 0, '  ' + key + ' 没有 .ev-time 元素（全页扫到 ' + d.evTimeEls + ' 个）');
+      ok(d.pills.length >= 1, '  ' + key + ' 这一屏有 ' + d.pills.length + ' 条胶囊可量');
+      for (const p of d.pills.filter((x) => !x.untimed)) {
+        ok(/\d{1,2}:\d{2}/.test(p.tip), '  ' + key + ' 定时胶囊的时间在气泡里：「' + p.tip + '」');
+      }
+      for (const p of d.pills.filter((x) => x.checkW != null)) {
+        ok(p.checkW <= p.titleFs + 0.5, '  ' + key + ' 胶囊圈 ' + num(p.checkW)
+          + ' ≤ 标题字号 ' + num(p.titleFs) + '（不比文字大）');
+      }
+      continue;
+    }
+    const rows = [...d.timed, ...d.untimed];
+    if (!rows.length) { console.log('  ' + key + '：这一屏没有卡'); continue; }
+    console.log('\n  ' + key);
+    for (const c of rows) {
+      const dur = DUR[c.id];
+      const label = (dur != null ? dur + ' 分钟 ' : '未定时 ') + c.id;
+      const has = c.timeText != null && c.timeDisplay !== 'none';
+      const mid = (c.textTop + c.textBottom) / 2;
+      const centerDiff = c.checkCy != null ? +(c.checkCy - mid).toFixed(2) : null;
+      const alignDiff = (c.timeL != null && c.titleL != null) ? +(c.timeL - c.titleL).toFixed(2) : null;
+      console.log('    ' + label.padEnd(20) + ' 卡高=' + num(c.card.h)
+        + (c.minHeight ? '（加长到 ' + c.minHeight + '）' : '')
+        + ' 标题字号=' + num(c.titleFs) + ' 圈=' + num(c.checkW)
+        + ' 时间行=' + (has ? '「' + c.timeText + '」fs=' + num(c.timeFs) : '无')
+        + ' 左端差=' + num(alignDiff) + ' 中心差=' + num(centerDiff)
+        + ' align-content=' + c.bodyAlign);
+
+      /* ③ 时间行：只由时长决定 */
+      if (dur != null) {
+        const want = dur > 60;
+        ok(has === want, '    ' + label + ' 时间行' + (want ? '必须显示' : '必须不显示')
+          + '，实际' + (has ? '显示「' + c.timeText + '」' : '没显示')
+          + (c.timeText && !want ? '（元素在但…）' : ''));
+        if (want) {
+          ok(c.timeTop >= c.card.t - 0.5 && c.timeBottom <= c.card.b + 0.5,
+            '    ' + label + ' 时间行完整在卡里（行 ' + num(c.timeTop) + '~' + num(c.timeBottom)
+            + '，卡 ' + num(c.card.t) + '~' + num(c.card.b) + '）');
+          /* ① 左对齐：时间行左端 == 标题**文字**左端（不是卡片左边缘、不是勾选圈） */
+          ok(Math.abs(alignDiff) <= 0.5,
+            '    ' + label + ' 时间行与标题文字左端对齐（差 ' + num(alignDiff) + 'px）');
+        }
+      } else {
+        ok(!has, '    ' + label + ' 未定时卡没有时间行');
+      }
+
+      /* ② 圈径 = 标题字号 × --check-k，夹在 --check-min / --check-max 之间，不比文字大 */
+      const want2 = Math.min(CHECK_MAX, Math.max(CHECK_MIN, c.titleFs * CHECK_K));
+      ok(c.checkW != null && Math.abs(c.checkW - want2) <= 0.6,
+        '    ' + label + ' 圈径 ' + num(c.checkW) + ' = 字号 ' + num(c.titleFs) + ' × ' + CHECK_K
+        + ' 夹在 ' + CHECK_MIN + '~' + CHECK_MAX + '（want ' + want2.toFixed(2) + '）');
+      ok(c.checkW != null && c.checkW <= c.titleFs + 0.5,
+        '    ' + label + ' 圈不比任务名大（圈 ' + num(c.checkW) + ' ≤ 字号 ' + num(c.titleFs) + '）');
+      /* ② 圈中心 = 「标题 + 时间（+ 摘要）」那一整块的中心（跨行居中，不是只跟第一行） */
+      ok(centerDiff != null && Math.abs(centerDiff) <= 1,
+        '    ' + label + ' 圈中心与文字块中心差 ' + num(centerDiff) + 'px（圈跨满所有行）');
+      /* 内容层那一条 align-content 要真的生效：写坏了浏览器会退回 normal（=拉伸），
+         中心与「居中」这件事就都没了 —— 上面那条中心差会一起红，但这条指得更准 */
+      ok(String(c.bodyAlign).indexOf('center') >= 0,
+        '    ' + label + ' 内容层 align-content=' + c.bodyAlign + '（不是退回 normal）');
+    }
+  }
+
+  console.log('\n四、断言：周视图表头两档同步收小');
   for (const [key, m] of Object.entries(table)) {
     if (key.indexOf('week') < 0 || m.weekHead == null) continue;
     const want = m.narrow ? WEEK_HEAD.narrow : WEEK_HEAD.desktop;
@@ -479,8 +638,8 @@ try {
     ok(m.weekHead <= want.headMax, key + ' 表头总高 ' + num(m.weekHead) + ' ≤ ' + want.headMax);
   }
 
-  /* ============ 四、触屏：长按拽起卡片后只拖卡片，区域不跟着滑 ============ */
-  console.log('\n四、断言：长按拽起 → 只拖卡片；不长按 → 区域照常滚');
+  /* ============ 五、触屏：长按拽起卡片后只拖卡片，区域不跟着滑 ============ */
+  console.log('\n五、断言：长按拽起 → 只拖卡片；不长按 → 区域照常滚');
   await page.send('Emulation.setDeviceMetricsOverride', {
     width: 390, height: 844, deviceScaleFactor: 2, mobile: true,
   });
@@ -613,11 +772,11 @@ try {
   ok(tmQuick.pre > 0 && tmQuick.prePrevented === 0,
     '不长按时没有一个 touchmove 被拦（' + tmQuick.pre + ' 个全放行）= 区域滚得动');
 
-  /* ============ 五、列表里拖一行：整页不许跟着滑 ============
+  /* ============ 六、列表里拖一行：整页不许跟着滑 ============
      列表（今天 / 待办箱）这一路的滚动容器是 **.content**（不是文档，也不是
      某个 :has() 切成 overflow: visible 的时间轴格）—— 库的 AutoScroll
      在这里**有东西可以滚**，所以这一段单独测。 */
-  console.log('\\n五、断言：列表里拖一行，整页不跟着滑');
+  console.log('\\n六、断言：列表里拖一行，整页不跟着滑');
   await evalJs(page, `
     const n = document.querySelector('[data-nav="today"]')
       || [...document.querySelectorAll('.tabbar .tab')].find((b) => /今天/.test(b.textContent));
@@ -719,7 +878,7 @@ try {
 
   /* C. 卡片上禁文字选中 / 复制 —— 得回日程视图（列表行没有卡片修饰类）：
      日视图量定时卡 / 未定卡 / 就地新建格，月视图量胶囊 */
-  console.log('\n六、断言：卡片表面不被文字选中');
+  console.log('\n七、断言：卡片表面不被文字选中');
   for (const view of ['day', 'month']) {
     await gotoCalendar();
     await evalJs(page, `

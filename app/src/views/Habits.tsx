@@ -96,7 +96,7 @@ export function HabitsView({ state }: { state: LocalState }) {
               data-id={h.id}
               data-kind="habit"
             >
-              <CheckBtn id={h.id} on={done} act="habit" sm />
+              <CheckBtn id={h.id} on={done} act="habit" />
               <div className="habit-main">
                 {/* 改名走 InlineRename（项目里所有改名同一套交互）。
                     删除挪进它的操作槽第二格：这样「铅笔 + 删除」两态都是两格，

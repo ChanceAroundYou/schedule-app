@@ -1800,6 +1800,36 @@ try {
   ok(list.bad.length === 0, '待办箱没有假按钮 / 无名控件'
     + (list.bad.length ? '：\n      ' + list.bad.join('\n      ') : ''));
 
+  /* 圈的**大小**（2026-10-24 第四轮，用户第 2 条「打勾太大、位置不对」）：
+     视觉直径 = 所在那一行的字号 × 0.85（夹在 9~16px），命中区仍然 24×24 ——
+     靠 `.check-btn::before` 往外撑，不是把圆点画大（画大就毁了列表密度）。
+     这里量的是**列表行**（卡片那两个尺寸由 card-geometry 钉）。 */
+  const size = await evalJs(page, `
+    const rows = [...document.querySelectorAll('.task-row')].filter((r) => r.querySelector('.check-btn'));
+    if (!rows.length) return null;
+    return rows.map((r) => {
+      const btn = r.querySelector('.check-btn');
+      const title = r.querySelector('.row-title') || r;
+      const fs = parseFloat(getComputedStyle(title).fontSize);
+      const box = getComputedStyle(btn, '::before');
+      return {
+        fs, w: +btn.getBoundingClientRect().width.toFixed(2),
+        beforeW: parseFloat(box.width), beforeH: parseFloat(box.height),
+      };
+    });
+  `);
+  ok(!!size && size.length > 0, '列表行里有带勾选圈的行可查（' + (size ? size.length : 0) + ' 行）');
+  for (const r of (size || [])) {
+    const want = Math.min(16, Math.max(9, r.fs * 0.85));
+    ok(Math.abs(r.w - want) <= 0.6,
+      '列表圈视觉直径 = 行字号 × 0.85（夹 9~16），且不比任务名大',
+      `圈 ${r.w}px / 字号 ${r.fs}px（want ${want.toFixed(2)}）`);
+    ok(r.w <= r.fs + 0.5, '列表圈不比任务名文字宽', `圈 ${r.w}px ≤ 字号 ${r.fs}px`);
+    ok(r.beforeW >= 24 && r.beforeH >= 24,
+      '命中区仍是 24×24（WCAG 2.5.8，靠 ::before 撑，不是把圈画大）',
+      `::before ${r.beforeW}×${r.beforeH}`);
+  }
+
   // 抽屉里字段最多（日期 / 时间 / 时长 / 重复 / 备注 + 重复面板里的几个），
   // label 配没配上在这里最容易露馅
   ok(await clickEl(page, `
@@ -2257,11 +2287,11 @@ try {
     '标题按**整行**裁（max-height 钉在行高的整数倍上，不露半截字）',
     `max ${nine.mh}px / 行高 ${nine.lh}px`);
   ok(nine.fw === '400', '字重与月视图任务名一致（400）', nine.fw);
-  /* 2026-10-24 三问题第 2 条：圆角不是定值档，是**这张卡自身高的 30%**
-     （夹在 3px 与 --r-lg 之间）—— 以前写死 4px，卡一换档就看着不对。
-     判据跟着改成「半径 ÷ 卡高 = 0.3」。 */
-  ok(Math.abs(parseFloat(nine.radius) / nine.cardH - 0.3) < 0.02,
-    '圆角 = 自身高的 30%（与定时卡同一条算式）',
+  /* 2026-10-24 三问题第 2 条 + 同源化：圆角不是定值档，是**这张卡自身高的 28%**
+     （`--card-r-k`，夹在 2px 与 --r-xl 之间）—— 以前写死 4px，卡一换档就看着不对。
+     判据跟着改成「半径 ÷ 卡高 = --card-r-k」。 */
+  ok(Math.abs(parseFloat(nine.radius) / nine.cardH - 0.28) < 0.02,
+    '圆角 = 自身高的 28%（与定时卡同一条算式）',
     `${nine.radius} / 卡高 ${nine.cardH.toFixed(2)} = ${(parseFloat(nine.radius) / nine.cardH).toFixed(3)}`);
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 40; return 1;`);
   await new Promise((r) => setTimeout(r, 150));

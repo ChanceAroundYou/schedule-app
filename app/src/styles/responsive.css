@@ -190,10 +190,11 @@ body.sheet-open .tab:active { background: none; }
 
   /* 任务行：手机上加大点击面 */
   .task-row { padding: 13px 30px 13px 14px; }
-  /* 勾按**中心**对（见 lists.css 那段注释）—— 22px 的圈配 5×9 的勾 */
-  .check-btn { width: 22px; height: 22px; flex: 0 0 22px; }
-  .check-btn.on::after { width: 5px; height: 9px; }
-  .row-title { font-size: 14.5px; }
+  /* ⚠️ 这里原先有一条 `.check-btn { width: 22px }`（「手机上加大点击面」）—— **已删**
+     （2026-10-24 第四轮）：圈径现在跟所在那一行的字号走（lists.css 的 --check-size），
+     点击面本来就由 ::before 撑到 24×24，和视觉尺寸无关。
+     窄屏那一行的字号靠下面那条 `--fs-row: 14.5px` 给（原来写在 `.row-title` 上，
+     现在收进令牌：标题和圈读同一个数，圈跟着长到 12.3px，仍比文字小一档）。 */
   /* `.task-pill` 这条窄屏覆盖**已删**（2026-10-24）：TaskPill 只在月视图
      `.cell-tasks` 里渲染，而那里还有一条特异度更高的 `.cell-tasks .task-pill`
      —— 这条从来落不到任何元素上，留着只会让人以为胶囊的 padding 有两处可调。
@@ -363,42 +364,41 @@ body.sheet-open .tab:active { background: none; }
   .wun-cell .task-el--untimed {
     font-size: var(--task-text-sm); line-height: var(--task-line-sm);
   }
-  /* **手机端周视图不显示时间**（2026-10-22 用户：72px 宽的格子要同时放任务名
-     和起止时间放不下，只留任务名）。小时只保留在 title 气泡 / 抽屉里。
-     用 CSS 藏而不是改 JS：卡片够高时那行本来就会出现（`roomy`），
-     这里一律不显示，规则更简单，也不会在窗口缩放时忽隐忽现。
-     电脑端不受影响（这条在 max-width:900px 里面）。 */
-  .week-col .task-el--timed .ev-time { display: none; }
+  /* **窄屏周视图也显示时间**（2026-10-24 第四轮，用户：「周视图卡片怎么始终没有时间
+     显示？不是超过 1 小时的都该显示么」）。原先这里是 `.ev-time { display: none }`
+     —— 理由是 72px 宽的格子放不下任务名 + 起止时间，于是手机端一律不画。
+     现在全项目一条规则：**时长 > 60 分钟才有时间行，有了就一定要露出来**
+     （判据在 TaskCard，放不下压的是那一行自己的字号）。
+     窄格子的净宽不够时裁的是**时间文案**（`text-overflow: ellipsis`），
+     完整范围在 `title` 气泡里。 */
   /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
      —— 会切断跨边界的拖拽）。
      ⚠️ `safe center` 不是笔误：普通 center 在内容比盒子高时**上下同时溢出**，
      首行会被拦腰切一半（实测 38px 的卡里 24px 的标题就是这症状）；
-     加了 safe 就在放不下时退回 flex-start，从第一行开始裁。 */
+     加了 safe 就在放不下时退回起点，从第一行开始裁。 */
   .week-col .task-el--timed .ev-body {
-    justify-content: safe center; min-height: 0; overflow: hidden;
+    align-content: safe center; min-height: 0; overflow: hidden;
   }
-  /* 标题**可收缩**、时间行**不收缩**：卡片矮的时候宁可少显示一行标题，
-     也要把时间留住（2026-10-20 用户：「有空间还是显示时间」）。
-     收缩的是 head 这一层，里面的字由 overflow 裁掉。 */
-  .week-col .task-el--timed .ev-head {
-    flex: 0 1 auto; min-height: 0; align-items: safe center; overflow: hidden;
-  }
-  .week-col .task-el--timed .ev-time { flex: 0 0 auto; }
   .week-col .task-el--timed .ev-title {
     /* 行高与月视图窄屏同款（--task-line-sm）；**左对齐**（九条第 6 条：
-       以前 center，和日/月不一致）；溢出裁掉不出省略号（第 7 条）。 */
-    line-height: var(--task-line-sm); white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+       以前 center，和日 / 月不一致）；溢出裁掉不出省略号（第 7 条）。
+       ⚠️ 原先这里还有一组 `.ev-head { flex: 0 1 auto }` / `.ev-time { flex: 0 0 auto }`
+       ——「标题可收缩、时间行不可收缩」那条规矩。`.ev-head` 这一层已经没有了
+       （见 calendar.css：圈和文字块是 `.ev-body` 那一行的两件，文字自己排成
+       `.ev-text` 单列网格），flex 属性全落空；文字块宽是 `minmax(0, 1fr)`，
+       标题自己会被 `overflow` 裁，不用 flex 分配。
+       「宁可少显示一行标题也要留住时间」现在由 JS 保证：`useWholeLineClamp`
+       先按真实行高给时间行留出位子，再折算标题能放几整个行。 */
+    line-height: var(--ev-title-lh, var(--task-line-sm)); white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
     text-align: left;
   }
-  /* 时间行不再为勾选圈让出 21px，也跟着左对齐 */
-  .week-col .task-el--timed .ev-time { padding-left: 0; text-align: left; font-size: var(--task-time-sm); }
   /* 摘要那一行仍然不显示：它只在场卡片里才有，不该为了「可能有」占一行 */
   .week-col .task-el--timed .ev-note { display: none; }
 }
 
 /* ---- 月视图：窄屏一屏画完、一行一条任务文字 ---- */
 @media (max-width: 900px) {
-  :root { --fs-title: 11px; --fs-meta: 9.5px; --fs-head-date: 12px; }
+  :root { --fs-title: 11px; --fs-meta: 9.5px; --fs-head-date: 12px; --fs-row: 14.5px; }
   .month-grid { grid-auto-rows: minmax(62px, auto); }
   .cell-head { margin-bottom: 3px; gap: 3px; }
   .cell-date { width: 18px; height: 18px; flex: 0 0 18px; font-size: var(--fs-meta); }
@@ -442,9 +442,12 @@ body.sheet-open .tab:active { background: none; }
     --pill-pad-y: 1px;
     line-height: var(--pill-line);
   }
-  /* 时间放不下（46.86 里 `09:30` 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
-     窄屏取舍，不是漏了（2026-10-24 用户确认：**不加勾**）。 */
-  .cell-tasks .task-pill .pill-time { display: none; }
+  /* 窄屏勾选圈放不下（46.86 净宽里圈 + 5 个字就到边）—— 想勾完成要点开抽屉。
+     窄屏取舍，不是漏了（2026-10-24 用户确认：**不加勾**）。
+     ⚠️ 原先这条旁边还有一条 `.pill-time { display: none }`：**已删**
+     （2026-10-24 第四轮）—— 现在月视图**永远**不渲染时间（CompactCard 不画，
+     宽屏窄屏一样），时间挂在 `title` 气泡上。藏一条不存在的元素只会让人以为
+     月视图的时间有两种画法。 */
   .cell-tasks .task-pill .check-btn { display: none; }
   /* 标题**不用省略号**，直接裁掉超出的部分（用户 2026-10-19：省略号占了整整
      一个字宽，去掉它一行能多显示一个字）。46.86 正好 5 个 14px 汉字，第 6 个从

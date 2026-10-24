@@ -3,7 +3,9 @@
  *
  * 用户 2026-10-22 晚报的两条，都属于「看着不对但代码里读不出来」的：
  *   ① 顶部未定时任务的字比下面已定时任务**大一点**；
- *   ② 手机端周视图太窄，定时卡不该再显示时间，只留任务名。
+ *   ② 手机端周视图太窄，定时卡该不该显示时间当时是「一律不显示」，
+ *      2026-10-24 第四轮改成**只由时长决定**：> 60 分钟必须有那一行（窄格子也一样），
+ *      ≤ 60 分钟没有 —— 所以这里的判定从「窄屏不许有」换成「有 = 时长 > 60」。
  *
  * 字号到底是多少、时间行到底显不显示，只有量 computed style 才算数
  * （`--ev-title-size` 是变量，光读 CSS 会以为两边都是 10px —— 实际未定时那张
@@ -11,19 +13,30 @@
  *
  *   node app/tests/week-look.mjs
  *   W=390 node app/tests/week-look.mjs
+ *   LIVE_URL=http://127.0.0.1:11717/ node app/tests/week-look.mjs    # 量本地那份
  *
  * 打线上 URL、用 e2e-bot 自己的日程集；若那天的未定时区是空的，会临时建一条
  * 「量字号」并量完删掉。**不做修改类断言**，只打印数字 + 存一张截图。
+ *
+ * ⚠️ **默认打的是线上伺服的那份**（`LIVE_URL` 没给就是线上）。所以本地改完、
+ * 还没发布时这条会红 —— 红的含义是「线上还是旧版」，不是本地代码坏了。
+ * 2026-10-24 实测过一遍两边：同一条 180 分钟的窄屏周视图卡，线上 2.1.23「不显示」、
+ * 本地 2.1.24「显示（09:00 – 12:00）」。**要比本地就先起 dev 再带 `LIVE_URL`。**
  */
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const BASE = (process.env.LIVE_URL || 'https://home.xiaokubao.space/schedule/').replace(/\/?$/, '/');
 const USER = process.env.LIVE_USER || 'e2e-bot';
 const PASS = process.env.LIVE_PASS || 'e2e-bot-2026';
 const VW = +(process.env.W || 360);
 const VH = +(process.env.H || 792);
-const SHOT = process.env.SHOT || 'C:/Users/小哭包/AppData/Local/Temp/week-look.png';
+/* 默认截图位置走**当前系统的**临时目录。原先写死 `C:/Users/…/Temp/week-look.png`，
+   在 ubuntu 上跑等于在工程根**新建一串目录**（`C:/Users/小哭包/AppData/Local/Temp/`）——
+   探针跑完工程里多一棵树，git status 里冒出来才发现。 */
+const SHOT = process.env.SHOT || path.join(os.tmpdir(), 'week-look.png');
 
 const CHROME = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome']
   .find((p) => { try { return p && fs.existsSync(p); } catch { return false; } });
@@ -91,11 +104,22 @@ async function main() {
     const colW = (() => { const c = document.querySelector('.week-col'); return c ? Math.round(c.getBoundingClientRect().width) : 0; })();
     const gutter = document.querySelector('.week-gutter');
     const gW = gutter ? Math.round(gutter.getBoundingClientRect().width) : 0;
+    /* 时长从本机那份状态读（`.duration` 为空就是默认的 60 分钟）——
+       「该不该有时间行」的判据是时长，不是屏幕宽窄，所以这个数必须一起报出来。 */
+    let dur = null;
+    if (timed) {
+      const st = JSON.parse(localStorage.getItem('schedule-app-v4') || '{}');
+      /* 重复任务的卡用的是**派生 id**（`根#发生日`），本机状态里存的是根 —— 两头都试 */
+      const id = timed.getAttribute('data-id') || '';
+      const t = (st.tasks || {})[id] || (st.tasks || {})[id.split('#')[0]];
+      if (t) dur = t.duration && t.duration > 0 ? t.duration : 60;
+    }
     return {
       colW,
       daysVisible: colW ? Math.round(((window.innerWidth - gW) / colW) * 10) / 10 : 0,
       未定时标题: px(un),
       定时标题: px(timedTitle),
+      定时卡时长: dur,
       定时卡时间行: timedTime ? (getComputedStyle(timedTime).display === 'none' ? '不显示' : '显示（' + (timedTime.textContent || '').trim() + '）') : '没有这一行',
       定时卡高: timed ? Math.round(timed.getBoundingClientRect().height) : -1,
     };
@@ -118,21 +142,26 @@ async function main() {
   console.log(`视口 ${VW}×${VH} · ${BASE}`);
   for (const [k, v] of Object.entries(info)) console.log(`  ${k}：${v}`);
 
-  /* 判定：窄屏（<900）时间行必须不显示、两处字号相等；宽屏时间行照旧显示 */
+  /* 判定：时间行**只由时长决定**，窄屏宽屏同一条规则（2026-10-24 第四轮）。
+     字号那条是窄屏专属：未定时那一栏必须和定时卡同字号。 */
   const narrow = VW < 900;
   let bad = 0;
   const check = (cond, what, detail) => {
     if (cond) console.log('  ok   ' + what + (detail ? '（' + detail + '）' : ''));
     else { bad++; console.log('  FAIL ' + what + (detail ? '（' + detail + '）' : '')); }
   };
+  const hasTime = String(info['定时卡时间行']).startsWith('显示');
+  const dur = info['定时卡时长'];
+  if (dur == null) {
+    check(true, '时间行在不在（时长读不到，只报数不判）', `${info['定时卡时间行']} · 卡高 ${info['定时卡高']}px`);
+  } else {
+    check(hasTime === (dur > 60),
+      `时间行只由时长决定：${dur} 分钟 ${dur > 60 ? '必须有' : '必须没有'}`,
+      info['定时卡时间行']);
+  }
   if (narrow) {
-    check(info['定时卡时间行'] !== '显示' && !String(info['定时卡时间行']).startsWith('显示'),
-      '窄屏周视图不显示时间行', String(info['定时卡时间行']));
     check(info['未定时标题'] === info['定时标题'],
       '未定时标题字号 = 定时标题字号', `${info['未定时标题']} / ${info['定时标题']}`);
-  } else {
-    check(String(info['定时卡时间行']).startsWith('显示'),
-      '宽屏周视图照旧显示时间行', String(info['定时卡时间行']));
   }
   if (bad) process.exitCode = 1;
   await page.screenshot({ path: SHOT });

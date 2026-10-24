@@ -34,26 +34,33 @@ import type { LayoutEvent } from './shared.ts';
  * 折算成「能放下几整个标题行」（行距也算在内），把标题的 max-height 钉在
  * 行高的整数倍上 —— 装不下一整行就整行不显示，也不留占位。
  *
- * 时间/备注那两行由 `roomy` 判定决定要不要渲染（见 TimedCard），这里再给它们
- * 预留时间行高的高度（运行时读 `--fs-meta`×1.2），免得标题把它们的位子吃掉后被拦腰切。
+ * 时间行 / 备注行**先占位再算标题**：这样卡片矮的时候宁可少一行标题，
+ * 时间那行也留得住（2026-10-20 用户：「有空间还是显示时间」；
+ * 2026-10-24 第四轮升级成「时长超过 1 小时就必须露出来」）。
+ * 那两行的高度**量真实布局值**，不再用 `--fs-meta × 1.2` 去猜 ——
+ * 卡装不下时压缩的是那一行自己的**行距**（`--ev-time-lh`，见 calendar.css），
+ * 猜的值两头都对不上。
  *
  * 用 ResizeObserver 而不是窗口 resize：卡片高度跟着时间轴百分比走，
  * 时间窗一改、卡片没动窗口也变了；跟着自己尺寸走才准。
  */
-function useWholeLineClamp(
-  bodyRef: { current: HTMLElement | null },
-  followRows: number,
-  /** 时间行行高（px）。调用方按两套字令牌的当前值传 —— 禁止写死 12。 */
-  auxLineH: number,
-) {
+function useWholeLineClamp(bodyRef: { current: HTMLElement | null }) {
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
     const title = el.querySelector<HTMLElement>('.ev-title');
     if (!title) return;
     const apply = () => {
+      const title = el.querySelector<HTMLElement>('.ev-title');
+      if (!title) return;
+      const text = el.querySelector<HTMLElement>('.ev-text');
       const lh = parseFloat(getComputedStyle(title).lineHeight) || 16;
-      const room = el.clientHeight - followRows * auxLineH;
+      const aux = Array.from(el.querySelectorAll<HTMLElement>('.ev-time, .ev-note'));
+      /* 被 CSS `display:none` 掉的行 offsetHeight 为 0（窄屏周视图的摘要行就是），
+         不给它占位。行距挂在 `.ev-text` 上（那一块才是逐行排的），不在 `.ev-body`。 */
+      const gap = text ? (parseFloat(getComputedStyle(text).rowGap) || 0) : 0;
+      const taken = aux.reduce((s, n) => s + n.offsetHeight + gap, 0);
+      const room = el.clientHeight - taken;
       const lines = Math.max(1, Math.floor(Math.max(0, room) / lh));
       title.style.maxHeight = (lines * lh) + 'px';
     };
@@ -61,7 +68,7 @@ function useWholeLineClamp(
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [followRows, auxLineH]);
+  }, []);
 }
 
 export type TaskCardVariant = 'timed' | 'untimed' | 'compact';
@@ -84,14 +91,57 @@ export function taskCardClass(
   );
 }
 
-/** 运行时读 `--fs-meta` 算时间行高（1.2×），禁止写死 12。读不到退回 12.6。 */
-function auxLineHPx(): number {
-  try {
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--fs-meta');
-    const fs = parseFloat(v);
-    if (Number.isFinite(fs) && fs > 0) return fs * 1.2;
-  } catch { /* 首帧 / 非 DOM 环境，退回桌面值 */ }
-  return 12.6;
+/**
+ * **一张卡装得下两行文字吗**（2026-10-24 第四轮）—— 尺寸全部由令牌推出来，不写死像素。
+ *
+ * 时间行的规则是「时长 > 60 分钟就一定显示」，可窄屏周视图一小时的槽只有 ~21px：
+ * 一行标题 + 一行时间在宽松行距下要 ~28px，物理上装不下。装不下时的顺序是
+ * ① **压行距**（字号不动 —— 字号一变，相邻两张卡就成了两版皮肤，见 calendar.css 那段）；
+ * ② 压完还装不下才给这张卡一个**最小高**：宁可画得比真实时长长一点，
+ *    也不把「09:00–10:15」裁成半截。
+ *
+ * 令牌只在**会改动它们的那三个轴**换档时读一次：断点（--fs-title / --fs-meta）、
+ * 风格档（--border-w 1↔2px）、明暗档。每张卡各读一遍是白干活（一天视图几十张卡）。
+ */
+type LineBudget = {
+  /** 宽松行距下「标题 + 时间行 + 内外框」需要的卡高（含 border-box） */
+  loosePx: number;
+  /** 压行距后同样的卡高 */
+  tightPx: number;
+  /** 压行距时写进内联变量的两个行高（px） */
+  titleLh: string;
+  timeLh: string;
+};
+let budgetCache: { key: string; b: LineBudget } | null = null;
+
+function lineBudget(narrow: boolean): LineBudget {
+  const d = document.documentElement;
+  const key = narrow + '|' + (d.dataset.style || '') + '|' + (d.dataset.theme || '');
+  if (budgetCache && budgetCache.key === key) return budgetCache.b;
+  const cs = getComputedStyle(d);
+  const v = (name: string, fallback: number) => {
+    const x = parseFloat(cs.getPropertyValue(name));
+    return Number.isFinite(x) && x > 0 ? x : fallback;
+  };
+  const titleFs = v('--fs-title', 12.5);
+  const timeFs = v('--fs-meta', 10.5);
+  const frame = 2 * v('--card-pad-y', 1) + 2 * v('--border-w', 1);
+  /* 宽松档 = CSS 里的实际行高（标题走 --task-line-sm，时间行走 1.15 倍字号）
+     紧凑档 = 字号 × 1.1 / × 1.0 —— **字号一个字不动**，只把行与行之间的空收紧。
+     压字号是另一条路，但它会让同一屏上两张卡字号不同（相邻两卡像两版皮肤，
+     calendar.css 那段规矩就是这么写的），所以排在最后、现在不用。 */
+  const looseTitle = v('--task-line-sm', 16);
+  const tightTitle = titleFs * 1.1;
+  const looseTime = timeFs * 1.15;
+  const tightTime = timeFs * 1.0;
+  const b: LineBudget = {
+    loosePx: looseTitle + looseTime + frame,
+    tightPx: tightTitle + tightTime + frame,
+    titleLh: tightTitle.toFixed(2) + 'px',
+    timeLh: tightTime.toFixed(2) + 'px',
+  };
+  budgetCache = { key, b };
+  return b;
 }
 
 /**
@@ -121,10 +171,7 @@ export function TaskCard({
 }) {
   const drag = useDraggableEvent(t.id);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /* 跟在标题后面的固定行：时间行 + 备注行（没渲染就不占位）。
-     行高走 `--fs-meta`×1.2 的运行时值（桌面 12.6 / 窄屏 11.4），禁止写死 12
-     —— 以前写死的 12 会在两套令牌下都对不上（桌面 12.6、窄屏 11.4）。 */
-  useWholeLineClamp(bodyRef, (timeText ? 1 : 0) + (noteText ? 1 : 0), auxLineHPx());
+  useWholeLineClamp(bodyRef);
   return (
     <div
       className={taskCardClass(t, variant, { live, dragging: drag.isDragging })}
@@ -146,12 +193,12 @@ export function TaskCard({
           跨边界的拖拽），但内容（标题换行 + 时间行）在矮卡里会顶出卡片底部 ——
           见 2026-10-20 窄屏周视图。裁剪交给 `.ev-body`，拖拽不受影响。 */}
       <div className="ev-body" ref={bodyRef}>
-        <div className="ev-head">
-          <CheckBtn id={t.id} on={!!t.done} sm />
+        <CheckBtn id={t.id} on={!!t.done} />
+        <div className="ev-text">
           <span className="ev-title">{t.title}</span>
+          {timeText && <span className="ev-time">{timeText}</span>}
+          {noteText && <span className="ev-note">{noteText}</span>}
         </div>
-        {timeText && <span className="ev-time">{timeText}</span>}
-        {noteText && <span className="ev-note">{noteText}</span>}
       </div>
       {resizable && (
         <>
@@ -231,13 +278,27 @@ export function TimedCard({
   const pxH = boxH && boxH > 0 ? (box.height / 100) * boxH : -1;
   const roomy = pxH >= 0 ? pxH >= (narrow ? 34 : 22) : box.height >= (narrow ? 5.4 : 3.4);
   const hasEnd = t.duration != null;
-  /* P2：≤1h（含整 1h）不显示时间范围；只显示标题（时间仍可拖把手改时长）。
-     `hasEnd` 为 false 时（无显式时长，等同 60 分钟）也按 ≤1h 处理 → 不显示范围。 */
+  /* 时间行**只由时长决定**（2026-10-24 第三轮，用户定）：
+     ≤ 60 分钟（含整 1 小时、含没设过时长的）→ 不显示时间；
+     > 60 分钟 → **一定要显示**，不再看卡片够不够高（`roomy` 不管它了）。
+     装不下不藏 —— 见下面那段：先压行距，压完还装不下才加长这张卡。
+     ⚠️ 原先是三种画法（够高 → 显示范围 / 不够高 → 只显示开始时间 /
+     太矮 → 干脆不显示）再加窄屏 CSS 一律 `display:none` —— 同一条时长在不同
+     窗口下有四种样子，用户报的「周视图怎么始终没有时间」就是这么来的。
+     时长与范围仍在 `title` 气泡和抽屉里，一处不缺。 */
   const durMin = hasEnd ? (e.end - e.start) : 60;
-  const showTimeRange = durMin > 60;
-  const timeText = roomy
-    ? (showTimeRange ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start))
-    : null;
+  const timeText = durMin > 60 ? timeRange(e.start, e.end - e.start) : null;
+  /* 卡片装不装得下「标题 + 时间」两行（窄屏周视图一小时只有 ~21px，两行宽松行距要 ~28px）。
+     顺序见 `lineBudget`：**先压行距**（字号一个字不动），压完还装不下才给这张卡
+     一个最小高 —— 宁可画得比真实时长长一点，也不把时间裁成半截。
+     ⚠️ 只加长**带时间行**的卡：≤ 1 小时那档没有第二行，卡高照旧纯跟时长走。
+     pxH 还没量到（首帧）什么都不加，别让首帧就按错的尺寸落版。 */
+  const budget = timeText ? lineBudget(narrow) : null;
+  const avail = pxH > 0 ? pxH - CARD_SEAM : -1;
+  const tight = !!budget && avail >= 0 && avail < budget.loosePx;
+  const floorPx = budget ? (tight ? budget.tightPx : budget.loosePx) : 0;
+  const grow = tight && avail < budget!.tightPx;
+  const cardPx = pxH > 0 ? Math.max(pxH - CARD_SEAM, grow ? floorPx : 0) : 0;
   /* 上下把手各占 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
      上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。
      门槛：窄屏 38px / 桌面 22px；退回档 6% / 3.5%（browser-smoke 验 1h 任务有把手）。 */
@@ -264,8 +325,13 @@ export function TimedCard({
         width: e.cols > 1 ? `calc(${w}% - ${CARD_SEAM}px)` : `${w}%`,
         /* 圆角按卡高收（见 calendar.css 的 .task-el--timed）：这里直接把这张卡
            真正的像素高给出去（百分比 × 容器实高 − 缝），与未定时卡的 `--row`
-           同一个来源，两种卡的圆角才会一样。pxH 还没量到就不给，CSS 回落 20px。 */
-        '--card-px': pxH > 0 ? (pxH - CARD_SEAM) + 'px' : undefined,
+           同一个来源，两种卡的圆角才会一样。pxH 还没量到就不给，CSS 回落 20px。
+           ⚠️ 被加长过的卡给的是**加长后**的高 —— 圆角跟着肉眼看到的那张卡走。 */
+        '--card-px': cardPx > 0 ? cardPx + 'px' : undefined,
+        /* 紧凑行距只给「装不下宽松两行」的卡（CSS 里的默认值不动别的卡） */
+        '--ev-title-lh': tight ? budget!.titleLh : undefined,
+        '--ev-time-lh': tight ? budget!.timeLh : undefined,
+        minHeight: grow ? floorPx.toFixed(2) + 'px' : undefined,
       } as CSSProperties}
       timeText={timeText}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
@@ -288,13 +354,15 @@ export function TimedCard({
  * 月 pill（`TaskCard variant="compact"` 的薄包装 —— 唯一渲染 `.task-pill` 的地方）。
  *
  * 探针写死的口径（`month-measure` / `android-live-check` / `browser-smoke`）：
- * `.task-pill` / `.pill-title` / `.pill-time` / `.pill-more` / `data-jump` /
- * `data-untimed` / 宽屏 CheckBtn —— DOM 一律保留，只收类名拼装与拖拽。
+ * `.task-pill` / `.pill-title` / `.pill-more` / `data-jump` / `data-untimed` /
+ * 宽屏 CheckBtn —— DOM 一律保留，只收类名拼装与拖拽。
+ * ⚠️ `.pill-time` **已不再渲染**（2026-10-24 第三轮：月视图永远不显示时间），
+ * 时间改挂在 `title` 气泡上。
  * 不走 `TaskCard` 主体那套 `.ev-body`：那是纵向两行的卡片语言，月格是单行文字行，
  * 硬套会把 `text-overflow: clip`（窄屏多看一个字）与 45px 整字宽量坏。
  */
-export function CompactCard({ t, showTime, moreSuffix, jumpDay }: {
-  t: Task; showTime?: boolean; moreSuffix?: number;
+export function CompactCard({ t, moreSuffix, jumpDay }: {
+  t: Task; moreSuffix?: number;
   /**
    * 传了它就给这一行挂 `data-jump`：点整条任务 → 跳到那一天的**日视图**
    * （月视图专用，2026-10-19 用户要求：点格子里的任务 = 去看那一天）。
@@ -316,12 +384,16 @@ export function CompactCard({ t, showTime, moreSuffix, jumpDay }: {
       data-id={t.id}
       data-untimed={t.time ? undefined : '1'}
       data-jump={jumpDay}
-      title={t.title}
+      title={t.time ? t.title + '　' + t.time : t.title}
     >
       {/* 格子里唯一一个勾选入口。**必须是 <button>**（见 CheckBtn 头注释）；
-          窄屏由 CSS 藏掉（45px 放不下圈 + 字），想勾完成要点开抽屉。 */}
-      <CheckBtn id={t.id} on={!!t.done} sm />
-      {showTime && t.time && <span className="pill-time">{t.time}</span>}
+          窄屏由 CSS 藏掉（格子净宽 46.86px，圈 + 5 个字就到边），想勾完成要点开抽屉。
+          ⚠️ 这条与圈径无关 —— 圈跟着字号已经缩到 9.4px 了，窄屏**照样不画**
+          （2026-10-24 用户确认：手机端月视图不加勾）。 */}
+      <CheckBtn id={t.id} on={!!t.done} />
+      {/* **月视图不显示时间**（2026-10-24 第三轮，用户定：日 / 周看时长决定，
+          月视图永远不显示）：格子里那一行只有勾选圈 + 任务名（窄屏连圈都藏）。
+          时间没丢 —— 挂在 `title` 气泡上，点开还是全的。 */}
       <span className="pill-title">{t.title}</span>
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。

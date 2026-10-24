@@ -103,12 +103,12 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
 
 /* ============================== 小胶囊 ==============================
    `TaskCard variant="compact"`（`CompactCard`）的薄包装 —— 唯一渲染 `.task-pill` 的
-   地方收进 TaskCard.tsx，DOM（`.pill-title/.pill-time/.pill-more/data-jump/
+   地方收进 TaskCard.tsx，DOM（`.pill-title/.pill-more/data-jump/
    data-untimed`/CheckBtn）一字不动，探针口径不变。周视图已切 `UntimedCard`，
    现在只剩月视图格子在用。 */
 
-export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
-  task: Task; showTime?: boolean; moreSuffix?: number;
+export function TaskPill({ task: t, moreSuffix, jumpDay }: {
+  task: Task; moreSuffix?: number;
   /**
    * 传了它就给这一行挂 `data-jump`：点整条任务 → 跳到那一天的**日视图**
    * （月视图专用，2026-10-19 用户要求：点格子里的任务 = 去看那一天）。
@@ -117,7 +117,7 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
    */
   jumpDay?: string;
 }) {
-  return <CompactCard t={t} showTime={showTime} moreSuffix={moreSuffix} jumpDay={jumpDay} />;
+  return <CompactCard t={t} moreSuffix={moreSuffix} jumpDay={jumpDay} />;
 }
 
 /* ============================== 空状态 ============================== */

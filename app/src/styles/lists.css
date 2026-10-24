@@ -103,6 +103,9 @@
   border-radius: var(--r-lg);
   cursor: pointer;
   transition: box-shadow .14s, transform .14s, border-color .14s;
+  /* 这一行的勾选圈跟的是**标题字号**（下面 .row-title 用的同一个令牌），
+     不是这一行从正文继承来的 14px —— 不然圈会比它要比的文字还大。 */
+  --check-fs: var(--fs-row);
 }
 .task-row:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .task-row::after {
@@ -114,7 +117,7 @@
 .task-row.done .row-title { color: var(--text-2); }
 /* .dragging 的样式统一放在文件后面的「让位拖放」一节里，避免两处定义互相覆盖 */
 .row-main { flex: 1; min-width: 0; }
-.row-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-title { font-size: var(--fs-row); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 详细内容的摘要预览。**单行截断**，完整内容在抽屉里 —— 列表是扫读的地方，
    不是为了读长文。颜色比元信息那行还淡一档：它跟「18:30」这类硬信息不是
    一个层级，扫的时候应该先看时间与日期。 */
@@ -178,8 +181,21 @@
 .od-row .od-late { color: var(--danger); font-weight: 600; }
 .od-quick { display: inline-flex; gap: 4px; margin-left: 4px; }
 
+/* **圈径只有一条来源：所在那一行的字号**（2026-10-24 第四轮，用户：「打勾太大了，
+   应该不能比文本大」）。默认 `1em` = 父元素继承来的字号（font-size 本来就继承）：
+   卡片 `.task-el` 写的是 `--fs-title`（12.5 / 窄屏 11）、月胶囊同一个、
+   打卡行 `.ci-item` 没写 → 吃正文 14px。原先三套写死值（18 / `.sm` 14 / 窄屏 22）
+   随之作废：同一字号在卡里和列表里得到同一个圈，改字号圈自己跟着变，不用两头追。
+   列表行特殊一点：`.task-row` 自己吃正文 14，可那一行**看得见的文字**是 `--fs-row`
+   （13.5 / 窄屏 14.5）—— 所以下面 `.task-row` 把 `--check-fs` 显式指到 `--fs-row`，
+   圈才真跟着标题走而不是跟正文走。
+   夹在 `--check-min` / `--check-max` 之间：窄屏卡上 9.4px、桌面列表 11.5px、
+   窄屏列表 12.3px。上限 16px 留给以后字号真上到 19px 的情况。
+   ⚠️ 以后要圈大一点就改**那一行的字号**或 `--check-k`，别再给 `.check-btn` 写 width。 */
 .check-btn {
-  width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
+  --check-size: min(var(--check-max), max(var(--check-min), calc(var(--check-fs, 1em) * var(--check-k))));
+  width: var(--check-size); height: var(--check-size);
+  flex: 0 0 var(--check-size); padding: 0;
   border: 1.5px solid var(--input); border-radius: 50%;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
@@ -190,19 +206,21 @@
    等于把勾的左上角钉在那儿，勾中心落在 (7, 6)，圆心在 (9, 9)，于是勾整体
    偏左上 2×3px（用户 2026-10-09：「打勾的图标的勾并不居中」）。
    改成按中心对：`left/top: 50%` + `translate(-50%,-50%)`，旋转照转。
-   **三个尺寸（18 / .sm 14 / 响应式 22）都得这么写**，只改一个是换个地方歪。 */
+   ⚠️ **勾的尺寸也跟着圈走**（比例 .24 × .48）：圈现在会随字号变，
+   写死 4×8 在 9px 的圈里会把圈撑满。描边下限 1.25px，再细则在小圈上看不见。 */
 .check-btn.on::after {
   content: ''; position: absolute; left: 50%; top: 50%;
-  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  width: calc(var(--check-size) * .24); height: calc(var(--check-size) * .48);
+  border: solid #fff;
+  border-width: 0 max(1.25px, calc(var(--check-size) * .115))
+               max(1.25px, calc(var(--check-size) * .115)) 0;
   transform: translate(-50%, -50%) rotate(45deg);
 }
-.check-btn.sm { width: 14px; height: 14px; flex-basis: 14px; }
-/* 小一号：勾也按比例缩，位置同上（按中心对） */
-.check-btn.sm.on::after { width: 3px; height: 6px; }
 
 /* 命中区补到 24×24（WCAG 2.5.8 的下限），**视觉尺寸不变**。
-   这是全应用点得最多的一个控件（勾任务、勾打卡），而它本体只有 18px，
-   .sm 更小只有 14px。用 ::before 往外撑，不是把圆点画大 —— 画大就毁了列表密度。
+   这是全应用点得最多的一个控件（勾任务、勾打卡），圈径跟着字号走之后它更小
+   （窄屏卡上只有 9.4px），命中区这一层更不能跟着缩 —— 手指还是那一根手指。
+   用 ::before 往外撑，不是把圆点画大 —— 画大就毁了列表密度。
    用 ::before 而不是 ::after：勾那一下子已经被 ::after 占了。
    安全边际：它两侧最近的邻居是 .ci-item 的 9px 内边距 / 7px gap、
    .habit-row 的 11px gap，都容得下这 5px，不会和隔壁的按钮抢点击。 */
@@ -211,7 +229,7 @@
   width: 24px; height: 24px; transform: translate(-50%, -50%);
 }
 
-/* 勾选圈与标题的间距只在 calendar.css 的 `.ev-head` 定一次（2px）——
+/* 勾选圈与标题的间距只在 calendar.css 的 `.ev-body { column-gap }` 定一次（2px）——
    这里再写一遍就成了「靠导入顺序赢」的第二条规则，最容易漂。 */
 
 /* 完成瞬间的小动效 */
@@ -400,11 +418,14 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 .sel-btn.danger:hover { background: var(--danger-soft); }
 .sel-btn:disabled { color: var(--text-3); opacity: .5; cursor: default; background: none; }
 
-/* 选择圈。几何与 .check-btn 完全一致（18px、1.5px 描边、24px 命中区）——
-   两个圈在列表里是**同一个位置**的两种状态，差一个像素都会让进出多选时
-   整行抖一下。呼应 .check-btn 的 ::before 命中区写法。 */
+/* 选择圈。几何与 `.check-btn` **完全一致**（同一行同一个位子，两种状态）——
+   所以尺寸算式也共用同一份：`--check-size` 在两个选择器里各写一遍是没办法的事
+   （自定义属性不会跨选择器传），改 `--check-k` / `--check-min` / `--check-max`
+   两个圈一起动。差一个像素都会让进出多选时整行抖一下。 */
 .sel-dot {
-  width: 18px; height: 18px; flex: 0 0 18px; padding: 0;
+  --check-size: min(var(--check-max), max(var(--check-min), calc(var(--check-fs, 1em) * var(--check-k))));
+  width: var(--check-size); height: var(--check-size);
+  flex: 0 0 var(--check-size); padding: 0;
   border: 1.5px solid var(--input); border-radius: 50%;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
@@ -414,7 +435,10 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 /* 勾的居中规则同 .check-btn.on::after —— 必须按中心对，不能钉左上角 */
 .sel-dot.on::after {
   content: ''; position: absolute; left: 50%; top: 50%;
-  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  width: calc(var(--check-size) * .24); height: calc(var(--check-size) * .48);
+  border: solid #fff;
+  border-width: 0 max(1.25px, calc(var(--check-size) * .115))
+               max(1.25px, calc(var(--check-size) * .115)) 0;
   transform: translate(-50%, -50%) rotate(45deg);
 }
 .sel-dot::before {

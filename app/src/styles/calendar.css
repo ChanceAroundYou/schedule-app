@@ -299,33 +299,59 @@
 }
 .task-el--untimed:hover { transform: none; }
 
-/* 卡片内容（标题 / 时间 / 摘要）外面那一层。卡片本身不能 overflow:hidden
-   （会切断跨边界的拖拽），所以「内容超出卡片」由这一层裁 —— 它吃满卡片内高，
-   里面放不下的东西在卡片边界处停住。 */
+/* 卡片内容层：**圈 + 文字块**两块（2026-10-24 第四轮，用户第 1 条「时间和任务文本没左对齐」、
+   第 2 条「圈要在文本与时间的综合竖直居中」）。卡片本身不能 overflow:hidden（会切断
+   跨边界的拖拽），所以「内容超出卡片」由这一层裁 —— 它吃满卡片内高，放不下的在卡片边界处停住。
+   原先是 flex 列：圈和标题挤在同一个 `.ev-head` 里，时间行想与**标题文字**左对齐
+   只能写 `padding-left: 21px` —— 那个 21 是照着「圈 14 + gap 2 + 边框」估的，
+   圈一改就漂，日视图因此对不齐（实测偏 5px）。
+   现在标题 / 时间 / 摘要全在同一个 `.ev-text` 里，左端只有一处定义；圈是这一行 flex 的
+   另一件，`align-items: center` 让它落在**整块文字**的中线上（不是标题那一行）。
+   ⚠️ 圈不能靠网格跨行来居中：`grid-row: 1 / -1` 的 `-1` 只数**显式**行，这里的行全是
+   隐式的 —— 实测圈只盖住标题那一行，中心偏上 6px（探针第三节钉着这一条）。
+   ⚠️ `align-content: center` 管的是「整块内容在卡片里竖直居中」，`align-items: center`
+   管的是「圈对文字块居中」，两句缺一不可（单行 flex 里只写后者会把整块顶到上沿）。
+   ⚠️ 文字块 `minmax(0, 1fr)` + `min-width: 0`：直接用 `1fr` 的话 min-content 会把块撑到
+   文字那么宽，长标题就能顶穿卡片右边。 */
 .ev-body {
-  display: flex; flex-direction: column; justify-content: center;
-  gap: var(--ev-gap); flex: 1 1 auto; min-height: 0; min-width: 0;
+  display: flex;
+  align-items: center;
+  align-content: center;
+  column-gap: 2px;   /* 圈与文字的间距，全项目只这一处（以前 .ev-head 和 lists.css 各写一遍） */
+  flex: 1 1 auto; min-height: 0; min-width: 0;
   overflow: hidden;
 }
-/* 勾选圈与标题的间距 2px（2026-10-24 三问题第 3 条：以前 6px，两种卡上看着都松）。
-   只在这里定一次，别到 lists.css 再覆盖一遍（靠导入顺序赢的写法最容易漂）。 */
-.ev-head { display: flex; align-items: center; gap: 2px; min-width: 0; }
+/* 文字块：标题 / 时间 / 详细内容，一行一列。行距只在 `--ev-gap` 这一处。 */
+.ev-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--ev-gap);
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+}
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
-.ev-title { flex: 1; min-width: 0; font-size: var(--fs-title); font-weight: 400; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.ev-title {
+  min-width: 0;
+  /* 行高默认与卡自己给的一致（--task-line-sm）；卡装不下两行时 TimedCard 会把这个
+     变量改成「字号 × 1.1」（见 lineBudget）—— **字号不动**，动行距。 */
+  line-height: var(--ev-title-lh, var(--task-line-sm));
+  font-size: var(--fs-title); font-weight: 400;
+  overflow: hidden; text-overflow: clip; white-space: nowrap;
+}
 .ev-time {
-  font-size: var(--fs-meta); line-height: 1.2; color: var(--text-3);
+  /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
+     装不下时先压行距（TimedCard 写 --ev-time-lh），再不够是给卡加长 —— 不藏、不裁。 */
+  font-size: var(--fs-meta); line-height: var(--ev-time-lh, 1.15); color: var(--text-3);
   font-variant-numeric: tabular-nums; letter-spacing: .1px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding-left: 21px; /* 与标题文字左对齐（让开勾选圈） */
 }
 /* 详细内容的摘要。**比时间行再淡一档**：那一行是「几点几分」这种硬信息，
    这一行是备注。同一张卡上两行的尺寸完全一致，只有深浅不同 —— 层级靠灰度，
-   不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。 */
+   不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。
+   它出场前先看空间够不够（`roomy`，见 TaskCard）—— 会挤标题的东西不画。 */
 .ev-note {
   font-size: var(--fs-meta); line-height: 1.2; color: var(--text-3);
   opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding-left: 21px;
 }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { text-decoration: none; }
 /* 上下沿拖拽改时间：**把手常显**（2026-10-19 用户报「没地方拖动改时长」）。
@@ -725,7 +751,9 @@ body.is-drag-range { user-select: none; }
 .task-pill.done { opacity: 1; background: var(--panel-3); }
 .task-pill.done .pill-title { color: var(--text-3); }
 .pill-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill-time { color: var(--text-2); font-size: var(--fs-meta); flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* ⚠️ `.pill-time` **这条已删**（2026-10-24 第四轮，用户定：月视图永远不显示时间，
+   日 / 周由时长决定）。胶囊那一行只有勾选圈 + 任务名，时间挂在 `title` 气泡上。
+   以后要在月视图显示时间，先改 TaskCard 的 CompactCard，别在这儿补一条。 */
 
 /* ================= 宽屏：列表分列 =================
    .mc 是任务流的容器（按页面语义显式加的类，不是靠子元素猜）。

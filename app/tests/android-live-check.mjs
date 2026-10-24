@@ -587,7 +587,7 @@ async function checkLook() {
       d.style.height=hPx+'px';
       d.style.setProperty('--tl-h', tlPx);
       d.style.setProperty('--card-h', hPx/tlPx*100);
-      d.innerHTML='<div class="ev-head"><span class="ev-title">测</span></div><span class="ev-time">00:00</span>';
+      d.innerHTML='<div class="ev-text"><span class="ev-title">测</span><span class="ev-time">00:00</span></div>';
       document.body.appendChild(d);
       var cs=getComputedStyle(d);
       var out={r:parseFloat(cs.borderTopLeftRadius), bg:cs.backgroundColor,
@@ -638,9 +638,9 @@ async function checkLook() {
   assert(w.titleWrap === 'normal', '周视图卡片标题允许换行（高卡不再被截成一行）',
     `white-space=${w.titleWrap} / 字号 ${w.titleSize}`);
 
-  /* 2026-10-20 四条 + 2026-10-24 三问题修订：
+  /* 2026-10-20 四条 + 2026-10-24 三问题 / 第四轮修订：
      勾选圈**两种卡都要有**（原来是「窄屏藏圈」，用户要求统一加回）；
-     卡片文字左对齐（原来是居中）；有空间显示时间；极窄卡不给把手。 */
+     卡片文字左对齐（原来是居中）；时间行只由时长决定（> 60 分钟才有）；极窄卡不给把手。 */
   const look = await evalIn(`(function(){
     var qa=function(s){return Array.from(document.querySelectorAll(s))};
     var chkT=document.querySelector('.week-col .task-el--timed .check-btn');
@@ -670,12 +670,33 @@ async function checkLook() {
       tinyWithHandle: tinyWithHandle, cards: cards.length,
       tallH: tallest?Math.round(tallest.getBoundingClientRect().height):0,
       tallHasTime: tallest?!!tallest.querySelector('.ev-time'):null,
-      /* 2026-10-22 晚：手机端周视图**不显示时间**，这里的「有 .ev-time 元素」
-         不再等于「看得见」——要量 display，JS 给的 timeText 在不在都不算数。 */
+      /* 2026-10-24 第四轮：手机端周视图**也显示时间**了 —— 判据换成时长：
+         时长 > 60 分钟的卡必须有那一行，≤ 60 分钟必须没有。
+         「有没有那一行」要量 display（JS 给不给 timeText 不算数），
+         「该不该有」从本机状态读时长（重复任务的卡用的是派生 id，两头都试）。 */
       cardsWithTime: cards.filter(function(c){
         var t=c.querySelector('.ev-time');
         return t && getComputedStyle(t).display!=='none';
       }).length,
+      wantTimeCards: (function(){
+        var st={}; try{ st=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}'); }catch(e){ st={}; }
+        var tasks=st.tasks||{};
+        return cards.filter(function(c){
+          var id=c.getAttribute('data-id')||'';
+          var t=tasks[id]||tasks[id.split('#')[0]];
+          if(!t) return false;
+          return (t.duration&&t.duration>0?t.duration:60)>60;
+        }).length;
+      })(),
+      /* 读不到时长的张数（>0 时上面那两个数不能直接比，脚本会改用宽判据） */
+      durUnknownCards: (function(){
+        var st={}; try{ st=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}'); }catch(e){ st={}; }
+        var tasks=st.tasks||{};
+        return cards.filter(function(c){
+          var id=c.getAttribute('data-id')||'';
+          return !(tasks[id]||tasks[id.split('#')[0]]);
+        }).length;
+      })(),
       /* 未定时那一栏的标题字号必须和定时卡标题一致（同一个 --ev-title-size） */
       untimedTitleSize: (function(){
         var u=document.querySelector('.wun-cell .task-el--untimed .ev-title');
@@ -757,10 +778,17 @@ async function checkLook() {
   await evalIn(`(function(){var v=document.querySelector('.week-view');
     if(v&&v.dataset.e2eScroll!==undefined){v.scrollLeft=Number(v.dataset.e2eScroll);delete v.dataset.e2eScroll;}return 1})()`);
   await wait(150);
-  /* 2026-10-22 晚（用户第二次改口）：手机端周视图**不再显示时间**，
-     72px 宽的格子只放任务名。（原来那条「有空间时显示时间」已作废。） */
-  assert(look.cardsWithTime === 0, '手机端周视图的定时卡不显示时间（只留任务名）',
-    `${look.cardsWithTime}/${look.cards} 张还带着时间行（最高 ${look.tallH}px）`);
+  /* 2026-10-24 第四轮（用户：「不是超过 1 小时的都该显示么」）：手机端周视图
+     **不再一律藏时间**，判据只剩时长 —— 带时间行的张数必须等于时长 > 60 分钟的张数。 */
+  if (look.durUnknownCards > 0) {
+    assert(look.cardsWithTime >= look.wantTimeCards,
+      `手机端周视图带时间行的卡不少于该带的（时长读不到 ${look.durUnknownCards} 张，只判下限）`,
+      `带时间行 ${look.cardsWithTime}/${look.cards}，该带 ${look.wantTimeCards}`);
+  } else {
+    assert(look.cardsWithTime === look.wantTimeCards,
+      '手机端周视图的时间行只由时长决定（> 60 分钟必须有，≤ 60 必须没有）',
+      `带时间行 ${look.cardsWithTime}/${look.cards}，该带 ${look.wantTimeCards}（最高卡 ${look.tallH}px）`);
+  }
   if (look.untimedCards > 0) {
     assert(!!look.untimedTitleSize && look.untimedTitleSize === look.timedTitleSize,
       '未定时任务的标题字号和定时任务一致',

@@ -418,15 +418,23 @@ try {
       flexDirection: cs.flexDirection,
       background: cs.backgroundColor,
       borderLeftWidth: cs.borderLeftWidth,
+      borderRightWidth: cs.borderRightWidth,
+      borderLeftColor: cs.borderLeftColor,
+      borderRightColor: cs.borderRightColor,
     };
   `);
   if (!calCard) {
     console.log('  --   日视图里没有任务卡（本轮的探针任务没有日期），跳过');
   } else {
     ok(calCard.flexDirection === 'column',
-      '日历卡片仍是竖排（勾选圈+标题 / 时间两行），实际 ' + calCard.flexDirection);
-    ok(calCard.borderLeftWidth === '3px',
-      '日历卡片的左侧主色竖条还在，实际 ' + calCard.borderLeftWidth);
+      '日历卡片仍是竖排（内容那一块 + 上下把手），实际 ' + calCard.flexDirection);
+    /* 2026-10-19：卡片那条 3px 主色竖线**按要求全去掉**了，四面是同一条中性灰框
+       （原来这里断言 border-left 3px，从那天起这条就一直红 —— 探针自己过期了）。
+       判据改成「四面一样」：左边和右边的宽度与颜色都必须一致。 */
+    ok(calCard.borderLeftWidth === calCard.borderRightWidth
+      && calCard.borderLeftColor === calCard.borderRightColor,
+      '日历卡片四面是同一条框（不是左侧一根主色强调线）',
+      `左 ${calCard.borderLeftWidth} ${calCard.borderLeftColor} / 右 ${calCard.borderRightWidth} ${calCard.borderRightColor}`);
   }
 } catch (e) {
   failures++;
