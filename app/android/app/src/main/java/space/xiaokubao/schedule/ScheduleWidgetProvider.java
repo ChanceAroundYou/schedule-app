@@ -326,10 +326,18 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
         int timelineDp = Math.max(70, totalDp - fixedDp);
 
+        /* 轴尾 = 设定终点，但**晚间任务不能因此丢掉**：轴现在只画到终点，
+           有任务跨过终点就把它延到任务结束的那个整点（没有就没有代价）。 */
+        int hiEff = hi;
+        for (WTask t : timed) {
+            int end = startMin(t) + durOf(t);
+            hiEff = Math.max(hiEff, (end + 59) / 60);
+        }
+
         boolean isToday = day.equals(today);
         int nowMin = isToday ? nowMinutes() : -1;
-        renderScale(c, v, lo, hi, timelineDp, isToday, nowMin);
-        renderTimeline(c, v, timed, lo, hi, timelineDp, isToday, nowMin);
+        renderScale(c, v, lo, hiEff, timelineDp, isToday, nowMin);
+        renderTimeline(c, v, timed, lo, hiEff, timelineDp, isToday, nowMin);
         renderUntimedBar(c, v, untimed);
 
         /* ---- 底部状态：用户 2026-10-14 要求整行去掉，页面更精简 ---- */
@@ -365,6 +373,15 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 代价：时间轴底部少 5dp（用户已确认）。
      */
     private static final int LINE_OFFSET_DP = 5;
+
+    /**
+     * 时间轴**最后一条**占多高：只为了放「终点那个小时」的数字。
+     *
+     * 2026-10-25：轴以前画到「设定终点 + 1 小时」，多出来的那格没有数字，
+     * 轴底就白出一整格（约 14dp）—— 用户连着三轮说「底部空太多」。
+     * 现在主体只画到终点，终点数字单独占这 6dp 贴在轴底（8sp 一行约 5.7dp）。
+     */
+    private static final int AXIS_END_DP = 6;
 
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
     /** 未定时区最多显示的**格子数**（3 排 × 每排 2 格，2026-10-25 用户定：
@@ -405,28 +422,32 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int NOTE_LINE_MIN_DP = 24;
 
     /**
-     * 时间轴「画几行 + 每几个钟头写一个数字」。
+     * 时间轴「画几格 + 每几个钟头写一个数字」。
      *
-     * **返回 {rows, step}**，刻度列和网格层共用同一份 —— 两边都必须据此算高度，
+     * **返回 {bands, step}**，刻度列和网格层共用同一份 —— 两边都必须据此算高度，
      * 否则左边的数字和右边的小时线会越往下越错开。
      *
-     * 2026-10-25（用户报「底部空太多了」）：以前行数恒等于 {@code hi - lo + 1}。
-     * 刻度是隔 2 小时写一个的，所以**终点落在奇数点上时，最后一行没有数字** ——
-     * 时间轴底下白出一整行（用户把范围设到 21 点，21 是奇数，白出的就是 21~22
-     * 那一行，约 14dp，比留白本身显眼得多）。
+     * 2026-10-25（用户连着三轮「底部空太多」）真凶在这里：以前格子数恒定等于
+     * {@code hi - lo + 1}，也就是「设到 20 点」实际画到 **21 点** —— 多出整整
+     * 一格，而数字是隔 2 小时写一个的，21 是奇数格没有数字，于是轴底白出一整格
+     * （约 14dp），比留白本身显眼得多。留白怎么调都调不掉，因为白的是「多出来的
+     * 那一小时」。
      *
-     * 现在把「尾部没有数字的行」直接砍掉：轴尾永远落在一个有数字的钟点上，
-     * 竖线下方只留半行（数字到行底的那点空隙）。只在末行确实无数字时才生效，
-     * 有数字的行一行都不会少。
+     * 现在按设定范围画 {@code hi - lo} 格（8 → 20 就是 12 格，正好到 20:00），
+     * 终点数字单独占一条 {@link #AXIS_END_DP} 高的尾巴压在轴底 —— 轴底再没有
+     * 空出来的格子。
      */
     private static int[] axisPlan(int lo, int hi, int timelineDp) {
-        int rows = Math.max(1, hi - lo + 1);
+        int bands = Math.max(1, hi - lo);
+        float dph = Math.max(1, timelineDp - AXIS_END_DP) / (float) bands;
         // 行高很小 → 数字会叠在一起，隔 2~3 小时才写一个（判据跟 App 日视图一致）
-        float dpPerHour = Math.max(1, timelineDp - LINE_OFFSET_DP) / (float) rows;
-        int step = dpPerHour < 11f ? 3 : (dpPerHour < 16f ? 2 : 1);
-        int last = rows - 1;
-        while (last > 0 && last % step != 0) last--;   // 尾部无数字的行砍掉
-        return new int[]{last + 1, step};
+        int step = dph < 11f ? 3 : (dph < 16f ? 2 : 1);
+        return new int[]{bands, step};
+    }
+
+    /** 时间轴主体（不含贴底那一条终点数字）的高度 */
+    private static int axisHeight(int timelineDp) {
+        return Math.max(1, timelineDp - AXIS_END_DP);
     }
 
     /**
@@ -439,14 +460,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                                     int timelineDp, boolean isToday, int nowMin) {
         v.removeAllViews(R.id.tl_scale);
         int[] plan = axisPlan(lo, hi, timelineDp);
-        int hours = plan[0];
+        int bands = plan[0];
         int step = plan[1];
-        // 和主体用同一个「一小时多少 dp」—— 见 LINE_OFFSET_DP：主体整体下移了
-        // 5dp，所以可用高度要先扣掉，否则数字和线会越往下越错开。
-        float dpPerHour = Math.max(1, timelineDp - LINE_OFFSET_DP) / (float) hours;
+        float dpPerHour = axisHeight(timelineDp) / (float) bands;
 
         int prevY = 0;
-        for (int k = 0; k < hours; k++) {
+        for (int k = 0; k < bands; k++) {
             int nextY = Math.round((k + 1) * dpPerHour);
             int hgt = Math.max(1, nextY - prevY);
             prevY = nextY;
@@ -460,6 +479,15 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             e.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
             v.addView(R.id.tl_scale, e);
         }
+
+        /* 终点数字：单独一条贴住轴底。
+           「设到 20 点」就画到 20:00 为止，20 这个数字本身没有整格可用 ——
+           给它 6dp 的高度，轴底自然收在数字下面，不再白出一格。 */
+        RemoteViews end = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
+        end.setViewLayoutHeight(R.id.tl_hour, AXIS_END_DP, TypedValue.COMPLEX_UNIT_DIP);
+        end.setTextViewText(R.id.tl_hour, String.format(Locale.US, "%02d", lo + bands));
+        end.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
+        v.addView(R.id.tl_scale, end);
     }
 
     /**
@@ -484,20 +512,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                                        int lo, int hi, int timelineDp,
                                        boolean isToday, int nowMin) {
         int[] plan = axisPlan(lo, hi, timelineDp);
-        int hours = plan[0];
+        int bands = plan[0];
         int fromMin = lo * 60;
-        int toMin = (lo + hours) * 60;
+        int toMin = (lo + bands) * 60;
         // 扣掉整体下移量。**线、红线和任务卡共用这一个比例**，
         // 所以下移之后三者仍然严格对齐（见 LINE_OFFSET_DP）。
-        int innerDp = Math.max(1, timelineDp - LINE_OFFSET_DP);
-        float dpPerMin = innerDp / (float) (hours * 60);
-        float dpPerHour = innerDp / (float) hours;
+        int innerDp = Math.max(1, axisHeight(timelineDp) - LINE_OFFSET_DP);
+        float dpPerMin = innerDp / (float) (bands * 60);
+        float dpPerHour = innerDp / (float) bands;
 
         /* ---- 网格层：等高的格子，格子的顶边就是整点。只有线，刻度在左侧列 ---- */
         v.removeAllViews(R.id.tl_grid);
         v.addView(R.id.tl_grid, spacer(c, LINE_OFFSET_DP));
         int prevY = 0;
-        for (int k = 0; k < hours; k++) {
+        for (int k = 0; k < bands; k++) {
             // 用累进目标值取整，避免逐行四舍五入攒出十几 dp 的偏移
             int nextY = Math.round((k + 1) * dpPerHour);
             int hgt = Math.max(1, nextY - prevY);
