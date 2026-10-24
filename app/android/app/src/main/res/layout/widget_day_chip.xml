@@ -10,7 +10,8 @@
   「日期（正圆底 + 数字）」。圆是一个**固定 22dp × 22dp 的 FrameLayout**，
   宽高相等 → 永远是正圆。
 
-  2026-10-14：星期 8 → 9sp、日期 11 → 12sp，行距略放大（用户要求），
+  2026-10-14：星期 8 → 9sp、日期 11 → 12sp，行距略放大（用户要求）；
+  2026-10-25 整体小 1sp：星期 8sp、日期 11sp，圆 22 → 20dp。
   但仍明显小于标题。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -33,28 +34,28 @@
             android:layout_height="wrap_content"
             android:text="一"
             android:textColor="#6B8574"
-            android:textSize="9sp" />
+            android:textSize="8sp" />
 
         <!-- 日期：圆形高亮只作用于这一格 -->
         <FrameLayout
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:layout_marginTop="2dp">
 
             <TextView
                 android:id="@+id/chip_circle"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:text="" />
 
             <TextView
                 android:id="@+id/chip_date"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:gravity="center"
                 android:text="12"
                 android:textColor="#1B3A2A"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textStyle="bold" />
         </FrameLayout>
     </LinearLayout>

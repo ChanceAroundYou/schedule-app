@@ -3,11 +3,12 @@
   未定时区的一「行」：两个半宽格子（2026-10-25 用户：两两一行，行数随任务增加）。
   卡片由代码动态塞进 untimed_pair（每格 weight=1 = 半宽）；奇数落单时
   第二格塞 widget_untimed_filler（空的半宽占位，1A：右半格留空）。
-  行高 16dp：卡片 15dp + gravity 居中，上下各留 0.5dp —— 行与行之间那条缝。
+  行高 15dp：卡片 14dp + gravity 居中，上下各留 0.5dp —— 行与行之间那条缝。
+  （2026-10-25 整体缩一号：16 → 15dp）
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/untimed_pair"
     android:layout_width="match_parent"
-    android:layout_height="16dp"
+    android:layout_height="15dp"
     android:gravity="center_vertical"
     android:orientation="horizontal" />

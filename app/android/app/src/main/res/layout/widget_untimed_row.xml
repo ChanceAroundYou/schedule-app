@@ -3,12 +3,12 @@
   未定时区（两两一行，2026-10-25）里的一张卡：半宽（行内两个 weight=1 凑对）。
   左边缘用 marginLeft=1dp 起排 —— 与下方任务卡（marginLeft 也是 1dp）对齐
   （用户 2026-10-13：未定时卡的行首应与下面的任务卡竖直方向对齐）。
-  字号 9sp，与主体其它文字统一。
+  字号 8sp（2026-10-25 整体小 1sp），与主体其它文字统一。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/untimed_row"
     android:layout_width="0dp"
-    android:layout_height="15dp"
+    android:layout_height="14dp"
     android:layout_marginLeft="1dp"
     android:layout_marginRight="1dp"
     android:layout_weight="1"
@@ -19,4 +19,4 @@
     android:paddingLeft="2dp"
     android:paddingRight="2dp"
     android:textColor="#1B3A2A"
-    android:textSize="9sp" />
+    android:textSize="8sp" />

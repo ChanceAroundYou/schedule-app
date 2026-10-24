@@ -5,6 +5,9 @@ import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
@@ -303,15 +306,24 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         int habitRows = snap.habits.isEmpty() ? 0
                 : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
 
+        // 未定时区实占多少高：**两两一行**，行数随任务增加（最多 3 行 = 6 格）。
+        // 2026-10-25 修（用户报「最底下的时间数值被挡住、显示不完整」）：
+        // 以前这里只按常驻的 PANEL_BAR_DP(15) 算，未定时任务一多，顶行实际长到
+        // 30/45dp，时间轴却仍按 15dp 分预算 → 时间轴画得比可用空间高，底部被裁，
+        // 最后一格刻度（20 点那个数字）就剩半截。按实际行数算，一分不差。
+        int untimedShown = Math.min(untimed.size(), UNTIMED_MAX);
+        int untimedRows = (untimedShown + 1) / 2;
+        int barDp = Math.max(PANEL_BAR_DP, untimedRows * UNTIMED_ROW_DP);
+
         // 时间轴能分到多少高度。**顶部和面板的固定件全是定值**（用户要求顶部
         // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
         int totalDp = mgr.getAppWidgetOptions(widgetId)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
-        int fixedDp = 16                       // root padding 上下各 8
-                + 32 + 2                        // head 行（FrameLayout 32dp）+ margin
+        int fixedDp = 21                       // root padding：上 8 + 下 13（底部多留白）
+                + 30 + 2                        // head 行（FrameLayout 30dp）+ margin
                 + DATE_STRIP_DP + 2             // 日期条 + margin
                 + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)   // 打卡区 + margin
-                + PANEL_BAR_DP + 1 + 2;         // 未定时横条（常驻）+ 横分割线 + margin
+                + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
         int timelineDp = Math.max(70, totalDp - fixedDp);
 
         boolean isToday = day.equals(today);
@@ -359,31 +371,38 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      *  两两一行、行数随任务增加；再多折「+N」—— 再多就没法看了，
      *  行数继续长会把时间轴挤没）。 */
     private static final int UNTIMED_MAX = 6;
+    /** 未定时区**一行**（两张半宽卡）占高。2026-10-25：16 → 15dp（整体缩一号） */
+    private static final int UNTIMED_ROW_DP = 15;
     /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
-    private static final int HABIT_ROW_DP = 19;
+    private static final int HABIT_ROW_DP = 18;
     /**
      * 日期条占高。2026-10-14 第八轮：高亮圈只包日期数字后，结构变成
      * 「星期（9sp）在上 + 日期圆（22dp）在下」，条高 29 → **35dp**。
+     * 2026-10-25：字号各小 1sp、圆 22 → 20dp，条高收到 **33dp**。
      */
-    private static final int DATE_STRIP_DP = 35;
-    /** 十字面板顶行（左空白角 + 右未定时横条）的高度。常驻，不随有无任务变 */
-    private static final int PANEL_BAR_DP = 15;
+    private static final int DATE_STRIP_DP = 33;
+    /** 十字面板顶行（左空白角 + 右未定时区）的最小高度。常驻，不随有无任务变。
+     *  2026-10-25：15 → 14dp（整体缩一号） */
+    private static final int PANEL_BAR_DP = 14;
     /**
      * 任务卡最小高度。
      *
      * 2026-10-13 由 13dp 提到 **15dp**：字号固定成 9sp 之后不再随块高缩小，
      * 很短的卡片（5 分钟任务）如果只有 13dp，去掉 1dp 上下 padding 后
      * 只剩 11dp 放字，会被裁。
+     *
+     * 2026-10-25：字号 9 → 8sp，最小高同步 15 → **14dp**（8sp 一行约 11dp，
+     * 加 1dp 上下 padding 共 13dp，装得下）。
      */
-    private static final int MIN_BLOCK_DP = 15;
+    private static final int MIN_BLOCK_DP = 14;
     /**
      * 任务卡上允许画第二行（详细内容摘要）的**最小块高**。
      *
-     * 9sp 一行约 12dp，两行 24dp，再加上 1dp 上下 padding —— 低于这个高度就只
+     * 8sp 一行约 11dp，两行 22dp，再加上 1dp 上下 padding —— 低于这个高度就只
      * 画标题。这块的高度是按任务时长钉死的，15 分钟的任务只有 15dp，
      * 硬塞两行会把两行的头尾一起切掉。
      */
-    private static final int NOTE_LINE_MIN_DP = 26;
+    private static final int NOTE_LINE_MIN_DP = 24;
 
     /**
      * 十字面板左下角的**刻度列**。
@@ -573,10 +592,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     private static RemoteViews taskBlock(Context c, WTask t, int hDp) {
         RemoteViews block = new RemoteViews(c.getPackageName(), R.layout.widget_task_block);
-        /* 给不给第二行，看**这块有多高**（9sp 两行 ≈ 26dp，见 NOTE_LINE_MIN_DP）。
+        /* 给不给第二行，看**这块有多高**（8sp 两行 ≈ 24dp，见 NOTE_LINE_MIN_DP）。
            块矮时硬塞两行会把两行的头尾一起切掉 —— 那是比只画标题更糟的读法。
            15 分钟的小块本来就只够放一个名字。 */
-        block.setTextViewText(R.id.task_block, label(t, hDp >= NOTE_LINE_MIN_DP));
+        boolean roomy = hDp >= NOTE_LINE_MIN_DP;
+        CharSequence text = label(t, roomy);
+        // 完成态整块是灰的，不需要再分色
+        if (!t.done) text = dimTimePrefix(text, t);
+        block.setTextViewText(R.id.task_block, text);
         block.setViewLayoutHeight(R.id.task_block, hDp, TypedValue.COMPLEX_UNIT_DIP);
         // ⚠️ **字号不再按块高变化** —— 用户 2026-10-13 明确「任务卡上的文字不随着
         // 卡片变大而变大」。统一 9sp，写在 widget_task_block.xml 里（以前这里
@@ -1073,6 +1096,28 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 只会把这两行自己挤没了。完整内容在「点这一条」的弹窗里。
         String note = oneLine(t.note);
         return note.isEmpty() ? head : head + "\n" + note;
+    }
+
+    /** 任务卡上「时段」那一段的灰（用户 2026-10-25：中性灰，不带绿调） */
+    private static final int C_TIME_DIM = 0xFF8A8D8B;
+
+    /**
+     * 把卡片第一行开头的「13:00-14:00」染成中性灰，标题仍用正文色。
+     *
+     * 卡片是**一个 TextView**（高度按分钟钉死，拆成两个视图会改行高），
+     * 所以只能靠 span 分色。RemoteViews 传 CharSequence 时 SpannableString
+     * 是 Parcelable、ForegroundColorSpan 是 ParcelableSpan，跨进程到 launcher
+     * 依然保留 —— 万一某家桌面把 span 丢了，最多是「又变回一个颜色」，不会崩。
+     */
+    private static CharSequence dimTimePrefix(CharSequence text, WTask t) {
+        if (t.time == null) return text;
+        String range = rangeOf(t);
+        String s = text.toString();
+        if (range.isEmpty() || !s.startsWith(range)) return text;
+        SpannableString sp = new SpannableString(s);
+        sp.setSpan(new ForegroundColorSpan(C_TIME_DIM), 0, range.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return sp;
     }
 
     /** 压成一行的摘要：换行变空格、掐掉了首尾空白。null 当空串 */

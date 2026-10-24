@@ -7,7 +7,7 @@
 
   上下都留 1dp margin（以前只有 marginTop，导致整块上重下轻）。
 
-  2026-10-13：字号 10sp → **9sp**（与小时刻度 / 任务卡 / 未定时卡统一），
+  2026-10-13：字号 10sp → 9sp；2026-10-25 再小 1sp → **8sp**（与小时刻度 / 任务卡 / 未定时卡统一），
   内边距 3dp → 2dp，圆角半径收到 9dp —— 用户要求更紧凑。
 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
@@ -28,4 +28,4 @@
     android:paddingRight="2dp"
     android:paddingBottom="2dp"
     android:textColor="#1B3A2A"
-    android:textSize="9sp" />
+    android:textSize="8sp" />

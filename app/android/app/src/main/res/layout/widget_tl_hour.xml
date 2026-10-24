@@ -5,7 +5,7 @@
   高度**由代码用 setViewLayoutHeight 精确钉死**（= 一小时多少 dp），
   和右下主体里的网格格**同一个公式**，所以数字和小时线严格同高。
 
-  字号固定 **9sp**（用户 2026-10-13：与打卡 / 任务卡统一；不再随行高变化）。
+  字号固定 **8sp**（用户 2026-10-13 定 9sp；2026-10-25 整体小 1sp）。
 
   2026-10-14（第八轮）：用户要求**数字左右留白一样**（原来右对齐 + 右 padding
   2dp，左边空很多）。改成**水平居中**。
@@ -31,4 +31,4 @@
     android:singleLine="true"
     android:text="08"
     android:textColor="#A2B5A9"
-    android:textSize="9sp" />
+    android:textSize="8sp" />

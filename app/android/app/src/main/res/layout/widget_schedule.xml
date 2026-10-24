@@ -41,7 +41,10 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:paddingLeft="8dp"
+    android:paddingTop="8dp"
+    android:paddingRight="8dp"
+    android:paddingBottom="13dp">
 
     <!-- ============ head：月份真正居中 + 左上角当天日期 ============
          2026-10-14（第八轮）：
@@ -50,17 +53,18 @@
            （以前是 LinearLayout + weight，month 被左右挤得偏了）。
          · 箭头离月份**拉远**（marginLeft/Right 8 → 12dp），不挤在一起。
          · 右上「+」「⋯」都 28dp、同样 4dp padding —— 尺寸统一。
+           2026-10-25：整体缩一号（head 30dp、图标 26/20dp、字号各 -1sp）。
          · 左上角原来的绿白 logo 换成**当天日期徽标**：一个黑白日历轮廓 +
              中间写着今天几号（见 ic_calendar_badge），点一下仍回今天。 -->
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="32dp">
+        android:layout_height="30dp">
 
         <!-- 左上角：日历徽标 + 中间日期数字（数字由 provider 写 tv_logo_day） -->
         <FrameLayout
             android:id="@+id/iv_logo"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
             android:layout_gravity="left|center_vertical"
             android:background="@drawable/ic_calendar_badge">
 
@@ -68,11 +72,11 @@
                 android:id="@+id/tv_logo_day"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="5dp"
                 android:gravity="center"
                 android:text="14"
                 android:textColor="#333333"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:textStyle="bold" />
         </FrameLayout>
 
@@ -85,8 +89,8 @@
 
             <ImageView
                 android:id="@+id/btn_prev_month"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:contentDescription="上一周"
                 android:padding="4dp"
                 android:src="@drawable/ic_chevron_left" />
@@ -100,13 +104,13 @@
                 android:gravity="center"
                 android:text="十月"
                 android:textColor="#1B3A2A"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <ImageView
                 android:id="@+id/btn_next_month"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:contentDescription="下一周"
                 android:padding="4dp"
                 android:src="@drawable/ic_chevron_right" />
@@ -121,16 +125,16 @@
 
             <ImageView
                 android:id="@+id/btn_add"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
                 android:contentDescription="新建任务"
                 android:padding="4dp"
                 android:src="@drawable/ic_plus" />
 
             <ImageView
                 android:id="@+id/btn_settings"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
                 android:contentDescription="小组件设置"
                 android:padding="4dp"
                 android:src="@drawable/ic_more" />
@@ -175,7 +179,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="15dp"
+            android:minHeight="14dp"
             android:orientation="horizontal">
 
             <!-- 左上空白角 = 未定时的标记。宽度与左下刻度列（tl_scale）一致，
