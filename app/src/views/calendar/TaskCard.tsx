@@ -23,7 +23,7 @@ import {
   minToPct, pctRange, spanOf, timeRange,
   type DayWindow,
 } from '../../domain/layout.ts';
-import { CheckBtn } from '../parts.tsx';
+import { CheckBtn, RepeatFlag } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
 import { useDragGhost } from '../../ui/dnd/lift.ts';
 import { createPortal } from 'react-dom';
@@ -103,6 +103,7 @@ export function TaskCard({
       <div className="ev-head">
         <CheckBtn id={t.id} on={!!t.done} sm />
         <span className="ev-title">{t.title}</span>
+        <RepeatFlag t={t} />
       </div>
       {timeText && <span className="ev-time">{timeText}</span>}
       {noteText && <span className="ev-note">{noteText}</span>}

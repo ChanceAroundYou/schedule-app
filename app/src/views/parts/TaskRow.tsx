@@ -14,6 +14,21 @@ import { createPortal } from 'react-dom';
 
 /* ============================== 分隔点 ============================== */
 
+/**
+ * 🔁 重复任务标志（2026-10-24 用户要求）。
+ *
+ * 凡带重复规则（按天/周/月，任何周期）的任务，标题末尾跟一个 🔁，
+ * 与单次任务一眼区分。列表行的 meta 里另有周期文案（`m-repeat`，
+ * 如「每周一、三」）—— 两处并存：🔁 是「这是重复任务」的一眼路标，
+ * meta 是「具体怎么重复」的细节，不是重复表达。
+ *
+ * 用字符不做图标文件（加东西前先想能不能复用/少造）。
+ */
+export function RepeatFlag({ t }: { t: Task }) {
+  if (!t.repeat || t.repeat.unit === 'none') return null;
+  return <span className="rep-flag" aria-label="重复任务" title="重复任务">🔁</span>;
+}
+
 function Meta({ items }: { items: ReactNode[] }) {
   if (!items.length) return null;
   return (
@@ -93,7 +108,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
           进出多选时列表不会跳一下。 */}
       {sel === null ? <CheckBtn id={t.id} on={!!t.done} /> : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
-        <div className="row-title">{t.title}</div>
+        <div className="row-title">{t.title}<RepeatFlag t={t} /></div>
         {/* 详细内容的摘要预览。**只有有内容的行才多出这一行** ——
             大多数任务只有标题，不该为「可能有」先占掉一格高度。 */}
         {!bare && !!t.note && <div className="row-note">{t.note}</div>}
@@ -145,6 +160,7 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
         <CheckBtn id={t.id} on={!!t.done} sm />
         {showTime && t.time && <span className="pill-time">{t.time}</span>}
         <span className="pill-title">{t.title}</span>
+        <RepeatFlag t={t} />
         {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
             还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
             +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
@@ -168,6 +184,7 @@ export function TaskPill({ task: t, showTime, moreSuffix, jumpDay }: {
           <CheckBtn id={t.id} on={!!t.done} sm />
           {showTime && t.time && <span className="pill-time">{t.time}</span>}
           <span className="pill-title">{t.title}</span>
+          <RepeatFlag t={t} />
         </div>,
         document.body,
       )}

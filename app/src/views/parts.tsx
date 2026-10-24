@@ -13,5 +13,5 @@
  */
 
 export { CheckBtn } from './parts/CheckBtn.tsx';
-export { TaskRow, TaskPill, Empty, type TaskRowProps } from './parts/TaskRow.tsx';
+export { TaskRow, TaskPill, RepeatFlag, Empty, type TaskRowProps } from './parts/TaskRow.tsx';
 export { CheckinStrip, HabitHeat, Caret, loadLevel } from './parts/Checkin.tsx';

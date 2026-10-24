@@ -174,7 +174,15 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
             </button>
           </div>
 
-          <NoteRow fid={fid} note={s.note} onPatch={(v) => { if (v !== (task.note || '')) patch({ note: v }); }} />
+          {/* ⚠️ onPatch 里**必须先 setNote**（2026-10-24 用户报「详细内容打字没反应」）：
+              Textarea 是受控组件，value 走的是本地草稿 state——原先 onChange 只
+              patch store、从不 setNote，于是每敲一个字 store 更新触发重渲染，
+              受控 value 被拉回旧 state，输入的字当场消失。标题框（上面）是
+              「setTitle + 失焦 patch」的正确示范，这里对齐。 */}
+          <NoteRow
+            fid={fid} note={s.note}
+            onPatch={(v) => { s.setNote(v); if (v !== (task.note || '')) patch({ note: v }); }}
+          />
 
           {/* 提醒：与小组件同一个字段（reminder = "HH:mm"） */}
           <ReminderRow task={task} onPatch={onPatch} />
