@@ -425,10 +425,12 @@ body.sheet-open .tab:active { background: none; }
      `.cell-tasks { overflow-y: auto }` 覆盖回 hidden（本文件后引入，同特异度
      压得住）。flex:1 照吃：格子剩余高度归它，内容由 monthCellCapacity 兜住。 */
   .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
-  /* 一行一条任务。横向每一分都要省：格子 48.8 减掉胶囊自己左右各 2px 与
-     四面 1px 的**中性边框**（`border: 1px solid var(--border)`，不只是顶底）
-     剩 42.8px。绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求
-     全去掉，剩下的 1px 是四面一样的灰框，不是强调线。 */
+  /* 一行一条任务。横向每一分都要省：390 实测格子 52.86，胶囊铺满整格
+     （border-box 52.86），扣掉自己左右各 2px 与四面 1px 的**中性边框**
+     （`border: 1px solid var(--border)`，不只是顶底）剩 **46.86** 给标题。
+     绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求
+     全去掉，剩下的 1px 是四面一样的灰框，不是强调线。
+     这两个数由 `tests/card-geometry.mjs` 量着并断言（不溢出格子 · 标题可用宽 ≥40）。 */
   /* 窄屏胶囊换**小档**：字与行高走小档，上下 padding 4px → 1px（胶囊高由
      --pill-h 自己算：16 + 1×2 + 1×2 = 20）。
      圆角与左右留白都不在这里 —— 全项目那一条算式和 --card-pad-x 在 calendar.css，
@@ -440,13 +442,13 @@ body.sheet-open .tab:active { background: none; }
     --pill-pad-y: 1px;
     line-height: var(--pill-line);
   }
-  /* 时间放不下（45px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
-     这两个都是窄屏取舍，不是漏了。 */
+  /* 时间放不下（46.86 里 `09:30` 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
+     窄屏取舍，不是漏了（2026-10-24 用户确认：**不加勾**）。 */
   .cell-tasks .task-pill .pill-time { display: none; }
   .cell-tasks .task-pill .check-btn { display: none; }
   /* 标题**不用省略号**，直接裁掉超出的部分（用户 2026-10-19：省略号占了整整
-     一个字宽，去掉它一行能多显示一个字）。45px 正好 5 个汉字，第 6 个从边界
-     开始、整字不可见，不会切出半个字的碎边。 */
+     一个字宽，去掉它一行能多显示一个字）。46.86 正好 5 个 14px 汉字，第 6 个从
+     边界开始、整字不可见，不会切出半个字的碎边。 */
   .cell-tasks .pill-title { flex: 1 1 auto; min-width: 0; text-overflow: clip; }
   .cell-tasks .pill-more {
     flex: 0 0 auto; padding-left: 1px;

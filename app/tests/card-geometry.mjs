@@ -315,6 +315,10 @@ try {
       return {
         cls: el.className,
         h: +b.height.toFixed(2), w: +b.width.toFixed(2), x: +b.left.toFixed(2),
+        /* 月视图：胶囊挤在格子里，格子有多宽、标题实际能用多宽都要量 ——
+           responsive.css 那段「一格能显示几个汉字」的注释全靠这两个数 */
+        cellW: (() => { const c = el.closest('.month-cell'); return c ? +c.getBoundingClientRect().width.toFixed(2) : null; })(),
+        titleW: tb ? +tb.width.toFixed(2) : null,
         padL: num(cs.paddingLeft), padR: num(cs.paddingRight),
         borderL: num(cs.borderLeftWidth),
         radius: num(cs.borderTopLeftRadius),
@@ -418,6 +422,11 @@ try {
         + ' x=' + num(c.x) + ' 左padding=' + num(c.padL) + ' 右=' + num(c.padR)
         + ' 圆角=' + num(c.radius) + '（短边 ' + num(short) + ' → 比 ' + (c.radius / short).toFixed(3) + '）'
         + ' 勾左间距=' + num(c.checkGap) + ' 勾→标题=' + num(c.titleGap));
+      if (c.cellW != null) {
+        console.log('           格子宽=' + num(c.cellW) + ' 标题可用宽=' + num(c.titleW)
+          + '（卡 ' + num(c.w) + ' − 左右 padding ' + num(c.padL) + '/' + num(c.padR)
+          + ' − 边框 ' + num(c.borderL) + '×2）');
+      }
     }
     if (m.weekHead != null) {
       console.log('    表头 高=' + num(m.weekHead) + ' 日期字号=' + num(m.whDayFont)
@@ -439,6 +448,15 @@ try {
         key + ' ' + c.cls.split(' ')[0] + ' 圆角 ' + num(c.radius)
         + ' = 短边 ' + num(short) + ' × ' + RADIUS_K + ' 夹在 ' + RADIUS_MIN + '~' + c.rXl
         + '（want ' + want.toFixed(2) + '）');
+    }
+    /* 月胶囊不许溢出格子，而且标题要真剩得下字（窄屏 5 个汉字是硬约束） */
+    for (const c of cards.filter((k) => k.cellW != null)) {
+      ok(c.w <= c.cellW + 0.5, key + ' 胶囊 ' + num(c.w) + ' 不溢出格子 ' + num(c.cellW));
+      /* narrow 是这一屏的属性（在 m 上），不在单张卡上 —— 写成 c.narrow 会恒 undefined，
+         于是窄屏也被拿桌面的 60 去量，红得指错地方 */
+      const minTitle = m.narrow ? 40 : 60;
+      ok(c.titleW >= minTitle, key + ' 标题可用宽 ' + num(c.titleW) + ' ≥ ' + minTitle
+        + (m.narrow ? '（窄屏要装得下 5 个汉字）' : ''));
     }
     /* 打勾左侧间距：同一屏上所有卡一致（窄屏月 pill 没有勾选圈 → 不参与） */
     const gaps = cards.filter((c) => c.checkGap != null);
