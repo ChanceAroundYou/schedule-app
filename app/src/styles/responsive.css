@@ -363,6 +363,16 @@ body.sheet-open .tab:active { background: none; }
     --ev-title-size: var(--task-text-sm);
     border-radius: 4px;
   }
+  /* 分身（.drag-ghost，见 ui/dnd/lift.ts）createPortal 到 body —— 丢了
+     .allday-items / .wun-cell / .cell-tasks 这些祖先的小格字号覆盖，
+     回落 .task-el 基础大格（12.5px），拖起来字会突然变大（2026-10-24 用户报
+     「拖起来的卡片字体突然变大」）。窄屏可拖卡统一小格（见上），分身照做：
+     日视图未定时卡 / 周视图未定时卡 / 月视图胶囊三处分身一并覆盖。 */
+  .drag-ghost {
+    font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    --ev-title-size: var(--task-text-sm);
+    --ev-time-size: var(--task-time-sm);
+  }
   /* 周视图定时卡：字号跟月视图小格（9px），左右留白几乎为 0（用户：
      「参考现在的月视图」= pill 的 padding 1px 0），字尽可能多显示。 */
   .week-col .task-el--timed { --ev-title-size: var(--task-text-sm); padding: 1px 0; }
