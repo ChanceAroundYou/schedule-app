@@ -167,12 +167,15 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- 顶行：左空白角（= 未定时的标记）+ 竖分割线 + 右未定时横条。
-             常驻，高度固定。竖分割线在这一行也要有 —— 否则「十字」只有下半截，
+        <!-- 顶行：左空白角（= 未定时的标记）+ 竖分割线 + 右未定时区。
+             **高度随行数长**（2026-10-25 用户：两两一行、行数随任务增加）——
+             空任务时 minHeight 保住 15dp 常驻（左上角 + 分割线不塌）；
+             竖分割线在这一行也要有 —— 否则「十字」只有下半截，
              左上空白角和右上未定时条分不开（用户 2026-10-13 指出）。 -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="15dp"
+            android:layout_height="wrap_content"
+            android:minHeight="15dp"
             android:orientation="horizontal">
 
             <!-- 左上空白角 = 未定时的标记。宽度与左下刻度列（tl_scale）一致，
@@ -189,13 +192,14 @@
                 android:background="#C6DCCF"
                 android:text="" />
 
+            <!-- 未定时区：竖排容器，行由代码动态塞（widget_untimed_pair，
+                 每行两格）。空任务时没有子视图，靠外层的 minHeight 撑住常驻。 -->
             <LinearLayout
                 android:id="@+id/untimed_bar"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:gravity="center_vertical"
-                android:orientation="horizontal" />
+                android:orientation="vertical" />
         </LinearLayout>
 
         <!-- 横分割线（十字线之一） -->

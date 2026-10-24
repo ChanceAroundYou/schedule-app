@@ -355,7 +355,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int LINE_OFFSET_DP = 5;
 
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
-    private static final int UNTIMED_MAX = 5;
+    /** 未定时区最多显示的**格子数**（3 排 × 每排 2 格，2026-10-25 用户定：
+     *  两两一行、行数随任务增加；再多折「+N」—— 再多就没法看了，
+     *  行数继续长会把时间轴挤没）。 */
+    private static final int UNTIMED_MAX = 6;
     /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
     private static final int HABIT_ROW_DP = 19;
     /**
@@ -597,44 +600,63 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
-     * 十字面板**右上角**的未定时横条。
+     * 十字面板**右上角**的未定时区。
      *
      * 用户 2026-10-13 定的形态：**不写「未定时」三个字** —— 左边的空白角
      * 就是这一行的标记（两者是同一块面板的四格之一，不是两块）。
-     * 卡片排成一行、按数量等分宽度；超过 {@link #UNTIMED_MAX} 个就折成
-     * 一格「+N」—— 再多就没法看了。
+     * 2026-10-25 改**两两一行**：每行两格半宽、行数随任务增加（最多 3 排 =
+     * 6 格）；奇数落单时右半格留空（1A）；超过 6 个折成最后一格「+N」（2A）。
+     * 空 n=0 时整区留空 —— 外层 minHeight 15dp 保住空白角与分割线常驻。
      */
     private static void renderUntimedBar(Context c, RemoteViews v, List<WTask> untimed) {
         v.removeAllViews(R.id.untimed_bar);
         int n = untimed.size();
-        if (n == 0) return;   // 空白角常驻，横条留空即可
+        if (n == 0) return;
 
         boolean fold = n > UNTIMED_MAX;
         int shown = fold ? UNTIMED_MAX - 1 : n;   // 折叠时留一格给「+N」
 
-        for (int i = 0; i < shown; i++) {
-            WTask t = untimed.get(i);
-            RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_row);
-            r.setTextViewText(R.id.untimed_row, t.title);
-            if (t.done) {
-                r.setInt(R.id.untimed_row, "setBackgroundResource",
-                        R.drawable.widget_task_bg_done);
-                r.setTextColor(R.id.untimed_row, 0xFF7E8F84);
+        for (int i = 0; i < shown; i += 2) {
+            RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_pair);
+            row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i)));
+            if (i + 1 < shown) {
+                row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i + 1)));
+            } else if (fold) {
+                // 折叠：最后一个显示位旁边那格给「+N」
+                row.addView(R.id.untimed_pair, untimedMore(c, n - shown));
             } else {
-                // 未完成：与未完成打卡同一浅绿 + 深绿字（未完成的任务/打卡同色系）。
-                r.setInt(R.id.untimed_row, "setBackgroundResource",
-                        R.drawable.widget_task_bg);
-                r.setTextColor(R.id.untimed_row, 0xFF1B3A2A);
+                // 奇数落单（1A）：右半格空占位，把左卡顶成半宽
+                row.addView(R.id.untimed_pair,
+                        new RemoteViews(c.getPackageName(), R.layout.widget_untimed_filler));
             }
-            r.setOnClickPendingIntent(R.id.untimed_row,
-                    WidgetIntent.of(c, ACTION_TASK, "u" + t.id).put(EXTRA_ID, t.id).build(c));
-            v.addView(R.id.untimed_bar, r);
+            v.addView(R.id.untimed_bar, row);
         }
-        if (fold) {
-            RemoteViews more = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_more);
-            more.setTextViewText(R.id.untimed_more, "+" + (n - shown));
-            v.addView(R.id.untimed_bar, more);
+    }
+
+    /** 一张未定时卡（样式与点击不变，从 renderUntimedBar 抽出来复用） */
+    private static RemoteViews untimedCard(Context c, WTask t) {
+        RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_row);
+        r.setTextViewText(R.id.untimed_row, t.title);
+        if (t.done) {
+            r.setInt(R.id.untimed_row, "setBackgroundResource",
+                    R.drawable.widget_task_bg_done);
+            r.setTextColor(R.id.untimed_row, 0xFF7E8F84);
+        } else {
+            // 未完成：与未完成打卡同一浅绿 + 深绿字（未完成的任务/打卡同色系）。
+            r.setInt(R.id.untimed_row, "setBackgroundResource",
+                    R.drawable.widget_task_bg);
+            r.setTextColor(R.id.untimed_row, 0xFF1B3A2A);
         }
+        r.setOnClickPendingIntent(R.id.untimed_row,
+                WidgetIntent.of(c, ACTION_TASK, "u" + t.id).put(EXTRA_ID, t.id).build(c));
+        return r;
+    }
+
+    /** 「+N」折叠提示，占半格 */
+    private static RemoteViews untimedMore(Context c, int more) {
+        RemoteViews m = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_more);
+        m.setTextViewText(R.id.untimed_more, "+" + more);
+        return m;
     }
 
     /* ============================ 打卡 ============================ */

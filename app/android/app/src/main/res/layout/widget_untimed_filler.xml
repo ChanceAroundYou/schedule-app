@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  奇数落单时右半格的**空占位**（2026-10-25 用户 1A：最后一行右半格留空）。
+  只为把左边的卡片顶成半宽（weight 凑对），没有背景、不可点。
+  ⚠️ RemoteViews 不认 Space / 空 View，空 TextView 是安全的最小等价物。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_marginLeft="1dp"
+    android:layout_marginRight="1dp"
+    android:layout_weight="1"
+    android:text="" />
