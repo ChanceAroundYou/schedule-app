@@ -1267,6 +1267,19 @@ try {
   `);
   ok((await inbox()).join('') === '甲乙丙', '三条任务按添加顺序排，实际 ' + JSON.stringify(await inbox()));
 
+  // —— 触摸设备任务卡禁文字选择（2026-10-24）——
+  // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的 480ms 激活竞速，
+  // 拖拽就「有时灵有时不灵」（真机：周视图任务拖到明天后拖不回来）。
+  // 修复是 calendar.css 的 @media (pointer: coarse) .task-el { user-select: none }。
+  // 触摸仿真开启时 pointer: coarse 会命中（实测），所以这条在这里断得住。
+  const selGate = await evalJs(page, `
+    const el = document.querySelector('[data-scope="inbox"] .task-el');
+    return { coarse: matchMedia('(pointer: coarse)').matches, sel: getComputedStyle(el).userSelect };
+  `);
+  ok(selGate.coarse && selGate.sel === 'none',
+    '触摸设备上任务卡**禁文字选择**（长按只剩拖拽一个含义）',
+    `coarse=${selGate.coarse} · user-select=${selGate.sel}`);
+
   const rectOf = (text) => evalJs(page, `
     const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
       .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
