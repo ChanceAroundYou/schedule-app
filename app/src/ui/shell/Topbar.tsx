@@ -86,7 +86,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
       </div>
       <div className="view-switch">
         <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
-        <button data-view="3day" className={ui.view === '3day' ? 'on' : ''} onClick={() => onView('3day')}>三</button>
+        <button data-view="3day" className={ui.view === '3day' ? 'on' : ''} onClick={() => onView('3day')}>3日</button>
         <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
         <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
       </div>
