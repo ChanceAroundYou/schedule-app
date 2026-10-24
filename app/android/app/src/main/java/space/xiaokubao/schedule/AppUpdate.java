@@ -175,6 +175,12 @@ class AppUpdate {
                 try {
                     Manifest m = fetchManifest();
                     if (m == null) {
+                        // 拉到了但内容不对（多半是服务端文件写坏了）。用户主动点的
+                        // 必须给个回执 —— 2026-10-24 用户报「点了没任何反应」，
+                        // 静默是病：网络/清单哪一层挂了都该说一声。
+                        if (force) {
+                            toast(c, "检查失败：版本清单异常，请稍后再试");
+                        }
                         return;
                     }
                     long self = selfVersionCode(c);
@@ -192,6 +198,11 @@ class AppUpdate {
                     showPrompt(activity, m);
                 } catch (Exception e) {
                     Log.w(TAG, "检查更新失败: " + e);
+                    // 网络不通 / 域名解析不了 / TLS 出错 —— force 时给回执，
+                    // 否则按钮点了毫无动静，用户只能当它坏了
+                    if (force) {
+                        toast(c, "检查失败：网络不通或服务端没响应，请稍后再试");
+                    }
                 }
             }
         }).start();

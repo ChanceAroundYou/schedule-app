@@ -57,6 +57,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   const [apkName, setApkName] = useState<string | null>(null);
   /** 检查更新的进行中态 —— 点了立刻有反馈，不让用户怀疑自己没点到 */
   const [checking, setChecking] = useState(false);
+  const [updateHint, setUpdateHint] = useState('');
   const native = Capacitor.isNativePlatform();
 
   useEffect(() => {
@@ -141,7 +142,12 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
                 disabled={checking}
                 onClick={async () => {
                   setChecking(true);
-                  try { await checkAppUpdate(); } finally {
+                  try {
+                    const ok = await checkAppUpdate();
+                    // 原生侧没接住（App 版本太旧 / 原生异常）才轮到网页说话 ——
+                    // 检查成功了（含「已是最新」「发现新版本」）都由原生回执
+                    setUpdateHint(ok ? '' : '这台 App 的版本太旧，检查不了更新 —— 请先用下方「下载 App」装一次最新版');
+                  } finally {
                     // 延迟一小会儿再解除进行中态：原生是异步拉版本清单的，
                     // 立刻恢复会让按钮看起来「点了没反应」
                     window.setTimeout(() => setChecking(false), 800);
@@ -150,6 +156,12 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
               >
                 {checking ? '检查中…' : '检查更新'}
               </Btn>
+              {updateHint && (
+                <span data-about="update-hint" className="block text-[11px] mt-1"
+                  style={{ color: 'var(--text-3)' }}>
+                  {updateHint}
+                </span>
+              )}
             </Field>
           )}
           {/* 「技术栈」一整行已删（2026-10-22 用户：完全不写，连 Node + SQLite 也不留） */}
