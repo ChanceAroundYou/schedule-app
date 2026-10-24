@@ -367,15 +367,16 @@
 }
 .rep-flag {
   flex: 0 0 auto; font-size: .78em; opacity: .75; margin-left: 3px;
-  /* 🔁 emoji 在部分机型渲染成黄铜色，和青玉色板打架（2026-10-25 用户）——
-     换成继承文字颜色的描线符号 ↻，色调永远跟着主题走 */
-  color: var(--text-3);
+  /* 🔁 emoji 在部分机型渲染成黄铜色（2026-10-25 用户）——换成描线符号 ↻。
+     颜色用主题绿：用户「变成绿色，跟目前的色调保持一致」（同日第二次裁决，
+     灰色版是我做过头了） */
+  color: var(--primary);
 }
 /* 任务卡右上角的层角标：绝对定位、不占文字宽度（2026-10-25 用户要求）。
    几何随卡片：定时卡本身是 absolute，未定时卡补 relative。 */
 .rep-flag--corner {
   position: absolute; top: 1px; right: 3px; margin: 0;
-  font-size: 9px; line-height: 1; opacity: .45;
+  font-size: 9px; line-height: 1; opacity: .55;
 }
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
@@ -530,6 +531,11 @@
      那根线同源，也让最底下的数字有确切的线可骑。 */
   border-bottom: 1px solid var(--border);
 }
+/* 三日视图：同壳，只有 3 列 —— 每列能分到 ~2.5 倍宽，字大、不挤
+   （2026-10-25 用户加）。窄屏的横滑/列宽在 responsive.css 单独放行。 */
+.week-view.three-day .week-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.week-view.three-day .week-head-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.week-view.three-day .week-un-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .week-col {
   min-width: 0; position: relative;
   border-right: 1px solid var(--border);

@@ -34,6 +34,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
   const jumpBtn = useRef<HTMLButtonElement>(null);
   let atToday = ui.cursor === t0;
   if (ui.view === 'week') atToday = D.weekStart(ui.cursor) === D.weekStart(t0);
+  else if (ui.view === '3day') atToday = ui.cursor === t0;
   else if (ui.view === 'month') {
     const a = D.parseISO(ui.cursor), b = D.parseISO(t0);
     atToday = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
@@ -85,6 +86,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
       </div>
       <div className="view-switch">
         <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
+        <button data-view="3day" className={ui.view === '3day' ? 'on' : ''} onClick={() => onView('3day')}>三</button>
         <button data-view="week" className={ui.view === 'week' ? 'on' : ''} onClick={() => onView('week')}>周</button>
         <button data-view="month" className={ui.view === 'month' ? 'on' : ''} onClick={() => onView('month')}>月</button>
       </div>
@@ -136,6 +138,8 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
     const ws = D.weekStart(ui.cursor);
     title = ui.view === 'day'
       ? D.fmtMD(ui.cursor)
+      : ui.view === '3day'
+        ? D.fmtMD(ui.cursor) + ' – ' + D.fmtMD(D.addDays(ui.cursor, 2))
       : ui.view === 'week'
         ? D.fmtMD(ws) + ' – ' + D.fmtMD(D.addDays(ws, 6))
         : D.parseISO(ui.cursor).getFullYear() + '年' + (D.parseISO(ui.cursor).getMonth() + 1) + '月';

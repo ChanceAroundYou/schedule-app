@@ -23,12 +23,12 @@ import { useRef, type CSSProperties } from 'react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
-  dayTimeline, minToPct, coverWindow, spanOf, untimedBlanks, untimedRowPx, windowOf,
+  dayTimeline, coverWindow, spanOf, untimedBlanks, untimedRowPx, windowOf,
   type DayWindow,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { TimeGutter, NowLine, DragRangePreview, BlankRow } from './timeline.tsx';
+import { TimeGutter, DragRangePreview, BlankRow } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
 import type { LayoutEvent } from './shared.ts';
@@ -124,10 +124,12 @@ function WunCell({ state, d, today, rowH }: { state: LocalState; d: string; toda
   );
 }
 
-export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
-  const start = D.weekStart(iso);
+export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso: string; dayCount?: number }) {
+  /* 三日视图（dayCount=3，2026-10-25 用户加）：从 iso 起连画 3 天 ——
+     不对齐到周起点，‹ › 每次翻 3 天。周视图照旧从周一开始铺 7 天。 */
+  const start = dayCount === 3 ? iso : D.weekStart(iso);
   const osbWeek = useOverlayScrollbar<HTMLDivElement>();
-  const days = Array.from({ length: 7 }, (_, i) => D.addDays(start, i));
+  const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
   const nowMin = D.nowMin();
 
@@ -155,7 +157,7 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
   });
 
   return (
-    <div className="week-view osb" id="weekView" ref={osbWeek}>
+    <div className={'week-view osb' + (dayCount === 3 ? ' three-day' : '')} id="weekView" ref={osbWeek}>
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
         <div className="week-head-cols">
@@ -203,10 +205,9 @@ export function WeekView({ state, iso }: { state: LocalState; iso: string }) {
               range={drag.range && drag.range.date === d ? drag.range : null}
             />
           ))}
-          {/* 「现在」这条线**横贯整周**（2026-10-22 用户要求：从周一到周日）。
-              画在 .week-cols 上而不是每一列各画一段 —— 各画一段会在列与列之间
-              的 1px 分隔线上断开，看着是七根短线。今天不在这一周时整条不画。 */}
-          {days.includes(today) && <NowLine pct={minToPct(nowMin, win)} week />}
+          {/* 「现在」线已删（2026-10-25 用户：周视图里那根绿线不要了 ——
+              半夜它会卡在时间窗顶上的 8:00，白天又是长长一条横在卡上。
+              日视图的还在，见 DayView。） */}
         </div>
       </div>
     </div>

@@ -36,7 +36,8 @@ export type StyleKey = 'soft' | 'flat' | 'notion';
 
 export interface UiPrefs {
   nav: string;
-  view: 'day' | 'week' | 'month';
+  /** '3day' = 三日视图（今天起 3 天，2026-10-25 用户加） */
+  view: 'day' | '3day' | 'week' | 'month';
   cursor: string;
   theme: ThemeMode;
   /** 6 套色板之一。`azure` = 换暖纸之前那套靛蓝，留着当退路 */

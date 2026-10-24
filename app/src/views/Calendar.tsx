@@ -31,6 +31,7 @@ export { useViewLayout } from './calendar/layout.ts';
 export function CalendarView({ state }: { state: import('../domain/types.ts').LocalState }) {
   const ui = state.ui;
   if (ui.view === 'day') return <DayView state={state} iso={ui.cursor} />;
+  if (ui.view === '3day') return <WeekView state={state} iso={ui.cursor} dayCount={3} />;
   if (ui.view === 'week') return <WeekView state={state} iso={ui.cursor} />;
   return <MonthView state={state} iso={ui.cursor} />;
 }
