@@ -319,7 +319,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
         int totalDp = mgr.getAppWidgetOptions(widgetId)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
-        int fixedDp = 17                       // root padding：上 8 + 下 9（底部略留白）
+        int fixedDp = 12                       // root padding：上 8 + 下 4（底部只留一点）
                 + 30 + 2                        // head 行（FrameLayout 30dp）+ margin
                 + DATE_STRIP_DP + 2             // 日期条 + margin
                 + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)   // 打卡区 + margin
