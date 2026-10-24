@@ -35,24 +35,42 @@
   /* 未定时卡上下 padding 1px：卡高必须正好 = 行高 18 + 1×2 = 20px
      （.allday-zone 的 --row 参与容器高度计算，多 1px 就露半截）。
      3px → 1px（2026-10-22 九条统一规范）。 */
-  --allday-pill-pad: 1px 7px;
+  /* ---- 卡片留白（2026-10-24 五项反馈②）----
+     **左右留白三视图同一个值**（日 / 周 / 月的定时卡、未定时卡、月视图胶囊）。
+     勾选圈到卡片左边界的距离 = 这一个 + 1px 边框，所以它就是「打勾左侧的间距」
+     —— 以前日周 7px、月胶囊 8px、窄屏周 0px，实测 8 / 9 / 1 三种，用户报「差很多」。
+     窄屏降到 2px：周视图一列只有 ~71px，每一分都要留给标题；月视图胶囊窄屏
+     不画勾选圈，留白只吃文字宽度。
+     ⚠️ 这条只许在**卡片自己**身上消费，容器（.wun-cell / .allday-zone）横向一律 0，
+        否则同一列里两种卡的左边又会错开（踩坑 50 的第三条）。 */
+  --card-pad-x: 7px;
+  --card-pad-y: 1px;
+  --allday-pill-pad: var(--card-pad-y) var(--card-pad-x);
   --allday-min-h: 14px;
-  /* 卡片圆角用（见 .task-el--timed / .task-el--untimed）：半径 = **这张卡自己的
-     像素高 × 30%**，夹在 3px 与 --r-lg 之间。
-     · 定时卡：`--card-px` 由 TimedCard 写（百分比高 × 容器实高 − 卡缝）
-     · 未定时卡：`--row` 由下面的 `max(自然行高, --row-hour)` 算出来，
-       `--row-hour` 由 DayView / WeekView 按「这一屏上的一小时（整天口径）」写（untimedRowPx）
-     两者同一个小时单位 ⇒ 1 小时卡与未定时卡的圆角必然同值（2026-10-24 三问题统一）。
-     以前的 `--tl-h × --card-h` 两跳换算已删 —— 换成 JS 直接给像素高。
-     ⚠️ 不能用 `min(12px, 30%)`：百分比半径在计算样式里是**未求值**的字符串，
-     探针读不到数、也断言不了「矮卡更方」。 */
+  /* ---- 卡片圆角（见下面那**唯一一条** border-radius）----
+     半径 = 这张卡自己的高度 × 0.28，再被风格档的 --r-xl 封顶。
+     · 定时卡高度走 `--card-px`（TimedCard 写：百分比高 × 容器实高 − 卡缝）
+     · 未定时卡高度走 `--row`（下面 `max(自然行高, --row-hour)` 算出来，
+       `--row-hour` 由 DayView / WeekView 按「这一屏上的一小时（整天口径）」写）
+     · 月视图胶囊高度走 `--pill-h`（自己声明，见 .task-pill）
+     为什么是 0.28 而不是写死一档：写死 4px 时 10px 高的卡几乎全圆、
+     20px 高的又嫌方；比例固定才「怎么缩放看着都是同一个圆润程度」。
+     上限为什么是 --r-xl 而不是 --r-lg：封顶值一旦低于「高 × 0.28」，
+     高卡就会**贴着上限**、矮卡还在算比例，同一屏上圆角程度又不一致
+     （实测 53px 的定时卡贴 12px = 0.226，25px 的未定时卡 7.74 = 0.300 ——
+     正是用户报「圆角程度也差很多」的那一条）。
+     用 `min()` / `max()` 而不是 `clamp()`：flat 风格档 --r-* 全是 0，
+     `clamp(2px, x, 0)` 按规范返回**下限** 2px，等于把 flat 的直角偷偷变成 2px。
+     ⚠️ 不能用百分比半径（`min(12px, 30%)`）：它在计算样式里是**未求值**的字符串，
+        探针读不到数、也断言不了「矮卡更方」。 */
   --card-px: 20px;
+  --card-r-k: 0.28;
   /* 未定时那一行的两半：
      · `--row-natural` = 一行字 + 卡片上下 padding + 上下边框（矮屏幕上的下限，别让卡比字还窄）
      · `--row-hour`    = JS 给的「这一屏上的一小时」（整天口径）
      `--row` 取两者的大值 —— 默认整天视图下等于一小时（与 1 小时定时卡同高），
      屏幕特别矮时退回一行字。CSS 里的 `--row`（.allday-zone / .wun-cell）就是这条。 */
-  --row-natural: calc(var(--task-line-sm) + 2px + 2 * var(--border-w));
+  --row-natural: calc(var(--task-line-sm) + 2 * var(--card-pad-y) + 2 * var(--border-w));
   /* JS 还没量到容器时这一半是 0 ⇒ --row 退回下限（首帧不塌）。
      DayView / WeekView 量到之后在容器上写内联值覆盖它。 */
   --row-hour: 0px;
@@ -63,11 +81,10 @@
   --tl-wrap-pad: 8px 12px 10px 60px;
   --tl-label-left: -56px;
   --tl-label-width: 44px;
-  --tl-event-pad: 1px 7px;
-  /* 周视图两张卡的左右留白（同一档）。**两种卡共用这一条**：以前定时卡吃
-     `--tl-event-pad` 7px、未定时卡吃 `padding: 1px 0`，同一列里文字起点差 7px，
-     看着就是两版皮肤（2026-10-24 三问题）。窄屏在 responsive.css 收成 1px 0。 */
-  --week-card-pad: 1px 7px;
+  --tl-event-pad: var(--card-pad-y) var(--card-pad-x);
+  /* --week-card-pad **已删**（2026-10-24）：它和 --tl-event-pad / --allday-pill-pad
+     桌面同值、窄屏不同值，而「窄屏不同值」正是踩坑 50 第三条（x 差 3px）的来源。
+     两种卡的左右留白现在同源到 --card-pad-x 一处。 */
   --ev-gap: 0px;
 }
 
@@ -189,12 +206,10 @@
    竖排居中、项目卡与胶囊跟着一起歪。日历卡片**永远**带上面两个修饰类之一，
    所以把选择器收成这两个，就再也不会漏到别的界面去了。 */
 .task-el--timed, .task-el--untimed {
-  /* 圆角：大卡（定时块）比小胶囊圆一档 —— 2026-10-19 用户报「日周太方」。
-     小胶囊那一行只有 ~20px 高，跟着用大圆角会变成药丸，所以只在下面单独放大卡。 */
   /* 默认底色用 --primary-pale（比 --primary-soft 再淡一档）—— 2026-10-22 用户：
      任务底的淡绿和「今天」那列的淡绿太像，两者要拉开层级。今天那列现在干脆
      不再加底色（只留日期圆圈），卡片用最淡的一档就够了。 */
-  border-radius: var(--r-sm); background: var(--primary-pale);
+  background: var(--primary-pale);
   border: var(--border-w) solid var(--border);
   cursor: pointer;
   /* 第一行：勾选圈 + 标题；第二行：时间段（更淡，不抢视线）
@@ -203,20 +218,32 @@
   display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
-/* 日/周视图那张大卡。**圆角按自身高度收**（2026-10-19 用户报「不同高度的框圆角
-   都一样大，矮框非常圆、高框还行，看着不统一」）：固定 12px 时，55px 高的卡
-   正合适、18px 高的 15 分钟小块就成了药丸。
-   算法：半径 = 卡高 × 30%，上下夹在 3px 与 --r-lg 之间。
-   ⚠️ **不用 `min(12px, 30%)`**：百分比半径在 `getComputedStyle` 里是**未求值**
-   的字符串（实测返回 "min(12px, 30%)"），探针读不到数、也没法断言「矮卡更方」。
-   所以像素高由 TimedCard 直接写进 `--card-px`（百分比高 × 容器实高 − 卡缝），
-   这里只做一次乘法 —— 与未定时卡的 `--row` 同一个小时单位。
-   ⚠️ 这条**不许在后面再被覆盖**：原先 `.task-el--timed` 那段（往下）又写了一次
-   `border-radius: var(--r-sm)`，同特异度后写的赢，于是定时卡回到固定 7px，
-   而未定时卡走 30% 算式 —— 2026-10-24 用户报「圆角程度也不一样」的根因。 */
-.task-el--timed {
-  border-radius: clamp(3px, calc(var(--card-px, 20px) * 0.3), var(--r-lg));
+/* ================= 卡片圆角：全项目**只此一条**（2026-10-24 五项反馈②③）
+   半径 = 这张卡自己的高度 × `--card-r-k`（0.28），上限走风格档的 --r-xl，下限 2px。
+   高度由每种卡自己声明进 --card-h：定时卡 --card-px（JS 写）、未定时卡 --row、
+   月视图胶囊 --pill-h（下面 .task-pill 里声明）。
+
+   ⚠️ **同一条属性只在一处声明**（踩坑 50 第二条）：原先这条分散在三处
+   （基础块的 var(--r-sm)、定时卡的 clamp(...)、responsive.css 窄屏胶囊的 4px），
+   同特异度后写的赢 —— 定时卡被后面那条 var(--r-sm) 静默吃回 7px。
+   以后要给某张卡换圆角，改 --card-h，别再写第二条 border-radius。
+   ⚠️ 上限不能低于「高 × 0.28」：一旦贴着上限，高卡不跟着比例走，
+   同一屏上「一小时卡」和「无时间卡」的圆润程度又错开（实测 0.226 vs 0.300）。
+   ⚠️ 用 min()/max() 不用 clamp()：flat 档 --r-* 全是 0，clamp(2px, x, 0) 返回下限。 */
+.task-el--timed, .task-el--untimed, .task-pill, .new-cell {
+  --card-h: var(--card-px, 20px);
+  border-radius: min(var(--r-xl), max(2px, calc(var(--card-h) * var(--card-r-k))));
 }
+/* 卡片上不被文字选中 / 复制（2026-10-24 ⑥）：手指长按拽起卡片的那一段
+   （触摸传感器的 delay 窗口）浏览器同时会开始选字，长按十有八九变成
+   「选中了一段任务名」。dnd-kit 只在**开拖之后**清选区，窗口内不管。
+   列表行（.task-row）不在这条里 —— 那一行的文字本来就可以复制；
+   就地新建那个框也不在 —— 它是拿来打字的。 */
+.task-el--timed, .task-el--untimed, .task-pill {
+  user-select: none; -webkit-user-select: none;
+}
+/* 每种卡把自己的高度报给上面那条算式（--card-h 只是给 var() 用的中间名） */
+.task-el--untimed { --card-h: var(--row, 20px); }
 .task-el--timed:hover, .task-el--untimed:hover { box-shadow: var(--shadow-md); z-index: 4; }
 /* 正在进行的卡：只靠外发光点出来（左侧那条绿线 2026-10-19 按用户要求全去掉了） */
 .task-el--timed.live { box-shadow: 0 0 0 1px var(--primary), var(--shadow-md); }
@@ -265,9 +292,9 @@
      不会把卡压得比一行字还窄。JS 还没量到容器时退回下限（首帧不塌）。 */
   height: var(--row);
   line-height: var(--task-line-sm);
-  /* 圆角与定时卡同一条算式：自身高的 30%，夹在 3px 与 --r-lg 之间。
-     卡高同为小时单位 ⇒ 1 小时卡与未定时卡的圆角必然同值。 */
-  border-radius: clamp(3px, calc(var(--row, 20px) * 0.3), var(--r-lg));
+  /* 圆角不在这里 —— 全项目那**唯一一条**在上面的 `.task-el--timed, .task-el--untimed,
+     .task-pill` 里，卡高由 --card-h 报过去（这里 = --row）。
+     以前这条自己写了一遍 clamp(...)，同特异度后写的赢 —— 那正是踩坑 50 的形态。 */
   transition: background .14s, box-shadow .14s;
 }
 .task-el--untimed:hover { transform: none; }
@@ -374,8 +401,13 @@
 .week-head-gutter { }
 .week-head-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
 .week-head-cell {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 8px 0 6px; border: none; background: none; border-radius: var(--r-md);
+  /* 表头收小（2026-10-24 五项反馈④，桌面与窄屏**两档同步**，窄屏在 responsive.css）：
+     日期数字 16 → 13、圆圈 26 → 22、上下留白 8/6 → 5/4、两行之间 3 → 2。
+     实测表头总高 58.75 → 46（省 12.75px 给时间网格）。
+     ⚠️ 这一处只管表头自己的呼吸，不动 `.week-grid` 的 8/10 —— 那两段是给
+        小时线和数字落笔留的地方。 */
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 5px 0 4px; border: none; background: none; border-radius: var(--r-md);
   color: var(--text-2); font-size: 12px;
   transition: background .14s, color .14s;
 }
@@ -383,10 +415,10 @@
 .week-head-cell.weekend { color: var(--text-3); }
 .wh-week { font-size: var(--fs-meta); letter-spacing: .5px; }
 .wh-day {
-  font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.2;
+  font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.2;
   /* 圆圈的位置**每一天都占着**（背景透明），只有今天填色 —— 否则今天那一格
      会凭空高出几像素，同一行里别的日期看着就是没对齐（2026-10-19 踩过）。 */
-  width: 26px; height: 26px; min-width: 26px;
+  width: 22px; height: 22px; min-width: 22px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 50%; font-variant-numeric: tabular-nums;
 }
@@ -461,7 +493,7 @@
      **横向 0**（2026-10-24 三问题）：以前这里留 3px，而下面的时间列
      `.week-col` 不留 —— 同一列里未定时卡比定时卡窄 6px、右边线错开 3px，
      用户截图上「左右 margin 不一致」就是这个 3px。横向留白统一交给卡片自己
-     （--week-card-pad），两个容器一律 0，列边界才会对齐。 */
+     （--card-pad-x），两个容器一律 0，列边界才会对齐。 */
   padding: 2px 0;
   display: flex; flex-direction: column; gap: var(--un-gap); align-content: start;
   border-right: 1px solid var(--border);
@@ -472,7 +504,7 @@
      和同一列里定时卡那个小时同一个来源 ⇒ 两种卡同高、同圆角（2026-10-24 三问题）。
      下限那半不许漏边框（卡片四面都有 1px 边）：上一版漏了，四张卡实际比算的高 8px，
      第 4 张被切掉一截（用户 2026-10-22 回归实测抓到）。宽屏卡 12.5px 字。 */
-  --row: max(calc(var(--task-line) + 2px + 2 * var(--border-w)), var(--row-hour, 0px));
+  --row: max(calc(var(--task-line) + 2 * var(--card-pad-y) + 2 * var(--border-w)), var(--row-hour, 0px));
   height: calc(var(--un-visible) * var(--row)
              + (var(--un-visible) - 1) * var(--un-gap)
              + 4px);                        /* 自身 padding 的上下两个 2px */
@@ -503,11 +535,10 @@
      改成不参与收缩，内容才会真的溢出、才滚得起来。 */
   flex: 0 0 auto;
 }
-/* **周视图两种卡共用同一份左右留白**（2026-10-24 三问题）：以前定时卡吃
-   `--tl-event-pad`（7px）、未定时卡吃 `1px 0`，同一列里文字起点差 7px。
-   窄屏在 responsive.css 把 --week-card-pad 收成 `1px 0`（72px 的列，每一分都要省）。 */
-.week-col .task-el--timed,
-.wun-cell .task-el--untimed { padding: var(--week-card-pad); }
+/* 两种卡的左右留白**同源到 --card-pad-x 一条**（卡片各自的 padding 声明），
+   这里不再有第二条 padding 覆盖。以前这条是 `--week-card-pad`：桌面与
+   --tl-event-pad 同值、窄屏不同值（1px 0 vs 1px 6px），窄屏同一列里
+   未定时卡比定时卡少 6px —— 踩坑 50 的第三条就是这么来的。 */
 /* 字重对齐月视图任务名（pill-title 没写 font-weight = 400）：
    卡片基础是 550，周视图两种卡都压回 400 —— 用户 2026-10-22：
    「未定时和定时也不一致，请全部统一成月视图的字号和字重」。 */
@@ -653,7 +684,10 @@ body.is-drag-range { user-select: none; }
   font-size: var(--fs-title); line-height: 1.3; color: var(--text);
   background: var(--panel);
   border: var(--border-w) solid var(--primary);
-  border-radius: var(--r-sm); box-shadow: var(--shadow-md);
+  /* 圆角跟着卡片那一条算式走（--card-h 报 min-height 这一档）：
+     它是「将来会长在这里的那张卡」的样子，圆角不该另成一档。 */
+  --card-h: 26px;
+  box-shadow: var(--shadow-md);
   outline: none;
 }
 .new-cell::placeholder { color: var(--text-3); }
@@ -665,12 +699,22 @@ body.is-drag-range { user-select: none; }
 .task-pill {
   /* 同 .task-row：它也是 task-el 标记的成员，自己声明横向，别靠别人 */
   display: flex; flex-direction: row; align-items: center; gap: 5px;
-  /* 圆角按自身高度收（同 .task-el--timed）：宽屏月格子里 200px 宽的胶囊 7px 合适，
-     窄屏 18px 高的小条在 responsive.css 里另给 4px。
+  /* **胶囊自己的高度在这里声明**（不是由内容顶出来）：
+     一行字 + 上下 padding + 上下边框，与未定时卡的 --row 同一条公式。
+     圆角那条算式要读它（--card-h: var(--pill-h)）—— 读不到就得写死一档，
+     而写死 7px 正是用户报「月视图圆角程度不一样」的根因（②③）。
+     实测：宽屏 18 + 4×2 + 1×2 = 28，窄屏（responsive.css 换小档）16 + 1×2 + 1×2 = 20。
      底色用 --primary-soft，与日/周视图的卡片**同一套语言** —— 2026-10-19 用户报
      「月视图无论是否完成全是白的，和日周不统一」：原来是 --panel-2（≈白），
      跟 --panel-3（已完成）差得太近，两种状态都看不出来。 */
-  padding: 4px 8px; border-radius: var(--r-sm); background: var(--primary-pale);
+  --pill-line: var(--task-line);
+  --pill-pad-y: 4px;
+  --pill-h: calc(var(--pill-line) + 2 * var(--pill-pad-y) + 2 * var(--border-w));
+  --card-h: var(--pill-h);
+  height: var(--pill-h);
+  padding: var(--pill-pad-y) var(--card-pad-x);
+  line-height: var(--pill-line);
+  background: var(--primary-pale);
   border: var(--border-w) solid var(--border);
   font-size: var(--fs-title); cursor: pointer; max-width: 100%; overflow: hidden;
   transition: background .14s, box-shadow .14s, transform .14s;

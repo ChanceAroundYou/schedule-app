@@ -47,6 +47,14 @@ export function DndProvider({ children, modifiers, onDragOver, onDragMove, onDra
     <DndContext
       sensors={sensors}
       modifiers={modifiers}
+      /* **关掉 dnd-kit 自带的 AutoScroll**（2026-10-24 五项反馈⑤）。
+         它默认开着：被拖的方块进入某个可滚容器边缘的阈值区，库就自己去
+         scrollBy 那个容器 —— 未定时区恒 3.2 行高、周视图那一格更矮，
+         卡片一挪就在阈值区里 ⇒ 「拖卡片的同时整个区域在滑」。
+         用户的判据是「长按把卡片拽起来之后只拖卡片」，所以这里一律不代滚。
+         键盘传感器本来就是 autoScrollEnabled = false，关掉后三条路一致。
+         代价：拖到看不见的地方要先自己滚再拖 —— 排序都在一屏内，换得。 */
+      autoScroll={false}
       onDragStart={handleDragStart}
       onDragOver={onDragOver}
       onDragMove={onDragMove}

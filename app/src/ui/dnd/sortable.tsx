@@ -85,6 +85,10 @@ export function SortableZone({ items, onDragEnd, renderGhost, children }: {
   return (
     <DndContext
       sensors={sensors}
+      /* 与 provider.tsx 那条同一个理由（2026-10-24 五项反馈⑤）：
+         库自带的 AutoScroll 会在被拖方块靠近容器边缘时代为滚动，
+         列表排序拖动时表现为「卡片在拖、整页在滑」。一律关掉。 */
+      autoScroll={false}
       onDragStart={(e) => setActiveId(String(e.active.id))}
       onDragEnd={(e) => { setActiveId(null); onDragEnd(e); }}
       onDragCancel={() => setActiveId(null)}

@@ -194,7 +194,10 @@ body.sheet-open .tab:active { background: none; }
   .check-btn { width: 22px; height: 22px; flex: 0 0 22px; }
   .check-btn.on::after { width: 5px; height: 9px; }
   .row-title { font-size: 14.5px; }
-  .task-pill { padding: 5px 7px; font-size: var(--task-text); }
+  /* `.task-pill` 这条窄屏覆盖**已删**（2026-10-24）：TaskPill 只在月视图
+     `.cell-tasks` 里渲染，而那里还有一条特异度更高的 `.cell-tasks .task-pill`
+     —— 这条从来落不到任何元素上，留着只会让人以为胶囊的 padding 有两处可调。
+     胶囊的留白只由 calendar.css 的 --card-pad-x / --pill-pad-y 给。 */
 
   /* 快速添加：手机上藏掉「Ctrl + Enter」这种桌面提示 */
   .fast-hint { display: none; }
@@ -226,15 +229,16 @@ body.sheet-open .tab:active { background: none; }
        这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。
        上下 padding 3px → 1px（九条统一规范）：卡高必须等于 .allday-zone 的
        --row（20px），多 1px 就会露半截。 */
-    --allday-pill-pad: 1px 6px;
+    /* 窄屏卡片左右留白 7px → 2px（**三视图同一个值**，2026-10-24 五项反馈②）。
+       为什么窄屏要降：周视图一列只有 ~71px，勾选圈 18 + 间距 2 已经吃掉 20px，
+       剩下的都该给标题。为什么不再各视图分头写（以前 6 / 0 / 0）：
+       打勾圈到卡片左边界的距离实测 7 / 1 / 0，用户报「差很多」。
+       上下留白不降（--card-pad-y 仍 1px）：卡高等于 --row，多 1px 就露半截。 */
+    --card-pad-x: 2px;
     --allday-min-h: 13px;
     --tl-wrap-pad: 10px 8px 10px 48px;
     --tl-label-left: -44px;
     --tl-label-width: 38px;
-    --tl-event-pad: 1px 6px;
-    /* 窄屏周视图两种卡：左右留白几乎为 0（用户：「参考现在的月视图」= pill 的
-       1px 0），字尽可能多显示。两种卡同一个值，别分头写。 */
-    --week-card-pad: 1px 0;
     --ev-gap: 0px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
@@ -339,23 +343,23 @@ body.sheet-open .tab:active { background: none; }
     position: sticky; left: 0; z-index: 5; background: var(--panel);
   }
   .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
-  .week-head-cell { padding: 7px 2px 5px; }
-  .wh-day { font-size: 15px; width: 24px; height: 24px; min-width: 24px; }
+  /* 表头窄屏档（与桌面**同步收小**，2026-10-24 五项反馈④）：
+     日期数字 15 → 12、圆圈 24 → 20、上下留白 7/5 → 4/3。 */
+  .week-head-cell { padding: 4px 1px 3px; }
+  .wh-day { font-size: 12px; width: 20px; height: 20px; min-width: 20px; }
   /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式。
-     **不再单独给 padding** —— 窄屏 --allday-pill-pad 与 --tl-event-pad 都是
-     `1px 6px`（见上面的 :root），两种卡左右留白才会一致（2026-10-24 三问题）。 */
+     **不再单独给 padding** —— 两种卡的左右留白同源到一个 --card-pad-x（见上面的 :root）。 */
   /* 未定时格的横向留白一律 0（与 calendar.css 的 .wun-cell 同一值）：
-     横向留白只由卡片自己给（--week-card-pad），两个容器都给 0，
+     横向留白只由卡片自己给（--card-pad-x），两个容器都给 0，
      未定时行与时间列的卡片左右边界才会对上（2026-10-24 三问题）。
-     --row 的下限跟着切到**小档**（16 + 2 + 2）：宽屏那条是 18 + 2 + 2 = 22，
+     --row 的下限跟着切到**小档**（16 + 1×2 + 1×2）：宽屏那条是 18 + 1×2 + 1×2 = 22，
      窄屏字小、卡也小，下限不跟着降就会把卡顶得比同一列里的定时卡高 2px。 */
   .wun-cell {
     padding: 2px 0;
-    --row: max(calc(var(--task-line-sm) + 2px + 2 * var(--border-w)), var(--row-hour, 0px));
+    --row: max(calc(var(--task-line-sm) + 2 * var(--card-pad-y) + 2 * var(--border-w)), var(--row-hour, 0px));
   }
   /* 窄屏周视图整体切到**月视图小档规格**（2026-10-22 回归）：小档字 / 行高小档。
-     圆角不再写死 4px —— 与定时卡共用「自身高的 30%」那条算式（见 calendar.css），
-     两种卡在窄屏才会一样圆。 */
+     圆角不在这里 —— 全项目那一条算式在 calendar.css，窄屏只换 --card-h 的那一半。 */
   .wun-cell .task-el--untimed {
     font-size: var(--task-text-sm); line-height: var(--task-line-sm);
   }
@@ -410,22 +414,31 @@ body.sheet-open .tab:active { background: none; }
      均分，min-height 收回 0、放不下的裁掉 —— 见 calendar.css 的 .content-month。
      横向内边距压到 1px：360px 视口 7 列摊下来每格只有 48.8px，省 1px 是一个字
      的 1/9（2026-10-19 实测：改之前格子 47px、文字行 39px、10px 字号只放 3 个汉字）。 */
-  .month-cell { padding: 3px 1px; min-height: 62px; }
+  /* 横向内边距给卡片：360px 视口 7 列摊下来每格只有 48.8px，每一分都是字。
+     （2026-10-19 实测：改之前格子 47px、文字行 39px、10px 字号只放 3 个汉字。）
+     ⚠️ 2026-10-24 这条从 1px 收到 0：胶囊自己左右各 2px 的留白（--card-pad-x，
+     与日 / 周视图同一值）不能动，动了三种卡的打勾左侧间距又错开。
+     所以横向留白由**格子**让出来，文字净宽不变（格子 48.8 − 0 − 卡 4 − 框 2 = 42.8）。 */
+  .month-cell { padding: 3px 0; min-height: 62px; }
   .content-month .month-cell { min-height: 0; overflow: hidden; }
   /* 窄屏**不走格内滚动**（手机上是 +N 角标路线）—— 把 calendar.css 宽屏那条
      `.cell-tasks { overflow-y: auto }` 覆盖回 hidden（本文件后引入，同特异度
      压得住）。flex:1 照吃：格子剩余高度归它，内容由 monthCellCapacity 兜住。 */
   .cell-tasks { flex-direction: column; gap: 2px; overflow: hidden; }
-  /* 一行一条任务。横向每一分都要省：47px 的胶囊减掉左右各 1px 的**中性边框**
-     （`border: 1px solid var(--border)` 四面都有，不只是顶底）就是 45px，
-     9px 字号正好 5 个汉字。
-     ⚠️ 所以左右内边距必须是 0：留 1px 就变 43px，5 个字差 2px 放不下。
-     ⚠️ 绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求全去掉，
-     剩下的 1px 是四面一样的灰框，不是强调线。
-     圆角 7px → 4px：18px 高的小条用 7px 就是个药丸，用户说「月视图太圆」。 */
+  /* 一行一条任务。横向每一分都要省：格子 48.8 减掉胶囊自己左右各 2px 与
+     四面 1px 的**中性边框**（`border: 1px solid var(--border)`，不只是顶底）
+     剩 42.8px。绿线（`border-left: 3px solid var(--primary)`）2026-10-19 已按要求
+     全去掉，剩下的 1px 是四面一样的灰框，不是强调线。 */
+  /* 窄屏胶囊换**小档**：字与行高走小档，上下 padding 4px → 1px（胶囊高由
+     --pill-h 自己算：16 + 1×2 + 1×2 = 20）。
+     圆角与左右留白都不在这里 —— 全项目那一条算式和 --card-pad-x 在 calendar.css，
+     窄屏只报「这张卡有多高」。以前这里写死 4px / 1px 0，
+     于是月视图和日周视图的圆润程度、打勾左侧间距各走各的（②③）。 */
   .cell-tasks .task-pill {
-    font-size: var(--task-text-sm); padding: 1px 0; gap: 0; border-radius: 4px;
-    line-height: var(--task-line-sm);
+    font-size: var(--task-text-sm); gap: 0;
+    --pill-line: var(--task-line-sm);
+    --pill-pad-y: 1px;
+    line-height: var(--pill-line);
   }
   /* 时间放不下（45px 里 09:30 就占满），勾选圈也放不下 —— 想勾完成要点开抽屉。
      这两个都是窄屏取舍，不是漏了。 */
