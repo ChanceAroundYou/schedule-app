@@ -163,6 +163,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     const c = state.ui.cursor;
     let end = c;
     if (state.ui.view === 'week') end = D.addDays(D.weekStart(c), 6);
+    else if (state.ui.view === '3day') end = D.addDays(c, 2);
     else if (state.ui.view === 'month') {
       const d = D.parseISO(c);
       const last = D.lastDayOfMonth(d.getFullYear(), d.getMonth() + 1);

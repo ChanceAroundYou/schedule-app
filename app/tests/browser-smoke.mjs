@@ -5771,6 +5771,37 @@ try {
   ok(wkLock.minH === '0px' || wkLock.minH === 'auto',
     '列没有被「小时数 × 48px」的最小高撑着', wkLock.minH);
 
+  /* ---- 2026-10-25：周视图删「当前时间」绿线 + 切换器四档（含三日） ----
+     绿线半夜会卡在时间窗顶上的 8:00，用户点名删掉；日视图的保留。 */
+  const nowLine = await evalJs(page, `
+    return {
+      weekNow: document.querySelectorAll('.week-view .tl-now').length,
+      views: [...document.querySelectorAll('[data-view]')].map((b) => b.dataset.view),
+    };
+  `);
+  ok(nowLine.weekNow === 0, '周视图不再画「当前时间」绿线', JSON.stringify(nowLine.weekNow));
+  ok(nowLine.views.join(',') === 'day,3day,week,month',
+    '切换器四档：日 · 三 · 周 · 月', JSON.stringify(nowLine.views));
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === '3day')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view.three-day')`, '三日视图渲染出来', 8000);
+  const three = await evalJs(page, `
+    const v = document.querySelector('.week-view.three-day');
+    return {
+      cols: v.querySelectorAll('.week-head-cols .week-head-cell').length,
+      zones: v.querySelectorAll('.week-col[data-zone-id]').length,
+      unCells: v.querySelectorAll('.wun-cell').length,
+    };
+  `);
+  ok(three.cols === 3 && three.zones === 3 && three.unCells === 3,
+    '三日视图：表头 3 列、落点区 3 列、未定时 3 格（同一套机制换列数）',
+    JSON.stringify(three));
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === 'week')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view:not(.three-day)')`, '切回周视图', 8000);
+
   /* ---- 二十一之二、三件重叠的层叠（方案 C）+ 循环角标 ----
      API 直种 3 件互相重叠的定时任务（今天 9:00-11:00 交错）+ 1 件每日重复任务，
      催一次同步让它们落到周视图，然后量几何：
@@ -5925,6 +5956,30 @@ try {
   ok(!wkLockN.hourVar,
     '没有 --wk-hour-h 了（撤销 6504386 后的原状，不会再按 48px/小时撑高）',
     '变量值「' + wkLockN.hourVar + '」');
+
+  /* ---- 真窄屏 · 列宽 78px + 三日视图不横滑（2026-10-25）---- */
+  const colsN = await evalJs(page, `
+    return getComputedStyle(document.querySelector('.week-cols')).gridTemplateColumns;
+  `);
+  ok(/78px/.test(colsN), '真窄屏周视图每列至少 78px（2026-10-25 拓宽）',
+    colsN.slice(0, 60) + '…');
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === '3day')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view.three-day')`, '真窄屏：三日视图渲染出来', 8000);
+  await new Promise((r) => setTimeout(r, 300));
+  const threeN = await evalJs(page, `
+    const v = document.querySelector('.week-view.three-day');
+    const cell = document.querySelector('.three-day .week-head-cell');
+    return {
+      overX: v.scrollWidth - v.clientWidth,
+      cellW: cell ? Math.round(cell.getBoundingClientRect().width) : 0,
+    };
+  `);
+  ok(threeN.overX <= 1, '真窄屏三日视图**不需要横滑**（3 列一屏放得下）',
+    '横向溢出 ' + threeN.overX + 'px');
+  ok(threeN.cellW >= 96, '三日视图每列 ≥ 96px（比周视图 78px 宽近一半）',
+    threeN.cellW + 'px');
 
   page.close();
 } catch (e) {

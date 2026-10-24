@@ -33,7 +33,7 @@ export function useNav() {
     const ui = store.get().ui;
     const step = ui.view === 'month' ? 0 : n;
     const cursor = step
-      ? D.addDays(ui.cursor, step * (ui.view === 'week' ? 7 : 1))
+      ? D.addDays(ui.cursor, step * (ui.view === 'week' ? 7 : ui.view === '3day' ? 3 : 1))
       : D.addMonths(ui.cursor, n);
     store.setUi({ cursor });
   }, []);
