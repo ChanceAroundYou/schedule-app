@@ -5771,6 +5771,86 @@ try {
   ok(wkLock.minH === '0px' || wkLock.minH === 'auto',
     '列没有被「小时数 × 48px」的最小高撑着', wkLock.minH);
 
+  /* ---- 二十一之二、三件重叠的层叠（方案 C）+ 循环角标 ----
+     API 直种 3 件互相重叠的定时任务（今天 9:00-11:00 交错）+ 1 件每日重复任务，
+     催一次同步让它们落到周视图，然后量几何：
+     · 三件全部整宽（不再分三分之一列）、left 逐件 +5px、z 序默认最早在最上；
+     · 重复任务的角标在卡片右上角（↻、9px、absolute），标题后不再有 emoji。 */
+  console.log('\n二十一之二、三件重叠层叠 + 循环角标');
+  const now = new Date();
+  const dstr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+             + '-' + String(now.getDate()).padStart(2, '0');
+  const meNow = (await api('GET', '/me', undefined,
+    await evalJs(page, `return localStorage.getItem('schedule-app-token');`))).body;
+  const myCal = meNow.cals[0].id;
+  const mkOp = (n, extra) => ({
+    opId: 'smoke-stack-' + Date.now() + '-' + n, deviceId: 'smoke-probe', ts: Date.now(),
+    calId: myCal, entity: 'task', entityId: 'smoke-stk-' + n,
+    fields: Object.assign({ title: '层叠' + n, date: dstr, time: '09:0' + n, duration: 90 }, extra),
+  });
+  const seed = await api('POST', '/sync', { cursor: 0, ops: [
+    mkOp(1), mkOp(2), mkOp(3),
+    mkOp(4, { title: '重复样例', time: '14:00', duration: 60, repeat: { unit: 'day', n: 1 } }),
+  ] }, await evalJs(page, `return localStorage.getItem('schedule-app-token');`));
+  ok(seed.status === 200, 'API 直种 4 条任务（3 件层叠样例 + 1 件重复样例）', JSON.stringify(seed.status));
+  // 催同步拉下来（引擎出箱空也要拉：focus 会触发一次完整的推拉）
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
+  await waitFor(page, `
+    [...document.querySelectorAll('.week-col.today .task-el--timed')]
+      .filter((e) => e.textContent.includes('层叠')).length >= 3 ? 1 : null
+  `, '周视图今天列出现 3 件层叠样例', 12000);
+
+  const stk = await evalJs(page, `
+    const cards = [...document.querySelectorAll('.week-col.today .task-el--timed')]
+      .filter((e) => e.textContent.includes('层叠'))
+      .sort((a, b) => (parseFloat(a.style.top) || 0) - (parseFloat(b.style.top) || 0));
+    return cards.map((el) => {
+      const cs = getComputedStyle(el);
+      return { left: el.style.left, w: el.style.width,
+        leftPx: Math.round(el.getBoundingClientRect().left),
+        wPx: Math.round(el.getBoundingClientRect().width),
+        z: cs.zIndex, title: (el.querySelector('.ev-title') || {}).textContent || '' };
+    });
+  `);
+  /* 簇里可能混着前面用例留下的别的任务（n 不一定是 3），所以只锁本质：
+     三件**同宽**且宽度是「100% - 定值 px」的整宽层叠，而不是 33% 那种切分 */
+  ok(stk.length === 3 && stk.every((c) => c.w === stk[0].w && c.w.startsWith('calc(100% - ')),
+    '三件全部**整宽层叠**（同宽、100% 减定值缝，不再分三分之一列）',
+    JSON.stringify(stk.map((c) => c.w)));
+  ok(stk[0].left === '0px' && stk[1].left === '5px' && stk[2].left === '10px',
+    '层叠 left 逐件 +5px（便签错位可见）', JSON.stringify(stk.map((c) => c.left)));
+  ok(stk[0].z === '8' && stk[1].z === '2' && stk[2].z === '3',
+    '默认最早开始的在最上（z 8），压着的按序 1/2/3', JSON.stringify(stk.map((c) => c.z)));
+  const rights = stk.map((c) => c.leftPx + c.wPx);
+  ok(rights[2] - rights[0] >= 8 && rights[1] - rights[0] >= 3,
+    '实测右边缘逐件外移（右边露出便签边）', JSON.stringify(rights));
+
+  const flag = await evalJs(page, `
+    const card = [...document.querySelectorAll('.week-col.today .task-el--timed')]
+      .find((e) => e.textContent.includes('重复样例'));
+    if (!card) return null;
+    const f = card.querySelector('.rep-flag');
+    const cs = f ? getComputedStyle(f) : null;
+    return { has: !!f, glyph: f ? f.textContent : null, pos: cs ? cs.position : null,
+      size: cs ? cs.fontSize : null, inHead: !!card.querySelector('.ev-head .rep-flag'),
+      title: (card.querySelector('.ev-title') || {}).textContent || '' };
+  `);
+  ok(flag && flag.has && flag.glyph === '↻',
+    '重复任务的角标是中性描线符号 ↻（不再是黄铜色 emoji）', JSON.stringify(flag && flag.glyph));
+  ok(flag && flag.pos === 'absolute' && flag.size === '9px',
+    '角标绝对定位在卡片右上角、9px 档', JSON.stringify({ pos: flag.pos, size: flag.size }));
+  ok(flag && !flag.inHead && !flag.title.includes('↻'),
+    '角标不在标题行里占位（标题后不再跟图标）', flag.title);
+
+  // 清理：4 条样例全删（墓碑），别把后面的计数断言搅了
+  const del = await api('POST', '/sync', { cursor: 0, ops: [1, 2, 3, 4].map((n) => ({
+    opId: 'smoke-stack-del-' + Date.now() + '-' + n, deviceId: 'smoke-probe', ts: Date.now(),
+    calId: myCal, entity: 'task', entityId: 'smoke-stk-' + n, fields: { deleted: true },
+  })) }, await evalJs(page, `return localStorage.getItem('schedule-app-token');`));
+  ok(del.status === 200, '样例任务已清理（墓碑）', JSON.stringify(del.status));
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
+
+
   /* ---- 真·窄屏视口（390×854）----
      上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
      窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。

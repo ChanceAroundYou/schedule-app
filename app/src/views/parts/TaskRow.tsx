@@ -24,9 +24,16 @@ import { createPortal } from 'react-dom';
  *
  * 用字符不做图标文件（加东西前先想能不能复用/少造）。
  */
-export function RepeatFlag({ t }: { t: Task }) {
+export function RepeatFlag({ t, corner }: { t: Task; corner?: boolean }) {
   if (!t.repeat || t.repeat.unit === 'none') return null;
-  return <span className="rep-flag" aria-label="重复任务" title="重复任务">🔁</span>;
+  /* corner：日/周任务卡的**右上角层角标**档（绝对定位、不占文字宽度）；
+     不传 = 列表行里的内联小符号。两者同一个中性符号 ↻（见 calendar.css）。 */
+  return (
+    <span
+      className={'rep-flag' + (corner ? ' rep-flag--corner' : '')}
+      aria-label="重复任务" title="重复任务"
+    >↻</span>
+  );
 }
 
 function Meta({ items }: { items: ReactNode[] }) {

@@ -28,7 +28,7 @@ import { useDraggableEvent } from '../../ui/dndkit.tsx';
 import { useDragGhost } from '../../ui/dnd/lift.ts';
 import { createPortal } from 'react-dom';
 import { isNarrowNow } from '../../ui/hooks.ts';
-import type { LayoutEvent } from './shared.ts';
+import { useStackTop, setStackTop, type LayoutEvent } from './shared.ts';
 
 /**
  * **标题按整行裁**（2026-10-22 九条第 9 条）：卡片能给内容的高度是任意像素，
@@ -69,7 +69,7 @@ function useWholeLineClamp(
  * 有没有第二行时间由 `timeText` 决定，其余完全一致。
  */
 export function TaskCard({
-  t, cls, style, timeText, noteText, title, resizable, lockX = true,
+  t, cls, style, timeText, noteText, title, resizable, lockX = true, onClick,
 }: {
   t: Task;
   /** 模式与状态类（定时 / 未定时 / done / live）—— 由父级按数据拼 */
@@ -86,6 +86,9 @@ export function TaskCard({
   /** 横向锁死。**日视图必须锁**（同一天里只在时间轴上下挪），
       周视图不锁 —— 7 列并排时让它横着跟不上手，就等于跨天拖不动。 */
   lockX?: boolean;
+  /** 层叠（三件以上重叠）里「压在下面」的卡用它翻层：stopPropagation 拦下
+     #content 的点击分派，不让它顺手开详情。最上面的卡不传 = 点了照常开详情 */
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
 }) {
   const drag = useDraggableEvent(t.id);
   /* 未定时卡在限高可滚的区里（.allday-zone / .wun-cell）—— 拖出边界会被容器
@@ -103,10 +106,12 @@ export function TaskCard({
       <div className="ev-head">
         <CheckBtn id={t.id} on={!!t.done} sm />
         <span className="ev-title">{t.title}</span>
-        <RepeatFlag t={t} />
       </div>
       {timeText && <span className="ev-time">{timeText}</span>}
       {noteText && <span className="ev-note">{noteText}</span>}
+      {/* 循环角标挂在**卡片层**（右上角、绝对定位），不进 .ev-head ——
+          2026-10-25 用户：不要挤标题的位置 */}
+      <RepeatFlag t={t} corner />
     </>
   );
   return (
@@ -126,6 +131,7 @@ export function TaskCard({
         }}
         {...drag.attributes}
         {...drag.listeners}
+        onClick={onClick}
         data-id={t.id}
         title={title}
       >
@@ -213,6 +219,14 @@ export function TimedCard({
      缝全部让给 height/width 的 calc 尾数。 */
   const topPct = box.top;
   const hPct = Math.max(1.2, box.height);
+  /* **三件以上重叠 → 整宽层叠**（方案 C，layoutOverlap 给的 stack）。
+     几何：所有卡同宽（整宽再收掉层叠总错位），left 逐件右移 5px ——
+     右边缘对齐，左边缘露出 5px 一档的「便签边」，看得出底下压着几件。
+     纵向（top/height）分毫不动，时间映射与拖拽全不受影响。
+     z：默认最早开始的在最上（i=0）；点压着的卡把它翻到最上（见下）。 */
+  const st = e.stack;
+  const topI = useStackTop(st ? st.key : '', st ? st.n : 1);
+  const isTop = !st || st.i === topI;
   return (
     <TaskCard
       t={t}
@@ -220,12 +234,23 @@ export function TimedCard({
       style={{
         top: topPct + '%',
         height: `calc(${hPct}% - 1.5px)`,
-        left: `${e.col * w}%`,
-        width: `calc(${w}% - 1.5px)`,
+        left: st ? `${st.i * 5}px` : `${e.col * w}%`,
+        width: st
+          ? `calc(100% - ${st.n * 5 - 5 + 1.5}px)`
+          : `calc(${w}% - 1.5px)`,
+        zIndex: st ? (isTop ? 8 : 1 + st.i) : undefined,
         /* 圆角按卡高收（见 calendar.css 的 .task-el--timed）：父级给了容器实高的
            `--tl-h`，这里给百分比高度，两者相乘就是这张卡真正的像素高。 */
         '--card-h': hPct,
       } as CSSProperties}
+      onClick={st && !isTop
+        ? (ev) => {
+            /* 压在下面的卡：第一下只翻层（拦住 #content 的分派，别顺手开详情）；
+               翻到最上以后再点，才是开详情 */
+            ev.stopPropagation();
+            setStackTop(st.key, st.i);
+          }
+        : undefined}
       timeText={roomy ? (hasEnd ? timeRange(e.start, e.end - e.start) : D.minToTime(e.start)) : null}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
          同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，

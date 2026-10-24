@@ -244,6 +244,8 @@
   line-height: var(--task-line);
   --ev-title-size: var(--task-text);
   transition: background .14s, box-shadow .14s;
+  /* 右上角的循环角标（.rep-flag--corner）要拿这张卡当定位基准 */
+  position: relative;
 }
 /* 不加粗：与月视图任务名同字重（400） */
 .task-el--untimed .ev-title { font-weight: 400; }
@@ -266,7 +268,18 @@
 /* 🔁 重复任务标志（2026-10-24 用户要求）：跟在标题末尾，flex:none 保证
    标题被裁时它仍可见。字符表达、不引新颜色变量 —— emoji 自带色彩，
    opacity .75 收着点存在感。 */
-.rep-flag { flex: 0 0 auto; font-size: .78em; opacity: .75; margin-left: 3px; }
+.rep-flag {
+  flex: 0 0 auto; font-size: .78em; opacity: .75; margin-left: 3px;
+  /* 🔁 emoji 在部分机型渲染成黄铜色，和青玉色板打架（2026-10-25 用户）——
+     换成继承文字颜色的描线符号 ↻，色调永远跟着主题走 */
+  color: var(--text-3);
+}
+/* 任务卡右上角的层角标：绝对定位、不占文字宽度（2026-10-25 用户要求）。
+   几何随卡片：定时卡本身是 absolute，未定时卡补 relative。 */
+.rep-flag--corner {
+  position: absolute; top: 1px; right: 3px; margin: 0;
+  font-size: 9px; line-height: 1; opacity: .45;
+}
 .ev-time {
   font-size: var(--ev-time-size); line-height: 1.2; color: var(--text-3);
   font-variant-numeric: tabular-nums; letter-spacing: .1px;

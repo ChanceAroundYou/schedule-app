@@ -20,6 +20,13 @@ export interface Placed<T> extends Slot<T> {
   col: number;
   /** 这一簇共几列 */
   cols: number;
+  /**
+   * **三件以上重叠时的层叠标记**（2026-10-25 用户裁决的方案 C）。
+   * cols ≥ 3 时手机上每件只剩 ~24px 宽，字没法看 —— 改成整宽层叠：
+   * i = 簇内第几件（0 起，按开始时间序）、n = 共几件、key = 簇首任务的 id
+   * （全局唯一，翻层的「谁在最上」状态用它做键）。cols < 3 时为 undefined，
+   * 照旧并排分宽。 */
+  stack?: { i: number; n: number; key: string };
 }
 
 /**
@@ -28,8 +35,20 @@ export interface Placed<T> extends Slot<T> {
  * 先按「重叠簇」切分：和当前簇最后一个任务有交集就并入，否则另起一组。
  * 组内再贪心分列：找最靠左且已空闲的那一列。
  */
-export function layoutOverlap<T>(slots: Slot<T>[]): Placed<T>[] {
-  const events: Placed<T>[] = slots
+/** 簇首对象 → 稳定短键（层叠翻层状态用）。对象身份不变就拿同一个号；
+ *  原始值（测试里的字符串）没有身份，直接拿内容当键 */
+const clusterKeys = new WeakMap<object, string>();
+let clusterSeq = 0;
+function clusterKeyOf(item: unknown): string {
+  if (item !== null && typeof item === 'object') {
+    let k = clusterKeys.get(item);
+    if (!k) { k = String(++clusterSeq); clusterKeys.set(item, k); }
+    return k;
+  }
+  return String(item);
+}
+
+export function layoutOverlap<T>(slots: Slot<T>[]): Placed<T>[] {  const events: Placed<T>[] = slots
     .slice()
     .sort((a, b) => a.start - b.start || a.end - b.end)
     .map((s) => ({ ...s, col: 0, cols: 1 }));
@@ -65,7 +84,19 @@ export function layoutOverlap<T>(slots: Slot<T>[]): Placed<T>[] {
       }
     }
     const cols = Math.max(1, colEnds.length);
-    for (const e of cl.items) e.cols = cols;
+    if (cols >= 3) {
+      /* **三件起层叠**（方案 C）：不再把宽度切成三分之一。每件 col=0/cols=1
+         （整宽），横向错位与上下关系由渲染层按 stack.i 画 —— 纵向时间映射
+         分毫不动。key 用簇首任务对象的身份（WeakMap 发号，跨天不撞）；
+         任务对象是不可变数据，没被编辑的那件身份稳定，翻层状态存得住。 */
+      const key = 'stk:' + clusterKeyOf(cl.items[0].item as object);
+      cl.items.forEach((e, i) => {
+        e.col = 0; e.cols = 1;
+        e.stack = { i, n: cl.items.length, key };
+      });
+    } else {
+      for (const e of cl.items) e.cols = cols;
+    }
   }
 
   return events;
