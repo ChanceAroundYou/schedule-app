@@ -43,7 +43,7 @@ export function useElementHeight<T extends HTMLElement>(
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const apply = () => setH(Math.round(el.getBoundingClientRect().height));
+    const apply = () => setH(el.getBoundingClientRect().height);
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);

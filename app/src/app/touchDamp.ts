@@ -14,10 +14,15 @@
  * 2. **不改滚动本身**：不 preventDefault、不接管 scrollTop，原生滚动和惯性
  *    照常。我们只写一个 CSS 变量 `--pull`，由样式把内容挪开那一点。
  * 3. **位移挂在内容上，不挂在容器上**：容器有边框和底色，挪容器等于挪格子。
+ * 4. **正在拖卡片时不参与**（2026-10-24 用户报「拖未定时任务时整个未定时区又滑动」）：
+ *    dnd-kit 已经接管这段触摸并 preventDefault；这里如果还写 `--pull`，就会把
+ *    整格内容一起拽走，看起来像区域替卡片滑。
  *
  * 监听装在 `#content` 上一个（和点击一样走委托），不往视图里塞回调 ——
  * 视图仍然是纯展示。
  */
+
+import { isDragging } from '../ui/dragState.ts';
 
 /** 橡皮筋（拉到边界的阻尼）只给这两处 —— 改选择器记得同步 styles/calendar.css 的 `> *` 规则 */
 const DAMP_TARGETS = '.allday-zone, .wun-cell';
@@ -55,7 +60,18 @@ export function installTouchDamp(root: HTMLElement): () => void {
     }, 400);
   };
 
+  /** 开拖之后这一区归 dnd-kit 管（它对每个 touchmove 都 preventDefault）。
+   *  我们再写 `--pull` 就是替整格内容搬家 —— 正是「拖卡片时整个区域跟着滑」。
+   *  已经拉着的那一段当场归零（摘 `data-pull` → 过渡接管 → 弹回去）。 */
+  const dropIfDragging = () => {
+    if (!isDragging()) return true;
+    cancelAnimationFrame(raf);
+    if (el) { reset(el); el = null; }
+    return false;
+  };
+
   const onStart = (ev: TouchEvent) => {
+    if (!dropIfDragging()) return;
     if (ev.touches.length !== 1) { if (el) { reset(el); el = null; } return; }
     const t = ev.target as Element | null;
     const hit = t && typeof t.closest === 'function'
@@ -69,6 +85,7 @@ export function installTouchDamp(root: HTMLElement): () => void {
   };
 
   const onMove = (ev: TouchEvent) => {
+    if (!dropIfDragging()) return;
     if (!el || ev.touches.length !== 1) return;
     const node = el;
     const dy = ev.touches[0].clientY - startY;

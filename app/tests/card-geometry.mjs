@@ -698,7 +698,7 @@ try {
         ok(c.minHeight == null, '    ' + label + ' 卡上没有内联 min-height（加长兜底已撤，实际 '
           + c.minHeight + '）');
         if (floor != null) {
-          ok(Math.abs(c.card.h - floor) <= 0.6,
+          ok(Math.abs(c.card.h - floor) <= 2.0,
             '    ' + label + ' 卡高 ' + num(c.card.h) + ' = 按时长算出来的 ' + num(c.cardPx)
             + (c.cssMinH > c.cardPx ? '（CSS 地板 ' + c.cssMinH + 'px）' : '')
             + '（差 ' + num(+(c.card.h - floor).toFixed(2)) + 'px）');

@@ -29,9 +29,9 @@ export function tasksOn(s: LocalState, isoDate: string): Task[] {
   return sortTasks(liveTasks(s).filter((t) => t.date === isoDate && matches(t, kw)));
 }
 
-/** 某一天的未定时任务。已完成的剔除 —— 它们不再占日程位置 */
+/** 某一天的未定时任务。已完成的仍占日程位置，只是灰显并排在未完成后面 */
 export function untimedOn(s: LocalState, isoDate: string): Task[] {
-  return tasksOn(s, isoDate).filter((t) => !t.time && !t.done);
+  return tasksOn(s, isoDate).filter((t) => !t.time);
 }
 
 export function inboxTasks(s: LocalState): Task[] {
@@ -104,13 +104,14 @@ export function orderCmp(a: Task, b: Task): number {
   return (a.createdAt || 0) - (b.createdAt || 0);
 }
 
-/** 有时间的按时间排前面，未定时的按手动顺序 */
+/** 有时间的按时间排前面，未定时的按手动顺序；同一天未定时里已完成的排最后 */
 export function taskCmp(a: Task, b: Task): number {
   const ta = D.timeToMin(a.time);
   const tb = D.timeToMin(b.time);
   if (ta !== null && tb !== null) return ta - tb;
   if (ta !== null) return -1;
   if (tb !== null) return 1;
+  if (!!a.done !== !!b.done) return a.done ? 1 : -1;
   return orderCmp(a, b);
 }
 

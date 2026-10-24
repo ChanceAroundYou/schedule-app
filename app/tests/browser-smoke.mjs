@@ -2129,6 +2129,58 @@ try {
     '周视图未定时格末尾多一整行空白，且格高是按整卡数精确算出的定值（超出自己滚）',
     `空 ${wun.blankH}px / 格高 ${wun.fixedH}（${wun.visible} 张 ${wun.cardH.toFixed(2)}px 卡算该是 ${wunWant.toFixed(2)}）`);
 
+  /* ---- 2026-10-24 未定时任务完成后不消失：灰显留在未定时区末尾 ---- */
+  const doneId = unIds[0];
+  await evalJs(page, `window.__unDoneId = ${JSON.stringify(doneId)}; return 1;`);
+  const baseCheckGap = await evalJs(page, `
+    return (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      const card = cell && cell.querySelector('.task-el[data-id="' + window.__unDoneId + '"]');
+      const check = card && card.querySelector('.check-btn');
+      if (!card || !check) return null;
+      return +(check.getBoundingClientRect().left - card.getBoundingClientRect().left).toFixed(2);
+    })();
+  `);
+  ok(baseCheckGap !== null && baseCheckGap >= 0, '完成前勾选圈左侧间距量得到', baseCheckGap);
+  const clickDone = await clickEl(page, `document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"] .task-el[data-id="' + window.__unDoneId + '"] .check-btn')`);
+  ok(clickDone !== 'missing', '周视图未定时卡上的勾选圈点得到', clickDone);
+  const doneMove = await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const cards = [...cell.querySelectorAll('.task-el--untimed')];
+      const ids = window.__unIds || [];
+      const mine = cards.filter((c) => ids.includes(c.dataset.id));
+      if (mine.length !== 3) return null;
+      const done = cards.find((c) => c.dataset.id === window.__unDoneId);
+      if (!done || !done.classList.contains('done')) return null;
+      const check = done.querySelector('.check-btn');
+      if (!check) return null;
+      const undoneIdx = cards.map((c, i) => c.classList.contains('done') ? -1 : i).filter((i) => i >= 0);
+      return {
+        n: cards.length,
+        doneIdx: cards.indexOf(done),
+        lastUndone: undoneIdx.length ? Math.max(...undoneIdx) : -1,
+        gap: +(check.getBoundingClientRect().left - done.getBoundingClientRect().left).toFixed(2),
+      };
+    })()
+  `, '勾选后未定时任务仍显示，并排到未完成后面', 8000);
+  ok(doneMove.doneIdx > doneMove.lastUndone,
+    '未定时任务完成后不消失：灰显留在未定时区末尾',
+    `done 在第 ${doneMove.doneIdx + 1} 格 · 最后未完成在第 ${doneMove.lastUndone + 1} 格`);
+  ok(Math.abs(doneMove.gap - (baseCheckGap + 2)) <= 1,
+    '完成后的勾选圈左侧多 2px，避免被卡片边挡住',
+    `完成前 ${baseCheckGap}px → 完成后 ${doneMove.gap}px`);
+  await clickEl(page, `document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"] .task-el[data-id="' + window.__unDoneId + '"] .check-btn')`);
+  await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const done = cell.querySelector('.task-el[data-id="' + window.__unDoneId + '"]');
+      return done && !done.classList.contains('done') ? 1 : null;
+    })()
+  `, '取消完成后还原为未完成任务', 8000);
+
   /* 坐标**现量**：上面刚往这格里加了 5 条又删掉，`wun.at` 是那之前算的
      （2026-10-22 就栽在这 —— 拿着旧坐标去点，点到了任务卡上）。 */
   const blankAt = await evalJs(page, `

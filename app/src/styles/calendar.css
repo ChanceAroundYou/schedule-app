@@ -157,6 +157,10 @@
    （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。
    **不滚** —— 整天 24 小时一次性摊在一屏里，滚轮在时间轴上是死的。 */
 .timeline { position: relative; height: 640px; }
+/* 日视图里：时间轴填满 .tl-wrap（flex:1），高度由 flex 算出来 ——
+   这样 .allday-zone 长高时时间轴同步缩，不会出现「未定时区把时间轴压成 0」
+   的反馈循环（2026-10-24 对齐修复）。 */
+.day-panel .tl-wrap > .timeline { height: 100%; min-height: 0; }
 .tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
 .tl-label { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: right; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
@@ -262,6 +266,8 @@
    灰底 + 灰字已经足够说明「这条做完了」，横线反而让 10px 的小字更难认。 */
 .task-el--timed.done .ev-title, .task-el--untimed.done .ev-title { color: var(--text-3); }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { color: var(--text-3); }
+/* 已完成卡上的勾选圈不再额外挪动（2026-10-24 修复：之前只在 done 时加 2px
+   margin-left，勾选瞬间圈会跳 2px）。留白统一走 --card-pad-x，不再按状态分化。 */
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
@@ -359,10 +365,13 @@
      —— 不藏、不给卡加长（加长等于把时长画长了）。
      ⚠️ 横向那一轴不许动 `--ev-title-fs`：第四轮那么干过，窄屏周视图为了时间行
      把标题也缩一档，同一屏上 11px 与 10px 并存，「未定时与定时同字号」当场破。 */
-  font-size: var(--ev-time-fs); line-height: var(--ev-time-lh); color: var(--text-3);
+  font-size: var(--ev-time-fs); line-height: var(--ev-time-lh); color: var(--text-3-soft);
   font-variant-numeric: tabular-nums; letter-spacing: var(--ev-time-ls);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 空间不够、且不必显示时间行时，把这一行藏掉（`data-notime`，见 TaskCard/useCardFit）。
+   藏掉后 `clampTitleLines` 不再给它占位（offsetHeight 0），标题拿回那一行的空间。 */
+.task-el--timed[data-notime] .ev-time { display: none; }
 /* 详细内容的摘要。**比时间行再淡一档**：那一行是「几点几分」这种硬信息，
    这一行是备注。同一张卡上两行的尺寸完全一致，只有深浅不同 —— 层级靠灰度，
    不靠字号（字号一变，相邻两张卡看着就像两版皮肤）。
@@ -392,7 +401,8 @@
      触摸区 6px 高、横条 2px，用 align-items 把条**推到卡片最边缘** ——
      bottom 把手的条贴底沿、top 把手的条贴顶沿，一眼就知道「拉这里改边」。
      透明度维持上一版的 .16。 */
-  position: absolute; left: 50%; width: 17px; transform: translateX(-50%); bottom: 0;
+  position: absolute; left: 50%; width: min(40px, 45%); min-width: 16px;
+  transform: translateX(-50%); bottom: 0;
   height: min(6px, 22%); min-height: 3px;
   cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center;
   opacity: .16; transition: opacity .12s;
@@ -401,7 +411,7 @@
 .ev-resize-top { top: 0; bottom: auto; align-items: flex-start; }
 .task-el--timed:hover .ev-resize, .task-el--untimed:hover .ev-resize { opacity: .5; }
 .ev-resize::after {
-  content: ''; width: 13px; height: 2px; border-radius: var(--r-xs);
+  content: ''; width: 76%; height: 2px; border-radius: var(--r-xs);
   background: rgb(from var(--primary) r g b / .5);
 }
 /* 拖动改时长时颜色保持原样，不加透明度，方便看清长到哪 */
@@ -630,9 +640,21 @@
 .wun-cell[data-pull] > * { translate: 0 var(--pull, 0px); }
 .allday-zone:not([data-pull]) > *,
 .wun-cell:not([data-pull]) > * { transition: translate 320ms cubic-bezier(.18, .85, .24, 1); }
-/* 拖动中不裁剪未定时区，避免卡片被截断 */
+/* 拖动中不裁剪未定时区，避免卡片被截断（卡片要能从未定时区一路拖进时间轴）。
+   ⚠️ 代价（2026-10-24 用户报「拖未定时任务时整个未定时区又滑动」）：**可滚容器一旦
+   不再是滚容器，浏览器当场把 scrollTop 归零** —— 滚 80px 的格子在切开的同一帧内容
+   往下跳 80px（切回 auto 又还原）。补回下面那条。 */
 .allday-zone:has(.task-el.dragging),
 .wun-cell:has(.task-el.dragging) { overflow: visible; }
+/* 把被浏览器抹掉的那笔滚动位移加回内容上：`--keep` = −scrollTop，开拖前由
+   ui/dnd/scrollKeep.ts 写、松手撤。排在 `[data-pull]` 那两条之后（同特异度后写的赢；
+   拖拽中本来也不该有 pull —— touchDamp 在 isDragging 时直接不参与）。 */
+.allday-zone:has(.task-el.dragging) > *,
+.wun-cell:has(.task-el.dragging) > * { translate: 0 var(--keep, 0px); }
+/* 切换那一帧不许有过渡：上面 `:not([data-pull]) > *` 的 320ms 会把 0 → −S 画成一次滑动。
+   `data-keep` 与 `--keep` 由同一次写入挂上，所以补位移和关过渡落在同一次重算里。 */
+.allday-zone[data-keep] > *,
+.wun-cell[data-keep] > * { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .allday-zone > *, .wun-cell > * { transition: none; }
 }

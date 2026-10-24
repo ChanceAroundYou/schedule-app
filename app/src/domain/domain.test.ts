@@ -446,6 +446,15 @@ test('排序：有时间的在前按时间，未定时的按手动位次', () =>
   assert.deepEqual(sortTasks(list).map((x) => x.id), ['t09', 't14', 'u1', 'u2']);
 });
 
+test('排序：同一天未定时里已完成的排最后', () => {
+  const list = [
+    makeTask({ id: 'u2', title: '未完成', date: T, order: 2 }),
+    makeTask({ id: 'd1', title: '已完成', date: T, order: 1, done: true }),
+    makeTask({ id: 'u1', title: '未定时1', date: T, order: 3 }),
+  ];
+  assert.deepEqual(sortTasks(list).map((x) => x.id), ['u2', 'u1', 'd1']);
+});
+
 test('排序：用户拖过的（ord 有值）优先，没拖过的按默认口径接在后面', () => {
   const a = makeTask({ id: 'a', title: 'a', date: T, ord: 2 });
   const b = makeTask({ id: 'b', title: 'b', date: T, ord: 0 });

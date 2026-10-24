@@ -210,11 +210,11 @@
    写死 4×8 在 9px 的圈里会把圈撑满。描边下限 1.25px，再细则在小圈上看不见。 */
 .check-btn.on::after {
   content: ''; position: absolute; left: 50%; top: 50%;
-  width: calc(var(--check-size) * .24); height: calc(var(--check-size) * .48);
+  width: calc(var(--check-size) * .36); height: calc(var(--check-size) * .44);
   border: solid #fff;
   border-width: 0 max(1.25px, calc(var(--check-size) * .115))
                max(1.25px, calc(var(--check-size) * .115)) 0;
-  transform: translate(-50%, -50%) rotate(45deg);
+  transform: translate(calc(-50% - var(--check-size) * 0.0322), calc(-50% - var(--check-size) * 0.0932 + var(--check-size) * 0.0304)) rotate(45deg);
 }
 
 /* 命中区补到 24×24（WCAG 2.5.8 的下限），**视觉尺寸不变**。
@@ -347,7 +347,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 }
 .tl-guide::before {
   /* 球心落线：9px 球 + 1.5px 虚线 → top = −(9 − 1.5) / 2 = −3.75px（与 .tl-now 同算式） */
-  content: ''; position: absolute; left: 0; top: -3.75px;
+  content: ''; position: absolute; left: -4.5px; top: -3.75px;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--primary); box-shadow: 0 0 0 3px rgb(from var(--primary) r g b / .16);
 }
@@ -435,11 +435,11 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
 /* 勾的居中规则同 .check-btn.on::after —— 必须按中心对，不能钉左上角 */
 .sel-dot.on::after {
   content: ''; position: absolute; left: 50%; top: 50%;
-  width: calc(var(--check-size) * .24); height: calc(var(--check-size) * .48);
+  width: calc(var(--check-size) * .36); height: calc(var(--check-size) * .44);
   border: solid #fff;
   border-width: 0 max(1.25px, calc(var(--check-size) * .115))
                max(1.25px, calc(var(--check-size) * .115)) 0;
-  transform: translate(-50%, -50%) rotate(45deg);
+  transform: translate(calc(-50% - var(--check-size) * 0.0322), calc(-50% - var(--check-size) * 0.0932 + var(--check-size) * 0.0304)) rotate(45deg);
 }
 .sel-dot::before {
   content: ''; position: absolute; left: 50%; top: 50%;

@@ -191,7 +191,7 @@ function relaxH(st: FitState): boolean {
  * 时间窗一改、卡片没动窗口也变了；跟着自己尺寸走才准。
  * 起点取这张卡上一次的档位（弱字典里存着），避免每次 resize 都从最松档重扫一遍。
  */
-function useCardFit(bodyRef: { current: HTMLElement | null }) {
+function useCardFit(bodyRef: { current: HTMLElement | null }, mustShowTime: boolean = false) {
   useLayoutEffect(() => {
     const body = bodyRef.current;
     const card = body ? body.parentElement : null;
@@ -203,11 +203,21 @@ function useCardFit(bodyRef: { current: HTMLElement | null }) {
       const tk = readTokens(isNarrowNow());
       const st: FitState = fitByCard.get(card) ?? { v: 0, vs: 0, h: 0, hs: 0 };
       const put = () => { writeFit(card, tk, st); clampTitleLines(body); };
+      const timeEl = body.querySelector<HTMLElement>('.ev-time');
+      /* 先把时间行显示出来（默认态），再按空间决定是否藏掉 */
+      if (timeEl) card.removeAttribute('data-notime');
       put();
-      /* 装不下就一档一档压到底。到可读下限还装不下就**认** ——
-         宁可露着「压到底还是装不下」这条读数，也不把字压成读不清，更不给卡加长。 */
+      /* 装不下就一档一档压到底 */
       while (!vFits(body) && stepV(st, tk)) put();
       while (!hFits(body) && stepH(st, tk)) put();
+      /* 压到底还装不下、且**不必**显示时间行 → 藏掉时间行，重新按「只有标题」的布局压 */
+      if (timeEl && !mustShowTime && !vFits(body)) {
+        card.setAttribute('data-notime', '');
+        Object.assign(st, { v: 0, vs: 0, h: 0, hs: 0 });
+        put();
+        while (!vFits(body) && stepV(st, tk)) put();
+        while (!hFits(body) && stepH(st, tk)) put();
+      }
       /* 压完再逐轴往回松：先试松的，**两轴都还装得下**才留，否则退回。
          缩字号是最后手段，不该常驻在本来装得下的卡上。 */
       const bothFit = () => vFits(body) && hFits(body);
@@ -232,8 +242,7 @@ function useCardFit(bodyRef: { current: HTMLElement | null }) {
  * （2026-10-22 九条第 9 条）。
  *
  * 时间行 / 详细内容行**先占位再算标题**：卡片矮的时候宁可少一行标题，
- * 时间那行也留得住（2026-10-20 用户：「有空间还是显示时间」；
- * 2026-10-24 升级成「时长超过 1 小时就必须露出来」）。
+ * 时间那行也留得住（新规则：空间够就显示；>60 分钟必须露出来）。
  * 那两行的高度**量真实布局值**，不用 `--fs-meta × 1.2` 去猜 —— 压缩阶梯改的正是
  * 那一行自己的行距，猜的值两头都对不上。
  */
@@ -278,7 +287,7 @@ export function taskCardClass(
  * 有没有第二行时间由 `timeText` 决定，其余完全一致。
  */
 export function TaskCard({
-  t, variant, live, style, timeText, noteText, title, resizable, lockX = true,
+  t, variant, live, style, timeText, noteText, title, resizable, lockX = true, mustShowTime = false,
 }: {
   t: Task;
   /** 定时 / 未定时 / 月 pill。类名拼装收进 taskCardClass，调用方不再拼字符串 */
@@ -297,11 +306,12 @@ export function TaskCard({
   /** 横向锁死。**日视图必须锁**（同一天里只在时间轴上下挪），
       周视图不锁 —— 7 列并排时让它横着跟不上手，就等于跨天拖不动。 */
   lockX?: boolean;
+  mustShowTime?: boolean;
 }) {
   const drag = useDraggableEvent(t.id);
   const bodyRef = useRef<HTMLDivElement>(null);
   /* 卡片自己知道自己多高（compact 月 pill 没有 `.ev-body`，hook 自动不做事） */
-  useCardFit(bodyRef);
+  useCardFit(bodyRef, mustShowTime);
   return (
     <div
       className={taskCardClass(t, variant, { live, dragging: drag.isDragging })}
@@ -394,6 +404,7 @@ export function TimedCard({
   /** 时间轴实测高（useTimelineMetrics/useElementHeight）。0 = 还没量到，退回旧百分比判据 */
   boxH?: number;
   lockX?: boolean;
+  mustShowTime?: boolean;
 }) {
   const t = e.item;
   /* 纵向一律走**百分比**：时间轴高度由容器决定（锁单屏），写死 px 会在
@@ -408,19 +419,16 @@ export function TimedCard({
   const pxH = boxH && boxH > 0 ? (box.height / 100) * boxH : -1;
   const roomy = pxH >= 0 ? pxH >= (narrow ? 34 : 22) : box.height >= (narrow ? 5.4 : 3.4);
   const hasEnd = t.duration != null;
-  /* 时间行**只由时长决定**（2026-10-24 第三轮，用户定）：
-     ≤ 60 分钟（含整 1 小时、含没设过时长的）→ 不显示时间；
-     > 60 分钟 → **一定要显示**，不再看卡片够不够高（`roomy` 不管它了）。
-     装不下不藏 —— 见下面那段：卡里按两轴分别往下压，卡长不加。
+  /* 时间行新规则（2026-10-24）：不再按「时长 > 60」规则性地藏掉 —— 只要空间装得下就显示；
+     时长 > 60（1:15 起）**必须**显示（装不下就压到装得下）。文案一律算好，
+     是否露面由 useCardFit 按空间 + mustShow 决定。
      ⚠️ 原先是三种画法（够高 → 显示范围 / 不够高 → 只显示开始时间 /
      太矮 → 干脆不显示）再加窄屏 CSS 一律 `display:none` —— 同一条时长在不同
      窗口下有四种样子，用户报的「周视图怎么始终没有时间」就是这么来的。
-     时长与范围仍在 `title` 气泡和抽屉里，一处不缺。
-     卡里用**紧凑写法**（`09:30–10:30`）：窄屏周视图一列只有 72px，完整写法
-     「17:00 – 18:01」要 67px、可用 54px，尾巴被省略号吃掉 13px（实测）。
-     气泡与抽屉仍是完整写法，同一个值。 */
+     卡里用**紧凑写法**（`09:30–10:30`）。气泡与抽屉仍是完整写法，同一个值。 */
   const durMin = hasEnd ? (e.end - e.start) : 60;
-  const timeText = durMin > 60 ? timeRangeCompact(e.start, e.end - e.start) : null;
+  const timeText = timeRangeCompact(e.start, e.end - e.start);
+  const mustShowTime = durMin > 60;
   /* 卡高**只由时长定**（2026-10-24 第五轮，用户定：「没有什么地方有给卡片加长的兜底」）：
      装不下由 `useCardFit` 沿两个轴分别往下压（纵向 行距 → 留白 → 标题字号；横向 字距 → 时间行字号），
      这里不再给 `minHeight`。上一轮那个加长把 61 分钟的卡顶到 28.25px（一小时只有
@@ -429,8 +437,8 @@ export function TimedCard({
   const cardPx = pxH > 0 ? pxH - CARD_SEAM : 0;
   /* 上下把手各占 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
      上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。
-     门槛：窄屏 38px / 桌面 22px；退回档 6% / 3.5%（browser-smoke 验 1h 任务有把手）。 */
-  const canResize = pxH >= 0 ? pxH >= (narrow ? 38 : 22) : box.height >= (narrow ? 6 : 3.5);
+     门槛：26px（两个 6px 把手 + 14px 可拖带），窄屏 / 桌面同一条；退回档 4.5%（browser-smoke 验 1h 任务有把手）。 */
+  const canResize = pxH >= 0 ? pxH >= 26 : box.height >= 4.5;
   /* 上下各留**固定的 1.5px**：2026-10-22 九条回归，用户点名统一成
      `height: calc(高度% - 1.5px)` 的写法 —— 以前用 0.35% 的相对缝，窗一缩
      缝就跟着缩，手机上肉眼看不见；定值缝在任何窗口下都稳定可见。
@@ -459,6 +467,7 @@ export function TimedCard({
         /* 行距 / 留白 / 字号**不在这里给**：装不下才压，压几档由 `useCardFit` 量出来定 */
       } as CSSProperties}
       timeText={timeText}
+      mustShowTime={mustShowTime}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
          同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，
          那不如不写。完整内容仍在抽屉里。 */

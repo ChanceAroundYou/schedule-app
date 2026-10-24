@@ -196,8 +196,8 @@ export function snapToHour(min: number): number {
    实际显示几行取决于格子实测高度，所以这里是纯算术，量高的活由 MonthView 做。
    这几个常数必须与 responsive.css 窄屏那段对得上（改一处要改另一处）。 */
 
-/** 窄屏一行任务文字占的高度：胶囊 20（16 行高 + 2 内边距 + 2 上下边框）+ 行间距 2 = 22 */
-export const MONTH_LINE_H = 22;
+/** 窄屏一行任务文字占的高度：胶囊 16（14 行高 + 0 内边距 + 2 上下边框）+ 行间距 2 = 18（窄屏月视图专用小档，见 responsive.css 的 `.cell-tasks .task-pill`） */
+export const MONTH_LINE_H = 18;
 /** 最后一行后面没有行间距，算最大行数时要把这 2px 还回去 */
 const MONTH_LAST_ROW_NO_GAP = 2;
 /** 日期那一行占的高度（窄屏数字圆 18 + 下边距 3 = 21；cell-load/cell-today 窄屏不显示） */
@@ -292,28 +292,29 @@ export function untimedBlanks(count: number, cols: number): number {
  * 未定时卡永远对不齐（窄屏实测 22.28 vs 20，圆角与 padding 跟着各长各的）。
  * 挂到同一个小时单位上，两张卡的高与圆角（都按自身高的 30%）自动处处一致。
  *
- * ## 小时按**整天**摊开，不跟着时间窗收窄放大
+ * ## 小时按**这一屏的时间窗**摊开（与定时卡同高）
  *
- * 这一行是**界面行**，不是时间槽：它跟屏幕高度走（容器高的 1/24），但时间窗收到
- * 08:00–11:00 时不跟着变成 206px —— 那样未定时区会撑到七八百像素，把日面板捅穿、
- * 定时卡被压扁到只剩 min-height（2026-10-24 browser-smoke 抓到：方块 12px、
- * 拖拽中卡片跑到面板外面）。默认整天窗口下，它与 1 小时定时卡**严格同高**，
- * 那正是三问题要的效果；窗收窄只是让定时卡变高，未定时行不动。
+ * 未定时行高 = 这一屏上 1 小时定时卡的高（`(60 / spanMin) × timelineH − seam`），
+ * 所以无论时间窗是整天还是 08:00–11:00，未定时卡与 1 小时卡**严格同高**。
+ * 以前按整天取大值：时间窗收窄时未定时卡只有 1/7 高、和 hour 格完全脱节
+ * （2026-10-24 用户反馈「未定时区卡片的高度没有和 1 小时对齐」）。
+ * tlH 是 `.timeline` 的固定高度（CSS 640px），不是 flex 量出来的，所以收窄时
+ * 容器高度不会跟着塌 —— 不会再出现 earlier 的「方块 12px / 拖拽出界」。
  *
  * 返回 0 = 「还没量到容器 / 窗口非法」，调用方回落到 CSS 默认的 `--row`，首帧不塌。
  * 太矮的屏幕（一小时算出来比一行字还窄）由 CSS 那条 `max()` 兜底，不在这里夹。
  */
 export const CARD_SEAM = 1.5;
 
-/** 整天那档的跨度 —— 未定时行高的换算基准（见 FULL_DAY 与上面的注释） */
-const MAX_SPAN = FULL_DAY.to - FULL_DAY.from;
-
 export function untimedRowPx(timelineH: number, spanMin: number, seam = CARD_SEAM): number {
   if (!Number.isFinite(timelineH) || timelineH <= 0) return 0;
   if (!Number.isFinite(spanMin) || spanMin < MIN_SPAN) return 0;
-  /* 取 `max(span, 整天)`：窗比整天窄时按整天算（见上面那段），窗比整天宽（不会发生，
-     夹在 0–1440）时按窗算。 */
-  const v = (60 / Math.max(spanMin, MAX_SPAN)) * timelineH - seam;
+  /* 取 spanMin 本身（不再按整天取大值）：未定时卡的高必须等于这一屏上 1 小时
+     定时卡的高（= 该屏上的一小时），时间窗收窄时两者同步放大 —— 两者同高才是
+     「未定时区卡片与 1 小时对齐」的要求。按整天取大值会让时间窗收窄时未定时卡
+     变成 1/7 高、和 hour 格完全脱节（2026-10-24 用户反馈）。
+     回落：spanMin 非法 / 容器没量到时返回 0，调用方回落到 CSS 的 --row-natural。 */
+  const v = (60 / spanMin) * timelineH - seam;
   return v > 0 ? Math.round(v * 100) / 100 : 0;
 }
 

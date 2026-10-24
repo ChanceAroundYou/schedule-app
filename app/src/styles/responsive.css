@@ -449,9 +449,9 @@ body.sheet-open .tab:active { background: none; }
      窄屏只报「这张卡有多高」。以前这里写死 4px / 1px 0，
      于是月视图和日周视图的圆润程度、打勾左侧间距各走各的（②③）。 */
   .cell-tasks .task-pill {
-    font-size: var(--task-text-sm); gap: 0;
-    --pill-line: var(--task-line-sm);
-    --pill-pad-y: 1px;
+    font-size: 10px; gap: 0;
+    --pill-line: 14px;
+    --pill-pad-y: 0px;
     line-height: var(--pill-line);
   }
   /* 窄屏勾选圈放不下（46.86 净宽里圈 + 5 个字就到边）—— 想勾完成要点开抽屉。

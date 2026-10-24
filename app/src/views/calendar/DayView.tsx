@@ -43,8 +43,8 @@ import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   const tasks = tasksOn(state, iso);
   const timed = tasks.filter((t) => t.time);
-  // 已完成的未定时任务不再占日程位置 —— 它去了「今天 › 今天已完成」
-  const allday = tasks.filter((t) => !t.time && !t.done);
+  // 已完成的未定时任务仍留在未定时区，灰显并排在未完成后面
+  const allday = tasks.filter((t) => !t.time);
 
   /* 时间窗由设置决定（默认整天）。**再按内容自动往外让一圈**（coverWindow）——
      设置在 8–20 点、却有任务排在窗外时，宁可格子矮一点也不让那条任务消失。 */
@@ -77,14 +77,22 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
   /* 刻度疏密跟周视图同一套：见 metrics.ts。
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const { hours } = useTimelineMetrics(win, tlRef);
-  /* 容器实测高度两用：给定时卡算圆角，也给未定时行高定单位（见 untimedRowPx）。
-     **未定时行高 = 这一屏上的「一小时」**（2026-10-24 三问题统一）—— 以前未定时卡
-     高由行高定（20px），定时卡高由时间槽定（1h ≈ 26.6px），两套公式让两种卡
-     的高 / 圆角 / 间距处处不一致。写进 --row-hour 后，CSS 的 `--row` 取
-     max(一行字, 这个小时)，容器高度算式跟着走。 */
-  const tlH = useElementHeight(tlRef);
-  const rowH = untimedRowPx(tlH, spanOf(win));
+  const panelH = useElementHeight(panelRef) || 752;
+  /* 未定时行高 = 这一屏上 1 小时定时卡的高；zone 高度按 visibleRows 自适应，
+     迭代收敛（panelH 稳定，不随 zone 反馈）—— 避免把时间轴压成 0。 */
+  let tlH = panelH * 0.7;
+  let rowH = 0;
+  let unVisible = 3.2;
+  for (let i = 0; i < 8; i++) {
+    rowH = untimedRowPx(tlH, spanOf(win));
+    if (rowH <= 0) { rowH = 0; break; }
+    unVisible = Math.max(1, Math.min(3.2, Math.floor(260 / rowH)));
+    const zoneH = unVisible * rowH + (unVisible - 1) * 1 + 6;
+    tlH = Math.max(120, panelH - zoneH);
+  }
+  if (rowH <= 0) rowH = 0;
   /* 窗外就不画「现在」那条线 —— 它落在窗外的位置，画出来是贴边的一条假线 */
   const nowPct = minToPct(nowMin, win);
 
@@ -108,11 +116,11 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
   return (
     <>
-      <div className="day-panel">
+      <div className="day-panel" ref={panelRef}>
         <div
           className="allday-zone" ref={alldayZone.ref}
           data-zone-id={`allday:${iso}`} data-date={iso}
-          style={rowH > 0 ? ({ '--row-hour': `${rowH}px` } as CSSProperties) : undefined}
+          style={rowH > 0 ? ({ '--row-hour': `${rowH}px`, '--un-visible': unVisible } as CSSProperties) : undefined}
         >
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
             {shown.map((t) => (

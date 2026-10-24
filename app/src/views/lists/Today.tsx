@@ -52,7 +52,7 @@ export function TodayView({ state }: { state: LocalState }) {
         scope={'day:' + today}
       />
 
-      {/* 今天已完成的收口：日程页不再显示它们，这里随时能回看、也能反悔取消 */}
+      {/* 今天已完成的收口：日程页也会灰显它们，这里集中回看、也能反悔取消 */}
       {!!doneToday.length && (
         <div className={'today-done' + (doneOpen ? ' open' : '')} id="todayDone">
           {/* 不挂 onClick：views/ 是纯展示，开关交给 App 的点击委托去写 store。
