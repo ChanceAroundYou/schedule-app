@@ -379,9 +379,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      *
      * 2026-10-25：轴以前画到「设定终点 + 1 小时」，多出来的那格没有数字，
      * 轴底就白出一整格（约 14dp）—— 用户连着三轮说「底部空太多」。
-     * 现在主体只画到终点，终点数字单独占这 6dp 贴在轴底（8sp 一行约 5.7dp）。
+     * 现在主体只画到终点，终点数字单独占这一条贴在轴底。
+     * 10dp 是量出来的：8sp 一行约 5.7dp，但 TextView 自带最小高度 + 上下留白
+     * 约 7dp，给 6dp 时数字会被父容器裁掉下半截（2026-10-25 装机实测）。
      */
-    private static final int AXIS_END_DP = 6;
+    private static final int AXIS_END_DP = 10;
 
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
     /** 未定时区最多显示的**格子数**（3 排 × 每排 2 格，2026-10-25 用户定：
