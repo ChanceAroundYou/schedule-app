@@ -44,7 +44,7 @@ import { useContentEvents } from './useContentEvents.ts';
 import { useDeniedToast } from './useDeniedToast.ts';
 import { useResizeTimeline } from './resizeTimeline.ts';
 import { useKeyboard } from './keyboard.ts';
-import { useBackup } from './backup.ts';
+import { useBackup } from './backup.tsx';
 import { contentDispatch } from './contentDispatch.tsx';
 import { installTouchDamp, attachScrollThumb } from './touchDamp.ts';
 import { initKeyboard } from './kb.ts';

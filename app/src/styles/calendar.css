@@ -248,7 +248,11 @@
   user-select: none; -webkit-user-select: none;
   /* iOS / 安卓 WebView 的长按菜单（复制 / 查词 / 分享）同样会抢走触摸流，
      `user-select: none` 单独挡不住它 —— 合并 dev 时补上（2026-10-25）。
-     范围仍只这三面：列表行的文字保持可复制（见上面那段）。 */
+     范围仍只这三面：列表行的文字保持可复制（见上面那段）。
+     ⚠️ dev 那边把这条放宽成了 `@media (pointer: coarse) .task-el`（连列表行一起禁）。
+     合并时**不采用**：列表行的标题本来就是要能复制出去的（用户 2026-10-22 明确过），
+     而列表排序走的 TouchSensor 在行上由 `body.dragging-active` 那一层兜着；
+     card-geometry 第六节钉着「task-row 的文字仍可选中」这条。 */
   -webkit-touch-callout: none;
 }
 /* 每种卡把自己的高度报给上面那条算式（--card-h 只是给 var() 用的中间名） */

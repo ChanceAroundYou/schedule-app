@@ -602,8 +602,9 @@ try {
              勾中心偏移: [+(parseFloat(cb.borderLeftWidth) + parseFloat(cs.left) + w / 2 + e - r.width / 2).toFixed(2),
                        +(parseFloat(cb.borderTopWidth) + parseFloat(cs.top) + h / 2 + f - r.height / 2).toFixed(2)] };
   `));
-  ok(Math.abs(tick18.勾中心偏移[0]) <= 0.6 && Math.abs(tick18.勾中心偏移[1]) <= 0.6,
-    '桌面 ' + tick18.圈直径 + 'px 勾选圈里，勾盒中心正落在圆心（原来偏左上 2×3px），实际 '
+  ok(Math.abs(tick18.勾中心偏移[0]) <= 1.0 && Math.abs(tick18.勾中心偏移[1]) <= 1.0,
+    '桌面 ' + tick18.圈直径 + 'px 勾选圈里，勾盒中心落在圆心（容差 1px：光学补偿是'
+    + '**故意**偏一点点，让 L 形勾的墨迹重心回到圆心），实际 '
     + JSON.stringify(tick18.勾中心偏移));
   // 改名 / 成员 / 邀请 / 退出 / 删除全在设置页了，下拉里只留勾选
   ok(await withCals(() => evalJs(page, `
@@ -1270,15 +1271,34 @@ try {
   // —— 触摸设备任务卡禁文字选择（2026-10-24）——
   // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的激活延迟竞速，
   // 拖拽就「有时灵有时不灵」（真机：周视图任务拖到明天后拖不回来）。
-  // 修复是 calendar.css 的 @media (pointer: coarse) .task-el { user-select: none }。
-  // 触摸仿真开启时 pointer: coarse 会命中（实测），所以这条在这里断得住。
+  // 修复是 calendar.css 的 `.task-el--timed / --untimed / .task-pill { user-select: none }`
+  // —— **只这三面卡片表面**；列表行（.task-row）的文字保持可复制
+  // （用户 2026-10-22 明确，AGENTS.md 与 docs/界面约定.md 都钉着这条）。
+  // 用一张离线探针卡量（不依赖当前页有没有真卡片），列表行量**真的那一行**。
   const selGate = await evalJs(page, `
-    const el = document.querySelector('[data-scope="inbox"] .task-el');
-    return { coarse: matchMedia('(pointer: coarse)').matches, sel: getComputedStyle(el).userSelect };
+    const d = document.createElement('div');
+    d.innerHTML = '<div class="task-el task-el--timed"><div class="ev-body">'
+      + '<div class="ev-text"><span class="ev-title">测</span></div></div></div>'
+      + '<div class="task-el task-el--untimed"><div class="ev-body">'
+      + '<div class="ev-text"><span class="ev-title">测</span></div></div></div>'
+      + '<div class="task-pill task-el"><span class="pill-title">测</span></div>';
+    document.body.appendChild(d);
+    const sel = [...d.children].map((el) => getComputedStyle(el).userSelect);
+    d.remove();
+    const row = document.querySelector('[data-scope="inbox"] .task-el');
+    return {
+      coarse: matchMedia('(pointer: coarse)').matches,
+      cards: sel,
+      row: row ? getComputedStyle(row).userSelect : 'no-row',
+    };
   `);
-  ok(selGate.coarse && selGate.sel === 'none',
+  ok(selGate.coarse && selGate.cards.every((s) => s === 'none'),
     '触摸设备上任务卡**禁文字选择**（长按只剩拖拽一个含义）',
-    `coarse=${selGate.coarse} · user-select=${selGate.sel}`);
+    `coarse=${selGate.coarse} · 三种卡片 user-select=${JSON.stringify(selGate.cards)}`);
+  /* 列表行不在那一档里 —— 那条文字本来就要能复制。这条断言防「顺手把
+     `pointer: coarse` 那版放宽到全部 .task-el」退回来（dev 1054723 是那么写的）。 */
+  ok(selGate.row === 'auto' || selGate.row === 'no-row',
+    '列表行的文字**仍可选中复制**（卡片那档不扩到列表行）', selGate.row);
 
   const rectOf = (text) => evalJs(page, `
     const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
@@ -2260,8 +2280,10 @@ try {
   ok(doneMove.doneIdx > doneMove.lastUndone,
     '未定时任务完成后不消失：灰显留在未定时区末尾',
     `done 在第 ${doneMove.doneIdx + 1} 格 · 最后未完成在第 ${doneMove.lastUndone + 1} 格`);
-  ok(Math.abs(doneMove.gap - (baseCheckGap + 2)) <= 1,
-    '完成后的勾选圈左侧多 2px，避免被卡片边挡住',
+  /* 勾选圈在完成前后**不挪位**（2026-10-24 修复：以前 done 时额外加 2px
+     margin-left，勾那一下圈会跳 2px）。留白统一走 `--card-pad-x`，不按状态分化。 */
+  ok(Math.abs(doneMove.gap - baseCheckGap) <= 1,
+    '完成前后勾选圈左侧间距不变（勾选瞬间圈不跳）',
     `完成前 ${baseCheckGap}px → 完成后 ${doneMove.gap}px`);
   await clickEl(page, `document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"] .task-el[data-id="' + window.__unDoneId + '"] .check-btn')`);
   await waitFor(page, `
@@ -2551,12 +2573,16 @@ try {
     host.appendChild(d);
     const t = d.querySelector('.ev-title');
     const st = getComputedStyle(t);
-    const out = { size: st.fontSize, lh: st.lineHeight, gap: getComputedStyle(d.querySelector('.ev-head')).columnGap };
+    /* 圈与标题的间距现在挂在 .ev-body 的 column-gap 上（2026-10-24 第四轮：
+       .ev-head 那一层已经拆了 —— 标题 / 时间 / 摘要同在 .ev-text 里，
+       圈是这一行 flex 的另一件，「圈到文字」的间距因此只剩这一个来源）。
+       ⚠️ 这段跑在浏览器里，注释里不能出现反引号（会提前结束模板字符串）。 */
+    const out = { size: st.fontSize, lh: st.lineHeight, gap: getComputedStyle(d.querySelector('.ev-body')).columnGap };
     d.remove();
     return out;
   `);
-  const UNT_HTML = '<div class="task-el task-el--untimed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
-  const TMD_HTML = '<div class="task-el task-el--timed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
+  const UNT_HTML = '<div class="task-el task-el--untimed"><div class="ev-body"><div class="ev-text"><span class="ev-title">测</span></div></div></div>';
+  const TMD_HTML = '<div class="task-el task-el--timed"><div class="ev-body"><div class="ev-text"><span class="ev-title">测</span></div></div></div>';
   const dayUn = await probeFont('.allday-items', UNT_HTML);
   const dayTm = await probeFont('.timeline', TMD_HTML);
   await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
@@ -4501,8 +4527,9 @@ try {
              勾中心偏移: [+(parseFloat(cb.borderLeftWidth) + parseFloat(cs.left) + w / 2 + e - r.width / 2).toFixed(2),
                        +(parseFloat(cb.borderTopWidth) + parseFloat(cs.top) + h / 2 + f - r.height / 2).toFixed(2)] };
   `);
-  ok(Math.abs(tickBox.勾中心偏移[0]) <= 0.6 && Math.abs(tickBox.勾中心偏移[1]) <= 0.6,
-    '窄屏 ' + tickBox.圈直径 + 'px 勾选圈里，勾盒中心正落在圆心（原来偏左上 2×3px），实际 '
+  ok(Math.abs(tickBox.勾中心偏移[0]) <= 1.0 && Math.abs(tickBox.勾中心偏移[1]) <= 1.0,
+    '窄屏 ' + tickBox.圈直径 + 'px 勾选圈里，勾盒中心落在圆心（容差 1px：光学补偿是'
+    + '**故意**偏一点点，让 L 形勾的墨迹重心回到圆心），实际 '
     + JSON.stringify(tickBox.勾中心偏移));
   /* 勾一个 → 面板**不收**（多选该让人连着勾），但勾选态要变。
      找**没勾**的那个勾上 —— 勾唯一那个会被「至少留一个」挡住（见 store.toggleCal）。
@@ -5975,14 +6002,14 @@ try {
     const f = card.querySelector('.rep-flag');
     const cs = f ? getComputedStyle(f) : null;
     return { has: !!f, glyph: f ? f.textContent : null, pos: cs ? cs.position : null,
-      size: cs ? cs.fontSize : null, inHead: !!card.querySelector('.ev-head .rep-flag'),
+      size: cs ? cs.fontSize : null, inText: !!card.querySelector('.ev-text .rep-flag'),
       title: (card.querySelector('.ev-title') || {}).textContent || '' };
   `);
   ok(flag && flag.has && flag.glyph === '↻',
     '重复任务的角标是中性描线符号 ↻（不再是黄铜色 emoji）', JSON.stringify(flag && flag.glyph));
   ok(flag && flag.pos === 'absolute' && flag.size === '9px',
     '角标绝对定位在卡片右上角、9px 档', JSON.stringify({ pos: flag.pos, size: flag.size }));
-  ok(flag && !flag.inHead && !flag.title.includes('↻'),
+  ok(flag && !flag.inText && !flag.title.includes('↻'),
     '角标不在标题行里占位（标题后不再跟图标）', flag.title);
 
   // 清理：4 条样例全删（墓碑），别把后面的计数断言搅了
