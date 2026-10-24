@@ -26,7 +26,7 @@ import {
   dayTimeline, minToPct, coverWindow, spanOf, untimedBlanks, untimedRowPx, windowOf,
   type DayWindow,
 } from '../../domain/layout.ts';
-import { tasksOn, untimedOn } from '../../domain/model.ts';
+import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { TimeGutter, NowLine, DragRangePreview, BlankRow } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
@@ -102,7 +102,9 @@ function WeekColumn({
  */
 function WunCell({ state, d, today, rowH }: { state: LocalState; d: string; today: string; rowH: number }) {
   const zone = useDroppableZone(`allday:${d}`);
-  const un = untimedOn(state, d);
+  /* 含已完成的（2026-10-23 用户）：勾完留在原处变灰、排在未完成后面 ——
+     以前 untimedOn 把 done 过滤掉，勾完这条就从周视图消失。 */
+  const un = openFirst(untimedOn(state, d));
   const draft = draftOn(state.ui, `allday:${d}`);
   /* 空白新建位与日视图同一算式（单列 cols=1，有卡时恒补 1 格；空天留 1 格可点区，
      日视图空区由 zone-empty 文案占位所以 blanks=0）。草稿开着少铺一格。 */

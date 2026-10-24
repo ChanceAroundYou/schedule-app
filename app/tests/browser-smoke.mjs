@@ -10,12 +10,13 @@
  *
  *   node app/tests/browser-smoke.mjs
  *
- * 退出码非 0 = 有问题。环境变量 CHROME 可以指定浏览器可执行文件。
+ * 退出码非 0 = 有问题。环境变量 CHROME 可以指定浏览器可执行文件；
+ * 不指定则按「各平台常见安装位置」自动探测。
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync, mkdtempSync, rmSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,7 +68,20 @@ const API_PORT = +(process.env.SMOKE_API_PORT || await freePort(25701));   // �
 let WEB_PORT = +(process.env.SMOKE_WEB_PORT || await freePort(5198));    // 静态 + 代理
 const CDP_PORT = +(process.env.SMOKE_CDP_PORT || await freePort(9223));
 let MODEL_PORT = +(process.env.SMOKE_MODEL_PORT || await freePort(25711));
-const CHROME = process.env.CHROME || '/opt/google/chrome/chrome';
+/* Chrome 定位：环境变量 → 各平台常见安装位置 → 原默认。原来写死 NAS 的 Linux 路径，
+   Windows 上每次都得人肉带 CHROME=（web-loop 里还另硬编码了一份 Windows 路径，
+   换个平台又反了）。2026-10-24 改成三级探测，谁跑都对号入座。 */
+const CHROME_CANDIDATES = [
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google/Chrome/Application/chrome.exe'),
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/opt/google/chrome/chrome',
+].filter(Boolean);
+const CHROME = process.env.CHROME
+  || CHROME_CANDIDATES.find((p) => existsSync(p))
+  || '/opt/google/chrome/chrome';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -194,6 +208,27 @@ async function waitFor(page, expr, what, ms = 8000) {
   throw new Error(`等不到「${what}」，最后一次求值 = ${JSON.stringify(last)}`);
 }
 
+/* 探针中断时把**页面现状**打进日志。只报「等不到 .sidebar」的话，分不清是
+   注册失败、页面空白还是后端挂了 —— 2026-10-24 为这类超时白查了好几轮，
+   就差这一眼。 */
+async function dumpPage(page, label) {
+  try {
+    const s = await evalJs(page, `
+      return {
+        url: location.href,
+        login: !!document.querySelector('form input'),
+        text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300),
+      };
+    `);
+    console.error(`  [页面现状·${label}] url=${s.url} 还在登录页=${s.login}`);
+    console.error(`  [页面文字] ${s.text}`);
+    if (s.login) {
+      console.error('  [提示] 注册没成功、页面留在登录页 —— 错在哪看上面的「页面文字」；'
+        + 'dist 若是旧构建，ensureDist 会自动重建（也可手动 cd app && npm run build）');
+    }
+  } catch (_) { /* 页面已经没了就算了，别盖掉原始错误 */ }
+}
+
 /**
  * 点页面里的一个元素。**找不到**返回 'missing'，否则返回事件序列
  * （'pointerdown:xxx → click:xxx'，放断言里，出问题一眼看得出点没点进去）。
@@ -227,8 +262,8 @@ async function clickEl(page, findExpr) {
 
 /* ---------------------------------------------------- 触屏合成 */
 
-/** 和 ui/dnd/sensors.ts 的 TOUCH_DRAG_DELAY 对齐。浏览器里是 480 */
-const TOUCH_DRAG_DELAY = 480;
+/** 和 ui/dnd/sensors.ts 的 TOUCH_DRAG_DELAY 对齐（2026-10-24 起是 250） */
+const TOUCH_DRAG_DELAY = 250;
 
 /**
  * 合成一次触摸。走 CDP 的 Input.dispatchTouchEvent —— 它派生出来的
@@ -319,10 +354,49 @@ function cleanup() {
 }
 process.on('exit', cleanup);
 
-try {
-  if (!existsSync(DIST) || !existsSync(path.join(DIST, 'index.html'))) {
-    throw new Error('dist/ 还没构建 —— 先 `npm run build`');
+/* dist 必须是**当前源码的同源版**。原来只判「有没有」——旧 dist 会让整轮探针
+   测一堆不相干的东西还查不出为什么（2026-10-24 连挂四轮，失败跑的 dist 是
+   并发会话早一个小时构建的旧版）。现在比新旧：dist 比源码旧、或者根本是
+   APK 的注基址变体（资产里带生产域名，会绕开临时后端直连生产），就自动重建。
+   git checkout / pull 会刷新源码 mtime → 偶尔误判「旧」→ 多花一次 build，
+   换「测的确实是当前代码」，值。 */
+function ensureDist() {
+  const APP_DIR = path.join(ROOT, 'app');
+  const idx = path.join(DIST, 'index.html');
+  const srcRoots = ['src', 'index.html', 'vite.config.ts', 'tailwind.config.js', 'postcss.config.js']
+    .map((p) => path.join(APP_DIR, p)).filter(existsSync);
+  let newest = 0;
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else newest = Math.max(newest, statSync(p).mtimeMs);
+    }
+  };
+  for (const r of srcRoots) {
+    if (statSync(r).isDirectory()) walk(r); else newest = Math.max(newest, statSync(r).mtimeMs);
   }
+  const assetsDir = path.join(DIST, 'assets');
+  const injected = existsSync(assetsDir) && readdirSync(assetsDir)
+    .filter((f) => f.endsWith('.js'))
+    .some((f) => readFileSync(path.join(assetsDir, f), 'utf8').includes('home.xiaokubao.space'));
+  const why = !existsSync(idx) ? '不存在'
+    : injected ? '是 APK 注基址变体（会绕开临时后端直连生产，必须重建）'
+    : newest > statSync(idx).mtimeMs ? '比源码旧' : '';
+  if (!why) return;
+  console.log(`  [dist] ${why}，自动重建（npm run build）…`);
+  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const r = existsSync(npmCli)
+    ? spawnSync(process.execPath, [npmCli, 'run', 'build'], { cwd: APP_DIR, stdio: 'inherit' })
+    : spawnSync('npm', ['run', 'build'], { cwd: APP_DIR, stdio: 'inherit', shell: process.platform === 'win32' });
+  if (r.status !== 0 || !existsSync(idx)) {
+    throw new Error('dist 重建失败 —— 手动 cd app && npm run build 看报错');
+  }
+  console.log('  [dist] 重建完成');
+}
+
+try {
+  ensureDist();
   if (!existsSync(CHROME)) throw new Error('找不到 Chrome：' + CHROME);
 
   track(spawn(process.execPath, [path.join(ROOT, 'server/server.js')], {
@@ -493,7 +567,12 @@ try {
   };
 
   console.log('\n三、进入主界面，顶栏有日程集多选');
-  await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 12000);
+  try {
+    await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 20000);
+  } catch (e) {
+    await dumpPage(page, '等侧栏超时（注册后没进主界面）');
+    throw e;
+  }
   ok(await evalJs(page, `return !!document.querySelector('[data-nav="today"]');`), '侧栏有导航项');
   // 桌面端日程集是**顶栏那个下拉多选框**（侧栏那一列已经收掉了 —— 侧栏顺序
   // 是用户自己排的，塞常驻控件进去会跟「底栏挑哪几项」抢位置）。默认日程集
@@ -1188,6 +1267,19 @@ try {
   `);
   ok((await inbox()).join('') === '甲乙丙', '三条任务按添加顺序排，实际 ' + JSON.stringify(await inbox()));
 
+  // —— 触摸设备任务卡禁文字选择（2026-10-24）——
+  // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的激活延迟竞速，
+  // 拖拽就「有时灵有时不灵」（真机：周视图任务拖到明天后拖不回来）。
+  // 修复是 calendar.css 的 @media (pointer: coarse) .task-el { user-select: none }。
+  // 触摸仿真开启时 pointer: coarse 会命中（实测），所以这条在这里断得住。
+  const selGate = await evalJs(page, `
+    const el = document.querySelector('[data-scope="inbox"] .task-el');
+    return { coarse: matchMedia('(pointer: coarse)').matches, sel: getComputedStyle(el).userSelect };
+  `);
+  ok(selGate.coarse && selGate.sel === 'none',
+    '触摸设备上任务卡**禁文字选择**（长按只剩拖拽一个含义）',
+    `coarse=${selGate.coarse} · user-select=${selGate.sel}`);
+
   const rectOf = (text) => evalJs(page, `
     const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
       .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
@@ -1199,7 +1291,7 @@ try {
   // —— 触摸拖拽排序（触屏这条路不能带着长按操作层一起改坏）——
   /* **按住不动不再弹任何东西。** 长按操作层已在 2026-10-11 整体删除
      （用户明确要求「整个长按的面板包括其功能都彻底砍掉」），所以这里只留
-     拖拽一条路：TouchSensor 的 `{delay: 480, tolerance: 8}` 到点开拖，
+     拖拽一条路：TouchSensor 的 `{delay: 250, tolerance: 8}` 到点开拖，
      松手落库。断言的不是「有没有弹层」——那个已经没有了 —— 而是排序真的
      变了、并且落进了 localStorage。 */
   const p2 = await rectOf('甲');
@@ -2358,7 +2450,188 @@ try {
     return cell.hasAttribute('data-thumb');
   `);
   ok(thumbOn, '滚动时**浮条出现**（压在卡片上的滚动指示）', 'data-thumb=on');
+  /* 浮条必须**跟着滚动一起走**（2026-10-23 用户：「小标一直停在最上面、不跟手」）。
+     它是滚动容器自己的 ::after（绝对定位），默认会跟着内容滚出可视区 ——
+     JS 里把 scrollTop 补偿进了 --thumb-y。这里量**实际视觉位置**：
+     ::after 布局在内容坐标 y=0，视觉 top = -scrollTop + translateY。 */
+  const thumbPos = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    if (!cell) return null;
+    const after = getComputedStyle(cell, '::after');
+    const m = after.transform.match(/matrix\\(([^)]+)\\)/);
+    const ty = m ? parseFloat(m[1].split(',')[5]) : 0;
+    return {
+      scrollTop: Math.round(cell.scrollTop),
+      ty: Math.round(ty),
+      visual: Math.round(-cell.scrollTop + ty),
+      ch: cell.clientHeight,
+    };
+  `);
+  ok(thumbPos && thumbPos.scrollTop > 20 && thumbPos.visual > 0 && thumbPos.visual < thumbPos.ch,
+    '浮条**跟着滚动移动**（不被推出可视区上方）', JSON.stringify(thumbPos));
   await evalJs(page, `const c = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]'); if (c) c.scrollTop = 0; return 1;`);
+
+  /* ---- 2026-10-23 用户：完成的未定时任务不该从日程表消失 ----
+     定时任务勾完是「留在原处变灰」，未定时任务以前被 untimedOn / DayView 的
+     !t.done 过滤掉、直接消失。现在统一：留下变灰 + 排在未完成后面。
+     勾选用 API 落库（确定性；勾选圈→落库那条链别的节锁过），日/周两路各验一次。 */
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const id = window.__unIds[0];
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id + 'done', deviceId: 'smoke', ts: Date.now(), entity: 'task', entityId: id, calId: me.cals[0].id, fields: { done: true } }] }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  const wkDone = await waitFor(page, `
+    (() => {
+      const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+      if (!cell) return null;
+      const cards = [...cell.querySelectorAll('.task-el--untimed')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || !mine.classList.contains('done')) return null;
+      const open = cards.find((c) => !c.classList.contains('done'));
+      return {
+        n: cards.length,
+        last: cards[cards.length - 1] === mine,
+        bgDiff: !!open && getComputedStyle(mine).backgroundColor !== getComputedStyle(open).backgroundColor,
+        titleColor: getComputedStyle(mine.querySelector('.ev-title')).color,
+      };
+    })()
+  `, '周视图：完成的未定时任务留在原地（带 done 类）', 12000);
+  ok(wkDone.n >= 8 && wkDone.last,
+    '【周视图】完成的未定时任务**不消失**，且排在未完成后面',
+    `共 ${wkDone.n} 条 · 是最后一条=${wkDone.last}`);
+  ok(wkDone.bgDiff, '【周视图】留下的已完成卡**变灰**了（底色与未完成的不同）', wkDone.titleColor);
+
+  await evalJs(page, `document.querySelector('[data-view="day"]').click(); return true;`);
+  const dayDone = await waitFor(page, `
+    (() => {
+      const cards = [...document.querySelectorAll('.allday-items .task-el')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || !mine.classList.contains('done')) return null;
+      return { n: cards.length, last: cards[cards.length - 1] === mine };
+    })()
+  `, '日视图：完成的未定时任务仍在（以前这里就消失了）', 12000);
+  ok(dayDone.n >= 8 && dayDone.last,
+    '【日视图】完成的未定时任务**不消失**，排在未完成后面',
+    `共 ${dayDone.n} 条 · 是最后一条=${dayDone.last}`);
+
+  // 取消完成 → 回到未完成组（还能再勾），条数不变
+  await evalJs(page, `
+    const token = localStorage.getItem('schedule-app-token');
+    const me = await (await fetch('api/me', { headers: { Authorization: 'Bearer ' + token } })).json();
+    const id = window.__unIds[0];
+    await fetch('api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ cursor: 1, ops: [{ opId: 'o' + id + 'undone', deviceId: 'smoke', ts: Date.now() + 1, entity: 'task', entityId: id, calId: me.cals[0].id, fields: { done: false } }] }) });
+    window.dispatchEvent(new Event('focus'));
+    return 1;
+  `);
+  const backOpen = await waitFor(page, `
+    (() => {
+      const cards = [...document.querySelectorAll('.allday-items .task-el')];
+      const mine = cards.find((c) => c.dataset.id === window.__unIds[0]);
+      if (!mine || mine.classList.contains('done')) return null;
+      return { n: cards.length };
+    })()
+  `, '取消完成后回到未完成组', 12000);
+  ok(backOpen.n >= 8, '取消完成 → 变回未完成（还能再勾），条数不变', `${backOpen.n} 条`);
+
+  /* ---- 2026-10-23 回归：日/周视图的任务文字大小必须一样 ----
+     上一轮「字号收敛」把未定时卡的基础样式切成小格 9px、只给周视图补了大格
+     覆盖 → 日视图电脑端 9px、周视图 12.5px（用户：「文字大小不一样了」）。
+     用探针卡量四种组合的 computed 字号（不依赖真实数据），电脑端必须全是
+     12.5px / 行高 18px —— 与月视图 pill 同一档。 */
+  const probeFont = (hostSel, html) => evalJs(page, `
+    const host = document.querySelector(${JSON.stringify(hostSel)});
+    if (!host) return null;
+    const d = document.createElement('div');
+    d.innerHTML = ${JSON.stringify(html)};
+    host.appendChild(d);
+    const t = d.querySelector('.ev-title');
+    const st = getComputedStyle(t);
+    const out = { size: st.fontSize, lh: st.lineHeight, gap: getComputedStyle(d.querySelector('.ev-head')).columnGap };
+    d.remove();
+    return out;
+  `);
+  const UNT_HTML = '<div class="task-el task-el--untimed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
+  const TMD_HTML = '<div class="task-el task-el--timed"><div class="ev-body"><div class="ev-head"><span class="ev-title">测</span></div></div></div>';
+  const dayUn = await probeFont('.allday-items', UNT_HTML);
+  const dayTm = await probeFont('.timeline', TMD_HTML);
+  await evalJs(page, `document.querySelector('[data-view="week"]').click(); return true;`);
+  await new Promise((r) => setTimeout(r, 500));
+  const wkUn = await probeFont('.wun-cell', UNT_HTML);
+  const wkTm = await probeFont('.week-col', TMD_HTML);
+  const fontSizes = [dayUn && dayUn.size, dayTm && dayTm.size, wkUn && wkUn.size, wkTm && wkTm.size];
+  ok(fontSizes.every((s) => s === '12.5px'),
+    '【字号统一】日/周视图 × 定时/未定时的任务文字**同一大小**（电脑端 12.5px）',
+    JSON.stringify({ 日未定时: dayUn, 日定时: dayTm, 周未定时: wkUn, 周定时: wkTm }));
+  /* 勾选圈与标题的间距（2026-10-23 用户：6px 太大，2px 就够） */
+  const headGaps = [dayUn, dayTm, wkUn, wkTm].map((x) => x && x.gap);
+  ok(headGaps.every((g) => g === '2px'),
+    '勾选圈与标题的间距是 2px（窄格子把省下的宽度留给字）', JSON.stringify(headGaps));
+
+  /* ---- 2026-10-23 用户：未定时任务「一拖就整个消失」----
+     拖拽不用浮层，被拖的是卡片自己；未定时区限高可滚（overflow:auto），
+     卡片被拖出边界就被容器裁掉，落点却是对的。现在拖起时改成 fixed +
+     原位等高占位块。这里真鼠标拖到时间轴上方，量「半路时卡片还在不在」。 */
+  const unDrag = await evalJs(page, `
+    const cell = document.querySelector('.wun-cell[data-zone-id="allday:' + window.__unDate + '"]');
+    const card = cell && cell.querySelector('.task-el--untimed');
+    if (!card) return null;
+    const r = card.getBoundingClientRect();
+    window.__dragId = card.dataset.id;
+    return { id: card.dataset.id, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+             ol: card.offsetLeft, ot: card.offsetTop };
+  `);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: unDrag.x, y: unDrag.y, button: 'left', clickCount: 1, buttons: 1,
+  });
+  for (const dy of [12, 60, 140]) {
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: unDrag.x, y: unDrag.y + dy, button: 'left', buttons: 1,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const dragMid = await evalJs(page, `
+    const ghost = document.querySelector('.drag-ghost[data-id="' + window.__dragId + '"]');
+    const orig = document.querySelector('.task-el[data-id="' + window.__dragId + '"]');
+    if (!ghost || !orig) return { ghost: !!ghost, orig: !!orig };
+    const r = ghost.getBoundingClientRect();
+    const ro = orig.getBoundingClientRect();
+    return {
+      pos: getComputedStyle(ghost).position,
+      cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2),
+      inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+      origVis: getComputedStyle(orig).visibility,
+      /* 布局位置用 offsetTop/Left —— 不受 transform 影响，量的是“占位”本身 */
+      origLeft: orig.offsetLeft, origTop: orig.offsetTop,
+    };
+  `);
+  ok(dragMid && dragMid.pos === 'fixed' && dragMid.inView,
+    '把未定时卡拖出格子时**分身仍然可见**（画在 body 层，不被容器裁掉）',
+    JSON.stringify(dragMid));
+  /* 卡片是按中心抓起来的 → 拖拽中分身中心必须 ≈ 指针位置。上一版把本体改成
+     fixed，dnd-kit 重测量给 transform 加了布局位移补偿（恒定 +24），卡片比
+     指针偏一大截（用户 2026-10-23：「点击位置和实际移动位置差一大截」）。 */
+  ok(dragMid && Math.abs(dragMid.cx - unDrag.x) <= 8 && Math.abs(dragMid.cy - (unDrag.y + 140)) <= 8,
+    '拖拽中**分身中心跟着指针走**（点击位置 = 移动位置，零偏移）',
+    `分身中心 (${dragMid.cx},${dragMid.cy}) vs 指针 (${unDrag.x},${unDrag.y + 140})`);
+  ok(dragMid && dragMid.origVis === 'hidden' && dragMid.origLeft === unDrag.ol && dragMid.origTop === unDrag.ot,
+    '本体**原地隐身**（占位不变，其余卡片不跳动）',
+    JSON.stringify(dragMid && { origLeft: dragMid.origLeft, origTop: dragMid.origTop }));
+  /* 拖回原处松手：不改任何数据 */
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x: unDrag.x, y: unDrag.y, button: 'left', buttons: 1,
+  });
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: unDrag.x, y: unDrag.y, button: 'left', buttons: 0,
+  });
+  await new Promise((r) => setTimeout(r, 400));
+
+  await new Promise((r) => setTimeout(r, 300));
+
 
   await evalJs(page, `
     const token = localStorage.getItem('schedule-app-token');
@@ -5594,6 +5867,22 @@ try {
   ok(wk.gutterBg === 'rgba(0, 0, 0, 0)', '刻度列没有自己的底色（跟日视图一样是白底），实际 ' + wk.gutterBg);
   ok(wk.unText === '', '未定时那一行的左格不写字，实际「' + wk.unText + '」');
 
+  /* 宽屏周视图锁单屏（2026-10-24 撤销 6504386 后补的护栏，守着别再退回应滚动的版本）：
+     时间窗摊满一屏、纵向永不滚；.week-cols 也没有「小时数 × 48px」的最小高。 */
+  const wkLock = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    return {
+      oy: getComputedStyle(v).overflowY,
+      over: v.scrollHeight - v.clientHeight,
+      minH: getComputedStyle(cols).minHeight,
+    };
+  `);
+  ok(wkLock.oy === 'hidden' && wkLock.over <= 2,
+    '宽屏周视图锁单屏（纵向不滚、内容无溢出）', JSON.stringify(wkLock));
+  ok(wkLock.minH === '0px' || wkLock.minH === 'auto',
+    '列没有被「小时数 × 48px」的最小高撑着', wkLock.minH);
+
   /* ---- 真·窄屏视口（390×854）----
      上面那一整节「窄屏」是**伪窄屏**：探针只在 JS 的 matchMedia 上套了 Proxy，
      窗口真的还是 1280px，所以 CSS 的 `@media (max-width: 900px)` 一条都没生效。
@@ -5641,6 +5930,33 @@ try {
   ok(Math.abs(rnOpen.fabLeft - rnClosed.left) < 1 && Math.abs(rnOpen.fabTop - rnClosed.top) < 1,
     '真窄屏下展开前后圆钮在屏幕上不动：收起 (' + rnClosed.left + ',' + rnClosed.top
     + ') 展开 (' + rnOpen.fabLeft + ',' + rnOpen.fabTop + ')');
+
+  /* ---- 真窄屏 · 周视图锁单屏（2026-10-24 撤销 6504386 后的护栏）----
+     用户 2026-10-24 明确裁决：手机端周视图恢复锁单屏 —— 整天摊在一屏里，
+     纵向不滚。6504386「每小时 48px、可滚动」已 revert，这条断言防它退回去。 */
+  await clickEl(page, `
+    [...document.querySelectorAll('.tabbar .tab')].find((b) => b.textContent.includes('日程'))
+  `);
+  await waitFor(page, `!!document.querySelector('.cal-subhead')`, '真窄屏：切到日程页', 8000);
+  await clickEl(page, `
+    [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === 'week')
+  `);
+  await waitFor(page, `!!document.querySelector('.week-view')`, '真窄屏：周视图渲染出来', 8000);
+  await new Promise((r) => setTimeout(r, 300));
+  const wkLockN = await evalJs(page, `
+    const v = document.querySelector('.week-view');
+    const cols = document.querySelector('.week-cols');
+    return {
+      oy: getComputedStyle(v).overflowY,
+      over: v.scrollHeight - v.clientHeight,
+      hourVar: getComputedStyle(cols).getPropertyValue('--wk-hour-h').trim(),
+    };
+  `);
+  ok(wkLockN.oy === 'hidden' && wkLockN.over <= 2,
+    '真窄屏周视图**锁单屏**（纵向不滚、内容无溢出）', JSON.stringify(wkLockN));
+  ok(!wkLockN.hourVar,
+    '没有 --wk-hour-h 了（撤销 6504386 后的原状，不会再按 48px/小时撑高）',
+    '变量值「' + wkLockN.hourVar + '」');
 
   page.close();
 } catch (e) {

@@ -9,6 +9,9 @@ import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
 import { CompactCard } from '../calendar/TaskCard.tsx';
+/* 🔁 重复任务标志住在独立文件里（TaskCard 也要用，留在本文件会成循环依赖） */
+import { RepeatFlag } from './RepeatFlag.tsx';
+export { RepeatFlag } from './RepeatFlag.tsx';
 
 /* ============================== 分隔点 ============================== */
 
@@ -91,7 +94,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
           进出多选时列表不会跳一下。 */}
       {sel === null ? <CheckBtn id={t.id} on={!!t.done} /> : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
-        <div className="row-title">{t.title}</div>
+        <div className="row-title">{t.title}<RepeatFlag t={t} /></div>
         {/* 详细内容的摘要预览。**只有有内容的行才多出这一行** ——
             大多数任务只有标题，不该为「可能有」先占掉一格高度。 */}
         {!bare && !!t.note && <div className="row-note">{t.note}</div>}

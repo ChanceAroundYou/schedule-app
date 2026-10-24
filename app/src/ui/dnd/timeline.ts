@@ -64,7 +64,11 @@ export function useTimelineDrag() {
        跟随器。卡片本身连续跟手（dnd-kit transform），绿线只告诉你松手后
        会落到哪个刻度。 */
     const activeId = String(event.active.id);
-    const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
+    /* **分身优先**：未定时卡拖拽时本体原地隐身（visibility），跟手的是 body 上
+       的分身（.drag-ghost，见 ui/dnd/lift.ts）—— 引导线/时长标签要跟手，
+       必须量分身的 rect。定时卡没有分身，落到原来的本体。 */
+    const card = document.querySelector<HTMLElement>(`.drag-ghost[data-id="${activeId}"]`)
+      ?? document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
     let min: number;
     if (card) {
       min = minFromY(zone, card.getBoundingClientRect().top);
@@ -106,7 +110,9 @@ export function useTimelineDrag() {
 
     /* 绿线按 15 分钟档走 */
     const activeId = String(event.active.id);
-    const card = document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
+    /* 分身优先（同 onDragOver） */
+    const card = document.querySelector<HTMLElement>(`.drag-ghost[data-id="${activeId}"]`)
+      ?? document.querySelector<HTMLElement>(`.task-el[data-id="${activeId}"]`);
     let min: number;
     if (card) {
       min = minFromY(z.el, card.getBoundingClientRect().top);

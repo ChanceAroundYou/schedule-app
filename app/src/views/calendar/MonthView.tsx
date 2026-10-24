@@ -29,18 +29,11 @@
 import { useRef } from 'react';
 import type { LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { dayLoad, tasksOn } from '../../domain/model.ts';
+import { dayLoad, tasksOn, openFirst } from '../../domain/model.ts';
 import { monthCellCapacity } from '../../domain/layout.ts';
 import { TaskPill, loadLevel } from '../parts.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
-
-/** 格子内口径：未完成在前（按时间），已完成在后 —— 只在月视图这一处用 */
-function cellOrder(list: Task[]): Task[] {
-  const open = list.filter((t) => !t.done);
-  const done = list.filter((t) => t.done);
-  return [...open, ...done];
-}
 
 /**
  * 这一格显示几条、还剩几条没显示（挂在最后一条尾巴上成 "+N"）。
@@ -136,9 +129,11 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
       </div>
       <div className="month-grid" ref={gridRef}>
         {weeks.map((row) => row.map((d) => {
-          const ts = cellOrder(tasksOn(state, d));
-          /* 月格 `data-no-draft` 根本不开草稿（clickDispatch 见之返回 null），
-             无需预留草稿行 —— 传默认值 false。 */
+          /* 未完成在前、已完成在后（openFirst，2026-10-23 起三处视图共用同一口径） */
+          const ts = openFirst(tasksOn(state, d));
+          /* 月格的 `data-no-draft` 让 clickDispatch 的 draftSeedFrom 直接返回 null ——
+             这里根本不开草稿框，所以**不需要**为草稿预留一行（dev 侧那句
+             `draftHere` 在合并时删掉，避免留一个永远为 false 的变量）。 */
           /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
              尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
              看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */

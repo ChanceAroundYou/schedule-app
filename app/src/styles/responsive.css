@@ -367,6 +367,17 @@ body.sheet-open .tab:active { background: none; }
        （18），这里不换回去，窄屏周视图的标题会比同屏的定时卡高 2px 的行距。 */
     --ev-title-lh: var(--task-line-sm);
   }
+
+  /* 分身（.drag-ghost，见 ui/dnd/lift.ts）createPortal 到 body —— 丢了
+     .allday-items / .wun-cell / .cell-tasks 这些祖先的小档字号覆盖，回落
+     .task-el 的基础大档（12.5px），拖起来字会突然变大（dev 分支 2026-10-24
+     实测报过）。窄屏可拖卡统一小档，分身照做：日视图未定时卡 / 周视图未定时卡
+     / 月视图胶囊三处分身一并覆盖。 */
+  .drag-ghost {
+    font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    --ev-title-lh: var(--task-line-sm);
+    --ev-time-fs: var(--fs-meta);
+  }
   /* **窄屏周视图也显示时间**（2026-10-24 第四轮，用户：「周视图卡片怎么始终没有时间
      显示？不是超过 1 小时的都该显示么」）。原先这里是 `.ev-time { display: none }`
      —— 理由是 72px 宽的格子放不下任务名 + 起止时间，于是手机端一律不画。

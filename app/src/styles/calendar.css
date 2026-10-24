@@ -97,8 +97,9 @@
 
 /* ================= 日视图：唯一一个堆叠上下文 =================
    **未定时区与时间轴处在同一个堆叠上下文里。**
-   平时各区自己滚（`overflow-y: auto` 照常裁剪）；拖拽中 `:has(.task-el.dragging)`
-   把所在区切到 `overflow: visible` 放行，跨区拖不被裁（见文件末尾那条 `:has` 规则）。
+   平时各区自己滚（`overflow-y: auto` 照常裁剪）；拖拽中的卡片**不是这个区画的**
+   —— 它是 `createPortal` 到 body 的分身（`ui/dnd/lift.ts`），所以跨区拖不会被裁，
+   也不需要把区切成 `overflow: visible`（那会抹掉 scrollTop）。
    原先两个区各自 `position: relative; z-index: N` + `.allday-zone` 上
    `overflow-y: clip` —— 那等于给它们各建一个堆叠上下文，于是：
      · 上拖的卡片被下面的区（更高 z-index / 更靠后）挡回来；
@@ -245,6 +246,10 @@
    就地新建那个框也不在 —— 它是拿来打字的。 */
 .task-el--timed, .task-el--untimed, .task-pill {
   user-select: none; -webkit-user-select: none;
+  /* iOS / 安卓 WebView 的长按菜单（复制 / 查词 / 分享）同样会抢走触摸流，
+     `user-select: none` 单独挡不住它 —— 合并 dev 时补上（2026-10-25）。
+     范围仍只这三面：列表行的文字保持可复制（见上面那段）。 */
+  -webkit-touch-callout: none;
 }
 /* 每种卡把自己的高度报给上面那条算式（--card-h 只是给 var() 用的中间名） */
 .task-el--untimed { --card-h: var(--row, 20px); }
@@ -358,6 +363,10 @@
   font-size: var(--ev-title-fs); font-weight: 400;
   overflow: hidden; text-overflow: clip; white-space: nowrap;
 }
+/* 🔁 重复任务标志（dev 分支引入，2026-10-25 合并）：跟在标题末尾，
+   flex:none 保证标题被裁时它仍可见。字符表达、不引新颜色变量。
+   **这是「零 emoji」的唯一例外**，由用户明确要求引入。 */
+.rep-flag { flex: 0 0 auto; font-size: .78em; opacity: .75; margin-left: 3px; }
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
      横向也要完整：卡片文案走紧凑写法（`timeRangeCompact`）先省掉两个空格和那根长破折号，
@@ -640,21 +649,15 @@
 .wun-cell[data-pull] > * { translate: 0 var(--pull, 0px); }
 .allday-zone:not([data-pull]) > *,
 .wun-cell:not([data-pull]) > * { transition: translate 320ms cubic-bezier(.18, .85, .24, 1); }
-/* 拖动中不裁剪未定时区，避免卡片被截断（卡片要能从未定时区一路拖进时间轴）。
-   ⚠️ 代价（2026-10-24 用户报「拖未定时任务时整个未定时区又滑动」）：**可滚容器一旦
-   不再是滚容器，浏览器当场把 scrollTop 归零** —— 滚 80px 的格子在切开的同一帧内容
-   往下跳 80px（切回 auto 又还原）。补回下面那条。 */
-.allday-zone:has(.task-el.dragging),
-.wun-cell:has(.task-el.dragging) { overflow: visible; }
-/* 把被浏览器抹掉的那笔滚动位移加回内容上：`--keep` = −scrollTop，开拖前由
-   ui/dnd/scrollKeep.ts 写、松手撤。排在 `[data-pull]` 那两条之后（同特异度后写的赢；
-   拖拽中本来也不该有 pull —— touchDamp 在 isDragging 时直接不参与）。 */
-.allday-zone:has(.task-el.dragging) > *,
-.wun-cell:has(.task-el.dragging) > * { translate: 0 var(--keep, 0px); }
-/* 切换那一帧不许有过渡：上面 `:not([data-pull]) > *` 的 320ms 会把 0 → −S 画成一次滑动。
-   `data-keep` 与 `--keep` 由同一次写入挂上，所以补位移和关过渡落在同一次重算里。 */
-.allday-zone[data-keep] > *,
-.wun-cell[data-keep] > * { transition: none; }
+/* **拖拽中不裁剪**（卡片要能从未定时区一路拖进时间轴、月胶囊要能拖出格子）——
+   现在改由「分身」实现：本体 `visibility: hidden` 原地不动，`createPortal` 一个
+   `.drag-ghost` 到 body（position: fixed，不受任何祖先 overflow 影响）。
+   见 `ui/dnd/lift.ts`，TaskCard / CompactCard 各渲染一份。
+   ⚠️ **不要再改回 `:has(.task-el.dragging) { overflow: visible }`**（2026-10-24 试过）：
+   可滚容器一旦不再是滚容器，浏览器当场把 `scrollTop` 归零 —— 滚 80px 的格子在同一帧
+   内容往下跳 80px，用户看到的是「整格内容替卡片滑」。当时用 `--keep` 补位移才压住，
+   代价是每张卡都要跟着容器的实时滚动量重算一遍；分身方案没有这个耦合。
+   （dev 分支 2026-10-25 合并进来，同时覆盖了月视图 `.cell-tasks` 那个我们没管的格子。） */
 @media (prefers-reduced-motion: reduce) {
   .allday-zone > *, .wun-cell > * { transition: none; }
 }

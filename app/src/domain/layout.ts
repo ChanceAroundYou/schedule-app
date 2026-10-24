@@ -292,29 +292,35 @@ export function untimedBlanks(count: number, cols: number): number {
  * 未定时卡永远对不齐（窄屏实测 22.28 vs 20，圆角与 padding 跟着各长各的）。
  * 挂到同一个小时单位上，两张卡的高与圆角（都按自身高的 30%）自动处处一致。
  *
- * ## 小时按**这一屏的时间窗**摊开（与定时卡同高）
+ * ## 小时按**整天**摊开，不跟着时间窗收窄放大
  *
- * 未定时行高 = 这一屏上 1 小时定时卡的高（`(60 / spanMin) × timelineH − seam`），
- * 所以无论时间窗是整天还是 08:00–11:00，未定时卡与 1 小时卡**严格同高**。
- * 以前按整天取大值：时间窗收窄时未定时卡只有 1/7 高、和 hour 格完全脱节
- * （2026-10-24 用户反馈「未定时区卡片的高度没有和 1 小时对齐」）。
- * tlH 是 `.timeline` 的固定高度（CSS 640px），不是 flex 量出来的，所以收窄时
- * 容器高度不会跟着塌 —— 不会再出现 earlier 的「方块 12px / 拖拽出界」。
+ * 这一行是**界面行**，不是时间槽：它跟屏幕高度走（容器高的 1/24），但时间窗收到
+ * 08:00–11:00 时不跟着变成 205px —— 那样未定时区会撑到七八百像素，把日面板捅穿、
+ * 定时卡被压扁到只剩 min-height（2026-10-24 browser-smoke 抓到：方块 12px、
+ * 拖拽中卡片跑到面板外面）。默认整天窗口下，它与 1 小时定时卡**严格同高**，
+ * 那正是三问题要的效果；窗收窄只是让定时卡变高，未定时行不动。
+ *
+ * ⚠️ **2026-10-25 撤回过一次「按这一屏的时间窗算」的改法**：理由写的是
+ * 「tlH 是固定 640px，收窄时容器不会塌」—— **那句是错的**，`.timeline` 在日视图里
+ * 是 `flex: 1` / `height: 100%`，跟着面板走。照那个公式，三小时窗下未定时卡
+ * 算出 205px，正是本段第一句记着的那次事故。`domain.test.ts` 那条
+ * 「时间窗收窄不许把未定时行撑大」当场报红，是对的。
  *
  * 返回 0 = 「还没量到容器 / 窗口非法」，调用方回落到 CSS 默认的 `--row`，首帧不塌。
  * 太矮的屏幕（一小时算出来比一行字还窄）由 CSS 那条 `max()` 兜底，不在这里夹。
  */
 export const CARD_SEAM = 1.5;
 
+/** 整天那档的跨度 —— 未定时行高的换算基准（见上面那段） */
+const MAX_SPAN = FULL_DAY.to - FULL_DAY.from;
+
 export function untimedRowPx(timelineH: number, spanMin: number, seam = CARD_SEAM): number {
   if (!Number.isFinite(timelineH) || timelineH <= 0) return 0;
   if (!Number.isFinite(spanMin) || spanMin < MIN_SPAN) return 0;
-  /* 取 spanMin 本身（不再按整天取大值）：未定时卡的高必须等于这一屏上 1 小时
-     定时卡的高（= 该屏上的一小时），时间窗收窄时两者同步放大 —— 两者同高才是
-     「未定时区卡片与 1 小时对齐」的要求。按整天取大值会让时间窗收窄时未定时卡
-     变成 1/7 高、和 hour 格完全脱节（2026-10-24 用户反馈）。
+  /* 取 `max(spanMin, 整天)`：窗比整天窄时按整天算（见上面那段），窗比整天宽
+     （不会发生，夹在 0–1440）时按窗算。
      回落：spanMin 非法 / 容器没量到时返回 0，调用方回落到 CSS 的 --row-natural。 */
-  const v = (60 / spanMin) * timelineH - seam;
+  const v = (60 / Math.max(spanMin, MAX_SPAN)) * timelineH - seam;
   return v > 0 ? Math.round(v * 100) / 100 : 0;
 }
 

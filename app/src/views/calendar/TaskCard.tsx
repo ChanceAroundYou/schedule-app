@@ -23,8 +23,11 @@ import {
   minToPct, pctRange, spanOf, timeRange, timeRangeCompact, CARD_SEAM,
   type DayWindow,
 } from '../../domain/layout.ts';
+import { createPortal } from 'react-dom';
 import { CheckBtn } from '../parts/CheckBtn.tsx';
+import { RepeatFlag } from '../parts/RepeatFlag.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
+import { useDragGhost } from '../../ui/dnd/lift.ts';
 import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
 
@@ -312,23 +315,16 @@ export function TaskCard({
   const bodyRef = useRef<HTMLDivElement>(null);
   /* 卡片自己知道自己多高（compact 月 pill 没有 `.ev-body`，hook 自动不做事） */
   useCardFit(bodyRef, mustShowTime);
-  return (
-    <div
-      className={taskCardClass(t, variant, { live, dragging: drag.isDragging })}
-      ref={drag.ref}
-      style={{
-        ...drag.style,
-        /* 只取位移，纵向跟手；横向不锁的时候才有自由 */
-        transform: lockX
-          ? `translate3d(0px, ${drag.y}px, 0px)`
-          : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
-        ...style,
-      }}
-      {...drag.attributes}
-      {...drag.listeners}
-      data-id={t.id}
-      title={title}
-    >
+  /* **未定时卡要分身**（2026-10-25 合并 dev 的「分身」方案）：它住在限高可滚的
+     `.allday-zone` / `.wun-cell` 里，拖出边界会被容器裁掉（用户 2026-10-23：
+     「未定时的一拖就整个消失」）。拖起时把分身画到 body 上，本体原地隐身 ——
+     占位不变，其余卡片不跳，dnd 的位移保持纯指针位移。见 ui/dnd/lift.ts。
+     定时卡住在不裁的时间轴里，不需要。 */
+  const isUntimed = variant === 'untimed';
+  const ghost = useDragGhost(isUntimed && drag.isDragging);
+  const cls = taskCardClass(t, variant, { live, dragging: drag.isDragging });
+  const inner = (
+    <>
       {/* 内容外面**必须再包一层**：卡片自己不能 overflow:hidden（那会切断
           跨边界的拖拽），但内容（标题换行 + 时间行）在矮卡里会顶出卡片底部 ——
           见 2026-10-20 窄屏周视图。裁剪交给 `.ev-body`，拖拽不受影响。 */}
@@ -340,19 +336,64 @@ export function TaskCard({
           {noteText && <span className="ev-note">{noteText}</span>}
         </div>
       </div>
-      {resizable && (
-        <>
-          <span
-            className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
-            tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
-          />
-          <span
-            className="ev-resize" data-act="resize" data-id={t.id}
-            tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
-          />
-        </>
+    </>
+  );
+  return (
+    <>
+      <div
+        className={cls}
+        ref={(el) => { ghost.setNodeRef(el); drag.ref(el); }}
+        style={{
+          ...drag.style,
+          /* 只取位移，纵向跟手；横向不锁的时候才有自由 */
+          transform: lockX
+            ? `translate3d(0px, ${drag.y}px, 0px)`
+            : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
+          ...style,
+          /* 拖拽中本体**原地隐身**：占位不变（其余卡片不跳），分身替它出场 */
+          ...(isUntimed && drag.isDragging ? { visibility: 'hidden' as const } : null),
+        }}
+        {...drag.attributes}
+        {...drag.listeners}
+        data-id={t.id}
+        title={title}
+      >
+        {inner}
+        {resizable && (
+          <>
+            <span
+              className="ev-resize ev-resize-top" data-act="resize-top" data-id={t.id}
+              tabIndex={0} aria-label={'调整「' + t.title + '」的开始时间，方向键上下微调'}
+            />
+            <span
+              className="ev-resize" data-act="resize" data-id={t.id}
+              tabIndex={0} aria-label={'调整「' + t.title + '」的结束时间，方向键上下微调'}
+            />
+          </>
+        )}
+      </div>
+      {/* 分身：createPortal 到 body —— 不在 `.allday-zone` / `.wun-cell` 里，
+          不会被它们的 overflow 裁掉；pointer-events:none 不挡落点判定。
+          timeline.ts 的引导线优先读分身的 rect（本体原地不动，量它会量到旧位置）。 */}
+      {isUntimed && drag.isDragging && ghost.ghostRect && createPortal(
+        <div
+          className={cls + ' drag-ghost'}
+          style={{
+            position: 'fixed', left: ghost.ghostRect.left, top: ghost.ghostRect.top,
+            width: ghost.ghostRect.width, height: ghost.ghostRect.height, margin: 0,
+            zIndex: 90, pointerEvents: 'none',
+            transform: lockX
+              ? `translate3d(0px, ${drag.y}px, 0px)`
+              : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
+          }}
+          data-id={t.id}
+          aria-hidden="true"
+        >
+          {inner}
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
@@ -508,18 +549,15 @@ export function CompactCard({ t, moreSuffix, jumpDay }: {
   /* 月视图格子专用：拖到别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
      落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。 */
   const drag = useDraggableEvent(t.id);
-  return (
-    <div
-      className={taskCardClass(t, 'compact', { dragging: drag.isDragging })}
-      ref={drag.ref}
-      style={drag.style}
-      {...drag.attributes}
-      {...drag.listeners}
-      data-id={t.id}
-      data-untimed={t.time ? undefined : '1'}
-      data-jump={jumpDay}
-      title={t.time ? t.title + '　' + t.time : t.title}
-    >
+  /* 月视图格子是限高可滚的（`.cell-tasks` 有 overflow-y: auto）—— 胶囊拖出格子
+     会被容器裁掉。拖起时把**分身**画到 body 上（不受任何祖先裁剪），本体原地
+     隐身（占位不变、其余胶囊不跳动，dnd 的位移保持纯指针位移）。
+     同未定时卡，见 ui/dnd/lift.ts（dev 分支的「分身」方案，2026-10-25 合并引入）。 */
+  const ghost = useDragGhost(drag.isDragging);
+  const cls = taskCardClass(t, 'compact', { dragging: drag.isDragging });
+  /* 本体与分身共用的内容 —— 分身也必须画同一份，否则拖起来会变样 */
+  const inner = (
+    <>
       {/* 格子里唯一一个勾选入口。**必须是 <button>**（见 CheckBtn 头注释）；
           窄屏由 CSS 藏掉（格子净宽 46.86px，圈 + 5 个字就到边），想勾完成要点开抽屉。
           ⚠️ 这条与圈径无关 —— 圈跟着字号已经缩到 9.4px 了，窄屏**照样不画**
@@ -529,6 +567,7 @@ export function CompactCard({ t, moreSuffix, jumpDay }: {
           月视图永远不显示）：格子里那一行只有勾选圈 + 任务名（窄屏连圈都藏）。
           时间没丢 —— 挂在 `title` 气泡上，点开还是全的。 */}
       <span className="pill-title">{t.title}</span>
+      <RepeatFlag t={t} />
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
           +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
@@ -536,7 +575,45 @@ export function CompactCard({ t, moreSuffix, jumpDay }: {
       {moreSuffix ? (
         <span className="pill-more" title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
       ) : null}
-    </div>
+    </>
+  );
+  return (
+    <>
+      <div
+        className={cls}
+        ref={(el) => { ghost.setNodeRef(el); drag.ref(el); }}
+        style={{
+          ...drag.style,
+          /* 拖拽中本体**原地隐身**：占位不变（其余胶囊不跳），分身替它出场 */
+          ...(drag.isDragging ? { visibility: 'hidden' as const } : null),
+        }}
+        {...drag.attributes}
+        {...drag.listeners}
+        data-id={t.id}
+        data-untimed={t.time ? undefined : '1'}
+        data-jump={jumpDay}
+        title={t.time ? t.title + '　' + t.time : t.title}
+      >
+        {inner}
+      </div>
+      {/* 分身：createPortal 到 body —— 不在 `.cell-tasks` 里，不会被它的
+          overflow 裁掉；pointer-events:none 不挡落点判定。 */}
+      {drag.isDragging && ghost.ghostRect && createPortal(
+        <div
+          className={cls + ' dragging drag-ghost'}
+          style={{
+            position: 'fixed', left: ghost.ghostRect.left, top: ghost.ghostRect.top,
+            width: ghost.ghostRect.width, height: ghost.ghostRect.height, margin: 0,
+            zIndex: 90, pointerEvents: 'none',
+          }}
+          data-id={t.id}
+          aria-hidden="true"
+        >
+          {inner}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

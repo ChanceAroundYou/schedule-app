@@ -8,7 +8,6 @@ import {
   type DragStartEvent, type DragOverEvent, type DragMoveEvent, type DragEndEvent, type Modifier,
 } from '@dnd-kit/core';
 import { setDragging } from '../dragState.ts';
-import { keepZoneScroll, releaseZoneScroll } from './scrollKeep.ts';
 import { DragCtx } from './context.ts';
 import { useDragSensors } from './sensors.ts';
 
@@ -28,24 +27,17 @@ export function DndProvider({ children, modifiers, onDragOver, onDragMove, onDra
   const sensors = useDragSensors();
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    /* **先补滚动位移，再让 `.dragging` 落地**（见 scrollKeep.ts）：卡片一被标记，
-       CSS 那条 `:has(.task-el.dragging)` 就把未定时区切成 overflow: visible，
-       浏览器当场把它的 scrollTop 归零 —— 整格内容往下跳，看着就是「区域替卡片滑」。
-       状态更新在这条之后才 flush，所以赶得上。 */
-    keepZoneScroll(String(event.active.id));
     setActiveId(String(event.active.id));
     setDragging(true);
   }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
-    releaseZoneScroll();
     setActiveId(null);
     setDragging(false);
     onDragEnd?.(event);
   }, [onDragEnd]);
 
   const handleDragCancel = useCallback(() => {
-    releaseZoneScroll();
     setActiveId(null);
     setDragging(false);
     onDragCancel?.();

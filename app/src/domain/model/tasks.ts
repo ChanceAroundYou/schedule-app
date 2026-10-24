@@ -29,9 +29,31 @@ export function tasksOn(s: LocalState, isoDate: string): Task[] {
   return sortTasks(liveTasks(s).filter((t) => t.date === isoDate && matches(t, kw)));
 }
 
-/** 某一天的未定时任务。已完成的仍占日程位置，只是灰显并排在未完成后面 */
+/**
+ * 某一天的未定时任务（**含已完成的**）。
+ *
+ * 2026-10-23 用户：完成的未定时任务不再从日程表消失 —— 和定时任务统一，
+ * 留在原处变灰。以前这里写着 `!t.done`（勾完就没了），日视图那边还有一份
+ * 同样的行内过滤。排序由调用方用 `openFirst` 把已完成排到未完成后面
+ * （和月视图格子同一口径）。
+ *
+ * 注意：待办箱不走这里 —— 它是 `!t.date && !t.done`（没日期没时间才算待办），
+ * 勾完离开箱子是另一套语义，用户 2026-10-23 明确区分过。
+ */
 export function untimedOn(s: LocalState, isoDate: string): Task[] {
   return tasksOn(s, isoDate).filter((t) => !t.time);
+}
+
+/**
+ * 「未完成在前、已完成在后」的分组（组内保持传入顺序）。
+ *
+ * 2026-10-23 从月视图的 cellOrder 提取 —— 月视图格子、日/周视图未定时区
+ * 三处共用同一个口径；用户明确要求完成的排在未完成的后面。
+ */
+export function openFirst(list: Task[]): Task[] {
+  const open = list.filter((t) => !t.done);
+  const done = list.filter((t) => t.done);
+  return [...open, ...done];
 }
 
 export function inboxTasks(s: LocalState): Task[] {

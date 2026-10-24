@@ -70,6 +70,26 @@ function vars(src, sel) {
 const SURFACES = ['--bg', '--panel', '--panel-2', '--panel-3', '--sidebar'];
 const TIERS = ['--text', '--text-2', '--text-3'];
 
+/**
+ * **卡片时间行专用灰**（2026-10-25）。
+ *
+ * `.ev-time` 用的是 `--text-3-soft`（比 `--text-3` 再灰一档，用户：「时间字体
+ * 灰一点」），它**只落在卡片自己的底色上**，所以不能塞进上面的 TIERS ——
+ * 那一组是「每种底色都要过」的正文三档，混进来会要求它在 --bg / --sidebar
+ * 上也达标，而那些地方根本没有卡片。
+ *
+ * 卡片的时间行落在**两种**底色上，别的一个都没有：
+ *   · 常态卡 / 月胶囊 / 拖拽分身 —— `--primary-pale`（每个色板一个值，六个都要查）
+ *   · 已完成卡 —— `--panel-3`
+ *
+ * ⚠️ **`--primary-soft` 不在这里**，虽然它也是强调色：那上面出现的是 `.drag-range`
+ * （拖拽拉段的预览框），它不挂 `.task-el`、只渲染一个时刻文字（吃 `--text-2`），
+ * 根本没有 `.ev-time`。加进来会造一条**假失败** —— 暗色的 `#948f87 / #1a2e27`
+ * 只有 4.47，看着像真问题（2026-10-25 就这么误报过一次）。
+ * 判据是「这个底色上真的会画这一行字吗」，不是「这个颜色看着像卡片底色」。
+ */
+const CARD_SURFACES = ['--primary-pale', '--panel-3'];
+
 /** 语义色：每个都列出它**真实**会落上去的底色。多写一个不亏，少写一个就是漏网。 */
 const SEMANTIC = [
   { fg: '--primary', bgs: ['--panel', '--panel-3', '--bg', '--primary-soft', '--primary-pale'], onIt: true },
@@ -211,6 +231,15 @@ export function audit(src) {
         if (v[t] && v[s]) rows.push({ theme, group: '正文三档', label: t + ' on ' + s, fg: v[t], bg: v[s], r: ratio(v[t], v[s]) });
       }
     }
+    /* 时间行那一档灰：只查它**真实**会落上去的卡片底色（见 CARD_SURFACES） */
+    for (const b of CARD_SURFACES) {
+      if (v['--text-3-soft'] && v[b]) {
+        rows.push({
+          theme, group: '卡片时间行', label: '--text-3-soft on ' + b,
+          fg: v['--text-3-soft'], bg: v[b], r: ratio(v['--text-3-soft'], v[b]),
+        });
+      }
+    }
     for (const { fg, bgs, onIt } of SEMANTIC) {
       if (!v[fg]) continue;
       for (const b of bgs) {
@@ -240,7 +269,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let failed = 0;
 
   for (const theme of ['亮色', '暗色']) {
-    for (const g of ['正文三档', '语义色', '控件描边']) {
+    for (const g of ['正文三档', '卡片时间行', '语义色', '控件描边']) {
       const list = rows.filter((x) => x.theme === theme && x.group === g);
       if (!list.length) continue;
       console.log('\n' + theme + '　' + g + (g === '控件描边' ? '（下限 3:1，WCAG 1.4.11）' : ''));

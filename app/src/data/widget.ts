@@ -144,12 +144,14 @@ export async function applySafeAreaInsets(): Promise<void> {
 /**
  * 让原生侧立刻检查一次 App 更新（关于页「检查更新」按钮）。
  *
- * 只在 App 里有意义（网页版没有原生那一层），且**不抛**：旧版 APK 没有这个
- * 插件方法时调用会 reject，那时静默就好 —— 只是按钮点了没反应，比崩了强。
+ * 只在 App 里有意义（网页版没有原生那一层）。返回**是否真的检查了**：
+ * 旧版 APK 没有这个插件方法时调用会 reject —— 2026-10-24 用户报「点了没反应」，
+ * 静默是病，所以把失败交回给调用方显示（见 SettingsView 的更新提示）。
  * 有更新时会由原生弹框，走的是和启动时同一条下载 + 校验 + 安装链路。
  */
-export async function checkAppUpdate(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try { await WidgetBridge.checkUpdate(); } catch (_) { /* 旧版没有这个方法 */ }
+export async function checkAppUpdate(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try { await WidgetBridge.checkUpdate(); return true; }
+  catch (_) { return false; }   // 旧版没有这个方法 / 原生侧异常
 }
 
