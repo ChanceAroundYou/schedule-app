@@ -136,7 +136,17 @@ if [ -z "$DEVICE" ]; then
   DEVICE="$(MSYS_NO_PATHCONV=1 "$ADB" devices | awk 'NR>1 && $2=="device"{print $1; exit}')"
 fi
 if [ -z "$DEVICE" ]; then
-  fail "没有在线设备。用 --device IP:端口，或让用户在「无线调试」页面取当前地址"
+  fail "没有在线设备"
+  echo ""
+  echo "  ┌ 需要你在手机上操作（约 30 秒）："
+  echo "  │ 1. 设置 → 系统 → 开发者选项 → 无线调试（打开开关）"
+  echo "  │ 2. 页面会显示一串「IP 地址和端口」，例如 192.168.1.172:39283"
+  echo "  │    （每次开关该页面端口都会变，别用旧的）"
+  echo "  │ 3. 把那串发给我，或 ./deploy/mobile-loop.sh --device IP:端口 重跑"
+  echo "  └ 手机和电脑必须连同一个 WiFi"
+  echo ""
+  echo "== 闭环中止：没设备，发布 / 装机 / 真机冒烟都跳过"
+  exit 1
 else
   ok "设备 $DEVICE"
 fi

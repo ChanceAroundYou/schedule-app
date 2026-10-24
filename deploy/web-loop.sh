@@ -84,8 +84,9 @@ if [ "$FAST" = "0" ]; then
   # dist 必须是同源版（APK 的注基址变体会残留，先重建）
   ( cd app && npx vite build >/dev/null 2>&1 )
   # 端口默认自动让开，并行跑也不打架
-  if CHROME="${CHROME:-C:/Program Files/Google/Chrome/Application/chrome.exe}" \
-     node app/tests/browser-smoke.mjs > /tmp/smoke.log 2>&1; then
+  # CHROME 不硬编码：smoke 自己三级探测（环境变量 → 常见安装位置 → 默认），
+  # 写死 Windows 路径到 NAS 侧反而跑不了（2026-10-24 改）
+  if node app/tests/browser-smoke.mjs > /tmp/smoke.log 2>&1; then
     echo "  ok  探针全节通过（$(grep -c '  ok  ' /tmp/smoke.log) 条断言）"
   else
     fail "本地深测失败（详见 /tmp/smoke.log）"

@@ -10,12 +10,13 @@
  *
  *   node app/tests/browser-smoke.mjs
  *
- * 退出码非 0 = 有问题。环境变量 CHROME 可以指定浏览器可执行文件。
+ * 退出码非 0 = 有问题。环境变量 CHROME 可以指定浏览器可执行文件；
+ * 不指定则按「各平台常见安装位置」自动探测。
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync, mkdtempSync, rmSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,7 +68,20 @@ const API_PORT = +(process.env.SMOKE_API_PORT || await freePort(25701));   // �
 let WEB_PORT = +(process.env.SMOKE_WEB_PORT || await freePort(5198));    // 静态 + 代理
 const CDP_PORT = +(process.env.SMOKE_CDP_PORT || await freePort(9223));
 let MODEL_PORT = +(process.env.SMOKE_MODEL_PORT || await freePort(25711));
-const CHROME = process.env.CHROME || '/opt/google/chrome/chrome';
+/* Chrome 定位：环境变量 → 各平台常见安装位置 → 原默认。原来写死 NAS 的 Linux 路径，
+   Windows 上每次都得人肉带 CHROME=（web-loop 里还另硬编码了一份 Windows 路径，
+   换个平台又反了）。2026-10-24 改成三级探测，谁跑都对号入座。 */
+const CHROME_CANDIDATES = [
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google/Chrome/Application/chrome.exe'),
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/opt/google/chrome/chrome',
+].filter(Boolean);
+const CHROME = process.env.CHROME
+  || CHROME_CANDIDATES.find((p) => existsSync(p))
+  || '/opt/google/chrome/chrome';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -192,6 +206,27 @@ async function waitFor(page, expr, what, ms = 8000) {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`等不到「${what}」，最后一次求值 = ${JSON.stringify(last)}`);
+}
+
+/* 探针中断时把**页面现状**打进日志。只报「等不到 .sidebar」的话，分不清是
+   注册失败、页面空白还是后端挂了 —— 2026-10-24 为这类超时白查了好几轮，
+   就差这一眼。 */
+async function dumpPage(page, label) {
+  try {
+    const s = await evalJs(page, `
+      return {
+        url: location.href,
+        login: !!document.querySelector('form input'),
+        text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300),
+      };
+    `);
+    console.error(`  [页面现状·${label}] url=${s.url} 还在登录页=${s.login}`);
+    console.error(`  [页面文字] ${s.text}`);
+    if (s.login) {
+      console.error('  [提示] 注册没成功、页面留在登录页 —— 错在哪看上面的「页面文字」；'
+        + 'dist 若是旧构建，ensureDist 会自动重建（也可手动 cd app && npm run build）');
+    }
+  } catch (_) { /* 页面已经没了就算了，别盖掉原始错误 */ }
 }
 
 /**
@@ -319,10 +354,49 @@ function cleanup() {
 }
 process.on('exit', cleanup);
 
-try {
-  if (!existsSync(DIST) || !existsSync(path.join(DIST, 'index.html'))) {
-    throw new Error('dist/ 还没构建 —— 先 `npm run build`');
+/* dist 必须是**当前源码的同源版**。原来只判「有没有」——旧 dist 会让整轮探针
+   测一堆不相干的东西还查不出为什么（2026-10-24 连挂四轮，失败跑的 dist 是
+   并发会话早一个小时构建的旧版）。现在比新旧：dist 比源码旧、或者根本是
+   APK 的注基址变体（资产里带生产域名，会绕开临时后端直连生产），就自动重建。
+   git checkout / pull 会刷新源码 mtime → 偶尔误判「旧」→ 多花一次 build，
+   换「测的确实是当前代码」，值。 */
+function ensureDist() {
+  const APP_DIR = path.join(ROOT, 'app');
+  const idx = path.join(DIST, 'index.html');
+  const srcRoots = ['src', 'index.html', 'vite.config.ts', 'tailwind.config.js', 'postcss.config.js']
+    .map((p) => path.join(APP_DIR, p)).filter(existsSync);
+  let newest = 0;
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else newest = Math.max(newest, statSync(p).mtimeMs);
+    }
+  };
+  for (const r of srcRoots) {
+    if (statSync(r).isDirectory()) walk(r); else newest = Math.max(newest, statSync(r).mtimeMs);
   }
+  const assetsDir = path.join(DIST, 'assets');
+  const injected = existsSync(assetsDir) && readdirSync(assetsDir)
+    .filter((f) => f.endsWith('.js'))
+    .some((f) => readFileSync(path.join(assetsDir, f), 'utf8').includes('home.xiaokubao.space'));
+  const why = !existsSync(idx) ? '不存在'
+    : injected ? '是 APK 注基址变体（会绕开临时后端直连生产，必须重建）'
+    : newest > statSync(idx).mtimeMs ? '比源码旧' : '';
+  if (!why) return;
+  console.log(`  [dist] ${why}，自动重建（npm run build）…`);
+  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const r = existsSync(npmCli)
+    ? spawnSync(process.execPath, [npmCli, 'run', 'build'], { cwd: APP_DIR, stdio: 'inherit' })
+    : spawnSync('npm', ['run', 'build'], { cwd: APP_DIR, stdio: 'inherit', shell: process.platform === 'win32' });
+  if (r.status !== 0 || !existsSync(idx)) {
+    throw new Error('dist 重建失败 —— 手动 cd app && npm run build 看报错');
+  }
+  console.log('  [dist] 重建完成');
+}
+
+try {
+  ensureDist();
   if (!existsSync(CHROME)) throw new Error('找不到 Chrome：' + CHROME);
 
   track(spawn(process.execPath, [path.join(ROOT, 'server/server.js')], {
@@ -493,7 +567,12 @@ try {
   };
 
   console.log('\n三、进入主界面，顶栏有日程集多选');
-  await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 12000);
+  try {
+    await waitFor(page, `!!document.querySelector('.sidebar')`, '侧栏渲染出来', 20000);
+  } catch (e) {
+    await dumpPage(page, '等侧栏超时（注册后没进主界面）');
+    throw e;
+  }
   ok(await evalJs(page, `return !!document.querySelector('[data-nav="today"]');`), '侧栏有导航项');
   // 桌面端日程集是**顶栏那个下拉多选框**（侧栏那一列已经收掉了 —— 侧栏顺序
   // 是用户自己排的，塞常驻控件进去会跟「底栏挑哪几项」抢位置）。默认日程集
