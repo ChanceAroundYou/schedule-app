@@ -20,7 +20,7 @@ import { useLayoutEffect, useRef } from 'react';
 import type { DraftSeed, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
-  minToPct, pctRange, spanOf, timeRange, CARD_SEAM,
+  minToPct, pctRange, spanOf, timeRange, timeRangeCompact, CARD_SEAM,
   type DayWindow,
 } from '../../domain/layout.ts';
 import { CheckBtn } from '../parts/CheckBtn.tsx';
@@ -29,46 +29,227 @@ import { isNarrowNow } from '../../ui/hooks.ts';
 import type { LayoutEvent } from './shared.ts';
 
 /**
- * **标题按整行裁**（2026-10-22 九条第 9 条）：卡片能给内容的高度是任意像素，
- * 直接 overflow 会把最后一行拦腰切掉半截字。这里量出 ev-body 的实际可用高度，
- * 折算成「能放下几整个标题行」（行距也算在内），把标题的 max-height 钉在
- * 行高的整数倍上 —— 装不下一整行就整行不显示，也不留占位。
- *
- * 时间行 / 备注行**先占位再算标题**：这样卡片矮的时候宁可少一行标题，
- * 时间那行也留得住（2026-10-20 用户：「有空间还是显示时间」；
- * 2026-10-24 第四轮升级成「时长超过 1 小时就必须露出来」）。
- * 那两行的高度**量真实布局值**，不再用 `--fs-meta × 1.2` 去猜 ——
- * 卡装不下时压缩的是那一行自己的**行距**（`--ev-time-lh`，见 calendar.css），
+ * 压缩阶梯（2026-10-24 第五轮，用户定）：**卡片装不下时只许压，不许加长**。
+ * 上一轮我给的是「压行距 → 再不够给这张卡一个 `min-height`」，用户明确否掉了：
+ * 「没有什么地方有给卡片加长的兜底」—— 卡高就是时长，顶高一点等于把 61 分钟画成 68 分钟。
+ * 于是改成一档一档往下压，判据是**量出来的**（文字行有没有超出卡片边界、
+ * 时间行有没有被横向裁），不是照令牌猜：周视图一列 72px、窄屏一小时只有 ~22px，
  * 猜的值两头都对不上。
+ *
+ * **两个轴分开压**（一条阶梯两头共用会把不该缩的字也缩掉）：
+ *
+ * | 轴 | 判据（都是量出来的） | 阶梯 |
+ * |---|---|---|
+ * | 纵向 | `.ev-text` 的 scrollHeight 高出 `.ev-body` 的 clientHeight | ① 行距压到字号本身 ② 卡内上下留白归零 ③ 标题字号一轮降 0.5px，下限 9px |
+ * | 横向 | `.ev-time` 的 scrollWidth 超出自己的 clientWidth | 源头先省（紧凑写法）→ ① 字距收紧 ② **时间行自己的**字号一轮降 0.5px，下限 7.5px |
+ *
+ * 为什么必须分两头（第四轮实测出来的）：合成一条阶梯时，窄屏周视图为了「时间行横向装不下」
+ * 把**标题**也缩了一档，于是同一屏上 60 分钟卡 11px、61 分钟卡 10px ——
+ * 「未定时与定时同字号」那条约定（用户 2026-10-22 专门要过）当场破了。
+ * **横向的洞是时间行自己的，就该只压时间行。**
+ *
+ * 时间文本一律走**紧凑写法**（`09:30–10:30`，见 `timeRangeCompact`）：省下的正是两个空格
+ * 和那根长破折号。抽屉 / 列表 / 气泡仍是完整写法，值不变。
+ *
+ * 两轴落在第几档写在卡上的 `data-fit`（形如 `v1h2`），探针按它读数 ——
+ * 「压到哪一档」是要能看见的。
+ */
+const V_MAX = 3;
+const H_MAX = 2;
+/** 字号不是一档定死：一轮降半像素，直到装得下或读到可读下限。
+ *  写死一档（−1.5px）时 30 分钟的卡差 1px 装不下，只能报「压到底还是不行」。 */
+const FS_STEP = 0.5;
+const FS_MIN_TITLE = 9;
+const FS_MIN_TIME = 7.5;
+const FIT_VARS = [
+  '--ev-title-lh', '--ev-time-lh', '--ev-title-fs', '--ev-time-fs', '--ev-time-ls',
+  '--tl-event-pad', '--allday-pill-pad', '--check-fs',
+];
+
+type Tokens = { titleFs: number; timeFs: number };
+/** 两轴各自的档位与字号轮数（v / h = 第几档，vs / hs = 到字号档后降了几轮） */
+type FitState = { v: number; vs: number; h: number; hs: number };
+let tokenCache: { key: string; tk: Tokens } | null = null;
+/** 每张卡落在哪一档 —— 元素级私有。DOM 上那条 `data-fit` 是给人和探针看的读数，
+ *  不该反过来当状态源（读回字符串还得再解析一遍）。 */
+const fitByCard = new WeakMap<HTMLElement, FitState>();
+
+function readTokens(narrow: boolean): Tokens {
+  const d = document.documentElement;
+  const key = narrow + '|' + (d.dataset.style || '') + '|' + (d.dataset.theme || '');
+  if (tokenCache && tokenCache.key === key) return tokenCache.tk;
+  const cs = getComputedStyle(d);
+  const v = (name: string, fallback: number) => {
+    const x = parseFloat(cs.getPropertyValue(name));
+    return Number.isFinite(x) && x > 0 ? x : fallback;
+  };
+  const tk: Tokens = { titleFs: v('--fs-title', 12.5), timeFs: v('--fs-meta', 10.5) };
+  tokenCache = { key, tk };
+  return tk;
+}
+
+/** 当前这一档下，标题行与时间行各自的字号 */
+function fsOf(tk: Tokens, st: FitState): { title: number; time: number } {
+  return {
+    title: st.v >= 3 ? Math.max(FS_MIN_TITLE, tk.titleFs - st.vs * FS_STEP) : tk.titleFs,
+    time: st.h >= 2 ? Math.max(FS_MIN_TIME, tk.timeFs - st.hs * FS_STEP) : tk.timeFs,
+  };
+}
+
+/** 某一档往卡上写哪些变量。(0, 0) 一个都不写（CSS 默认值就是宽松档）。 */
+function fitVars(tk: Tokens, st: FitState): Record<string, string> {
+  const px = (x: number) => x.toFixed(2) + 'px';
+  const fs = fsOf(tk, st);
+  const out: Record<string, string> = {};
+  if (st.v >= 1) {
+    /* 行距档：**行高 = 字号本身**（标题）、时间行再紧一点（×0.92）。
+       1.05 / 1.0 试过一轮，桌面周视图 61 分钟的卡差 1.2px 过不去，一路滑到字号档 ——
+       于是同一屏上 60 分钟卡 12.5px、61 分钟卡 11px，看着像两版皮肤。
+       这一档压到底就把绝大多数卡留在「字号不动」那一层。 */
+    out['--ev-title-lh'] = px(fs.title);
+    out['--ev-time-lh'] = px(fs.time * 0.92);
+  }
+  if (st.v >= 2) {
+    /* 卡内上下留白让给文字。**不能改 `--card-pad-y`**：卡片消费的是
+       `--tl-event-pad` / `--allday-pill-pad`，那两条声明在 `:root` 上、
+       `var(--card-pad-y)` 在那一刻就替换完了 —— 在卡上覆盖 `--card-pad-y` 等于没改
+       （CSS 自定义属性的替换发生在**声明它的那个元素**上）。所以直接覆盖消费的那两条。 */
+    out['--tl-event-pad'] = '0px var(--card-pad-x)';
+    out['--allday-pill-pad'] = '0px var(--card-pad-x)';
+  }
+  if (st.v >= 3) {
+    /* ⚠️ 缩了标题字号必须同时报 `--check-fs`：圈跟的是「所在那一行的字号」（tokens 五条第 5 条），
+       它默认吃 1em = 卡片自己的 `--fs-title`，标题缩到 10 而圈还按 12.5 算 = 圈比任务名大。 */
+    out['--ev-title-fs'] = px(fs.title);
+    out['--check-fs'] = px(fs.title);
+  }
+  if (st.h >= 1) out['--ev-time-ls'] = '-.25px';   // 字距收紧（横向那一轴）
+  if (st.h >= 2) out['--ev-time-fs'] = px(fs.time);
+  return out;
+}
+
+function writeFit(card: HTMLElement, tk: Tokens, st: FitState) {
+  for (const name of FIT_VARS) card.style.removeProperty(name);
+  const vars = fitVars(tk, st);
+  for (const [k, v] of Object.entries(vars)) card.style.setProperty(k, v);
+  fitByCard.set(card, { ...st });
+  card.dataset.fit = 'v' + st.v + 'h' + st.h;
+}
+
+/** 纵向：文字块高出内容层就是被 overflow 剪了半截字 */
+function vFits(body: HTMLElement): boolean {
+  const text = body.querySelector<HTMLElement>('.ev-text');
+  return !text || text.scrollHeight - body.clientHeight <= 0.5;
+}
+
+/**
+ * 横向：时间行超出自己可用宽 = 尾巴变省略号。
+ * 标题允许被裁（长标题本来就该裁），时间行不允许 —— 用户：「时间要求完整显示」。
+ *
+ * ⚠️ 纵向判据用 **scrollHeight 比 clientHeight**，不用「行的矩形在不在卡里」：
+ * 后者在只超出 1px 时会通过 —— `align-items: center` 把超出量**上下各分一半**，
+ * 11px 的行装在 10.14px 的框里只各露 0.43px，卡在 0.5px 容差里出不来（实测就是
+ * 这样停在 11px 没继续压）。探针与这里必须同一口径，否则一边绿一边红。
+ */
+function hFits(body: HTMLElement): boolean {
+  const time = body.querySelector<HTMLElement>('.ev-time');
+  return !time || time.scrollWidth - time.clientWidth <= 0.5;
+}
+
+/** 还能再压一档吗；到字号下限就到此为止（不许把字压成读不清） */
+function stepV(st: FitState, tk: Tokens): boolean {
+  if (st.v < V_MAX) { st.v++; return true; }
+  if (tk.titleFs - (st.vs + 1) * FS_STEP >= FS_MIN_TITLE) { st.vs++; return true; }
+  return false;
+}
+function stepH(st: FitState, tk: Tokens): boolean {
+  if (st.h < H_MAX) { st.h++; return true; }
+  if (tk.timeFs - (st.hs + 1) * FS_STEP >= FS_MIN_TIME) { st.hs++; return true; }
+  return false;
+}
+/** 往回松一档（字号能保住就保住）。已经是最松则返回 false。 */
+function relaxV(st: FitState): boolean {
+  if (st.v >= 3 && st.vs > 0) { st.vs--; if (st.vs === 0) st.v = 2; return true; }
+  if (st.v > 0) { st.v--; return true; }
+  return false;
+}
+function relaxH(st: FitState): boolean {
+  if (st.h >= 2 && st.hs > 0) { st.hs--; if (st.hs === 0) st.h = 1; return true; }
+  if (st.h > 0) { st.h--; return true; }
+  return false;
+}
+
+/**
+ * **标题按整行裁** + **压缩阶梯**（合成一个 hook：两件事都要跟着卡片尺寸走，
+ * 而且阶梯一改行距就变，裁的行数必须重算）。
+ *
+ * 只吃 `.ev-body` 那一个 ref：卡片就是它的父元素，而变量要写在**卡片**上
+ * （`--ev-*` 得让卡里的行都读到）。`drag.ref` 是 dnd-kit 的回调 ref，不是 RefObject，
+ * 再套一层本地 ref 只是给「谁持有这个元素」添第二个真相。
  *
  * 用 ResizeObserver 而不是窗口 resize：卡片高度跟着时间轴百分比走，
  * 时间窗一改、卡片没动窗口也变了；跟着自己尺寸走才准。
+ * 起点取这张卡上一次的档位（弱字典里存着），避免每次 resize 都从最松档重扫一遍。
  */
-function useWholeLineClamp(bodyRef: { current: HTMLElement | null }) {
+function useCardFit(bodyRef: { current: HTMLElement | null }) {
   useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const title = el.querySelector<HTMLElement>('.ev-title');
-    if (!title) return;
+    const body = bodyRef.current;
+    const card = body ? body.parentElement : null;
+    if (!card || !body) return;
     const apply = () => {
-      const title = el.querySelector<HTMLElement>('.ev-title');
-      if (!title) return;
-      const text = el.querySelector<HTMLElement>('.ev-text');
-      const lh = parseFloat(getComputedStyle(title).lineHeight) || 16;
-      const aux = Array.from(el.querySelectorAll<HTMLElement>('.ev-time, .ev-note'));
-      /* 被 CSS `display:none` 掉的行 offsetHeight 为 0（窄屏周视图的摘要行就是），
-         不给它占位。行距挂在 `.ev-text` 上（那一块才是逐行排的），不在 `.ev-body`。 */
-      const gap = text ? (parseFloat(getComputedStyle(text).rowGap) || 0) : 0;
-      const taken = aux.reduce((s, n) => s + n.offsetHeight + gap, 0);
-      const room = el.clientHeight - taken;
-      const lines = Math.max(1, Math.floor(Math.max(0, room) / lh));
-      title.style.maxHeight = (lines * lh) + 'px';
+      /* 令牌每轮重读：跨过断点（窄屏 ⇄ 桌面）时字号档会变，挂在闭包里的旧值
+         会把窄屏的卡按桌面的字号去压。readTokens 按「断点 | 风格 | 明暗」缓存，
+         同一档下每张卡每轮只读一次 computed style。 */
+      const tk = readTokens(isNarrowNow());
+      const st: FitState = fitByCard.get(card) ?? { v: 0, vs: 0, h: 0, hs: 0 };
+      const put = () => { writeFit(card, tk, st); clampTitleLines(body); };
+      put();
+      /* 装不下就一档一档压到底。到可读下限还装不下就**认** ——
+         宁可露着「压到底还是装不下」这条读数，也不把字压成读不清，更不给卡加长。 */
+      while (!vFits(body) && stepV(st, tk)) put();
+      while (!hFits(body) && stepH(st, tk)) put();
+      /* 压完再逐轴往回松：先试松的，**两轴都还装得下**才留，否则退回。
+         缩字号是最后手段，不该常驻在本来装得下的卡上。 */
+      const bothFit = () => vFits(body) && hFits(body);
+      for (const relax of [relaxV, relaxH]) {
+        for (;;) {
+          const backup = { ...st };
+          if (!relax(st)) break;
+          put();
+          if (!bothFit()) { Object.assign(st, backup); put(); break; }
+        }
+      }
     };
     apply();
     const ro = new ResizeObserver(apply);
-    ro.observe(el);
+    ro.observe(body);
     return () => ro.disconnect();
   }, []);
+}
+
+/**
+ * 标题的 max-height 钉在行高的整数倍上：装不下一整行就整行不显示，不留半截字
+ * （2026-10-22 九条第 9 条）。
+ *
+ * 时间行 / 详细内容行**先占位再算标题**：卡片矮的时候宁可少一行标题，
+ * 时间那行也留得住（2026-10-20 用户：「有空间还是显示时间」；
+ * 2026-10-24 升级成「时长超过 1 小时就必须露出来」）。
+ * 那两行的高度**量真实布局值**，不用 `--fs-meta × 1.2` 去猜 —— 压缩阶梯改的正是
+ * 那一行自己的行距，猜的值两头都对不上。
+ */
+function clampTitleLines(body: HTMLElement) {
+  const title = body.querySelector<HTMLElement>('.ev-title');
+  if (!title) return;
+  const text = body.querySelector<HTMLElement>('.ev-text');
+  const lh = parseFloat(getComputedStyle(title).lineHeight) || 16;
+  const aux = Array.from(body.querySelectorAll<HTMLElement>('.ev-time, .ev-note'));
+  /* 被 CSS `display:none` 掉的行 offsetHeight 为 0，不给它占位。
+     行距挂在 `.ev-text` 上（那一块才是逐行排的），不在 `.ev-body`。 */
+  const gap = text ? (parseFloat(getComputedStyle(text).rowGap) || 0) : 0;
+  const taken = aux.reduce((s, n) => s + n.offsetHeight + gap, 0);
+  const room = body.clientHeight - taken;
+  const lines = Math.max(1, Math.floor(Math.max(0, room) / lh));
+  title.style.maxHeight = (lines * lh) + 'px';
 }
 
 export type TaskCardVariant = 'timed' | 'untimed' | 'compact';
@@ -91,58 +272,6 @@ export function taskCardClass(
   );
 }
 
-/**
- * **一张卡装得下两行文字吗**（2026-10-24 第四轮）—— 尺寸全部由令牌推出来，不写死像素。
- *
- * 时间行的规则是「时长 > 60 分钟就一定显示」，可窄屏周视图一小时的槽只有 ~21px：
- * 一行标题 + 一行时间在宽松行距下要 ~28px，物理上装不下。装不下时的顺序是
- * ① **压行距**（字号不动 —— 字号一变，相邻两张卡就成了两版皮肤，见 calendar.css 那段）；
- * ② 压完还装不下才给这张卡一个**最小高**：宁可画得比真实时长长一点，
- *    也不把「09:00–10:15」裁成半截。
- *
- * 令牌只在**会改动它们的那三个轴**换档时读一次：断点（--fs-title / --fs-meta）、
- * 风格档（--border-w 1↔2px）、明暗档。每张卡各读一遍是白干活（一天视图几十张卡）。
- */
-type LineBudget = {
-  /** 宽松行距下「标题 + 时间行 + 内外框」需要的卡高（含 border-box） */
-  loosePx: number;
-  /** 压行距后同样的卡高 */
-  tightPx: number;
-  /** 压行距时写进内联变量的两个行高（px） */
-  titleLh: string;
-  timeLh: string;
-};
-let budgetCache: { key: string; b: LineBudget } | null = null;
-
-function lineBudget(narrow: boolean): LineBudget {
-  const d = document.documentElement;
-  const key = narrow + '|' + (d.dataset.style || '') + '|' + (d.dataset.theme || '');
-  if (budgetCache && budgetCache.key === key) return budgetCache.b;
-  const cs = getComputedStyle(d);
-  const v = (name: string, fallback: number) => {
-    const x = parseFloat(cs.getPropertyValue(name));
-    return Number.isFinite(x) && x > 0 ? x : fallback;
-  };
-  const titleFs = v('--fs-title', 12.5);
-  const timeFs = v('--fs-meta', 10.5);
-  const frame = 2 * v('--card-pad-y', 1) + 2 * v('--border-w', 1);
-  /* 宽松档 = CSS 里的实际行高（标题走 --task-line-sm，时间行走 1.15 倍字号）
-     紧凑档 = 字号 × 1.1 / × 1.0 —— **字号一个字不动**，只把行与行之间的空收紧。
-     压字号是另一条路，但它会让同一屏上两张卡字号不同（相邻两卡像两版皮肤，
-     calendar.css 那段规矩就是这么写的），所以排在最后、现在不用。 */
-  const looseTitle = v('--task-line-sm', 16);
-  const tightTitle = titleFs * 1.1;
-  const looseTime = timeFs * 1.15;
-  const tightTime = timeFs * 1.0;
-  const b: LineBudget = {
-    loosePx: looseTitle + looseTime + frame,
-    tightPx: tightTitle + tightTime + frame,
-    titleLh: tightTitle.toFixed(2) + 'px',
-    timeLh: tightTime.toFixed(2) + 'px',
-  };
-  budgetCache = { key, b };
-  return b;
-}
 
 /**
  * 定时与未定时共用这一个组件 —— 位置由父级给的 `style` 决定，
@@ -171,7 +300,8 @@ export function TaskCard({
 }) {
   const drag = useDraggableEvent(t.id);
   const bodyRef = useRef<HTMLDivElement>(null);
-  useWholeLineClamp(bodyRef);
+  /* 卡片自己知道自己多高（compact 月 pill 没有 `.ev-body`，hook 自动不做事） */
+  useCardFit(bodyRef);
   return (
     <div
       className={taskCardClass(t, variant, { live, dragging: drag.isDragging })}
@@ -281,24 +411,22 @@ export function TimedCard({
   /* 时间行**只由时长决定**（2026-10-24 第三轮，用户定）：
      ≤ 60 分钟（含整 1 小时、含没设过时长的）→ 不显示时间；
      > 60 分钟 → **一定要显示**，不再看卡片够不够高（`roomy` 不管它了）。
-     装不下不藏 —— 见下面那段：先压行距，压完还装不下才加长这张卡。
+     装不下不藏 —— 见下面那段：卡里按两轴分别往下压，卡长不加。
      ⚠️ 原先是三种画法（够高 → 显示范围 / 不够高 → 只显示开始时间 /
      太矮 → 干脆不显示）再加窄屏 CSS 一律 `display:none` —— 同一条时长在不同
      窗口下有四种样子，用户报的「周视图怎么始终没有时间」就是这么来的。
-     时长与范围仍在 `title` 气泡和抽屉里，一处不缺。 */
+     时长与范围仍在 `title` 气泡和抽屉里，一处不缺。
+     卡里用**紧凑写法**（`09:30–10:30`）：窄屏周视图一列只有 72px，完整写法
+     「17:00 – 18:01」要 67px、可用 54px，尾巴被省略号吃掉 13px（实测）。
+     气泡与抽屉仍是完整写法，同一个值。 */
   const durMin = hasEnd ? (e.end - e.start) : 60;
-  const timeText = durMin > 60 ? timeRange(e.start, e.end - e.start) : null;
-  /* 卡片装不装得下「标题 + 时间」两行（窄屏周视图一小时只有 ~21px，两行宽松行距要 ~28px）。
-     顺序见 `lineBudget`：**先压行距**（字号一个字不动），压完还装不下才给这张卡
-     一个最小高 —— 宁可画得比真实时长长一点，也不把时间裁成半截。
-     ⚠️ 只加长**带时间行**的卡：≤ 1 小时那档没有第二行，卡高照旧纯跟时长走。
-     pxH 还没量到（首帧）什么都不加，别让首帧就按错的尺寸落版。 */
-  const budget = timeText ? lineBudget(narrow) : null;
-  const avail = pxH > 0 ? pxH - CARD_SEAM : -1;
-  const tight = !!budget && avail >= 0 && avail < budget.loosePx;
-  const floorPx = budget ? (tight ? budget.tightPx : budget.loosePx) : 0;
-  const grow = tight && avail < budget!.tightPx;
-  const cardPx = pxH > 0 ? Math.max(pxH - CARD_SEAM, grow ? floorPx : 0) : 0;
+  const timeText = durMin > 60 ? timeRangeCompact(e.start, e.end - e.start) : null;
+  /* 卡高**只由时长定**（2026-10-24 第五轮，用户定：「没有什么地方有给卡片加长的兜底」）：
+     装不下由 `useCardFit` 沿两个轴分别往下压（纵向 行距 → 留白 → 标题字号；横向 字距 → 时间行字号），
+     这里不再给 `minHeight`。上一轮那个加长把 61 分钟的卡顶到 28.25px（一小时只有
+     ~22px）—— 等于把时长画长了，探量和肉眼都不答应。
+     圆角照这张卡**真实的高**报，没有任何修正项。 */
+  const cardPx = pxH > 0 ? pxH - CARD_SEAM : 0;
   /* 上下把手各占 8px，卡还没把手高就别画了（2026-10-20 用户：「高度非常窄的把
      上下把手隐藏掉」）—— 盖住整张卡反而看不见标题，也根本抓不住。
      门槛：窄屏 38px / 桌面 22px；退回档 6% / 3.5%（browser-smoke 验 1h 任务有把手）。 */
@@ -326,12 +454,9 @@ export function TimedCard({
         /* 圆角按卡高收（见 calendar.css 的 .task-el--timed）：这里直接把这张卡
            真正的像素高给出去（百分比 × 容器实高 − 缝），与未定时卡的 `--row`
            同一个来源，两种卡的圆角才会一样。pxH 还没量到就不给，CSS 回落 20px。
-           ⚠️ 被加长过的卡给的是**加长后**的高 —— 圆角跟着肉眼看到的那张卡走。 */
+           卡高没有任何修正项 —— 加长兜底已撤（见上面那段）。 */
         '--card-px': cardPx > 0 ? cardPx + 'px' : undefined,
-        /* 紧凑行距只给「装不下宽松两行」的卡（CSS 里的默认值不动别的卡） */
-        '--ev-title-lh': tight ? budget!.titleLh : undefined,
-        '--ev-time-lh': tight ? budget!.timeLh : undefined,
-        minHeight: grow ? floorPx.toFixed(2) + 'px' : undefined,
+        /* 行距 / 留白 / 字号**不在这里给**：装不下才压，压几档由 `useCardFit` 量出来定 */
       } as CSSProperties}
       timeText={timeText}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：

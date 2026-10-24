@@ -16,7 +16,7 @@ import {
   toRepeat, repeatAdvance, repeatNext, emptyRepeat, repeatLast,
   instanceId, seriesRootOf, repeatLabel, parseInstanceId,
 } from './repeat.ts';
-import { coverWindow, dayTimeline, layoutOverlap, minToPct, pctRange, spanOf, timeRange, windowOf, yToMin, placePanel, dragRange, DRAG_MIN, untimedBlanks, untimedRowPx, CARD_SEAM, FULL_DAY } from './layout.ts';
+import { coverWindow, dayTimeline, layoutOverlap, minToPct, pctRange, spanOf, timeRange, timeRangeCompact, windowOf, yToMin, placePanel, dragRange, DRAG_MIN, untimedBlanks, untimedRowPx, CARD_SEAM, FULL_DAY } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
@@ -369,6 +369,22 @@ test('重叠分列：首尾相接不算重叠', () => {
 test('时间段文案，跨零点标次日', () => {
   assert.equal(timeRange(9 * 60 + 30, 60), '09:30 – 10:30');
   assert.equal(timeRange(23 * 60 + 30, 60), '23:30 – 次日 00:30');
+});
+
+test('同一份时间的紧凑写法：卡片里用，值不变、只少空格和破折号两侧', () => {
+  assert.equal(timeRangeCompact(9 * 60 + 30, 60), '09:30–10:30');
+  assert.equal(timeRangeCompact(23 * 60 + 30, 60), '23:30–次日00:30');
+  /* 卡片文案的宽度预算全靠这两处（窄屏周视图净宽 54px，完整写法要 67px）：
+     紧凑写法 = 完整写法去掉破折号两侧的空格、「次日」后面的空格 */
+  assert.ok(timeRangeCompact(540, 120).length < timeRange(540, 120).length);
+  assert.deepEqual(
+    timeRangeCompact(540, 120).split('–'),
+    timeRange(540, 120).split(' – '),
+  );
+  /* 时长为空（没设过时长的任务）仍按 0 长度算结束点，不产生 NaN */
+  assert.equal(timeRangeCompact(540, 0), '09:00–09:00');
+  /* 跨零点与完整写法同一规则：越过 24:00 标「次日」，不是夹回 23:59 */
+  assert.equal(timeRangeCompact(23 * 60 + 30, 120), '23:30–次日01:30');
 });
 
 test('方向键微调上下沿：底边只改时长，上沿固定底边', () => {

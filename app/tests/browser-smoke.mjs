@@ -1801,28 +1801,34 @@ try {
     + (list.bad.length ? '：\n      ' + list.bad.join('\n      ') : ''));
 
   /* 圈的**大小**（2026-10-24 第四轮，用户第 2 条「打勾太大、位置不对」）：
-     视觉直径 = 所在那一行的字号 × 0.85（夹在 9~16px），命中区仍然 24×24 ——
-     靠 `.check-btn::before` 往外撑，不是把圆点画大（画大就毁了列表密度）。
+     视觉直径 = 所在那一行的字号 × `--check-k`（夹在 `--check-min` ~ `--check-max`），
+     命中区仍然 24×24 —— 靠 `.check-btn::before` 往外撑，不是把圆点画大（画大就毁了列表密度）。
+     第五轮用户「打勾太小了 比例再大一点」→ k .85 → 1、上限 16 → 18。
+     ⚠️ 三个数从 :root 读，不在探针里写死：写死过一次，改令牌那一轮就得手动追一遍探针，
+        追漏的那处会红在别处。
      这里量的是**列表行**（卡片那两个尺寸由 card-geometry 钉）。 */
   const size = await evalJs(page, `
     const rows = [...document.querySelectorAll('.task-row')].filter((r) => r.querySelector('.check-btn'));
     if (!rows.length) return null;
-    return rows.map((r) => {
-      const btn = r.querySelector('.check-btn');
-      const title = r.querySelector('.row-title') || r;
-      const fs = parseFloat(getComputedStyle(title).fontSize);
-      const box = getComputedStyle(btn, '::before');
-      return {
-        fs, w: +btn.getBoundingClientRect().width.toFixed(2),
-        beforeW: parseFloat(box.width), beforeH: parseFloat(box.height),
-      };
-    });
+    const cs = getComputedStyle(document.documentElement);
+    const tok = (n, dflt) => { const x = parseFloat(cs.getPropertyValue(n)); return Number.isFinite(x) ? x : dflt; };
+    return { k: tok('--check-k', 1), min: tok('--check-min', 9), max: tok('--check-max', 18),
+             rows: rows.map((r) => {
+               const btn = r.querySelector('.check-btn');
+               const title = r.querySelector('.row-title') || r;
+               const fs = parseFloat(getComputedStyle(title).fontSize);
+               const box = getComputedStyle(btn, '::before');
+               return {
+                 fs, w: +btn.getBoundingClientRect().width.toFixed(2),
+                 beforeW: parseFloat(box.width), beforeH: parseFloat(box.height),
+               };
+             }) };
   `);
-  ok(!!size && size.length > 0, '列表行里有带勾选圈的行可查（' + (size ? size.length : 0) + ' 行）');
-  for (const r of (size || [])) {
-    const want = Math.min(16, Math.max(9, r.fs * 0.85));
+  ok(!!size && size.rows.length > 0, '列表行里有带勾选圈的行可查（' + (size ? size.rows.length : 0) + ' 行）');
+  for (const r of (size ? size.rows : [])) {
+    const want = Math.min(size.max, Math.max(size.min, r.fs * size.k));
     ok(Math.abs(r.w - want) <= 0.6,
-      '列表圈视觉直径 = 行字号 × 0.85（夹 9~16），且不比任务名大',
+      `列表圈视觉直径 = 行字号 × ${size.k}（夹 ${size.min}~${size.max}），且不比任务名大`,
       `圈 ${r.w}px / 字号 ${r.fs}px（want ${want.toFixed(2)}）`);
     ok(r.w <= r.fs + 0.5, '列表圈不比任务名文字宽', `圈 ${r.w}px ≤ 字号 ${r.fs}px`);
     ok(r.beforeW >= 24 && r.beforeH >= 24,

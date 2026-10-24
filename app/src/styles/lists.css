@@ -189,8 +189,8 @@
    列表行特殊一点：`.task-row` 自己吃正文 14，可那一行**看得见的文字**是 `--fs-row`
    （13.5 / 窄屏 14.5）—— 所以下面 `.task-row` 把 `--check-fs` 显式指到 `--fs-row`，
    圈才真跟着标题走而不是跟正文走。
-   夹在 `--check-min` / `--check-max` 之间：窄屏卡上 9.4px、桌面列表 11.5px、
-   窄屏列表 12.3px。上限 16px 留给以后字号真上到 19px 的情况。
+   夹在 `--check-min` / `--check-max` 之间（k = 1，2026-10-24 第五轮）：窄屏卡上 11px、
+   桌面列表 13.5px、窄屏列表 14.5px。上限 18px 留给以后字号真上到 18px 的情况。
    ⚠️ 以后要圈大一点就改**那一行的字号**或 `--check-k`，别再给 `.check-btn` 写 width。 */
 .check-btn {
   --check-size: min(var(--check-max), max(var(--check-min), calc(var(--check-fs, 1em) * var(--check-k))));

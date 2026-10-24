@@ -14,8 +14,16 @@
  *
  * 同日第四轮（第三节）：
  *   ① 时间行的左端 = 标题**文字**的左端（不是卡片左边缘、不是勾选圈）
- *   ② 勾选圈直径 = 所在行字号 × 0.85（夹 9~16px），且中心落在「标题 + 时间」那一整块的中线上
+ *   ② 勾选圈直径 = 所在行字号 × CHECK_K（夹 CHECK_MIN~CHECK_MAX），且中心落在「标题 + 时间」那一整块的中线上
  *   ③ 时间行**只由时长决定**：> 60 分钟必须有且完整可见，≤ 60 分钟必须没有，月视图永远没有
+ *
+ * 同日第五轮（同一节，用户三项）：
+ *   ① 时间行**完整显示**：`timeClip ≤ 0`（横向一点不被裁）
+ *   ② **没有加长兜底**：卡上没有内联 `min-height`，卡高 = 按时长算出来的（CSS 地板另算）
+ *   ③ 装不下只许压：`.ev-text` 的 scrollHeight 不得高出 `.ev-body` 的 clientHeight
+ *      —— 与 TaskCard 的 `vFits` 同一口径，两边必须同绿同红
+ *   ④ 圈比例放大：直径按新 K 断言（CHECK_K=1 / CHECK_MAX=18 与本文件的常量同步；
+ *      `--check-k` / `--check-max` 那两条令牌读数在 browser-smoke 里钉）
  *
  * 与 browser-cards.mjs 一样是**完全隔离**的：临时后端 + 临时库 + 临时 Chrome profile。
  * 视口用 CDP 的 `Emulation.setDeviceMetricsOverride` 切，一趟量完桌面(1400)与窄屏(390)。
@@ -44,10 +52,11 @@ const RADIUS_MIN = 2;
 const TOL_RATIO = 0.03;
 const TOL_PAD = 0.5;
 
-/** 第四轮② 勾选圈：直径 = 所在行字号 × CHECK_K，夹在 CHECK_MIN / CHECK_MAX（与 tokens.css 同步） */
-const CHECK_K = 0.85;
+/** 勾选圈：直径 = 所在行字号 × CHECK_K，夹在 CHECK_MIN / CHECK_MAX（与 tokens.css 同步）
+ *  k = .85 → 1、上限 16 → 18（2026-10-24 第五轮，用户：「打勾太小了 比例再大一点」） */
+const CHECK_K = 1;
 const CHECK_MIN = 9;
-const CHECK_MAX = 16;
+const CHECK_MAX = 18;
 
 /** ④ 周表头目标（桌面 / 窄屏）：日期字号、圆圈边长、表头总高上限 */
 const WEEK_HEAD = {
@@ -269,6 +278,10 @@ try {
     { id: 't_geom_t61', time: '17:00', duration: 61, title: '定时六十一分' },
     { id: 't_geom_t60', time: '19:00', duration: 60, title: '定时整一小时' },
     { id: 't_geom_t45', time: '21:00', duration: 45, title: '定时四十五分' },
+    /* 30 分钟 = 压缩阶梯的**下限探针**（第五轮加的）：窄屏周视图这一档只有 ~11px，
+       连「压到字号下限」都装不下。有它在，报告里才会出现「压到底还是装不下」这一行，
+       而不是只报「全绿」。 */
+    { id: 't_geom_t30', time: '11:00', duration: 30, title: '定时三十分' },
   ];
   const DUR = Object.fromEntries(SEED_TIMED.map((r) => [r.id, r.duration]));
   const seed = await evalJs(page, `
@@ -397,6 +410,7 @@ try {
       const time = el.querySelector('.ev-time');
       const note = el.querySelector('.ev-note');
       const check = el.querySelector('.check-btn');
+      const text = el.querySelector('.ev-text');
       const cb = check ? R(check) : null;
       const tb = title ? R(title) : null;
       const mr = time ? R(time) : null;
@@ -411,6 +425,51 @@ try {
         /* display:none 与「没有这个元素」是两件事：前者是 CSS 藏掉了，后者是没渲染 */
         timeDisplay: time ? getComputedStyle(time).display : null,
         timeText: time ? (time.textContent || '').trim() : null,
+        /* **横向有没有被裁**：scrollWidth 大于 clientWidth 就是文字超出可用宽，
+           CSS 的 text-overflow 会把尾巴换成省略号 —— 用户看到的「时间显示不全」。
+           只读 DOM 属性，不靠猜 CSS。（这段跑在浏览器里，注释里不能出现反引号） */
+        timeClip: time ? Math.round(time.scrollWidth - time.clientWidth) : null,
+        titleClip: title ? Math.round(title.scrollWidth - title.clientWidth) : null,
+        timeW: time ? +time.clientWidth.toFixed(2) : null,
+        timeAvail: time ? +time.parentElement.clientWidth.toFixed(2) : null,
+        /* **纵向有没有溢出**读的是**文字块自己**（ev-text）而不是 ev-body：
+           勾选圈那块 24×24 命中区（靠 ::before 撑）是**故意**超出矮卡的（WCAG 2.5.8），
+           把它算进 scrollHeight 会让每一张矮卡都「溢出」—— 第一版就是这么误报的。
+           判据：文字块自己的内容高 ≤ 内容层可用高。 */
+        bodyCH: body ? body.clientHeight : null,
+        textCH: text ? text.clientHeight : null,
+        textSH: text ? text.scrollHeight : null,
+        /* 卡片自身的 CSS 地板（calendar.css 给定时卡写的 min-height: 12px）。
+           它是**旧的**、不是压缩阶梯给的：30 分钟的卡在窄屏只有 9.5px，
+           这条把它顶到 12px。报出来，别让它藏在「卡高 = 时长」这条断言背后。 */
+        cssMinH: (function () {
+          const x = parseFloat(getComputedStyle(el).minHeight);
+          return Number.isFinite(x) ? x : 0;
+        })(),
+        titleH: title ? +title.getBoundingClientRect().height.toFixed(2) : null,
+        timeH: time ? +time.getBoundingClientRect().height.toFixed(2) : null,
+        titleLh: title ? getComputedStyle(title).lineHeight : null,
+        timeLh: time ? getComputedStyle(time).lineHeight : null,
+        hourPx: (function () {
+          /* --row-hour 是 DayView / WeekView 写在**未定时容器**上的内联值
+             （:root 上没有这条，从 documentElement 读恒 0 —— 上一轮就误读成 0.00）。
+             定时卡不在那个容器里（它站在时间轴上），所以要退到页面上找那一个容器：
+             「这一屏上的一小时」是整屏一个数，不是每张卡一个数。 */
+          const host = el.closest('.allday-zone') || el.closest('.wun-cell')
+            || document.querySelector('.allday-zone') || document.querySelector('.wun-cell');
+          if (!host) return null;
+          const x = parseFloat(getComputedStyle(host).getPropertyValue('--row-hour'));
+          return Number.isFinite(x) ? +x.toFixed(2) : null;
+        })(),
+        /* **压缩阶梯落在第几档**（0 = 宽松）。判据在 TaskCard 的 useCardFit，
+           这里只报读数：哪一屏需要压到第几档，是要能看见的 */
+        fit: el.getAttribute('data-fit') || null,
+        /* TimedCard 报给圆角算式的那个数 = 这张卡按时长该有的高（百分比 × 容器实高 − 缝）。
+           渲染高与它不等 = 有人偷偷给卡加长了（第五轮撤掉的正是这个） */
+        cardPx: (function () {
+          const x = parseFloat(getComputedStyle(el).getPropertyValue('--card-px'));
+          return Number.isFinite(x) ? +x.toFixed(2) : null;
+        })(),
         titleL: tb ? tb.l : null, timeL: mr ? mr.l : null,
         timeTop: mr ? mr.t : null, timeBottom: mr ? mr.b : null,
         checkW: cb ? cb.w : null,
@@ -559,9 +618,11 @@ try {
     }
   }
 
-  console.log('\n三、断言：时间行只由时长决定 · 圈径跟字号走 · 文字左对齐 · 圈跨行居中');
+  console.log('\n三、断言：时间行只由时长决定 · 圈径跟字号走 · 文字左对齐 · 圈跨行居中 · 装不下只压不加');
   console.log('    规则（2026-10-24 第四轮用户定）：时长 > 60 分钟 → 时间行**必须有**且完整在卡里；'
     + '≤ 60 分钟 → 必须没有；月视图**永远**没有');
+  console.log('    第五轮补三条：时间行还要**完整可见**（横向不裁）、内容不许被纵向剪、'
+    + '卡高只由时长定（**没有 min-height 加长兜底**）；圈径 = 字号 × ' + CHECK_K);
   for (const [key, d] of Object.entries(detail)) {
     if (key.indexOf('month') >= 0) {
       /* 月视图只查两件事：**不画时间**，而且时间没丢（挂在气泡上） */
@@ -587,11 +648,22 @@ try {
       const mid = (c.textTop + c.textBottom) / 2;
       const centerDiff = c.checkCy != null ? +(c.checkCy - mid).toFixed(2) : null;
       const alignDiff = (c.timeL != null && c.titleL != null) ? +(c.timeL - c.titleL).toFixed(2) : null;
+      /* 只有定时卡的「应高」算得出来（未定时卡的高度走 --row，:root 那条 --card-px=20px
+         是它的默认值、不是这张卡的算式 —— 拿它当应高会误报） */
+      const floor = dur != null && c.cardPx != null ? Math.max(c.cardPx, c.cssMinH || 0) : null;
       console.log('    ' + label.padEnd(20) + ' 卡高=' + num(c.card.h)
-        + (c.minHeight ? '（加长到 ' + c.minHeight + '）' : '')
+        + (c.cardPx != null
+          ? '/按时长应高 ' + num(c.cardPx) + (c.cssMinH > c.cardPx ? '（CSS 地板 ' + c.cssMinH + 'px 顶的）' : '')
+          : '')
+        + (c.minHeight ? '（❌ 被加长到 ' + c.minHeight + '）' : '')
+        + ' 档=' + (c.fit == null ? '?' : c.fit)
         + ' 标题字号=' + num(c.titleFs) + ' 圈=' + num(c.checkW)
         + ' 时间行=' + (has ? '「' + c.timeText + '」fs=' + num(c.timeFs) : '无')
+        + (has ? ' 裁=' + num(c.timeClip) + 'px 文字宽=' + num(c.timeW) + '/可用 ' + num(c.timeAvail) : '')
+        + ' 标题裁=' + num(c.titleClip)
+        + ' 文字 ' + num(c.textSH) + '/可用 ' + num(c.bodyCH)
         + ' 左端差=' + num(alignDiff) + ' 中心差=' + num(centerDiff)
+        + ' 一小时=' + num(c.hourPx) + 'px'
         + ' align-content=' + c.bodyAlign);
 
       /* ③ 时间行：只由时长决定 */
@@ -607,6 +679,29 @@ try {
           /* ① 左对齐：时间行左端 == 标题**文字**左端（不是卡片左边缘、不是勾选圈） */
           ok(Math.abs(alignDiff) <= 0.5,
             '    ' + label + ' 时间行与标题文字左端对齐（差 ' + num(alignDiff) + 'px）');
+          /* ④ 第五轮：整条时间**完整可见** —— scrollWidth 大于 clientWidth 就是尾巴
+             被省略号吃掉了，用户报的「周视图时间显示不全」就是这个数（实测 13px） */
+          ok(c.timeClip <= 0,
+            '    ' + label + ' 时间行没被横向裁（裁 ' + num(c.timeClip) + 'px，文字 '
+            + num(c.timeW) + ' / 可用 ' + num(c.timeAvail) + '）');
+        }
+        /* ④ 第五轮：内容不许被纵向剪（.ev-body 是 overflow hidden，行照排 ——
+           行的矩形在卡里不等于没被剪，文字块自己的 scrollHeight > 可用高才是真装不下） */
+        ok(c.textSH == null || c.textSH <= c.bodyCH + 0.5,
+          '    ' + label + ' 文字没被纵向剪（文字 ' + num(c.textSH) + ' ≤ 可用 ' + num(c.bodyCH) + '）');
+        /* ④ 第五轮：**没有加长兜底** —— 卡高只由时长定（用户：「没有什么地方有给卡片
+           加长的兜底」）。上一轮的 min-height 让 61 分钟的卡画到 28.25px（一小时 ~22px），
+           等于把时长画长了。这条断言锁的是「不许再加回来」。
+           ⚠️ 唯一的例外是 CSS 那条旧的 `min-height: 12px`（`.task-el--timed`）：
+           它比压缩阶梯老，作用是「比手指还短的卡总得能点着」。断言把它算进应高里，
+           并在打印里点名（30 分钟卡在窄屏就靠它）。 */
+        ok(c.minHeight == null, '    ' + label + ' 卡上没有内联 min-height（加长兜底已撤，实际 '
+          + c.minHeight + '）');
+        if (floor != null) {
+          ok(Math.abs(c.card.h - floor) <= 0.6,
+            '    ' + label + ' 卡高 ' + num(c.card.h) + ' = 按时长算出来的 ' + num(c.cardPx)
+            + (c.cssMinH > c.cardPx ? '（CSS 地板 ' + c.cssMinH + 'px）' : '')
+            + '（差 ' + num(+(c.card.h - floor).toFixed(2)) + 'px）');
         }
       } else {
         ok(!has, '    ' + label + ' 未定时卡没有时间行');

@@ -81,6 +81,21 @@ export function timeRange(start: number, dur: number): string {
   return s + ' – ' + e;
 }
 
+/**
+ * 同一份时间的**紧凑写法**：`09:30–10:30`、跨零点 `23:30–次日00:30`。
+ * 卡片里用这个，抽屉 / 列表 / 气泡仍用完整写法 —— 省下来的正是那两个空格
+ * 和那根长破折号：72px 的周视图列里，完整写法要 67px、可用只有 54px，
+ * 尾巴被省略号吃掉 13px（实测，见踩坑 52）。**同一份时间两种写法，值不变。**
+ */
+export function timeRangeCompact(start: number, dur: number): string {
+  const s = D.minToTime(start);
+  const end = start + (dur || 0);
+  const e = end >= 1440
+    ? '次日' + D.minToTime(Math.max(0, end - 1440))
+    : D.minToTime(Math.min(1439, end));
+  return s + '–' + e;
+}
+
 /** 一天 24 小时的像素高度 */
 export const HOUR_H = 64;
 export const DAY_H = HOUR_H * 24;

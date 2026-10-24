@@ -697,7 +697,20 @@ async function checkLook() {
           return !(tasks[id]||tasks[id.split('#')[0]]);
         }).length;
       })(),
-      /* 未定时那一栏的标题字号必须和定时卡标题一致（同一个 --ev-title-size） */
+      /* 第五轮补两条：时间行**完整不裁**、卡上**没有加长兜底**。
+         口径与 card-geometry.mjs 第三节一致 —— 横向看 .ev-time 自己的
+         scrollWidth 有没有超出自己的 clientWidth（不是看它在卡里露不露头：
+         align-items: center 会把 1px 上下各分一半，落在容差里出不来）。 */
+      timeClipCards: cards.filter(function(c){
+        var t=c.querySelector('.ev-time');
+        if(!t || getComputedStyle(t).display==='none') return false;
+        return t.scrollWidth - t.clientWidth > 0.5;
+      }).length,
+      minHCards: cards.filter(function(c){
+        return (c.getAttribute('style')||'').indexOf('min-height') >= 0;
+      }).length,
+      /* 未定时那一栏的标题字号必须和定时卡标题一致（同一个 `--ev-title-fs`；
+         第五轮分轴后**横向那一轴不许动标题字号**，所以这一条比从前更该成立） */
       untimedTitleSize: (function(){
         var u=document.querySelector('.wun-cell .task-el--untimed .ev-title');
         return u?getComputedStyle(u).fontSize:'';
@@ -796,6 +809,14 @@ async function checkLook() {
   } else {
     ok('今天没有未定时任务，跳过字号对比');
   }
+  /* 2026-10-24 第五轮（用户：「周视图的时间要求完整显示」+「没有什么地方有给卡片加长的兜底」）：
+     时间行要**完整**（尾巴不被省略号吃掉），而且卡上不许有 min-height —— 顶高等于把时长画长。 */
+  assert(look.timeClipCards === 0,
+    '手机端周视图的时间行完整可见（没有被横向裁）',
+    `裁了的 ${look.timeClipCards} 张 / 带时间行的 ${look.cardsWithTime} 张`);
+  assert(look.minHCards === 0,
+    '卡片没有加长兜底（装不下只压不加长）',
+    `带内联 min-height 的 ${look.minHCards} 张 / 定时卡 ${look.cards} 张`);
 
   /* 月视图：胶囊不能比日/周大卡还圆 */
   await tap('button[data-view="month"]'); await wait(700);

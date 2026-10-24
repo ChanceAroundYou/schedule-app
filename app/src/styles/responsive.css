@@ -363,14 +363,19 @@ body.sheet-open .tab:active { background: none; }
      圆角不在这里 —— 全项目那一条算式在 calendar.css，窄屏只换 --card-h 的那一半。 */
   .wun-cell .task-el--untimed {
     font-size: var(--task-text-sm); line-height: var(--task-line-sm);
+    /* 行高小档也要写在**卡**上：calendar.css 给周视图两种卡的 `--ev-title-lh` 是大档
+       （18），这里不换回去，窄屏周视图的标题会比同屏的定时卡高 2px 的行距。 */
+    --ev-title-lh: var(--task-line-sm);
   }
   /* **窄屏周视图也显示时间**（2026-10-24 第四轮，用户：「周视图卡片怎么始终没有时间
      显示？不是超过 1 小时的都该显示么」）。原先这里是 `.ev-time { display: none }`
      —— 理由是 72px 宽的格子放不下任务名 + 起止时间，于是手机端一律不画。
      现在全项目一条规则：**时长 > 60 分钟才有时间行，有了就一定要露出来**
      （判据在 TaskCard，放不下压的是那一行自己的字号）。
-     窄格子的净宽不够时裁的是**时间文案**（`text-overflow: ellipsis`），
-     完整范围在 `title` 气泡里。 */
+     ⚠️ 第五轮补的**横向**那一半：光「有这一行」不够，第五轮实测四张定时卡全部
+     `裁 = 13px`（完整写法「17:00 – 18:01」要 67px、净宽只有 54px）。所以卡片文案
+     走紧凑写法 + 压缩阶梯，`text-overflow: ellipsis` 退成兜底而非常态。
+     这里**不许**再写 `display: none` —— 那等于把判据拆成两处（踩坑 52）。 */
   /* 内容层吃满卡片内高，放不下的在卡片边界处裁掉（卡片自己不能 overflow:hidden
      —— 会切断跨边界的拖拽）。
      ⚠️ `safe center` 不是笔误：普通 center 在内容比盒子高时**上下同时溢出**，
@@ -387,11 +392,18 @@ body.sheet-open .tab:active { background: none; }
        （见 calendar.css：圈和文字块是 `.ev-body` 那一行的两件，文字自己排成
        `.ev-text` 单列网格），flex 属性全落空；文字块宽是 `minmax(0, 1fr)`，
        标题自己会被 `overflow` 裁，不用 flex 分配。
-       「宁可少显示一行标题也要留住时间」现在由 JS 保证：`useWholeLineClamp`
-       先按真实行高给时间行留出位子，再折算标题能放几整个行。 */
-    line-height: var(--ev-title-lh, var(--task-line-sm)); white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+       「宁可少显示一行标题也要留住时间」现在由 JS 保证：`clampTitleLines`
+       先按真实行高给时间行留出位子，再折算标题能放几整个行；
+       整块装不下时由 `useCardFit` 沿两个轴分别压这一张卡。
+       ⚠️ 行高不在这里给 —— 它跟着 `--ev-title-lh` 走（见下面那条），
+       在这写死一档会盖掉压缩阶梯第 ① 档。 */
+    white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
     text-align: left;
   }
+  /* 窄屏周视图的行高换回小档（--task-line-sm 16）：calendar.css 那条大档（18）
+     特异度相同、写在更早的文件里，同特异度**后写的赢**（踩坑 50 第一条）。
+     不换回去，窄屏周视图的标题行距会比同一列里的未定时卡大 2px。 */
+  .week-col .task-el--timed { --ev-title-lh: var(--task-line-sm); }
   /* 摘要那一行仍然不显示：它只在场卡片里才有，不该为了「可能有」占一行 */
   .week-col .task-el--timed .ev-note { display: none; }
 }

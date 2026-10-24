@@ -265,6 +265,18 @@
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
 .task-el.dragging { opacity: 1; box-shadow: var(--drag-shadow); z-index: 9999; }
 
+/* 压缩阶梯的**起点**（宽松档）在这里定义，不在 `.ev-title` / `.ev-time` 的
+   `var()` 兜底里各写一遍（2026-10-24 第五轮）：那五处兜底既让 `contrast.mjs`
+   报「未定义的变量」，又把同一组默认值摊成五份、改一处漏四处。
+   ⚠️ 替换发生在**声明它的那个元素**上：JS 只在装不下的那张卡上写内联覆盖，
+   没写的卡照这里的默认值走。别在 `.ev-*` 上再给兜底值。 */
+.task-el {
+  --ev-title-lh: var(--task-line-sm);
+  --ev-title-fs: var(--fs-title);
+  --ev-time-lh: 1.15;
+  --ev-time-fs: var(--fs-meta);
+  --ev-time-ls: .1px;
+}
 /* 定时卡片：绝对定位到时间轴上。**不许 overflow: hidden** ——
    一裁，跨过容器边界的拖动就被切掉半截（用户 2026-10-11 报「向上拖被分割线挡」）。
    内边距 / 字号 / 行高与未定时卡**同一套**（2026-10-23 三问题第 1 条）：
@@ -332,17 +344,23 @@
    字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
 .ev-title {
   min-width: 0;
-  /* 行高默认与卡自己给的一致（--task-line-sm）；卡装不下两行时 TimedCard 会把这个
-     变量改成「字号 × 1.1」（见 lineBudget）—— **字号不动**，动行距。 */
-  line-height: var(--ev-title-lh, var(--task-line-sm));
-  font-size: var(--fs-title); font-weight: 400;
+  /* 默认值在 `.task-el`（宽松档），这里**不给兜底值**：那五处兜底会把「变量名写错」
+     变成静默降级（contrast.mjs 报的就是这一类）。卡装不下时由 TaskCard 的压缩阶梯
+     纵向第 ① 档压行距（`--ev-title-lh`）、第 ③ 档才动字号（`--ev-title-fs`）。
+     **默认值不动别的卡** —— 变量只写在装不下的那一张上。 */
+  line-height: var(--ev-title-lh);
+  font-size: var(--ev-title-fs); font-weight: 400;
   overflow: hidden; text-overflow: clip; white-space: nowrap;
 }
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
-     装不下时先压行距（TimedCard 写 --ev-time-lh），再不够是给卡加长 —— 不藏、不裁。 */
-  font-size: var(--fs-meta); line-height: var(--ev-time-lh, 1.15); color: var(--text-3);
-  font-variant-numeric: tabular-nums; letter-spacing: .1px;
+     横向也要完整：卡片文案走紧凑写法（`timeRangeCompact`）先省掉两个空格和那根长破折号，
+     装不下再紧字距（`--ev-time-ls`）、再降**这一行自己的**字号（`--ev-time-fs`）
+     —— 不藏、不给卡加长（加长等于把时长画长了）。
+     ⚠️ 横向那一轴不许动 `--ev-title-fs`：第四轮那么干过，窄屏周视图为了时间行
+     把标题也缩一档，同一屏上 11px 与 10px 并存，「未定时与定时同字号」当场破。 */
+  font-size: var(--ev-time-fs); line-height: var(--ev-time-lh); color: var(--text-3);
+  font-variant-numeric: tabular-nums; letter-spacing: var(--ev-time-ls);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* 详细内容的摘要。**比时间行再淡一档**：那一行是「几点几分」这种硬信息，
@@ -565,11 +583,15 @@
    这里不再有第二条 padding 覆盖。以前这条是 `--week-card-pad`：桌面与
    --tl-event-pad 同值、窄屏不同值（1px 0 vs 1px 6px），窄屏同一列里
    未定时卡比定时卡少 6px —— 踩坑 50 的第三条就是这么来的。 */
-/* 字重对齐月视图任务名（pill-title 没写 font-weight = 400）：
-   卡片基础是 550，周视图两种卡都压回 400 —— 用户 2026-10-22：
-   「未定时和定时也不一致，请全部统一成月视图的字号和字重」。 */
-.wun-cell .task-el--untimed .ev-title,
-.week-col .task-el--timed .ev-title { line-height: var(--task-line); }
+/* 周视图两种卡的**行高大档**（--task-line 18）写在卡上，不写在 `.ev-title` 上：
+   `--ev-title-lh` 的默认值已经定义在 `.task-el`，`.ev-title` 那句 `var()` 兜底
+   永远不会生效（自定义属性的替换发生在**声明它的那个元素**上）—— 覆盖也只有
+   写在同一层才压得过。窄屏那一半在 responsive.css 里换回小档。
+   字重对齐月视图任务名（pill-title 没写 font-weight = 400）：卡片基础是 550，
+   周视图两种卡都压回 400 —— 用户 2026-10-22：「未定时和定时也不一致，
+   请全部统一成月视图的字号和字重」。 */
+.wun-cell .task-el--untimed,
+.week-col .task-el--timed { --ev-title-lh: var(--task-line); }
 /* 未定时格末尾**那一整行空白**：没有文字、没有边框，点它就是「这天再加一条」。
    `flex: 1` 让它在「别的列把这行撑高」时把剩下的空白一起接住 —— 整格都能点。
    高度对齐一行卡（16px），不再用 26px。 */
