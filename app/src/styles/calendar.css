@@ -179,6 +179,20 @@
   display: flex; flex-direction: column; justify-content: center; gap: var(--ev-gap);
   transition: box-shadow .14s;
 }
+/* ---- 触摸设备：任务卡禁文字选择（2026-10-24）----
+   为什么：拖拽激活是「按住 480ms 且位移 ≤ 8px」（ui/dnd/sensors.ts），而安卓
+   WebView 长按**文字**约 500ms 会启动文本选择 —— 两个定时器只差 20ms，谁赢看运气。
+   文本选择一启动就把触摸流收走，拖拽永远起不来，真机上的表现是
+   「有的卡拖得动、有的完全没反应」，取决于手指按到的是文字还是空白
+   （2026-10-24 用户：周视图任务拖到明天后就拖不回来；真机截图里抓到过
+   长按弹出的蓝字选中 + 复制工具条）。把选择这条路关掉，长按就只剩拖拽一个含义。
+
+   范围是整个 `.task-el` 行为标记（日历卡 / 列表行 / 胶囊 / 项目卡）——
+   列表排序走的是同一个 TouchSensor，面对同一个竞速，不厚此薄彼。
+   限 `pointer: coarse`：鼠标设备不受影响，仍可正常选中复制标题。 */
+@media (pointer: coarse) {
+  .task-el { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+}
 /* 日/周视图那张大卡。**圆角按自身高度收**（2026-10-19 用户报「不同高度的框圆角
    都一样大，矮框非常圆、高框还行，看着不统一」）：固定 12px 时，55px 高的卡
    正合适、18px 高的 15 分钟小块就成了药丸。
