@@ -405,6 +405,31 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int NOTE_LINE_MIN_DP = 24;
 
     /**
+     * 时间轴「画几行 + 每几个钟头写一个数字」。
+     *
+     * **返回 {rows, step}**，刻度列和网格层共用同一份 —— 两边都必须据此算高度，
+     * 否则左边的数字和右边的小时线会越往下越错开。
+     *
+     * 2026-10-25（用户报「底部空太多了」）：以前行数恒等于 {@code hi - lo + 1}。
+     * 刻度是隔 2 小时写一个的，所以**终点落在奇数点上时，最后一行没有数字** ——
+     * 时间轴底下白出一整行（用户把范围设到 21 点，21 是奇数，白出的就是 21~22
+     * 那一行，约 14dp，比留白本身显眼得多）。
+     *
+     * 现在把「尾部没有数字的行」直接砍掉：轴尾永远落在一个有数字的钟点上，
+     * 竖线下方只留半行（数字到行底的那点空隙）。只在末行确实无数字时才生效，
+     * 有数字的行一行都不会少。
+     */
+    private static int[] axisPlan(int lo, int hi, int timelineDp) {
+        int rows = Math.max(1, hi - lo + 1);
+        // 行高很小 → 数字会叠在一起，隔 2~3 小时才写一个（判据跟 App 日视图一致）
+        float dpPerHour = Math.max(1, timelineDp - LINE_OFFSET_DP) / (float) rows;
+        int step = dpPerHour < 11f ? 3 : (dpPerHour < 16f ? 2 : 1);
+        int last = rows - 1;
+        while (last > 0 && last % step != 0) last--;   // 尾部无数字的行砍掉
+        return new int[]{last + 1, step};
+    }
+
+    /**
      * 十字面板左下角的**刻度列**。
      *
      * 和右下主体的网格格用**同一个高度公式**（累进取整，避免逐行攒出误差），
@@ -413,14 +438,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static void renderScale(Context c, RemoteViews v, int lo, int hi,
                                     int timelineDp, boolean isToday, int nowMin) {
         v.removeAllViews(R.id.tl_scale);
-        int hours = hi - lo + 1;
+        int[] plan = axisPlan(lo, hi, timelineDp);
+        int hours = plan[0];
+        int step = plan[1];
         // 和主体用同一个「一小时多少 dp」—— 见 LINE_OFFSET_DP：主体整体下移了
         // 5dp，所以可用高度要先扣掉，否则数字和线会越往下越错开。
         float dpPerHour = Math.max(1, timelineDp - LINE_OFFSET_DP) / (float) hours;
-        // 行高很小时数字会叠在一起 → 隔 2~3 小时才写一个（判据跟 App 日视图一致）。
-        // ⚠️ 字号**不再随行高变化** —— 用户 2026-10-13 要求刻度 / 打卡 / 任务卡
-        // 统一 9sp，字号在 widget_tl_hour.xml 里定死，这里只控制「写哪几个」。
-        int step = dpPerHour < 11f ? 3 : (dpPerHour < 16f ? 2 : 1);
 
         int prevY = 0;
         for (int k = 0; k < hours; k++) {
@@ -460,9 +483,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static void renderTimeline(Context c, RemoteViews v, List<WTask> timed,
                                        int lo, int hi, int timelineDp,
                                        boolean isToday, int nowMin) {
-        int hours = hi - lo + 1;
+        int[] plan = axisPlan(lo, hi, timelineDp);
+        int hours = plan[0];
         int fromMin = lo * 60;
-        int toMin = (hi + 1) * 60;
+        int toMin = (lo + hours) * 60;
         // 扣掉整体下移量。**线、红线和任务卡共用这一个比例**，
         // 所以下移之后三者仍然严格对齐（见 LINE_OFFSET_DP）。
         int innerDp = Math.max(1, timelineDp - LINE_OFFSET_DP);
