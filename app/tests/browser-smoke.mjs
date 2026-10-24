@@ -262,8 +262,8 @@ async function clickEl(page, findExpr) {
 
 /* ---------------------------------------------------- 触屏合成 */
 
-/** 和 ui/dnd/sensors.ts 的 TOUCH_DRAG_DELAY 对齐。浏览器里是 480 */
-const TOUCH_DRAG_DELAY = 480;
+/** 和 ui/dnd/sensors.ts 的 TOUCH_DRAG_DELAY 对齐（2026-10-24 起是 250） */
+const TOUCH_DRAG_DELAY = 250;
 
 /**
  * 合成一次触摸。走 CDP 的 Input.dispatchTouchEvent —— 它派生出来的
@@ -1268,7 +1268,7 @@ try {
   ok((await inbox()).join('') === '甲乙丙', '三条任务按添加顺序排，实际 ' + JSON.stringify(await inbox()));
 
   // —— 触摸设备任务卡禁文字选择（2026-10-24）——
-  // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的 480ms 激活竞速，
+  // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的激活延迟竞速，
   // 拖拽就「有时灵有时不灵」（真机：周视图任务拖到明天后拖不回来）。
   // 修复是 calendar.css 的 @media (pointer: coarse) .task-el { user-select: none }。
   // 触摸仿真开启时 pointer: coarse 会命中（实测），所以这条在这里断得住。
@@ -1291,7 +1291,7 @@ try {
   // —— 触摸拖拽排序（触屏这条路不能带着长按操作层一起改坏）——
   /* **按住不动不再弹任何东西。** 长按操作层已在 2026-10-11 整体删除
      （用户明确要求「整个长按的面板包括其功能都彻底砍掉」），所以这里只留
-     拖拽一条路：TouchSensor 的 `{delay: 480, tolerance: 8}` 到点开拖，
+     拖拽一条路：TouchSensor 的 `{delay: 250, tolerance: 8}` 到点开拖，
      松手落库。断言的不是「有没有弹层」——那个已经没有了 —— 而是排序真的
      变了、并且落进了 localStorage。 */
   const p2 = await rectOf('甲');

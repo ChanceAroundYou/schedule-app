@@ -11,7 +11,7 @@
  *   ├── useDroppableZone（放置区）
  *   └── useTimelineDrag（日 / 周 / 泳道的落点计算）
  *
- * **触屏只有一条路：按住 480ms 开拖（TouchSensor 的 `delay`）。**
+ * **触屏只有一条路：按住 TOUCH_DRAG_DELAY（250ms）开拖（TouchSensor 的 `delay`）。**
  * 长按操作层已于 2026-10-11 整体删除（用户明确要求），所以这里不再有
  * 「长按还是拖拽」的分叉 —— 手指挪没挪过都不弹东西，只决定拖不拖。
  *
