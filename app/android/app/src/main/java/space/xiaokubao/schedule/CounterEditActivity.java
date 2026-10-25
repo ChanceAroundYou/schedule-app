@@ -45,6 +45,10 @@ public class CounterEditActivity extends Activity {
         setContentView(R.layout.dialog_counter_edit);
         setFinishOnTouchOutside(true);
 
+        // 弹窗默认按内容收缩，太窄。加宽到屏幕宽度的 90%，约一倍。
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        getWindow().setLayout((int) (dm.widthPixels * 0.9), android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+
         counterId = getIntent().getStringExtra(EXTRA_ID);
         String name = getIntent().getStringExtra(EXTRA_NAME);
         int value = getIntent().getIntExtra(EXTRA_VALUE, 0);
