@@ -1,7 +1,7 @@
 # 编码规范第 7 册 · 测试
 
 > 状态：**长期规则**（本册含验证命令，无独立 plan）
-> 依据：`docs/测试.md`、`docs/重构-组件合并-实施spec.md` §8–§9、
+> 依据：`docs/测试.md`、`docs/归档-重构-组件合并-实施spec.md` §8–§9（已归档）、
 > `app/tests/`（browser-smoke/contrast/color-scan）、`server/tests/`（api/migration/ai/smoke-share）
 > 不变量：测试隔离第一（临时后端+随机端口，不碰线上库）；跑完收干净；本册只定矩阵与纪律，不写用例。
 
@@ -24,10 +24,10 @@
 - 端口自动让开（首选被占往后排，起手行写明实用的四个），但**避让只管本趟**——残留旧后端会静默劫持。
 - 收尾三件（踩坑 40）：`pkill -x chrome` 归零、`ss -ltnp` 杀残留服务、`rm -rf /tmp/sched-browser-*`。
 
-**verify（2026-10-14）**：§4 全套命令一遍绿 —— typecheck / 132 单测 / color-scan（0）/
-contrast（72 对 0）/ api-scan（domain 0 · views 0 · 调用方 73/73 · views 零 data/store）/
-build / browser-smoke（全通过）/ 后端 api·migration·ai·smoke-share（全过）；工作区干净、
-测试残留归零。判据 1–3 全绿，无开放违规。
+**verify（2026-10-25）**：`cd app && npm test` **193/193**、`node server/tests/api.test.js`
+**56/56**、`node app/tests/card-geometry.mjs` 全通过、`node app/tests/browser-smoke.mjs`
+全通过（0 FAIL）。扫描器（contrast / color-scan / api-scan）与 typecheck 另跑。
+判据 1–3 全绿，无开放违规。
 
 ---
 

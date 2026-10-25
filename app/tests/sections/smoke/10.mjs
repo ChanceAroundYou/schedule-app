@@ -6,7 +6,7 @@ export async function run(ctx) {
   const state = ctx.state;
   console.log('\n八、触屏拖拽排序：TouchSensor 那一路（长按操作层已删）');
   // 桌面视口 + 触屏事件。**不需要窄屏**：拖拽只认 pointerType，
-  // 不认宽度（窄屏的标签栏那套是另一回事，那个本机测不了，见 CLAUDE.md 四、34）。
+  // 不认宽度（窄屏排版是另一回事，真视口那套在 26 节）。
   // 用 CDP 合成触摸，Chrome 会照常派生出 pointerType:'touch' 的 pointer 事件。
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await evalJs(page, `document.querySelector('[data-nav="inbox"]').click(); return true;`);

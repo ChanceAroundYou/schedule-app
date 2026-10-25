@@ -38,7 +38,10 @@ AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt.exe"
 SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版 ssh 不读 ~/.ssh/config
 # 里的 Host 别名（`ssh ubuntu` 会退化成用本机名当用户名，然后 publickey 失败）
-SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
+# ssh 可执行文件由 preflight.sh 的 pick_ssh() 探测：
+#   显式 `SSH=` → Windows 自带的 ssh.exe → PATH 里的 ssh。
+# **别在这里再写死某个平台的路径** —— 那样 Linux 侧会静默失败。
+# 注意也别在这里给 SSH 赋任何值，会盖掉用户传进来的那个。
 REMOTE_DIR='~/.local/schedule/apk'
 BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule/dl}"
 

@@ -152,7 +152,7 @@
      这里声明 0 是**默认值而不是兜底值** —— 没有原生注入时（浏览器 / 非全面屏）
      语义上就是 0px 遮挡，不是「名字写错了将就一下」。写了它 `contrast.mjs`
      才不会把这四个当成未定义变量；真写错成 `--st` 照样会被抓出来。
-     用侧见 styles/shell.css（顶栏）与 responsive.css（底栏 / .main）。 */
+     用侧见 ui/shell/shell.css（顶栏）与 responsive.css（底栏 / .main）。 */
   --sat: 0px; --sab: 0px; --sal: 0px; --sar: 0px;
 }
 

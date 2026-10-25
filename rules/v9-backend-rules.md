@@ -19,7 +19,7 @@
   `clock`（时钟不对，留着重试）/ `forbidden`（无写权限，终态；不区分"不存在"与"不归你"防枚举）。
 - 同步：`changes.seq` 全局单调自增主键；客户端单 `cursor`；服务端先落盘再取数；
   新进集历史在游标后，客户端见陌生 `calId` 即要全量快照。
-- AI 三段：写工具 `execute` 只造提案（`Map<toolCallId, proposal>`，`chat.mjs:158`）→
+- AI 三段：写工具 `execute` 只造提案（`Map<toolCallId, proposal>`，`server/lib/ai/chat.mjs` 里那个 `const proposals = new Map()`；引行号会随重构漂，别写死）→
   提案按 `toolCallId` 挂 assistant 消息（并行，不按序，`persist.mjs:25`）→
   `POST /api/ai/confirm` 唯一落库（按 id 读回、重查权限、走 `applyOps`）。
   `confirm.js` 纯 DB、CJS 直接 require，不碰 pi（依赖没装也能确认已排好的改动）。
@@ -77,7 +77,7 @@
   确认前**重查权限**（生成到确认间可能被降级/移出）。
 - 确认时间戳 `max(Date.now(), lastTs+1)`（同毫秒两 op 比较键相同会白写）；
   重复任务拒绝标完成（推进在客户端）；软删除带 `trashFrom: 'AI'`。
-- pi 调用只关 `lib/ai/chat.mjs` 一文件；依赖锁精确版本（没到 1.0）。
+- pi 的 import 只出现在 `lib/ai/` 目录内（现 7 个文件）；依赖锁精确版本（1.0.4）。
 
 ### B5 后端依赖与数据目录
 

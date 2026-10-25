@@ -6,7 +6,12 @@
 #   ./deploy/publish-web.sh --approve          # 构建 + 真的发布
 #   ./deploy/publish-web.sh --approve --skip-build # 已有 dist/，不再构建
 #   ./deploy/publish-web.sh --approve --force  # 不看指纹，强制重发
-#   ./deploy/publish-web.sh --approve --rollback # 回滚到上一份备份
+#   ./deploy/publish-web.sh --rollback --approve # 回滚到上一份备份
+#
+# ⚠️ **开关顺序无所谓**（2026-10-25 起）：全部开关统一在 pf_parse_args 里扫全量。
+#    以前 `--rollback` / `--skip-build` 只认 `$1`，而 `--approve` 扫全量 ——
+#    于是 `--approve --rollback` **不进回滚分支**，一路走到「发布」，
+#    以为在回滚实际在上线，还不报错。别再退回 `[ "$1" = ... ]` 的写法。
 #
 # ⚠️ **默认 dry-run**：不加 --approve 就只打印「要发什么、发到哪、来源分支是
 #    哪个提交」，**绝不写生产**。这是双端开发下生产锁定的那道闸门 ——
@@ -36,7 +41,10 @@ APP="$ROOT/app"
 
 SSH_HOST="${SSH_HOST:-ubuntu}"
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版不读 ~/.ssh/config 里的别名
-SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
+# ssh 可执行文件由 preflight.sh 的 pick_ssh() 探测：
+#   显式 `SSH=` → Windows 自带的 ssh.exe → PATH 里的 ssh。
+# **别在这里再写死某个平台的路径** —— 那样 Linux 侧会静默失败。
+# 注意也别在这里给 SSH 赋任何值，会盖掉用户传进来的那个。
 REMOTE_WEB='~/.local/schedule/web'
 BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule}"
 KEEP=3
@@ -56,15 +64,34 @@ pf_parse_args "$@"
 FP_CMD="find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sed 's/\*//g' | tr -s ' ' | sha256sum | cut -c1-16"
 
 # ---------------------------------------------------------------- 回滚
-if [ "${1:-}" = "--rollback" ]; then
+if [ "$PF_ROLLBACK" = "1" ]; then
   say "回滚：列出备份"
-  LAST="$("$SSH" "$SSH_HOST" "ls -1d $REMOTE_WEB.bak-* 2>/dev/null | sort | tail -1")"
-  [ -n "$LAST" ] || die "没有找到任何备份（$REMOTE_WEB.bak-*）"
+  # ⚠️ 两条判定规则，缺一条就出事故（2026-10-25）：
+  #
+  # ① **按 mtime 挑，不能按名字字典序。** 备份名有三种格式，字典序和时间序
+  #    不是一回事：`<version>-<MMDD>` 里 version 也参与排序（`2.1.9` 排在
+  #    `2.1.10` 后面）、`prod-<YYYYMMDD>` 是迁移留下的、`rollback-<MMDD>` 是
+  #    回滚自己写的。原来写 `ls -1d … | sort | tail -1`：实机上选中的是
+  #    **2026-10-15 的 `prod`** 那份，比最近的备份旧了一周多。
+  #
+  # ② **必须排除 `-rollback-` 快照。** 回滚时自己也会写一份 `bak-rollback-*`，
+  #    它按 mtime 就是最新的 —— 不排除的话**连续回滚两次会把刚退掉的坏版本
+  #    装回去**。第二次的命令和第一次一字不差，用户不可能看出区别。
+  #    这类快照只当「撤销这次回滚」的手动后悔药，留在盘上但不参与挑选。
+  RUB="$(pf_rollback_candidates_cmd "$REMOTE_WEB")"
+  LAST="$("$SSH" "$SSH_HOST" "$RUB | head -1")"
+  [ -n "$LAST" ] || die "没有找到任何可回滚的备份（$REMOTE_WEB.bak-*，已排除 -rollback- 快照）"
   pf_gather
+  # 回滚不可撤销地覆盖线上内容 —— 把候选摆出来，让人有机会发现挑错了。
+  echo "  可选备份（按时间新→旧，不含 -rollback- 快照）："
+  "$SSH" "$SSH_HOST" "$RUB | head -5 | sed 's/^/    /'" || true
+  echo "  ⚠️ 想撤销「上一次回滚」，把 -rollback- 那份手动拷回来："
+  "$SSH" "$SSH_HOST" "ls -1dt $REMOTE_WEB.bak-rollback-* 2>/dev/null | head -1 | sed 's/^/    /'" || true
   pf_print_summary "$REMOTE_WEB" "动作=回滚到 $LAST"
   pf_approve_or_exit
   printf '  回滚到：%s\n' "$LAST"
   # 同样**不能 mv 目录**（bind mount 认 inode），只把内容拷回去
+  # 回滚前的现场也留一份：这次回滚本身也可能是错的，得能再退回来。
   "$SSH" "$SSH_HOST" "set -e
 mkdir -p $REMOTE_WEB
 cp -r $REMOTE_WEB $REMOTE_WEB.bak-rollback-$(date +%m%d-%H%M%S)
@@ -77,7 +104,7 @@ cp -r $LAST/. $REMOTE_WEB/"
 fi
 
 # ---------------------------------------------------------------- 构建
-if [ "${1:-}" = "--skip-build" ]; then
+if [ "$PF_SKIP_BUILD" = "1" ]; then
   say "1/6 跳过构建（--skip-build），用现有 dist/"
 else
   say "1/6 本地构建（同源，不带 VITE_API_BASE）"
@@ -98,8 +125,10 @@ TS="$(date +%m%d-%H%M%S)"
 # ---------------------------------------------------------------- 指纹比对
 say "2/6 跟线上比内容指纹"
 LOCAL_FP="$(cd dist && eval "$FP_CMD")"
-REMOTE_FP="$("$SSH" "$SSH_HOST" "cd $REMOTE_WEB 2>/dev/null && $FP_CMD" || true)"
-printf '  本地 %s\n  线上 %s\n' "${LOCAL_FP:-<空>}" "${REMOTE_FP:-<空>}"
+REMOTE_FP="$(pf_remote_fp "$REMOTE_WEB" "$FP_CMD")"
+REMOTE_SHOW="$REMOTE_FP"
+[ "$REMOTE_FP" = "__MISSING__" ] && REMOTE_SHOW='<远端还没有这个目录，首次发布>'
+printf '  本地 %s\n  线上 %s\n' "${LOCAL_FP:-<空>}" "$REMOTE_SHOW"
 SKIP=0
 if [ "$PF_FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
   SKIP=1
@@ -157,9 +186,12 @@ fi
 rm -rf $REMOTE_WEB/*
 cp -r $REMOTE_WEB.new/. $REMOTE_WEB/
 rm -rf $REMOTE_WEB.new
-# 只留最近 $KEEP 份
-ls -1d $REMOTE_WEB.bak-* 2>/dev/null | sort | head -n -$KEEP | while read -r d; do rm -rf \"\$d\"; echo \"    清掉旧备份 \$(basename \$d)\"; done
-ls -1d $REMOTE_WEB.bak-* 2>/dev/null | sed 's/^/    /' || true"
+# 只留最近 $KEEP 份（两类分开计，普通快照与回滚快照互不挤占）。
+# ⚠️ 按 **mtime** 排、并区分 `-rollback-`：备份名有 `<version>-<MMDD>` /
+# `prod-<YYYYMMDD>` / `rollback-<MMDD>` 三种格式，字典序会把最老的当成最新的
+# 留下来，删掉的正好是刚发的那几份。回滚挑的就是这批目录，两处必须同一口径。
+$(pf_prune_backups_cmd "$REMOTE_WEB" "$KEEP")
+ls -1dt $REMOTE_WEB.bak-* 2>/dev/null | sed 's/^/    /' || true"
 fi
 
 # ---------------------------------------------------------------- 校验
@@ -197,7 +229,7 @@ if [ "$SKIP" = "0" ]; then
 else
   say "未改动生产（线上已是这份内容）"
 fi
-printf '  回滚：./deploy/publish-web.sh --approve --rollback\n'
+printf '  回滚：./deploy/publish-web.sh --rollback --approve\n'
 # 用户端要不要清缓存？**不用**（2026-10-24 P3 记在这儿，免得每次发布都问一遍）：
 # `app/public/sw.js`（sched-shell-v4）对导航请求走「网络优先、断了才回落缓存」，
 # 只有带内容哈希的 assets 是缓存优先；`app/src/data/update-guard.ts` 还会比 bundle 名，

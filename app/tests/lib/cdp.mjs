@@ -89,7 +89,7 @@ export async function dumpPage(page, label) {
  * **必须连 pointerdown 一起补，光 `el.click()` 不算一次真点击**：这个应用的
  * 点击委托挂在 pointerdown 上（长按状态机在那儿），而「吞掉抬手那记 click」
  * 的标志也只在 pointerdown 里复位 —— 上一节触屏拖拽留下的标志会让第一次
- * `.click()` 整整一下被吃掉（详见 CLAUDE.md 四、40）。
+ * `.click()` 整整一下被吃掉（详见 docs/踩坑-环境.md 第 32 条）。
  *
  * `findExpr` 是一段**返回元素**的表达式，不是选择器字符串 —— 调用点常常要先
  * 按文字筛一轮。

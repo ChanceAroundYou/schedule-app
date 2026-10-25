@@ -53,7 +53,7 @@ function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
           onChange={(e) => { setText(e.target.value); setBad(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter') go(text); }}
         />
-        {/* 「跳转」保持原样：它有自己的 @media (hover:none) 触屏规则（styles/shell.css
+        {/* 「跳转」保持原样：它有自己的 @media (hover:none) 触屏规则（shell.css
             里那几条 .jp-go），换成 Btn 就得把那些选择器一起改 —— 而它是
             输入框的提交伙伴，跟 .fast-clock / .clear-search 同一类 */}
         <button className="jp-go" onClick={() => go(text)}>跳转</button>

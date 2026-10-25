@@ -358,9 +358,9 @@
  * Tailwind 压不过、也不跟那些模块打架。**配色一律走它们的变量** ——
  * 写死颜色会让深色模式在这块失效（见 AGENTS.md 四、第 5 条）。
  *
- * 拖拽那套是复用 `ui/dndkit.tsx` 的：卡片同时是 `.task-el`（拖得起来）和
- * `data-card`（算一格），所以 `.drop-hole` / `.drag-muted` 的样式
- * 直接用模块里现成的，这里一个字都不用写。
+ * 拖拽那套是复用 `ui/dnd.ts` 的：卡片同时是 `.task-el`（拖得起来）和
+ * `data-card`（算一格），落点虚影 `.drag-land` 的样式在语义模块里现成，
+ * 这里一个字都不用写。
  */
 
 .pj-wrap { display: flex; flex-direction: column; gap: 10px; }

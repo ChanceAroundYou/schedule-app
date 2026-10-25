@@ -2,7 +2,7 @@
 
 > 状态：**长期规则**（实施另见 `v4-file-layout-plan.md`）
 > 依据：全局 `security-review.md`（800/50/4层）、
-> `docs/重构-组件合并-实施spec.md` §7、实测目录树 + barrel + 最长文件快照
+> `docs/归档-重构-组件合并-实施spec.md` §7（已归档）、实测目录树 + barrel + 最长文件快照
 > 不变量：**外部 import 路径一律不变**；本册只定放哪和多大，不动任何逻辑。
 
 ---
@@ -13,7 +13,11 @@
   `aipanel/ calendars/ dnd/ drawer/ hooks/ kit/ settings/ shell/`，按**功能组**划分。
 - barrel：`ui/kit.tsx`（`export * from './kit/kit.ts'`）、`ui/hooks.ts`、`ui/shell/shell.ts`、
   `views/parts.tsx`、`domain/types.ts`——全部只 re-export，头部注释写明"保持 import 路径不变"。
-- 最长文件：`AiPanel.tsx` 313 行 → 800 上限**无压力**；server 最长 `calendars.js` 228 行。
+- 最长非测试源文件（2026-10-25 实测）：`data/store/tasks.ts` **813 行 —— 已超 800 硬顶**；
+  其后 `views/calendar/TaskCard.tsx` 669、`domain/layout.ts` 404、`app/clickDispatch.ts` 392。
+  server 非测试最长 `lib/ai/tools/write.mjs` 430、`lib/sync.js` 314。
+  > `tasks.ts` 超线是本轮实测发现的**待办**：它把新建 / 重复展开 / 勾选 / 删除 / 垃圾箱
+  > 五件事装在一个文件里，正好落在软线那条「是不是混了两件事」上（F1）。拆法只许 barrel。
 - 函数长度：逻辑函数**全部 ≤50 行，无特许**——`normalizeUi`/`migrateV3` 已按逻辑单元拆成
   `normalizeDayWindow`/`normalizeNav`、`migrateTasks`/`migrateTrash`/`migrateHabits`；
   `Dropdown` 按部件拆成 `Dropdown`/`DropdownMenu`/`handleKeyDown`，逻辑单元各 ≤50。

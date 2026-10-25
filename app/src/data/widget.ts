@@ -117,7 +117,7 @@ export async function clearWidgetAuth(): Promise<void> {
 /**
  * 把系统栏的实际占位写进 CSS 变量，供布局做内边距。
  *
- * 变量名与 CSS 里的兜底值（`--sat` 等，见 styles/shell.css）是一对：
+ * 变量名与 CSS 里的兜底值（`--sat` 等，见 ui/shell/shell.css）是一对：
  * **不调这个函数时它们就是空的**，CSS 会退化成原来的样子 ——
  * 所以网页版（浏览器里跑）完全不受影响，只有 App 里才会多出这几像素。
  *

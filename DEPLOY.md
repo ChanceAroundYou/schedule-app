@@ -10,8 +10,13 @@
 
 ## 一、拓扑与目录
 
+**本文所有 `~/` 都是指服务器 `ubuntu`（`192.168.1.6`）上的家目录**，不是 NAS 本机
+（`xiaokubao-fn`，`192.168.1.4`）—— 两边都有个 `~/.local/schedule/`，NAS 上那个是
+**2026-10-23 的旧残留**（`web/` 里 index.html 的 md5 和线上那份不一样），线上不读它。
+在 NAS 上跑命令前先想清楚「这是在哪台机器上」。
+
 ```text
-公网 → Cloudflare 隧道（路由器上）→ home.xiaokubao.space 直达本机
+公网 → Cloudflare 隧道（路由器上）→ home.xiaokubao.space 直达 ubuntu
   │
   ▼
 nginx 容器（network_mode: host）
@@ -40,7 +45,7 @@ nginx 容器（network_mode: host）
 |---|---|
 | `/home/xiaokubao/.local/schedule/{web,app,data,deps,apk}` | 见上表 |
 | `/home/xiaokubao/docker/nginx` | nginx 的 compose（`deploy/nginx-compose.yml` 是副本）+ `conf.d/` + `certs/` |
-| SMB 工程目录 `/mnt/fnos/family/星星包/coding/日程管理` | **只是源码**，线上不读它 |
+| 工程目录 `/vol2/@team/family/星星包/coding/日程管理`（NAS 本机）/ `/mnt/fnos/…`（经 SMB 看） | **只是源码**，线上不读它 |
 
 | | 前端 | 后端 |
 |---|---|---|
@@ -58,8 +63,8 @@ nginx 容器（network_mode: host）
 `SCHEDULE_DATA_DIR=/home/xiaokubao/.local/schedule/data`，里面就三样：
 `schedule.db`（+ `-wal` / `-shm`）、`secret.key`（令牌签名密钥，0600）。
 
-放本机磁盘而不是工程目录，是因为工程目录在 **CIFS/SMB** 上，SQLite 的文件锁在
-CIFS 上不可靠，写了坏页不可恢复。
+放本机磁盘而不是工程目录，是因为工程目录**经 SMB 共享给 Windows**，SQLite 的文件锁在
+SMB 上不可靠，写了坏页不可恢复。
 
 ```bash
 systemctl --user stop schedule-backend     # 先停，WAL 才干净落盘
@@ -84,7 +89,7 @@ ln -s ~/.local/schedule/deps/node_modules ./node_modules   # 每份 checkout 都
 |---|---|
 | 软链不用 `NODE_PATH` | 不用改 systemd 单元，也不挑进程从哪个目录起 |
 | `node_modules` 在 `.gitignore` 里 | 链不进版本库，每份 checkout 自己补。缺了服务**照样起得来**（`lib/ai/index.js` 是惰性 import），只是 AI 页报「依赖没装好」 |
-| pi 的调用只关在 `server/lib/ai/chat.mjs` | 升版只改这一个文件 |
+| pi 的 import 只出现在 `server/lib/ai/` 下（现 8 个文件） | 目录之外的代码永远不碰第三方包；升版改动收敛在这一个目录里 |
 
 ---
 
@@ -95,7 +100,7 @@ ln -s ~/.local/schedule/deps/node_modules ./node_modules   # 每份 checkout 都
 
 ```text
 Windows 本机    C:\Users\小哭包\coding\schedule-wt        分支 dev   → github/dev
-ubuntu 工程目录 /mnt/fnos/family/星星包/coding/日程管理     分支 main  → origin/main
+ubuntu 侧工程目录（NAS 的 /vol2/… 经 SMB 挂成 /mnt/fnos/…）  分支 main → origin/main
         │                                                    │
         └──────────── 同一个 upstream ───────────────────────┘
                   github.com/ChanceAroundYou/schedule-app
@@ -107,7 +112,7 @@ ubuntu 工程目录 /mnt/fnos/family/星星包/coding/日程管理     分支 ma
 
 | | Windows 本机 | ubuntu 工程目录 |
 |---|---|---|
-| 路径 | `C:\Users\小哭包\coding\schedule-wt` | `/mnt/fnos/family/星星包/coding/日程管理` |
+| 路径 | `C:\Users\小哭包\coding\schedule-wt` | `/mnt/fnos/family/星星包/coding/日程管理`（NAS 本机即 `/vol2/@team/family/星星包/coding/日程管理`） |
 | 分支 | **`dev`** | **`main`** |
 | remote 名 | `github` | `origin` |
 | 上游 | `github/dev` | `origin/main`（同一个仓库，名字不同而已） |
@@ -136,8 +141,14 @@ ubuntu 工程目录 /mnt/fnos/family/星星包/coding/日程管理     分支 ma
 
 ```bash
 # 1. 先提交 + 推送（闸门会查这两项）
-git add -A && git commit && git push
+git add <本任务的文件> && git commit && git push
+```
 
+> **别写 `git add -A`。** 两个会话（Windows 的 `dev` / 这里的 `main`）共用同一份
+> 工作副本时，`-A` 会把别人的在途改动一起卷进你的提交。逐条 add 本任务的文件，
+> 规则见 [docs/工作区保护.md](docs/工作区保护.md)。
+
+```bash
 # 2. dry-run —— 只打印「要发什么 / 来源分支哪个提交 / 发到哪」，一个字节都不写
 ./deploy/publish-web.sh
 ./deploy/publish-server.sh
@@ -157,6 +168,14 @@ git add -A && git commit && git push
 | `--allow-dirty` | 逃生口：允许带着未提交改动发布 |
 | `--allow-unpushed` | 逃生口：允许带着未推送的提交发布 |
 
+**开关顺序无所谓**（2026-10-25 起全部在 `preflight.sh` 的 `pf_parse_args` 里扫全量），
+拼错的 `--xxx` 会当场报错退出，不会静默忽略。
+
+> ⚠️ **2026-10-25 之前这里是个事故点**：`--rollback` / `--skip-build` 当时只认第一个
+> 参数，而 `--approve` 扫全量 —— 于是 `--approve --rollback` 不进回滚分支，**一路走到
+> 「构建 → 授权 → 发布」**：以为在回滚，实际在上线，而且不报错。现在两个开关和
+> `--approve` 走同一个循环，别再改回 `[ "$1" = ... ]`。
+
 ⚠️ 两个逃生口意味着「线上跑的版本**对不上仓库里任何提交**」—— 排障时
 `state/*.version` 里那个 commit 会误导你。救急才用，用完尽快补提交推送。
 
@@ -166,30 +185,21 @@ git add -A && git commit && git push
 ssh ubuntu 'cat ~/.local/schedule/state/*.version'
 ```
 
-```text
-target=web
-version=2.0.1
-commit=1c7155c
-branch=dev
-published_at=2026-10-15T13:40:12+0800
-published_from=小哭包家的笔记本
-```
+写成 `target=web` / `version=` / `commit=` / `branch=` / `published_at=` /
+`published_from=` 这么几行。**格式示意，别照抄** —— 实际值以命令输出为准。
 
 > ⚠️ 刻意**不放在 `web/` 里**：那是 nginx 站点根，放进去就等于在
-> `https://…/schedule/VERSION` 上公开版本号和 commit sha。`state/` 不在任何
-> 容器挂载里，外面读不到。
+> `https://…/schedule/VERSION` 上公开版本号和 commit sha。`state/` 不在任何容器挂载里。
 
-### 分支现状（2026-10-15）
+### 分支现状
 
-`dev` 与 `main` 是**分叉的**，没有收敛：
+`dev` 已于 2026-10-25 整条合并进 `main`。**别信文档里的数字**，查一条命令：
 
-| | 提交 |
-|---|---|
-| `dev` 独有（3） | `17c0d54` 启动卡死修复、`9137f68`、`18ac4e7` 版本号 2.0.1 |
-| `dev` 缺的（8） | `89d0e67` repeatUntil 级联清理由服务端做、`cb72cb8` AI 中文 IME 组字防截断、`a6ca5ec`/`a1366d2`/`11f81a1` 后端 B7/B9 校验与兜底、`6057066`…`5ad4681` 几个 merge |
+```bash
+git rev-list --left-right --count origin/dev...HEAD   # 左 = dev 独有，右 = main 领先
+```
 
-两边都改过 **repeatUntil 级联**，合的时候大概率冲突 —— 冲突时先摆差异，不替你挑。
-`main` 上的改动来自 ubuntu 侧，我不动它。
+合流仍由用户手动做 —— 冲突时先摆差异，不替他挑。
 
 ---
 
@@ -232,12 +242,18 @@ git log @{u}.. --oneline   # 必须为空（改动要先推到 dev）
 所以重跑脚本是安全的。要强制重发加 `--force`。两者都支持 `--rollback`。
 
 ```bash
-./deploy/publish-web.sh --skip-build    # 已有同源 dist/，只发布
-./deploy/publish-web.sh --rollback      # 从 web.bak-<版本>-<时间> 拷回（留最近 3 份）
-./deploy/publish-server.sh --rollback
+./deploy/publish-web.sh --skip-build --approve    # 已有同源 dist/，只发布
+./deploy/publish-web.sh --rollback --approve      # 拷回最新那份**发布**备份（留最近 3 份）
+./deploy/publish-server.sh --rollback --approve
 ```
 
-⚠️ 三条不能破的实现约束：
+> **回滚挑备份时会排除 `-rollback-` 快照**（`pf_rollback_candidates_cmd`）。回滚自己也
+> 会写一份 `web.bak-rollback-*`（= 刚退掉的那一版），按 mtime 挑的话第二次回滚会把它
+> 挑回来 —— 用户敲的命令和第一次一模一样，结果却是「退回了坏版本」，看不出任何区别。
+> 代价是**回滚对下一次发布之前是幂等的**：连按三次都停在同一个版本。想再退一级得从
+> 打印出来的候选列表里手动拷。
+
+⚠️ 五条不能破的实现约束：
 
 1. **只换目录里的东西，绝不 `mv` 目录本身。** Docker 的 bind mount 认 **inode**：
    目录被 mv 走后容器里那个挂载点还指着已删除的旧 inode，nginx 立刻 403
@@ -249,7 +265,7 @@ git log @{u}.. --oneline   # 必须为空（改动要先推到 dev）
    正好覆盖「链还在、目标没了」）。它**不是重装依赖** —— 本体在 `deps/`，只在
    `install-deps.sh` 装一次。
 4. **打包时强制 `--mode='u+rwX,go+rX'`，解包后再 chmod 一次并数文件数**（2026-10-24）。
-   工程目录在 CIFS 上，`dist/` 出来就是 `055`：tar 照原样带过去，远端先建出 `assets/`
+   工程目录经 SMB 共享，`dist/` 出来就是 `055`：tar 照原样带过去，远端先建出 `assets/`
    （没有写位）再往里塞文件就 `Permission denied`，`cp -r` 也读不动 —— 以前每次靠手动
    `chmod -R 755` 补救。文件数对不上会当场报「解包后只有 N 个」，不会再静默少文件。
 5. **回读校验以服务器磁盘上那份 `index.html` 为准**，公网那一趟只当链路体检（不一致只提示）。
@@ -316,7 +332,7 @@ systemctl --user daemon-reload && systemctl --user restart schedule-backend
 
 ## 五、conf 要点
 
-完整内容见 `deploy/schedule.conf`（七十来行）。骨架：
+完整内容见 `deploy/schedule.conf`（132 行）。骨架：
 
 ```nginx
 location = /schedule { return 301 /schedule/; }        # 补斜杠
@@ -372,8 +388,9 @@ location ^~ /schedule/         { alias /data/schedule-web/; index index.html; ..
 
 **新版自己注册一个 SW**（`app/public/sw.js`），作用只有一个：断网时还能把应用打开。
 预缓存清单是装的时候**现场从 index.html 抠的**（产物文件名带哈希，写死会立刻过期），
-验收标准是「打开一趟，`caches.keys()` 里就该有那 5 条」。
-改了缓存策略要顺手改 `CACHE` 名（`sched-shell-v1`），否则 `activate` 删旧缓存那步不触发；
+验收标准是「打开一趟，`caches.keys()` 里有 `sched-shell-v4`，里面装着 index.html、
+它引用的 assets、外加 `manifest.json` / `icon.svg`」。
+改了缓存策略要顺手改 `CACHE` 名（现在 `sched-shell-v4`，见 `app/public/sw.js`），否则 `activate` 删旧缓存那步不触发；
 只改 `sw.js` 代码不用动版本号。
 
 旧的那个（`schedule-v12`）在 `main.tsx` 的 `migrateAwayFromLegacySW()` 里被拆掉，
@@ -409,20 +426,30 @@ curl -sk -o /dev/null -w '%{http_code} %{redirect_url}\n' $B   # 301 -> .../sche
 端到端（改了共享 / 权限 / 同步一定要跑）：
 
 ```bash
-node server/tests/smoke-share.mjs      # 临时目录起自己的后端，不碰线上库
-cd app && npm run build && node tests/browser-cards.mjs   # 卡片几何（dist 要同源构建）
-cd app && node tests/contrast.mjs && node tests/color-scan.mjs
+node server/tests/smoke-share.mjs          # 两人共享一个集（临时后端，不碰线上库）
+node app/tests/browser-smoke.mjs           # 注册 → 建任务 → 拖拽 → 同步，真 Chrome
+node app/tests/card-geometry.mjs           # 卡片几何 + 手势分工
+node app/tests/contrast.mjs && node app/tests/color-scan.mjs
 ```
 
-> **交互（注册 → 建任务 → 拖拽 → 同步）没有自动化覆盖**，发布前手工走一遍。
+> 探针都会自己起一套隔离环境（临时后端 + 静态服务 + 独立 Chrome profile），
+> **自动构建 `dist/`**，直接从仓库根跑即可。改完仍建议手工点一遍 ——
+> 探针覆盖的是主链路，不是手感。
 
-清库重来（**会删掉所有真实用户和他们的日程**）：
+**清空一个测试账户的数据**（想清库重来，别碰生产 `data/` 目录）：
+
+> ⚠️ 下面这条命令**删的是整个数据目录，连 `secret.key` 一起删** ——
+> 结果是**所有账户当场被登出**，而不只是清掉某个人的日程。只在你确实要
+> 「从零开始，所有人重新注册」时才用；只是想验证一个空账户，注册个新用户名就行。
 
 ```bash
-systemctl --user stop schedule-backend
-rm -rf ~/.local/schedule/data && mkdir -p ~/.local/schedule/data
-systemctl --user start schedule-backend
+systemctl --user stop schedule-backend     # 先停，WAL 才干净落盘
+mv ~/.local/schedule/data ~/.local/schedule/data.$(date +%m%d-%H%M%S)   # 改名而不是删
+systemctl --user start schedule-backend    # 起来时自动建空库 + 新 secret.key
 ```
+
+> 用 `mv` 不用 `rm -rf`：改名是秒级的、可撤销的，真删错了没有任何后悔药
+> （`schedule.db` 里是所有人的全部任务）。确认不要了再手动清掉那个 `data.<时间>` 目录。
 
 ---
 
@@ -430,8 +457,8 @@ systemctl --user start schedule-backend
 
 | 故障 | 动作 |
 |---|---|
-| 前端新版有问题 | `./deploy/publish-web.sh --rollback`（从 `web.bak-*` 拷回，秒级）。⚠️ 别 `mv` 目录本身 |
-| 后端新版有问题 | `./deploy/publish-server.sh --rollback`，或干脆 `systemctl --user stop schedule-backend`（页面还开得了，离线副本也能看） |
+| 前端新版有问题 | `./deploy/publish-web.sh --rollback --approve`（拷回最新那份发布备份，秒级，会先把候选列出来）。⚠️ 别 `mv` 目录本身 |
+| 后端新版有问题 | `./deploy/publish-server.sh --rollback --approve`，或干脆 `systemctl --user stop schedule-backend`（页面还开得了，离线副本也能看） |
 | 想临时下线整站 | `conf.d/home/schedule.conf` → `.conf.disabled`，然后 `nginx -t && reload` |
 | APK 坏包 | 改回 `apk/version.json` 的 versionCode，或删掉 version.json |
 | nginx 整体起不来 | 恢复 `docker-compose.yml.bak-*` / `schedule.conf.bak-*`，再 `docker compose up -d` |
@@ -458,21 +485,21 @@ systemctl --user start schedule-backend
 
 ### 环境踩坑
 
-1. **非交互式 shell 里 `systemctl --user` 连不上总线**（脚本 / CI / AI 跑的命令都会撞上）：
-   ```bash
-   export XDG_RUNTIME_DIR=/run/user/$(id -u)
-   export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
-   ```
-2. **工程目录在 SMB 上会偶发丢文件**：大文件先写本机磁盘再 `cp`，`md5sum` 两端核对；
-   **别用 `perl -i` / `sed -i`**（靠「写临时文件再改名」，改名失败原文件当场消失）。
-3. **`pkill -f "node server/server.js"` 会打到自己**（命令行本身含这个字符串，exit 144）。
-   写成 `node [s]erver/server.js`，且别在同一条命令里出现字面量。
-4. **`scp` 传中文路径报 `pipe: Unknown error`**：改用 `cat 文件 | ssh ubuntu "cat > 目标"`。
-5. **本机 SSH 别名是 `ubuntu`**（`~/.ssh/config`），不是 `nas`；而且这台机器就是服务器，
-   改配置直接 `cp`，不用 ssh 自己。
-6. **无头 Chrome 最小窗口宽度约 526px**：`--window-size=390` 实测 `innerWidth` 是 526，
-   量不到真手机宽度。**别用 iframe 绕**（headless 下 `onload` 时序不可靠），
-   `Emulation.setDeviceMetricsOverride` 也不行（触发完整重排后合成事件不再进处理器）。
+**只在部署时撞上的**：
+
+1. **`scp` 传中文路径报 `pipe: Unknown error`**：改用 `cat 文件 | ssh ubuntu "cat > 目标"`。
+2. **SSH 别名是 `ubuntu`**（`~/.ssh/config`），不是 `nas`。⚠️ **别把「本机」当服务器**：
+   · **NAS 本机**（`xiaokubao-fn`，`192.168.1.4`，工程目录 `/vol2/…` 是本地 btrfs）：
+     **没有** nginx 容器、没有 `~/docker`、也没有 `~/.local/schedule/data`。
+   · **服务器 ubuntu**（`192.168.1.6`）：nginx / 后端 / 生产目录都在这儿，工程目录是
+     autofs 挂上来的 CIFS（`/mnt/fnos/…`）。
+   所以「改配置直接 cp」说的是**在 ubuntu 的 shell 里**；从 NAS 上改要先 ssh 过去。
+3. **无头 Chrome 最小窗口宽度约 526px**：`--window-size=390` 实测 `innerWidth` 是 526。
+   要真窄屏走 `Emulation.setDeviceMetricsOverride`（媒体查询真的生效，见
+   [踩坑-环境.md 第 24 条](docs/踩坑-环境.md)）。
+
+其余与环境有关的（`systemctl --user` 总线 / SMB 丢文件 / `pkill -f` 打到自己）见
+[踩坑-环境.md](docs/踩坑-环境.md) 第 21–23 条，这里不重复。
 
 ---
 

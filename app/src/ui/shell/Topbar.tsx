@@ -52,7 +52,7 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
           <ChevronRight size={15} />
         </Btn>
         {/* 只留一个「今」字。在不在今天**不靠文字**，靠 `aria-pressed` 那一档配色
-            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 styles/shell.css
+            （--primary 字 + --primary-pale 底 + 描边 + 加粗）—— 见 shell.css
             里 `.date-nav [aria-pressed="true"]`。
             **就在今天才亮**（需求 6）：和日 / 周 / 月三个视图档同一个语义。 */}
         <Btn

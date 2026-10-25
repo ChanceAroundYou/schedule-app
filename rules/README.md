@@ -55,21 +55,21 @@
 |---|---|
 | 1+2 | 每个 kit 组件 props 有清单、无 `className` 透传；调用方零 Tailwind 外观类；一个类名只有一个宿主 |
 | 3 | 令牌名写错当场可见（无兜底值，`contrast.mjs` 锁）；文件名 = 导出名；CSS 变量按角色不按序号 |
-| 4 | 最长文件 313 行（AiPanel），远低于 800 上限；拆分只用 barrel 模式，外部 import 路径不变 |
+| 4 | 文件 ≤800 行（`data/store/tasks.ts` 813 行仍是**待办**）；拆分只用 barrel 模式，外部 import 路径不变 |
 | 5 | `domain/` 零 React/DOM/网络（已验纯净）；`views/` 零 `onX` props（已验 0 处）；写操作只走委托 + 两道把关 |
 | 6 | 构造走 `make*`；外部数据必过 `hydrate*`；可见性只认 `isGone`/`isTrashed`；缺字段按旧行为处理 |
-| 7 | `npm test` + `browser-smoke.mjs`（400+ 断言）+ 4 个扫描器全绿；跑完收干净 |
+| 7 | `npm test`（193 条）+ `browser-smoke.mjs`（500+ 断言）+ 扫描器全绿；跑完收干净 |
 | 8 | 每个控件有可访问名字（placeholder 不算）；浮层四件套齐；动效全站关；探针断言锁 |
 | 9 | 读走 `snapshot`、写走 `applyOps`；`confirm` 只信 id 不信参数；权限只在三入口；SQL 值必绑定、异常不泄敏感 |
 
 ---
 
-## 现状快照（写总纲时的实测，供各册开工对照）
+## 现状快照（2026-10-25 实测）
 
-- 最长文件：`AiPanel.tsx` 313 行 → 800 上限**无压力**
+- 最长非测试源文件：`data/store/tasks.ts` 813 行（超 800 硬顶，待拆）；server 侧 `lib/ai/tools/write.mjs` 430
 - `domain/` 纯度：**已验纯净**（零 React/DOM/网络 import）
 - `views/` 回调：**已验 0 处** `onX` props
-- server 文件：最长 `calendars.js` 228 行，`server/data/` gitignored
+- server 文件：非测试最长 `lib/ai/tools/write.mjs` 430 行；`server/data/` gitignored
 - 全套验证（开工前基线）：typecheck ✓、单元 0 fail ✓、color-scan ✓、contrast 全绿 ✓、browser-smoke 全绿 ✓
 
 ---

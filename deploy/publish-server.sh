@@ -5,7 +5,11 @@
 #   ./deploy/publish-server.sh                  # dry-run（只看不发布）
 #   ./deploy/publish-server.sh --approve        # 真的发布
 #   ./deploy/publish-server.sh --approve --force        # 不看指纹，强制重发
-#   ./deploy/publish-server.sh --approve --rollback     # 回滚到上一份备份
+#   ./deploy/publish-server.sh --rollback --approve     # 回滚到上一份备份
+#
+# ⚠️ **开关顺序无所谓**（2026-10-25 起）：全部开关统一在 pf_parse_args 里扫全量。
+#    别再退回 `[ "$1" = --rollback ]` 的写法 —— 那样 `--approve --rollback`
+#    会被当成普通发布（静默上线），见 deploy/preflight.sh 里的说明。
 #
 # ⚠️ **默认 dry-run**：不加 --approve 就只打印「要发什么、发到哪、来源分支是
 #    哪个提交」，**绝不写生产**（不上传、不备份、不重启）。双端开发下生产
@@ -49,7 +53,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SSH_HOST="${SSH_HOST:-ubuntu}"
-SSH="${SSH:-/c/Windows/System32/OpenSSH/ssh.exe}"
+# ssh 可执行文件由 preflight.sh 的 pick_ssh() 探测：
+#   显式 `SSH=` → Windows 自带的 ssh.exe → PATH 里的 ssh。
+# **别在这里再写死某个平台的路径** —— 那样 Linux 侧会静默失败。
+# 注意也别在这里给 SSH 赋任何值，会盖掉用户传进来的那个。
 REMOTE_APP='~/.local/schedule/app'
 KEEP=3
 
@@ -71,11 +78,18 @@ pf_parse_args "$@"
 FP_CMD="find server -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sed 's/\*//g' | tr -s ' ' | sha256sum | cut -c1-16"
 
 # ---------------------------------------------------------------- 回滚
-if [ "${1:-}" = "--rollback" ]; then
+if [ "$PF_ROLLBACK" = "1" ]; then
   say "回滚：列出备份"
-  LAST="$("$SSH" "$SSH_HOST" "ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | tail -1")"
-  [ -n "$LAST" ] || die "没有找到任何备份（$REMOTE_APP.bak-*）"
+  # ⚠️ 两条判定规则，与 publish-web.sh 一字不差地同源（改一处就要改两处）：
+  #    按 **mtime** 挑，且**排除 `-rollback-` 快照** —— 回滚自己也会写一份
+  #    这类快照，不排除的话连续回滚两次会把刚退掉的坏版本装回去。
+  RUB="$(pf_rollback_candidates_cmd "$REMOTE_APP")"
+  LAST="$("$SSH" "$SSH_HOST" "$RUB | head -1")"
+  [ -n "$LAST" ] || die "没有找到任何可回滚的备份（$REMOTE_APP.bak-*，已排除 -rollback- 快照）"
   pf_gather
+  # 回滚会覆盖线上后端 —— 把候选摆出来，让人有机会发现挑错了。
+  echo "  可选备份（按时间新→旧，不含 -rollback- 快照）："
+  "$SSH" "$SSH_HOST" "$RUB | head -5 | sed 's/^/    /'" || true
   pf_print_summary "$REMOTE_APP" "动作=回滚到 $LAST"
   pf_approve_or_exit
   printf '  回滚到：%s\n' "$LAST"
@@ -112,8 +126,10 @@ ls /tmp/schedule-server-stage/server | sed 's/^/    /'
 # ---------------------------------------------------------------- 指纹比对
 say "2/7 跟远端比内容指纹"
 LOCAL_FP="$(cd /tmp/schedule-server-stage && eval "$FP_CMD")"
-REMOTE_FP="$("$SSH" "$SSH_HOST" "cd $REMOTE_APP 2>/dev/null && $FP_CMD" || true)"
-printf '  本地 %s\n  远端 %s\n' "${LOCAL_FP:-<空>}" "${REMOTE_FP:-<空>}"
+REMOTE_FP="$(pf_remote_fp "$REMOTE_APP" "$FP_CMD")"
+REMOTE_SHOW="$REMOTE_FP"
+[ "$REMOTE_FP" = "__MISSING__" ] && REMOTE_SHOW='<远端还没有这个目录，首次发布>'
+printf '  本地 %s\n  远端 %s\n' "${LOCAL_FP:-<空>}" "$REMOTE_SHOW"
 
 SKIP=0
 if [ "$PF_FORCE" = "0" ] && [ -n "$LOCAL_FP" ] && [ "$LOCAL_FP" = "$REMOTE_FP" ]; then
@@ -171,7 +187,8 @@ else
   ln -sfn ../deps/node_modules $REMOTE_APP/node_modules
   echo '    依赖软链缺失/悬空，已重建'
 fi
-ls -1d $REMOTE_APP.bak-* 2>/dev/null | sort | head -n -$KEEP | while read -r d; do rm -rf \"\$d\"; echo \"    清掉旧备份 \$(basename \$d)\"; done
+# 保留策略与回滚挑选**同源**（pf_prune_backups_cmd）：按 mtime、`-rollback-` 单独计。
+$(pf_prune_backups_cmd "$REMOTE_APP" "$KEEP")
 echo '    软链：'; ls -l $REMOTE_APP/node_modules | sed 's/^/    /'"
 
 # ---------------------------------------------------------------- 重启
@@ -194,4 +211,4 @@ pf_write_version app
 rm -f /tmp/schedule-server.tgz
 rm -rf /tmp/schedule-server-stage
 say "发布完成"
-printf '  回滚：./deploy/publish-server.sh --approve --rollback\n'
+printf '  回滚：./deploy/publish-server.sh --rollback --approve\n'

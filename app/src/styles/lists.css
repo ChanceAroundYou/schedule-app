@@ -259,32 +259,12 @@
 /* 所有落点容器都要是定位父级，指示物才能按坐标绝对定位画上去 */
 [data-drop] { position: relative; }
 
-/* ================= 让位拖放 =================
-   落点不再用「一条线 + 描边」表示，改成在列表里真的让开一个洞：
-   洞在哪，任务就落在哪 —— 位置本身就是位置，不用眼睛去推断。
+/* ================= 拖动排序 =================
+   落点由**指针压着的那一格**表示（`.drag-land`，见 ui/dnd/sortable.tsx），
+   被拖那项自己 `opacity-0` 藏起来、跟着手指走的是 DragOverlay 里的实体卡。
+   > `.drop-hole`（绝对定位的占位洞）是 2026-10-08 换 @dnd-kit 之前的残留，
+   > 代码里已无宿主，2026-10-25 删除。 */
 
-   之前那套静态线条（.ins-line / .ins-bar / .ins-hl）已废弃：
-   线只在跨过格子边界时跳一下，中间一大段位移完全没有反馈，
-   拖起来就是用户说的「刻板」。 */
-
-/* 占位洞：虚线框 + 极淡的主色底。
-   刻意做得很轻 —— 它只是「这里会空出来」的提示，
-   不该抢走被拖元素本身的注意力。 */
-.drop-hole {
-  position: absolute;
-  z-index: 5;
-  border: 1.5px dashed var(--primary);
-  border-radius: var(--r-lg);
-  background: var(--primary-soft);
-  opacity: .5;
-  pointer-events: none;
-  box-sizing: border-box;
-  /* 洞自己也在动：换格子时滑过去，而不是瞬移 */
-  transition: left .16s cubic-bezier(.22, .61, .36, 1),
-              top .16s cubic-bezier(.22, .61, .36, 1),
-              width .16s cubic-bezier(.22, .61, .36, 1),
-              height .16s cubic-bezier(.22, .61, .36, 1);
-}
 /* 被让位的任务：滑到新位置。
    这是「丝滑」的主要来源 —— 之前它们是瞬移的，
    现在整列会像被磁铁吸开一样依次挪动。 */

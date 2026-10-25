@@ -4,7 +4,7 @@ export async function run(ctx) {
   const { evalJs, waitFor, clickEl, touch, key, quickAdd, waitGone, dumpPage, openCalMenu, waitCalMenu, closeCalMenu, withCals, shown, clickCal, waitShownCount, focusCal, inbox, a11y, collect, fmt, apiPort, webPort, dataDir, TOUCH_DRAG_DELAY, SETTER } = helpers;
   const ok = ctx.ok;
   const state = ctx.state;
-  console.log('\n十四、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
+  console.log('\n十四之一、时间轴上下沿：够得着、方向键微调一档，上下沿别搞反');
   //
   // 上下沿那两个把手是**页面上仅有的两个不可点、只能拖的控件**（其余 data-act
   // 全是真 button）。鼠标那条路本来就通，但键盘进来的话它们原先既拿不到焦点、

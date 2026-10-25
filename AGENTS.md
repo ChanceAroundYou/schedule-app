@@ -4,17 +4,16 @@
 **前后端分离**：React 前端 + 自写 Node 后端 + SQLite，数据在服务器上。
 
 **改代码前先读 [docs/踩坑.md](docs/踩坑.md) 和「三、界面硬规则」。**
-本文「**踩坑 N**」= `docs/踩坑*.md` 里编号为 N 的那一条（1–4 在 `踩坑.md`，
-5–20 在 `踩坑-前端-交互.md`，41–54 在 `踩坑-前端-组件.md`，21–41 在 `踩坑-环境.md`）。**编号是稳定引用，别改。**
+本文「**踩坑 N**」= `docs/踩坑*.md` 里编号为 N 的那一条。**编号是稳定引用，别改。**
 
 | 文件 | 内容 |
 |---|---|
 | `AGENTS.md` | **本文 —— 往哪走**：结构、不变量、界面硬规则、给 AI 的硬约束 |
 | [docs/业务模型.md](docs/业务模型.md) | 完整字段表、重复规则、逾期、冲突提示、AI 三段式详情 |
-| [docs/界面约定.md](docs/界面约定.md) | 配色与令牌、变量名对照表（另有 `-无障碍` / `-布局` / `-快速添加` 三份分册） |
+| [docs/界面约定.md](docs/界面约定.md) | 配色与令牌、变量名对照表（另有 `-无障碍` / `-布局` / `-快速添加` 三册） |
 | [docs/踩坑.md](docs/踩坑.md) | **改代码前先读**：54 条坑的索引 |
 | [docs/测试.md](docs/测试.md) | 怎么验、每条约定锁在探针哪一节 |
-| [docs/接口.md](docs/接口.md) | HTTP 接口总览 + 认证（另有 `-日程集` / `-同步` / `-AI` 三份） |
+| [docs/接口.md](docs/接口.md) | HTTP 接口总览 + 认证（另有 `-日程集` / `-同步` / `-AI` 三册） |
 | [docs/架构决策.md](docs/架构决策.md) | **为什么是现在这样**：选型、同步、多账户、小组件、不做的事 |
 | [DEPLOY.md](DEPLOY.md) | 拓扑、发布、nginx / conf、排障 |
 | [README.md](README.md) | 给人看的：网址、怎么用、日常命令 |
@@ -25,24 +24,26 @@
 
 ```text
 日程管理/
-├── app/          前端（React + TS + Vite，有构建）
+├── app/          前端（React + TS + Vite）
+│   ├── src/App.tsx    97 行，**只有启动 / 登录分流**，不碰业务状态
+│   ├── src/app/       工作台：Workbench.tsx + 14 个按职责拆开的兄弟模块
 │   ├── src/domain/    纯逻辑，**零 React / DOM / 网络**
 │   ├── src/data/      localStorage + 接口封装 + 旧数据导入
 │   ├── src/sync/      同步引擎：outbox 推送 + 游标拉取
-│   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽 / 日程集 / AI 面板
-│   ├── src/views/     纯展示，**零回调**，只出 data-* 属性
-│   ├── src/styles/    语义样式模块（tokens / shell / calendar / lists / …）+ tailwind.css
+│   ├── src/ui/        侧栏 / 顶栏 / 抽屉 / 拖拽 / 日程集 / 设置 / AI 面板
+│   ├── src/views/     纯展示，**零回调**，只出 data-* 属性（含项目泳道看板）
+│   ├── src/styles/    语义样式模块 + tailwind.css
 │   └── public/ · tests/
-├── server/       后端（Node 22，**只引 AI 那一组依赖**，见五、1）
+├── server/       后端（Node 22，**只引 AI 那一组依赖**）
 │   ├── server.js      路由表 + 处理器 + 鉴权中间件
 │   ├── lib/           db · auth · sync · calendars · invites · ratelimit
 │   └── lib/ai/        **AI 唯一能碰 pi 的地方**
-├── deploy/       发布脚本 + nginx conf / systemd 单元的本地副本
-└── dist/         构建产物（生成物，勿手改）· legacy/（旧版，冻结）· docs/
+├── deploy/       发布脚本 + nginx conf / systemd 单元
+└── dist/         构建产物（勿手改）· legacy/（旧版，冻结）· docs/
 ```
 
-**线上只有 `~/.local/schedule/web` 会被 nginx 伺服**，源码 / `server/` / `legacy/` /
-文档一律 404。工程里的 `dist/` 只是本地产物，**不等于上线**（发布见 [DEPLOY.md](DEPLOY.md)）。
+**线上只有 `~/.local/schedule/web` 被 nginx 伺服**，源码 / `server/` / `legacy/` /
+文档一律 404。工程里的 `dist/` 只是本地产物，**不等于上线**（见 [DEPLOY.md](DEPLOY.md)）。
 
 ### 三层状态，别混
 
@@ -52,7 +53,7 @@
 | 本地存储 | localStorage `schedule-app-v4` | 离线副本 |
 | 服务端 | SQLite `~/.local/schedule/data/schedule.db` | **权威** |
 
-排查「数据不对」**先看服务器**，浏览器那份只是副本。
+排查「数据不对」**先看服务器**。
 
 ### 怎么跑起来
 
@@ -63,339 +64,290 @@ cd app && npm run dev            # Vite :5199，/api 代理到 127.0.0.1:25692
 cd app && npm run build          # tsc -b && vite build → ../dist/
 ```
 
-> `dev` / `preview` 都占 5199，别同时开。`preview` 用的是 `vite.config.ts` 里**另一段**
-> `preview.proxy` —— 只写 `server.proxy` 的话预览里所有 `/api` 都 404。
+> `dev` / `preview` 都占 5199，别同时开。`preview.proxy` 是 `vite.config.ts` 里**另一段**
+> —— 只写 `server.proxy` 的话预览里所有 `/api` 都 404。
 
-**依赖装在本机磁盘，不在共享盘**（CIFS 上成千上万个小文件正是 [踩坑 21](docs/踩坑.md) 的
-丢文件风险）。**用软链而不是 `NODE_PATH`** —— 软链不需要 systemd 那条 `Environment`，
-也不挑进程从哪个目录起。`node_modules` 在 `.gitignore` 里，**每份 checkout 都得自己补**：
+**依赖装在本机磁盘，不在工程目录**（工程目录经 SMB 共享给 Windows，见
+[踩坑 21](docs/踩坑-环境.md)）。**用软链，不用 `NODE_PATH`**；`node_modules` 不进仓库，
+每份 checkout 自己补：
 
 ```bash
-ln -s ~/.local/schedule/deps/node_modules ./node_modules          # 后端依赖
-ln -s /home/xiaokubao/family/星星包/coding/日程管理/app/node_modules app/node_modules  # 前端，复用主仓库
+./deploy/install-deps.sh                                          # 后端：装到 ~/.local/schedule/deps
+ln -s ~/.local/schedule/deps/node_modules ./node_modules          # 后端
+ln -s <主仓库>/app/node_modules app/node_modules                  # 前端，复用主仓库那份
 ```
 
-缺了后端那条服务**照样起得来**（`lib/ai/index.js` 是惰性 import），只是 AI 页报
-「依赖没装好」。
+缺后端那条服务照样起得来（`lib/ai/index.js` 惰性 import），只是 AI 页报「依赖没装好」。
 
-### `App.tsx` 为什么这么大
+### `App.tsx` / `Workbench.tsx` 各管什么
 
-它是**唯一知道「全部状态」的地方**，所以这几样必须有全局视野的东西都在这儿：
+`src/App.tsx`（97 行）**只有启动与登录分流**：`store.load()` → `engine.bootstrap()` /
+`start()` → 没 token 渲染登录页、有 token 渲染 `<Workbench>`。**auth 门禁在这里** ——
+没登录连 store 都不落地（否则没账户的浏览器会先写一份本机数据，登录后再往里倒）。
 
-1. **渲染调度**：`useStoreState()` 订阅 `store`，`renderAll` 对应一次重渲染。
-2. **点击事件委托**：`#content` 上挂**一个** `onClick`，靠 `data-act` / `data-nav` /
-   `data-jump` / `data-id` 分派。
-   > **不是「懒得拆」，是必须这样。** 行是 React 渲染的，拖拽重排、同步落地都会把它们
-   > 换掉，挂在行上的 handler 会跟着丢。容器级 handler 永远在。
-   > 代价：`views/` 里全是纯展示组件，**零回调**。
-3. **拖拽 / 拉伸**：`DndProvider`（@dnd-kit）+ `.ev-resize` 的 mousedown。
-4. **长按提起**（触屏：按住 300ms 才开拖；长按操作层 `ActSheet` 已于 2026-10-11 整体删除）、
-   **快捷键**、**导出 / 导入**。
+`src/app/Workbench.tsx`（326 行）是**唯一知道「全部状态」的地方**，但**只负责组装**：
+
+1. **两份 state**：`state`（全量，跨集页面看）/ `scoped`（只含选中集，日程 / 打卡 /
+   已完成 / 项目看）—— 这一处决定了「哪些页面跨集」。
+2. **浮层开关**与各处回调接线。那棵 JSX **故意不再拆**：每个 prop 都直接给到真正
+   需要它的组件，再包一层只是把同一份清单抄两遍。
+3. **拖拽 / 拉伸 / 长按提起**（`DndProvider` + `.ev-resize`）。
+
+判断本身按职责放在同目录的兄弟模块里：
+
+| 模块 | 管什么 |
+|---|---|
+| `clickDispatch.ts` | `#content` 上**那一个** `onClick`，靠 `data-*` 分派 |
+| `useNav.ts` · `useTaskActions.ts` · `useContentEvents.ts` | 换页 / 新建删除上下移 / `#content` 原生监听 |
+| `contentDispatch.tsx` | 按 `nav` 选视图（`settings` 在「没有集」那道门禁之前） |
+| `resizeTimeline.ts` · `keyboard.ts` · `kb.ts` | 时间轴把手 · 快捷键 · 软键盘变量 |
+| `backup.tsx` · `pickDate.ts` · `useDeniedToast.ts` | 导出导入 · 行内改期 · 写权限被挡的提示 |
+| `tapSnap.ts` · `touchDamp.ts` · `domWindow.ts` · `navLabel.ts` | 就地新建落点 · 橡皮筋 · 窗口测量 · 导航标签 |
+
+**为什么点击必须在容器上委托**：行是 React 渲染的，拖拽重排 / 同步落地会换掉它们，
+挂在行上的 handler 跟着丢；容器级 handler 永远在。**代价**：`views/` 全纯展示、
+**零回调**，只出 `data-*`。分派顺序 `[data-act]` → `[data-jump]`/`[data-nav]` →
+`.task-el` → `[data-zone-id]`，**第四步必须在第三步之后**（`.month-cell` 带 `data-no-draft`）。
+
+### 导航
+
+`NAV_ALL`（`domain/model/ui.ts`）= `inbox · today · overdue · calendar · projects ·
+habits · done · ai · trash · settings`。`CUSTOMIZABLE` 去掉 `settings`；底栏
+`TAB_MAX = 4`，「更多」恒占最后一格。`ui.tabs ← ui.navOrder` 的换算只有
+`orderTabs()` 一个出口（`store.setUi()` 是裸浅合并，派生字段会静默过期，[踩坑 49](docs/踩坑-前端-组件.md)）。
 
 ---
 
-## 二、不变量（**最要紧的部分**）
+## 二、不变量（**最要紧**）
 
-> 每条规则背后的推导、字段表、失败症状 → [docs/业务模型.md](docs/业务模型.md) 与
-> [docs/踩坑.md](docs/踩坑.md)。**这里只留「不许破」的那一句。**
+> 推导、字段表、失败症状 → [docs/业务模型.md](docs/业务模型.md)。这里只留「不许破」。
 
-### 数据结构：六条不能破的
+### 数据结构六条
 
 1. `tasks` / `habits` 是**按 id 索引的对象**，不是数组。
-2. `calId` 是**主键的一部分**，不是可同步字段（和 `_ts` / `_dev` 一样只存在本地）→
-   **挪集 = 目标集新建一条 + 源集留墓碑**，不是改一个字段。
-3. **删除是墓碑**：`deleted` 让别的设备知道「要删」，`purged` 才在任何地方都看不见。
-4. **三态各自独立**：未定时（`time===null`）· 未定日期（`date===null`）· 已完成仍占日程位置
-   （有时间的灰显留在时间轴上，未定时的灰显排在未定时区末尾）。**只有第二态进待办箱。**
-5. **待办箱 = `date === null` 的未完成任务**；未定时是另一回事（`date` 有、`time` 为空）。
-6. **任务与打卡是两个独立模块**，`habits.log` 是按日期的稀疏映射。
+2. `calId` 是**主键的一部分**，不是可同步字段（同 `_ts` / `_dev`）→ **挪集 = 目标集
+   新建一条 + 源集留墓碑**。
+3. **删除是墓碑**：`deleted` 让别的设备知道要删，`purged` 才到处看不见。
+4. **三态各自独立**：未定时（`time===null`）· 未定日期（`date===null`）· 已完成仍占
+   日程位置。**只有第二态进待办箱。**
+5. **待办箱 = `date === null` 的未完成任务**；未定时是另一回事。
+6. **任务与打卡独立**，`habits.log` 是按日期的稀疏映射。
 
-**工具分工**：不做长篇幅记录 —— 备忘录 / 清单 / 笔记本三个模块已整体删除，迁移是
-**「丢掉」不是「归档」**（没有 `archive` 字段）。**别再加回来。**
+**不做长篇幅记录** —— 备忘录 / 清单 / 笔记本已整体删除，迁移是**丢掉不是归档**。
+**别再加回来。**
 
 ### 权限
 
-**没有管理员，所有人平等，注册开放。共享的单位是集，不是任务**（像相册）—— 没有
-「把这一条任务分享给某人」这回事。
+**没有管理员，所有人平等，开放注册。共享的单位是集，不是任务**（像相册）。
 
 | 角色 | 改任务 / 打卡 | 改集与成员 |
 |---|---|---|
-| `owner` 创建者 | ✅ | ✅ |
-| `editor` 可编辑 | ✅ | ❌ |
-| `viewer` 只读 | ❌ | ❌ |
+| `owner` | ✅ | ✅ |
+| `editor` | ✅ | ❌ |
+| `viewer` | ❌ | ❌ |
 
-> **判断只有两个入口**：`canWrite(role)` / `canManage(role)`（`domain/types.ts`）；服务端
-> 同理只走 `db.roleOf()` / `calendars.canWrite()`。**别在别处写 `role === 'owner'`。**
+**判断只有两个入口**：`canWrite(role)` / `canManage(role)`（`domain/types.ts`）；服务端走
+`db.roleOf()` / `calendars.canWrite()`。**别在别处写 `role === 'owner'`。**
 
-**三条不变量**：① 每个人永远至少有一个集（`ensureHasCalendar`）；② 每个集永远至少有一个
-owner（最后一个不能被降级 / 移出 / 退出）；③ **写权限在写入通道那层把关**，不是靠界面藏
-按钮 —— `store.commitMany()` 与 `sync.applyOps()` 各挡一次。**邀请两段式**，对方接受后才
-生效。
+**三条不变量**：① 每人永远至少一个集（`ensureHasCalendar`）；② 每集永远至少一个 owner；
+③ **写权限在写入通道把关**（`store.commitMany()` 与 `sync.applyOps()` 各挡一次），
+不是靠界面藏按钮。**邀请两段式**，对方接受后才生效。
 
 ### 同步
 
-`changes.seq` 是**全局单调**的自增主键，客户端只存一个 `cursor`（不是每个集一个），服务端
-按 `cal_id IN (我的集)` 过滤。
+`changes.seq` **全局单调**，客户端只存**一个** `cursor`，服务端按 `cal_id IN (我的集)` 过滤。
 
-> **新加入一个集时，它的历史变更全在游标后面**，光靠增量**永远拉不到** —— 所以客户端一
-> 看到不认识的 `calId`，就**再要一次全量快照**（`engine.ts` 的 `syncNow()` 里那段
-> `known` 判断）。
+> **新加入一个集时，它的历史变更全在游标后面** —— 客户端一看到不认识的 `calId`，
+> 就**再要一次全量快照**（`engine.ts` 的 `syncNow()` 里 `known` 判断）。
 
 `POST /api/sync` **一次调用同时推和拉**，服务端**先落盘再取数**。**集 / 成员 / 邀请走普通
-REST，不走 LWW**（它们是「关系」不是「字段」）。**LWW 是逐字段的**（[踩坑 3](docs/踩坑.md)）；
+REST，不走 LWW**（是「关系」不是「字段」）。**LWW 逐字段**（[踩坑 3](docs/踩坑.md)）；
 同字段两边都改过时抽屉里多一条只读提示，**提示不改数据**。
 
-### AI：它是「另一台设备」，不是一条新通道
+### AI：它是「另一台设备」
 
 **读走 `sync.snapshot(userId)`，写走 `sync.applyOps(userId, ops)`，`deviceId` 固定
-`'ai'`。** 三个复用各有理由：`snapshot()` 已按 `calendarIdsFor()` 过滤、已剔墓碑；
-`applyOps()` 里有 `canWrite(db.roleOf(...))`，是全项目唯一的服务端把关点，**绕过去 =
-只读成员能被 AI 写穿**；写进 `changes` 带新 `seq`，客户端本来就会拉到。
+`'ai'`。** `snapshot()` 已按 `calendarIdsFor()` 过滤、已剔墓碑；`applyOps()` 里有
+`canWrite(...)`，是全项目唯一的服务端把关点，**绕过去 = 只读成员能被 AI 写穿**。
 
 **写路径三段：工具 → 提案 → 确认。**
 
-1. **写工具的 `execute` 正常返回，但只造提案、不落库**（`Map<toolCallId, proposal>`）——
-   真正的强制是**结构性**的：写工具没有写的能力。**不用 pi 的 `beforeToolCall` 拦**
-   （`block` 会产生错误工具结果，模型会以为工具坏了反复重试）。
-2. 提案按 **`toolCallId`** 关联到消息（**不按执行顺序**：pi 默认并行跑同一轮工具）。
+1. **写工具的 `execute` 正常返回但只造提案、不落库**（`Map<toolCallId, proposal>`）——
+   强制是**结构性**的：写工具没有写的能力。**不用 pi 的 `beforeToolCall` 拦**（`block`
+   会产生错误工具结果，模型以为工具坏了反复重试）。
+2. 提案按 **`toolCallId`** 关联消息（**不按执行顺序**：pi 默认并行跑同一轮工具）。
 3. `POST /api/ai/confirm` 是**唯一真正落库的地方**，**只信 id 不信参数**：按 id 读回提案、
-   **重查一遍权限**，再走 `applyOps`。信客户端回传的 args 等于把权限判断交给浏览器。
+   **重查权限**，再走 `applyOps`。信客户端回传的 args 等于把权限判断交给浏览器。
 
-**提案里存的是 `fields`（最终要落进 op 的字段），不是「意图」。**
+**提案里存的是 `fields`（最终落进 op 的字段），不是「意图」。**
 
 ### 重复规则 / 逾期
 
-- **防死循环的判据是「必须往前走」，不是次数上限**：`while (next && next < today &&
-  next > cursor)`。曾经的 `guard < 800` 被证明是错的（2020 年起的「每天」要 2400+ 步，
-  800 步就断，返回一个 2022 年的日期 —— **正是它本来要防的那个 bug**）。**别换回魔法数字。**
-- **实例 id 是派生的**：`` `${根}#${发生日}` `` —— 两台设备离线推进会**派生出同一个 id**，
-  同步时合并成一条。**这是整个同步模型里最要紧的一条不变量**（理由见
-  [架构决策.md](docs/架构决策.md)）。
+- **防死循环的判据是「必须往前走」**：`while (next && next < today && next > cursor)`。
+  曾经的 `guard < 800` 是错的（2020 年起的「每天」要 2400+ 步）。**别换回魔法数字。**
+- **实例 id 是派生的**：`` `${根}#${发生日}` `` —— 两台设备离线推进会派生同一个 id，
+  同步时合并成一条。**这是同步模型里最要紧的一条不变量。**
 - **逾期唯一口径**：`!done && date && date < today`。`counts().today` **不含逾期**。
 
 ---
 
 ## 三、界面硬规则（**跨切面**）
 
-> 每条背后的像素与推导 → [docs/界面约定.md](docs/界面约定.md) 及三份分册。
-> **这里只留不许破的那一句。**
+> 像素与推导 → [docs/界面约定.md](docs/界面约定.md) 及三册分册。这里只留「不许破」。
 
 ### 交互与视觉语言
 
-**交互统一是「列表 → 详情 → 编辑」三段式**：点行 → 抽屉详情 → 从抽屉底部进编辑。
-删除走应用内确认弹层（`useConfirm`）。
+**交互统一「列表 → 详情 → 编辑」三段式**；删除走应用内确认弹层（`useConfirm`）。
 
-- **界面上不出现「备忘录」「笔记本」「清单」**；**脚本文案统一「打卡」不是「习惯」**
-  （`habits` 数组名保留）。
-- **任务是「标题 + 详细内容」**（2026-10-15）：标题给它名字，详细内容放正文。
-  界面上一律叫**「详细内容」** —— 字段名仍是 `note`（服务端按字段名存，改名等于做一次
-  数据迁移，只在代码里叫它 note）。改名的四处：抽屉标签、列表行标记、
-  AI 提案的人话字段名、冲突提示。
-- **点日历上的空格子 = 就地新建**（2026-10-15）：在哪一天几点由**点的位置**决定，
-  回车落成真任务、Esc 取消。**抽屉不再是新建入口** —— 它是「补细节」的地方
-  （详细内容 / 重复 / 时长）。承载这个交互的是 `ui.draft`（瞬时状态，每次载入清空），
-  派发器往这里写、视图从这里读。
-- **深浅色两档**（`ui.theme`）、**风格三档**（`ui.style` → `data-style` +
-  `styles/tokens.css` 令牌块）。**色板没有。**
+- 界面不出现「备忘录」「笔记本」「清单」；文案统一「打卡」不是「习惯」（`habits` 名保留）。
+- **任务是「标题 + 详细内容」**：界面叫**「详细内容」**，字段名仍是 `note`（改名等于数据迁移）。
+  改名四处：抽屉标签、列表行标记、AI 提案字段名、冲突提示。
+- **点日历空格子 = 就地新建**：落点由**点的位置**决定，回车落成、Esc 取消。**抽屉不是新建
+  入口**，是「补细节」的地方。承载者是 `ui.draft`（瞬时状态，每次载入清空）。
+- **深浅色两档**（`ui.theme`）、**风格三档**（`ui.style` → `data-style` + tokens）。**色板没有。**
 - **图标一律 lucide，零 emoji；弹层一律应用内，零原生 `confirm` / `alert`。**
 
-**令牌五条**（1–3 由 `contrast.mjs` / `color-scan.mjs` 锁，4 与 5 由 `card-geometry.mjs` /
+**令牌五条**（1–3 由 `contrast.mjs` / `color-scan.mjs` 锁，4–5 由 `card-geometry.mjs` /
 `browser-smoke.mjs` 锁）：
 
-1. **`.tsx` 里引用变量一律不给兜底值** —— 有兜底值时不报错、不白屏，只是两套主题下
-   全在用写死的浅色，**静默降级比直接坏掉难查得多**。
-2. **`--border`（装饰线，不要求 3:1）与 `--input`（交互控件描边，≥3:1，WCAG 1.4.11）
-   按「用户能不能操作它」分档**；焦点环统一在 `styles/responsive.css` 最末那条
-   `:focus-visible`，**必须和 `--input` 一起改**。
-3. **风格轴两半**：线粗细走 `--border-w`，圆角走 `--r-xs/sm/md/lg/xl/pill`，
-   **`.tsx` 里不许出现 Tailwind 自带的 `rounded` / `rounded-lg` / `rounded-2xl`**
-   （写死的像素，切到 flat / notion 原地不动）。
-4. **卡片圆角跟着卡自己的短边走，全项目只此一条算式**：
-   `min(var(--r-xl), max(2px, calc(var(--card-h) * var(--card-r-k))))`（`--card-r-k: 0.28`），
-   每种卡把自己的高度报进 `--card-h`（定时卡 `--card-px`、未定时卡 `--row`、月视图胶囊 `--pill-h`）。
-   写死一档就会让「一小时卡」和「无时间卡」在同一屏上圆润程度不一样；**同一条属性只在一处声明** ——
-   后面那条同特异度的老皮肤会静默吃掉前面那条（[踩坑 50](docs/踩坑-前端.md)）。
-   **用 `min()` / `max()` 不用 `clamp()`**：flat 档 `--r-*` 全是 0，`clamp(2px, x, 0)` 返回下限。
-   横向留白同理：只有 `--card-pad-x`（桌面 7px / 窄屏 2px），**容器的横向 padding 一律 0**。
-5. **勾选圈的视觉直径 = 所在那一行的字号 × `--check-k`，夹在 `--check-min`~`--check-max`**
-   —— 现在 `--check-k: 1`、夹 9~18px（列表行把字号显式报进 `--check-fs: var(--fs-row)`）。
-   以前是 18 / `.sm` 14 / 窄屏 22 三个写死值，12.5px 的文字旁边挂 18px 的圈 ——
-   那就是用户报的「打勾太大」；第四轮定成跟字号走（k = 0.85、夹 9~16），
-   第五轮用户又说「打勾太小了 比例再大一点」→ k = 1、上限 18。**别在 `.tsx` 或响应式里
-   再写一档尺寸**（[踩坑 52](docs/踩坑-前端.md)）。压缩阶梯把标题压小时**必须同时报 `--check-fs`**，
-   否则圈还按原字号算 = 圈比任务名大。
+1. **`.tsx` 引用变量一律不给兜底值** —— 有兜底值时两套主题都在用写死的浅色，
+   **静默降级比坏掉难查得多**。
+2. **`--border`（装饰线）与 `--input`（交互描边 ≥3:1，WCAG 1.4.11）按「能不能操作」分档**；
+   焦点环在 `styles/responsive.css` 最末 `:focus-visible`，**必须和 `--input` 一起改**。
+3. **风格轴两半**：线粗细 `--border-w`，圆角 `--r-xs/sm/md/lg/xl/pill`；**`.tsx` 不许出现
+   Tailwind 自带 `rounded` / `rounded-lg` / `rounded-2xl`**（写死像素，切档原地不动）。
+4. **卡片圆角跟卡自己的短边走，全项目只此一条算式**：
+   `min(var(--r-xl), max(2px, calc(var(--card-h) * var(--card-r-k))))`，每种卡把高度报进
+   `--card-h`（定时 `--card-px`、未定时 `--row`、月胶囊 `--pill-h`）。**同一属性只声明一处**
+   —— 后写的同特异度老皮肤会静默吃掉（[踩坑 50](docs/踩坑-前端-组件.md)）。
+   **用 `min()` / `max()` 不用 `clamp()`**（flat 档 `--r-*` 全 0，`clamp(2px,x,0)` 返回下限）。
+   横向留白只有 `--card-pad-x`，**容器横向 padding 一律 0**。
+5. **勾选圈视觉直径 = 所在行字号 × `--check-k`，夹 `--check-min`~`--check-max`**
+   （现 k=1、夹 9~18px；列表行报 `--check-fs: var(--fs-row)`）。**别在 `.tsx` 或响应式里
+   再写一档尺寸**（[踩坑 52](docs/踩坑-前端-组件.md)）。压缩阶梯压标题时**必须同时报
+   `--check-fs`**，否则圈比任务名大。
 
-**卡片里的时间行只由时长决定**（2026-10-24 第四轮）：`时长 > 60 分钟` → 一定有那一行，
-`≤ 60 分钟`（含整 1 小时、含没设过时长的）→ 没有；**月视图永远没有**（时间挂 `title` 气泡）。
-判据只在 `TaskCard` 一处，窄屏 / 周视图都不许再写 `display: none`。
+**时间行只由时长决定**：`> 60 分钟` 一定有，`≤ 60`（含整 1 小时、含没设时长）没有；
+**月视图永远没有**（时间挂 `title` 气泡）。判据只在 `TaskCard` 一处，别处不许再写
+`display: none`。
 
-**上下时间把手也按时长走，不按像素碰运气**（2026-10-25 用户：「1 小时长度的卡片也给
-显示时间调节把手」）：`≥ 60 分钟` 的卡**一定有**那两个把手，`< 60 分钟` 的才受 26px
-像素门槛管（卡比两个把手还矮就画不下，见 2026-10-20 那条）。别再改回纯像素判据 ——
-同一张 60 分钟的卡桌面日视图 27px、窄屏周视图 20px，按像素就是「换个屏就没把手」。
+**上下把手也按时长走**：`≥ 60 分钟` **一定有**两个把手；`< 60 分钟` 的才受 26px 像素门槛管。
+别改回纯像素判据（同一张 60 分钟卡桌面 27px、窄屏 20px）。
 
-**卡缝四边都是 1px**（`CARD_SEAM`，2026-10-25 用户：「卡片右边和底部都改为 1px 的空白」；
-2026-10-22 定的是 1.5px）：上 / 下 / 右三边由 `TaskCard.tsx` 的内联 `calc(… − CARD_SEAM)`
-扣，未定时卡的右边在 `calendar.css` 的 `.task-el--untimed` 里扣（**两处必须同值**），
-未定时卡的间距是容器的 `--un-gap: 1px`。**单列也要扣** —— 以前特意不扣是为了跟
-未定时卡对齐宽度，用户点名右边要留白，那条理由已作废。
+**卡缝四边都是 1px**（`CARD_SEAM`）：上 / 下 / 右由 `TaskCard.tsx` 内联 `calc(… − CARD_SEAM)`
+扣，未定时卡右边在 `calendar.css` 的 `.task-el--untimed` 扣（**两处必须同值**），间距是
+容器的 `--un-gap: 1px`。**单列也要扣。**
 
-**装不下只许压，不许加长**（第五轮，用户：「没有什么地方有给卡片加长的兜底」——
-顶高一点等于把 61 分钟画成 68 分钟，探量和肉眼都不答应）。`useCardFit` 按**两个轴**分别压：
+**装不下只许压，不许加长**。`useCardFit` 按**两个轴**分别压：
 
-| 轴 | 判据（量出来的，不猜） | 阶梯 |
+| 轴 | 判据（量出来） | 阶梯 |
 |---|---|---|
-| 纵向 | `.ev-text` 的 scrollHeight 高出 `.ev-body` 的 clientHeight | 行距 → 卡内上下留白归零 → 标题字号（下限 9px） |
-| 横向 | `.ev-time` 的 scrollWidth 超出自己的 clientWidth | 紧凑写法先省 → 字距收紧 → **时间行自己的**字号（下限 7.5px） |
+| 纵向 | `.ev-text` 的 scrollHeight > `.ev-body` 的 clientHeight | 行距 → 卡内留白归零 → 标题字号（下限 9px） |
+| 横向 | `.ev-time` 的 scrollWidth > clientWidth | 紧凑写法先省 → 字距收紧 → **时间行自己的**字号（下限 7.5px） |
 
-**横向那一轴不许动标题字号**：第四轮合成一条阶梯时，窄屏周视图为了时间行把标题也缩一档，
-同一屏上 11px 与 10px 并存，「未定时与定时同字号」当场破。两轴落在第几档写在卡上的 `data-fit`
-（形如 `v1h2`），探针按它读数。卡片文案走**紧凑写法**（`timeRangeCompact` → `09:30–10:30`），
-抽屉 / 列表 / `title` 气泡仍是完整写法，同一个值。
-左对齐也不靠估：标题 / 时间 / 详细内容同在 `.ev-text` 里，圈是 `.ev-body` 那一行的另一件
-（`grid-row: 1 / -1` 撑不到隐式行，见[踩坑 52](docs/踩坑-前端.md)）。
+**横向那一轴不许动标题字号**。两轴落在第几档写在卡上 `data-fit`（形如 `v1h2`），探针按它
+读数。卡片文案走**紧凑写法**（`timeRangeCompact` → `09:30–10:30`），抽屉 / 列表 / `title`
+仍是完整写法。左对齐靠结构：标题 / 时间 / 详细内容同在 `.ev-text`，圈在 `.ev-body`。
 
-**「哪些页面跨集、哪些按集」是定死的**：今天 / 逾期 / 待办箱 / 垃圾箱看**全部**；
-日程 / 打卡 / 已完成只看**顶栏日程集多选勾着的那几个集**（`ui.cals`）。表达方式是
-`App.tsx` 给这几个视图传**哪一份 state**（`state` 全量 / `scoped`）—— **不要**给
-`views/` 里的选择器加 `calId` 参数。**侧栏徽标与顶栏一律用全量口径。**
+**「哪些页面跨集、哪些按集」定死**：今天 / 逾期 / 待办箱 / 垃圾箱 / **AI** 看**全部**；
+日程 / 打卡 / 已完成 / **项目**只看顶栏勾选的集（`ui.cals`）。表达方式是 `Workbench.tsx`
+给视图传**哪份 state**（`state` 全量 / `scoped`），**不要**给 `views/` 选择器加 `calId`
+参数。**侧栏徽标与顶栏一律全量口径。**
 
-> **勾选（`ui.cals`）和归属（`ui.cal`）是两件事**：前者是「我想同时看哪几个」，
-> 后者是「新建的东西落哪儿」（必须是**一个**）。`store.toggleCal()` 保证归属的集一定勾着
-> —— 否则新建的东西会落在看不见的集里，用户看到的是「凭空消失」。
-> 所以**至少永远有一个集是勾着的**。
+> **勾选（`ui.cals`）和归属（`ui.cal`）是两件事**：前者「同时看哪几个」，后者「新建落哪儿」
+> （必须一个）。`store.toggleCal()` 保证归属的集一定勾着，**至少永远有一个集勾着**。
 
-**只读成员看到的不是「藏起来」，是「点了会告诉你为什么」**（`commitMany()` 挡下时
-`denied` +1，弹一次提示，**别让写操作静默失败**）。记录只有 `store.ts` 的 `deny()` 一个
-入口；**提示要点名是哪个集**（`deniedCals`）—— 今天 / 逾期 / 待办箱是跨集的。
+**只读成员不是「藏起来」，是「点了会告诉你为什么」**（`commitMany()` 挡下时 `denied` +1，
+弹一次提示，**别让写操作静默失败**）。记录只有 `store.ts` 的 `deny()` 一个入口；**提示要点名
+是哪个集**（`deniedCals`）。
 
-### 文案：默认不写，写就写一句
-
-控件的名字已经说了它是什么 —— label、按钮文字、图标的 title / aria-label。
+### 文案：默认不写，写就一句
 
 | 该写 | 不该写 |
 |---|---|
 | 危险操作的后果（「删了找不回来」） | 「请记得」「别忘了」「千万」 |
-| 反直觉的行为（「导入是合并，不覆盖」） | 用户看得见的东西（「表盘上画着 12」） |
-| 不可逆的事（「忘记密码无法找回」） | 枚举不存在的功能（「没有邮箱、没有手机、没有管理员」） |
+| 反直觉的行为（「导入是合并，不覆盖」） | 用户看得见的东西 |
+| 不可逆的事 | 枚举不存在的功能 |
 
-1. **默认不写。** 非必要不加说明。
-2. **写就写一句。** 一句装不下就说明这个控件本身没设计好。
-3. **不把人当傻子。** 不替用户下结论，不解释显而易见的事，不枚举没有的东西。
+1. **默认不写。** 2. **写就写一句。** 3. **不把人当傻子。**
 
 ### 状态表达
 
-**断网时界面必须说话**：顶栏 `.sync-dot` 的位置显示 ☁︎ 划掉（`CloudOff`）配 title
-「离线，改动先存在本机，联网后自动同步」，**不是**那个一直转的加载圈 —— 一直转看起来
-就是卡死了。来源是 `ui/hooks.ts` 的 `useOnline()`，**不是**「上一次请求成不成功」。
+**断网时界面必须说话**：顶栏 `.sync-dot` 显示 ☁︎ 划掉（`CloudOff`）配 title「离线，改动先
+存在本机，联网后自动同步」，**不是**一直转的加载圈。来源是 `ui/hooks.ts` 的 `useOnline()`，
+**不是**「上一次请求成不成功」。
 
-**有登录，但**没有密码找回、没有邮箱、没有第三方登录，**也没有管理员** —— 平等多用户、
-开放注册，注册完自动有一个「我的日程」。**别在界面上提「管理员」**（`users.is_admin`
-这一列已经没有了）。
+**有登录，但没有密码找回、邮箱、第三方登录，也没有管理员**。注册完自动有一个「我的日程」。
+**别在界面上提「管理员」**（`users.is_admin` 列已删除）。
 
 ### 无障碍
 
-1. **每个控件都要有可访问名字。** 四种写法：有可见标签的 → `useId()` +
-   `<label htmlFor>`；没有可见标签的按钮组（Chips / SheetPicker）→ `aria-label`；
-   只有图标的按钮 → `<IconBtn label="…">`；**有文字的按钮什么都不用加**（可见文字就是名字）。
-   > **`placeholder` 不算名字** —— 它输入后就没了。这一条踩过：探针本来接受 placeholder，
-   > 于是某个输入框**整整一轮没被任何断言看过**。以后再写探针，取可访问名字的函数
-   > 也**不许接受 placeholder**。`placeholder` 只给格式示例。
-2. **勾选圈一律走 `views/parts.tsx` 的 `<CheckBtn>`。** 六个调用点原先各写一遍，
-   于是各自长歪。**别再手写 `span.check-btn`。**
-3. **命中区 ≥ 24×24（WCAG 2.5.8），视觉直径跟所在那一行的字号走。** 圈 = 字号 × `--check-k`
-   （k = 1，夹 9~18px），靠 `::before` 把命中区撑到 24 —— **不是把圆点画大**，画大就毁了列表密度。
-   （探针在 24 的边界上会读到 23，是取整细节，**别为了这一格改 CSS**。）
-   圈还必须是**所在那块文字**的竖直中心：`.ev-body` 的 `align-items: center` 保证这一点
-   —— 以前它只跟标题那一行齐，时间行一出来就差 6px。
-4. **盖住整页的浮层必须同时做四件事**：
-   `role="dialog"` + `aria-modal` + 名字 · `useFocusTrap(panel, open)` · 开时焦点送进
-   **面板本身**（送进第一个输入框会**当场弹手机软键盘**）· 关时 `prevFocus.focus()` 还回原处。
-   > 记录「原来那个元素」之前先看焦点在不在浮层里 —— 从一条任务切到另一条时 `id` 变了
-   > 但组件不卸载，`activeElement` 就是浮层自己，记下来等于把「还回哪」擦掉。
-   > 遮罩加 `aria-hidden="true"`（它只是鼠标目标）。
-   > `styles/responsive.css` 末尾关掉浮层的焦点环 —— 必须写在那里：Tailwind 的
-   > `outline-none` 在 `@layer` 里压不过（[踩坑 17](docs/踩坑.md)）。
+1. **每个控件都要有可访问名字**：有可见标签 → `useId()` + `<label htmlFor>`；无标签按钮组
+   → `aria-label`；纯图标按钮 → `<IconBtn label="…">`；**有文字的按钮什么都不用加**。
+   > **`placeholder` 不算名字**（输入后就没了）。探针取可访问名字的函数也**不许接受
+   > placeholder**；`placeholder` 只给格式示例。
+2. **勾选圈一律走 `views/parts.tsx` 的 `<CheckBtn>`**。**别再手写 `span.check-btn`。**
+3. **命中区 ≥ 24×24（WCAG 2.5.8），视觉直径跟字号走**，靠 `::before` 撑命中区 —— **不是把
+   圆点画大**。（探针在边界读到 23 是取整，别为一格改 CSS。）圈必须是**所在文字的竖直中心**：
+   `.ev-body` 的 `align-items: center` 保证。
+4. **盖住整页的浮层四件事**：`role="dialog"` + `aria-modal` + 名字 · `useFocusTrap(panel, open)`
+   · 开时焦点送进**面板本身**（送进输入框会当场弹软键盘）· 关时 `prevFocus.focus()` 还回。
+   > 记「原来那个元素」前先看焦点在不在浮层里（切任务时组件不卸载，`activeElement` 就是
+   > 浮层自己）。遮罩加 `aria-hidden="true"`。浮层焦点环关在 `responsive.css` 末尾 ——
+   > 必须写那儿：Tailwind 的 `outline-none` 在 `@layer` 里压不过（[踩坑 17](docs/踩坑-前端-交互.md)）。
 
-**状态语义三个别混用**：`aria-current="page"` →「现在在哪一页」；`aria-expanded`
-→ **真的是折叠开关**；`aria-haspopup="dialog"` →「按下去弹浮层，但开没开是 App 那层的
-状态」。后两个的差别就是「开没开**在谁手里**」。
+**状态语义别混**：`aria-current="page"` = 现在在哪页；`aria-expanded` = 真的是折叠开关；
+`aria-haspopup="dialog"` = 按下弹浮层，开没开在 App 那层。
 
-**键盘只做一档微调**：时间轴两个把手（`.ev-resize` / `.ev-resize-top`）是页面上仅有的
-两个不可点、只能拖的控件，给上 `tabIndex={0}` + `aria-label`，方向键走
-`domain/date.ts` 的 `nudgeEdge()` —— **和鼠标拖拽共用同一份算式**。↑ / ↓ 一次一档
-15 分钟，方向跟着时间轴走（往下 = `+1`）。**别再加别的键位。**
+**键盘只做一档微调**：两个时间把手给 `tabIndex={0}` + `aria-label`，方向键走 `nudgeEdge()`
+（和鼠标共用算式），↑/↓ 一次一档 15 分钟。**别再加别的键位。**
 
-**`prefers-reduced-motion` 全站关**（`styles/responsive.css` 最末，通配 `*` +
-`!important`），**无例外**（同步圈也一并停；同步状态靠顶栏文字 / 云图标说，不靠转圈）。
-会动的地方十几处，挑漏一处等于没关。
+**`prefers-reduced-motion` 全站关**（`responsive.css` 最末，通配 `*` + `!important`），
+**无例外**（同步圈也停）。会动的地方十几处，挑漏一处等于没关。
 
 ---
 
-## 四、最容易翻车的十条
+## 四、最容易翻车的九条
 
-> 完整 54 条见 `docs/踩坑*.md`。这十条最常踩、症状最会骗人。
+> 完整 54 条见 [docs/踩坑.md](docs/踩坑.md) 的索引（每条在三份分册里）。
 
-1. **两个 Service Worker 会打架** —— 「注销作用域内所有 SW」会把自己刚注册的也干掉。
-   拆旧 SW 用 localStorage 标记锁成**一次性**；删缓存只认 `/^schedule-v\d+$/`，
-   **新版 `sched-shell-*` 不能删**。
-2. **LWW 逐字段；幂等不靠 oplog**（比较键 `(ts, deviceId)` 创建时固定）；
-   **时间戳只拒绝、不钳制** —— 钳制值取决于「收到请求那一刻」，重放会钳出两个值。
-3. **拖动排序用「让位洞」模型，不是插入线**。位置一律按 dragstart 量的 `rawLayout`，
-   **不能用实时坐标**（让位是加在元素上的 `transform`）。
-4. **拖拽传感器鼠标与触摸分开配**（`ui/dnd/sensors.ts`）：鼠标 `distance: 8`，
-   触摸 `delay: 300 + tolerance: 8`（delay 而非 distance，是为了把滚动让出来）。
-   **开拖之后区域不跟着滑，靠库里那条 `preventDefault`**（`handleMove` 只在 activated 之后拦），
-   dnd-kit 自带的 AutoScroll 已在 `provider.tsx` / `sortable.tsx` 两处关掉
-   （[踩坑 51](docs/踩坑-前端.md)）。长按操作层 `ActSheet` 已于 2026-10-11 删除，别加回来。
-   **同一个症状还有第二条根因**：卡片被标记的那一帧那一区切成 `overflow: visible`，
-   浏览器当场抹掉它的 `scrollTop` ⇒ 整格内容替卡片滑；补位移那条（`ui/dnd/scrollKeep.ts`
-   的 `--keep`）与「橡皮筋在 `isDragging()` 时不参与」都不许撤（[踩坑 54](docs/踩坑-前端.md)）。
-5. **CSS 层叠两条**：同特异度后写的赢（给折叠元素加类要查 `display`）；Tailwind 4 全在
-   `@layer` 里，**没有层的作者样式永远赢** —— 代价是 legacy 覆盖过的元素上工具类**不生效**。
-6. **工程目录在 SMB 上，偶发丢文件**：大文件先写本机再 `cp`，`md5sum` 两端核对；
-   **别用 `perl -i` / `sed -i`**（靠「写临时文件再改名」，改名失败**原文件当场消失**）。
-7. **解析器规则顺序不能重排**：**「重复」整组必须在「日期」整组之前**（否则「每周一」
-   被当成「周一」）；`大后天` 在 `后天` 前、`下下周一` 在 `下周一` 前。
-8. **`waitFor` 只吃表达式、`evalJs` 要自己 `return`**：前者不能以换行开头（ASI 会把
-   `return` 断成空语句）；**规矩：`evalJs` 一律写 `return …;`**。
-9. **行尾一律 LF**，`.gitattributes` 的 `* text=auto eol=lf` —— **`eol=lf` 不能省**，
-   否则 `core.autocrlf=true` 的机器检出时又写出 CRLF。
-10. **跑完测试必须收干净**：`pkill -x chrome` 确认归零、`ss -ltnp` 找出残留服务 `kill`。
-    探针端口首选被占会自动让开，但**避让只管这一趟** —— 撞着的那一趟照样占着不放，
-    而且新起的会静默失败、转去连残留的旧后端（实测报注册 409，完全指错地方）。
+| 坑 | 一句话 |
+|---|---|
+| SW 打架 | 「注销作用域内所有 SW」会干掉自己刚注册的；拆旧 SW 用 localStorage 标记锁成一次性，删缓存只认 `/^schedule-v\d+$/`（[踩坑 1](docs/踩坑.md)） |
+| 拖拽排序 | 用「让位洞」不用插入线；位置一律取 dragstart 量的 `rawLayout`，**不用实时坐标**（[踩坑 6](docs/踩坑-前端-交互.md)） |
+| 拖拽传感器 | 鼠标 `distance: 8`、触摸 `delay: 300 + tolerance: 8`（`ui/dnd/sensors.ts`）；AutoScroll 已在两处关掉。**拖出容器用分身**（`ui/dnd/lift.ts`），**别切 `overflow: visible`**（浏览器会抹掉 `scrollTop`），也别让 `touchDamp` 在 `isDragging()` 时写 `--pull`（[踩坑 51](docs/踩坑-前端-组件.md) · [54](docs/踩坑-前端-组件.md)） |
+| 探针表达式 | `waitFor` 只吃表达式、`evalJs` 要自己 `return …;`（[踩坑 29](docs/踩坑-环境.md)） |
+| 行尾 | 一律 LF，`.gitattributes` 的 `* text=auto eol=lf` —— **`eol=lf` 不能省**（[踩坑 36](docs/踩坑-环境.md)） |
+| 收尾 | 跑完 `pkill -x chrome` 归零、`ss -ltnp` 找出残留服务 `kill`。端口避让只管这一趟，撞着的那趟会静默连到残留旧后端（[踩坑 40](docs/踩坑-环境.md)） |
+| 共享盘 | 工程目录经 SMB 共享，偶发丢文件：大文件先写本机再 `cp` + `md5sum`；**别用 `perl -i` / `sed -i`**（[踩坑 21](docs/踩坑-环境.md)） |
+| 不猜日期 | 快速添加不解析文本，日期 / 时间只有「面板选的 > tab 默认值」两个来源（[踩坑 25](docs/踩坑-环境.md)） |
+| CSS 层叠 | 同特异度后写赢（给折叠元素加类要查 `display`）；Tailwind 4 全在 `@layer` 里，**没有层的作者样式永远赢**（[踩坑 17](docs/踩坑-前端-交互.md)） |
 
 ---
 
 ## 五、给 AI 的硬约束
 
-1. **后端只许引 AI 那一组依赖，别的一律不许**，其余全用 Node 标准库。
-   **这是有范围的让步，不是「以后随便引」。** pi 的调用只关在
-   `server/lib/ai/chat.mjs` 一个文件里，依赖锁精确版本、装在本机磁盘。
+1. **后端只许引 AI 那一组依赖**，其余全用 Node 标准库。**pi 的 import 只许出现在
+   `server/lib/ai/` 目录里**（现 8 个文件，全在该目录下），依赖锁精确版本、装本机磁盘。
 2. **不引入 `v1` / `v2` 版本号并存** —— 结构变了就归档旧 key + 写迁移。
-3. **不改 nginx 的路径结构**（没有 `/schedule2/`），回滚靠换线上目录的内容。
-4. **前端新依赖要先问** —— `app/package.json` 里每一个都是「现有视觉做不到才加的」。
-5. **`domain/` 保持纯净**（不含 React / DOM / 网络），它要能在 Capacitor 与 Node 里跑。
+3. **不改 nginx 路径结构**（没有 `/schedule2/`），回滚靠换线上目录内容。
+4. **前端新依赖要先问** —— 每一个都是「现有视觉做不到才加的」。
+5. **`domain/` 保持纯净**（无 React / DOM / 网络），它要能在 Capacitor 与 Node 里跑。
 6. **权限判断只在 `canWrite` / `canManage` / `db.roleOf()` 三个入口。**
 7. **别在文档里写密码。**
-8. **写完新组件顺手跑 `contrast.mjs` + `color-scan.mjs`**（各几秒）—— 它们是「令牌五条」里
-   1–3 唯一的自动守卫（4、5 走 `card-geometry.mjs` / `browser-smoke.mjs`）。
-   端到端交互没有自动化覆盖，改完手工走一遍。
-9. **发布走 `deploy/publish-*.sh`，不要手动覆盖线上目录**（见 [DEPLOY.md](DEPLOY.md)）。
-10. **生产目录只由发布脚本写入，而且发布必须用户授权** —— 脚本默认 dry-run，
-    只有 `--approve` 才动 `~/.local/schedule/`。**不要替用户加 `--approve`**，
-    也不要用 `--allow-dirty` / `--allow-unpushed` 绕过体检来「让发布成功」。
-    用户没说「发」就只跑 dry-run，把摘要给他看。
-11. **双端开发：Windows 在 `dev`，ubuntu 工程目录在 `main`，两侧各推各的。**
-    合流由用户手动做 —— 冲突时**报告差异，不要替他选一边**。
-    尤其别动 ubuntu 那份工作区（`main` 分支及其未提交改动）。
-    完整约定见 [DEPLOY.md](DEPLOY.md)「二、双端开发与生产锁定」。
-12. **工作区保护是铁律**：动 git 之前先看 `status` / `stash list` / `ls-files -u`；
-    工作区里有**别人的**改动（另一个并行会话很可能就在同一份工作副本里改）→
-    先 `git stash push -u` 或 WIP 分支存档，**绝不允许覆盖**。
-    禁用 `checkout --` / `reset --hard` / `clean -fd` / `push -f` / `stash drop`。
-    提交信息必须带「来源：」一行。完整规则见 [docs/工作区保护.md](docs/工作区保护.md)。
-13. **就地新建的落点由 `pointerdown` 快照决定**（`app/tapSnap.ts`）。
-    键盘弹起时界面会被压矮，`e.clientY` 是按下那一刻的坐标、
-    `getBoundingClientRect()` 是 click 那一刻的布局 —— 两个坐标系混用会把
-    21:00 算成 7:00（实测偏 14 小时）。**不要改回「click 时读 rect」的写法。**
+8. **写完新组件顺手跑 `contrast.mjs` + `color-scan.mjs`**（各几秒）—— 它们是令牌 1–3 的
+   唯一自动守卫（4–5 走 `card-geometry.mjs` / `browser-smoke.mjs`）。端到端交互没有自动化
+   覆盖，改完手工走一遍。
+9. **发布走 `deploy/publish-*.sh`**，不要手动覆盖线上目录（见 [DEPLOY.md](DEPLOY.md)）。
+10. **生产目录只由发布脚本写入，而且发布必须用户授权** —— 脚本默认 dry-run，只有
+    `--approve` 才动 `~/.local/schedule/`。**不要替用户加 `--approve`**，也不要
+    `--allow-dirty` / `--allow-unpushed` 绕过体检。用户没说「发」就只跑 dry-run。
+11. **双端开发：Windows 在 `dev`，ubuntu 工程目录在 `main`，各推各的。** 合流由用户手动做
+    —— 冲突时**报告差异，不要替他选一边**。尤其别动 ubuntu 那份工作区。
+12. **工作区保护是铁律**：动 git 前先看 `status` / `stash list` / `ls-files -u`；有**别人的**
+    改动 → 先 `git stash push -u` 或 WIP 分支存档，**绝不覆盖**。禁用 `checkout --` /
+    `reset --hard` / `clean -fd` / `push -f` / `stash drop`。提交信息带「来源：」一行。
+    完整规则见 [docs/工作区保护.md](docs/工作区保护.md)。
+13. **就地新建的落点由 `pointerdown` 快照决定**（`app/src/app/tapSnap.ts`）。键盘弹起时界面压矮，
+    `e.clientY` 是按下坐标、`getBoundingClientRect()` 是 click 时布局 —— 混用会把 21:00
+    算成 7:00。**不要改回「click 时读 rect」。**

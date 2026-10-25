@@ -90,7 +90,7 @@ fix(calendar): 一句话
 | 情况 | 救法 |
 |---|---|
 | 误提交 | `git revert <提交>`（保留历史），**不用 reset** |
-| 线上发坏 | `publish-web.sh --rollback` / APK 重装上一版 |
+| 线上发坏 | `publish-web.sh --rollback --approve` / APK 重装上一版 |
 | 误删未跟踪文件 | 立刻停手，报告用户，别再写盘 |
 
 **不要用 `--allow-dirty` / `--allow-unpushed` 绕过发布体检** —— 那会让线上版本对不上任何提交。

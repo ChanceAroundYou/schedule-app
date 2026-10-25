@@ -37,7 +37,7 @@ export async function run(ctx) {
       if (lab && lab.textContent.trim()) return '包在 label 里';
       // 按钮的可见文字**就是**它的可访问名字，和 aria-label 等价 ——
       // 第一版漏了这一条，把 nav-item / ghost-btn 这些带字的全报成了「没名字」，
-      // 是探针自己的 bug（见 CLAUDE.md 四、40：这种症状先怀疑探针）
+      // 是探针自己的 bug（见 docs/踩坑-环境.md 第 31 条：这种症状先怀疑探针）
       if (el.tagName === 'BUTTON' && el.textContent.trim()) return 'textContent';
       if (el.tagName === 'INPUT' && /^(submit|button|reset)$/.test(el.type) && el.value) return 'value';
       // placeholder 会在最后一档当名字用，但那是退化行为，不算数（见下面 title 框）
@@ -63,7 +63,7 @@ export async function run(ctx) {
       const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
       return own + ' in .' + pc;
     };
-    /* 勾选圈必须是真 button（见 CLAUDE.md 三、无障碍 2）。
+    /* 勾选圈必须是真 button（见 AGENTS.md 三、无障碍 2）。
 
        **例外：aria-hidden 的圈，且它在一个真 button 里面** —— 那种圈是那个
        按钮的**状态指示**，不是独立控件。侧栏日程集那一行就是这种：整行是一个
@@ -232,7 +232,7 @@ export async function run(ctx) {
   `);
   ok(picked === 'ok', '在月历里点了今天，实际 ' + picked);
   // waitFor 前面会被补一个 return，所以这里只能写一个**表达式**，不能带 const
-  //（见 CLAUDE.md 四、39 —— 已经踩过一次）
+  //（见 docs/踩坑-环境.md 第 29 条 ASI 那一段 —— 已经踩过一次）
   await waitFor(page, `
     (() => {
       const d = new Date();

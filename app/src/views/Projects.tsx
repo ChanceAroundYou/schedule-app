@@ -102,7 +102,7 @@ function Lane({ state, p }: { state: LocalState; p: Project }) {
    * 「下一步」是**本地草稿**，blur 时才落库一次。
    *
    * 每敲一个字就 commit 会同时踩两个坑：产生一大串没意义的 op，以及让光标在
-   * 重渲染里跳回开头（AGENTS.md 四、第 5 条 CSS 层叠 / 踩坑 17 —— Drawer 的标题、备注是同一个理由）。
+   * 重渲染里跳回开头（docs/踩坑-前端-交互.md 第 13 条 —— Drawer 的标题、备注是同一个理由）。
    * `useEffect` 那条是防「另一台设备改了，本机草稿把新值盖住」。
    */
   const [next, setNext] = useState(p.next);

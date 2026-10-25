@@ -16,9 +16,9 @@
 
 | 位置 | 现象 | 结论 |
 |---|---|---|
-| `AiPanel.tsx` 313 行 | 超 300 软线 | 内聚（状态+发送+气泡），留；待第 8 册交互审计时再看 |
+| `data/store/tasks.ts` 813 行 | **超 800 硬线** | 混了新建 / 重复展开 / 勾选 / 删除 / 垃圾箱五件事 —— 按 F4 barrel 拆（待办） |
 
-## 2. verify（2026-10-14）
+## 2. verify（2026-10-25 复核）
 
-F1 通过：非测试源文件最大 `AiPanel.tsx` 313 行 < 800 硬线；300 软线那条（AiPanel）内聚，留。
+F1 **未通过**：`data/store/tasks.ts` 813 行超 800 硬线。其余超 300 软线的（`TaskCard.tsx` 669、`domain/layout.ts` 404、`app/clickDispatch.ts` 392）逐个看过，均内聚，留。
 **函数全部 ≤50 行，无特许**（`normalizeUi`/`migrateV3` 按逻辑单元拆、`Dropdown` 按部件拆，见 rules F1）。

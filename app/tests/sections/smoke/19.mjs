@@ -3,7 +3,7 @@ export async function run(ctx) {
   const helpers = ctx.helpers || {};
   const { evalJs, waitFor, clickEl, touch, key, quickAdd, waitGone, dumpPage, openCalMenu, waitCalMenu, closeCalMenu, withCals, shown, clickCal, waitShownCount, focusCal, inbox, a11y, collect, fmt, apiPort, webPort, dataDir, TOUCH_DRAG_DELAY, SETTER } = helpers;
   const ok = ctx.ok;
-  const { block } = ctx.state;   // 第十四节留下那条「微调试试」
+  const { block } = ctx.state;   // 十四之一（时间轴上下沿）留下的那条「微调试试」
   console.log('\n十五、软键盘避让：--kb 有人写、固定的浮层有人读');
   //
   // 无头里造不出真软键盘（真实键盘是 OS 层的，CDP 没有这个开关），
@@ -59,7 +59,7 @@ export async function run(ctx) {
   // （sm 断点起 items-end 换成 items-center）浮层本来就在上半屏，
   // 摘掉 padding 它照样通过，所以别把它当守卫。
   // 「贴着键盘上沿」这个位置关系只在 ≤640px 的 items-end 下成立，
-  // 而窄屏无头测不了（四、34），那半截只能靠真机。
+  // 而这一节跑在桌面宽度下 —— 真·窄屏视口那套在 26 节。
   ok(avoid.bottom <= avoid.vh - 199,
     '浮层整个在「键盘」之上：底边 ' + avoid.bottom + ' ≤ 视口高 ' + avoid.vh + ' − 200');
 

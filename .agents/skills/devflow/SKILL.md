@@ -92,7 +92,7 @@ agent_created: true
    - **破坏性 / 不确定改动**（改了同步协议、DB schema、鉴权）→ 无论哪端都先问你再发。
    - **发版后统一"验证 + 回滚"关卡**：web 看 `live-check.mjs` 断言全绿、安卓看
      `android-live-check.mjs`（兜底用 `mobile-loop.sh` 第七段真机冒烟）；任一失败立刻
-     `publish-web.sh --rollback` 或重装上一版 APK，并马上报告你。
+     `publish-web.sh --rollback --approve` 或重装上一版 APK，并马上报告你。
 
 6. **汇报 + 落盘纪要**：用一两句大白话在聊天里告诉用户：改了什么、已提交、代码审查结果、是否已同步云端、是否已发布、线上实测结论。同时读 `modules/report.md`，按模板在 `runs/` 目录存一份结构化发布纪要（以后能翻）。聊天是即时通知，纪要是存档，两者互补。
 

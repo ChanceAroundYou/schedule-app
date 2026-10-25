@@ -1,6 +1,7 @@
 # 重构：组件合并与复用 —— 实施 spec（全量 #1–#7）
 
-> 状态：**待审核**（spec + 针对性测试已产出，实现未开始）
+> 状态：**已归档**（2026-10-25）。历史实施 spec，代码现状见 `rules/` 与 `AGENTS.md`；
+> 文中「待做」项均已落地（`useAnchoredPosition` / `useModalFocus` / `useOutsideClose` / kit 拆分 / AiPanel / QuickAdd）。
 > 依据：`ui/`、`views/` 逐文件审计 + 一轮方案自审（撤回 4 条错误建议）
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）；
 >           `domain/` 保持零 React / DOM / 网络；后端不引任何新依赖。

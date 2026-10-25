@@ -6,18 +6,19 @@ export async function run(ctx) {
   const state = ctx.state;
   console.log('\n十八、功能区自定义：底栏挑哪几项、设置页调序都记得住');
 
-  // 这一节守的是两条**曾经是死数据**的字段（见 CLAUDE.md 四、23）：
+  // 这一节守的是两条**曾经是死数据**的字段（见 docs/踩坑-前端-交互.md 第 16 条）：
   // `ui.navOrder` / `ui.navBottom` 被 Shell 读着、却一度没有任何写入方，
   // 「拖过一次顺序就记住了」在那一版是假的。功能区自定义补回了写入方。
   //
-  // 底栏（`.tabbar`）只在窄屏渲染，而无头 Chrome 的**真实**窗口宽度压不到
-  // 那个断点（CLAUDE.md 四、34）。所以这里在 React 挂载之前把
+  // 底栏（`.tabbar`）只在窄屏渲染。这里用**伪窄屏**（下面那段 matchMedia Proxy）
+  // 验的是接线：真·窄屏视口探针在 26 节（`Emulation.setDeviceMetricsOverride`）。
+  // 所以这里在 React 挂载之前把
   // `matchMedia('(max-width: 900px)')` 那一路改成 `matches: true`。
   // 用 Proxy 而不是 Object.assign：后者会把 MediaQueryList 压成普通对象，
   // 丢掉原型上的 addEventListener —— hooks.ts 里那一句会当场抛异常。
   //
   // 这验的是「narrow 为真时底栏与「更多」抽屉有没有被接出来」这条**接线**，
-  // 不是真实窄屏下的排版 —— 后者在无头里造不出来，只能手工在真机上看。
+  // 不是真实窄屏下的排版 —— 后者要验就写在 26 节（真视口那一节）。
   //
   // 2026-10-07 起设置页的「功能区」卡片**按设备分屏**：窄屏只渲染底栏胶囊
   // （data-tab），宽屏只渲染侧栏列表（data-nav-row）。所以这一节拆成两半 ——

@@ -49,7 +49,7 @@ export async function run(ctx) {
   ok(await setText('.jump-pop input', '周' + cnWord) === 'ok', '往找日期框里打字');
   await clickEl(page, `document.querySelector('.jump-pop .jp-go')`);
   await waitFor(page, `document.querySelector('.jump-pop') ? null : 1`, '点「跳转」后面板收起来', 8000);
-  // persist() 有防抖，落盘要等（CLAUDE.md 四、41）；判据写成「光标与刚才不同」
+  // persist() 有防抖，落盘要等（docs/踩坑-前端-组件.md 第 43 条）；判据写成「光标与刚才不同」
   const jumped = await waitFor(page, `
     (() => {
       const u = JSON.parse(localStorage.getItem('schedule-app-v4')).ui;

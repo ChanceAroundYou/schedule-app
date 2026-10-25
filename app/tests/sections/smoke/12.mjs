@@ -8,7 +8,7 @@ export async function run(ctx) {
      由第八节放进 ctx.state。 */
   const { mom, momCal, momCalName } = ctx.state;
   console.log('\n十、被降成只读之后：改动挡下来，并且说是哪个集');
-  /* 这一节测的是「写操作不许静默失败」那条约定（见 CLAUDE.md 三、界面硬规则）。
+  /* 这一节测的是「写操作不许静默失败」那条约定（见 AGENTS.md 三、界面硬规则 · 只读成员那段）。
      store 那一层有单测，但**接线**没测过：计数器涨了、提示没弹出来，
      用户看到的还是「点了没反应」。所以这里走完整条路：真降权限 → 真点 → 真看提示。
 
