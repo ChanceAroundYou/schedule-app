@@ -38,16 +38,16 @@
 
 | 册 | 管什么 | 规则 | 计划 |
 |---|---|---|---|
-| **1. 组件 API** | props 封闭、cva 变体、派生、布局外层管 | `v1-component-api-rules.md` | `v1-component-api-plan.md` |
+| **1. 组件 API** | props 封闭、cva 变体、派生、布局外层管 | `component-api-rules.md` | `component-api-plan.md` |
 | **2. 样式归属** | CSS 放哪、三层边界、状态类白名单 | 并入第 1 册（R1–R5） | 并入第 1 册 |
-| **3. 命名** | 变量 / 文件 / 组件 / 类名 / CSS 变量 | `v3-naming-rules.md` | `v3-naming-plan.md` |
-| **4. 文件与目录** | 长度上限、文件夹划分、粒度、barrel | `v4-file-layout-rules.md` | `v4-file-layout-plan.md` |
-| **5. 分层与数据流** | `domain→data→views` 单向、零回调、委托 | `v5-dataflow-rules.md` | `v5-dataflow-plan.md` |
-| **6. 数据实体与行为** | 六道口子、零迁移、派生与本地性 | `v6-entities-rules.md` | `v6-entities-plan.md` |
-| **7. 测试** | 三层测试、扫描器矩阵、隔离收尾 | `v7-testing-rules.md` | —（纪律式，无 plan） |
-| **8. 交互与无障碍** | a11y、浮层、键盘、动效、文案 | `v8-a11y-rules.md` | `v8-a11y-plan.md` |
-| **9. 后端接口** | 路由、鉴权、同步、AI 三段、SQL 绑定、校验分层、日志 | `v9-backend-rules.md` | `v9-backend-plan.md` |
-| **10. Android 桌面小组件** | 共享语义、单一权威、RemoteViews 例外 | `v10-widget-rules.md` | `v10-widget-plan.md` |
+| **3. 命名** | 变量 / 文件 / 组件 / 类名 / CSS 变量 | `naming-rules.md` | `naming-plan.md` |
+| **4. 文件与目录** | 长度上限、文件夹划分、粒度、barrel | `file-layout-rules.md` | `file-layout-plan.md` |
+| **5. 分层与数据流** | `domain→data→views` 单向、零回调、委托 | `dataflow-rules.md` | `dataflow-plan.md` |
+| **6. 数据实体与行为** | 六道口子、零迁移、派生与本地性 | `entities-rules.md` | `entities-plan.md` |
+| **7. 测试** | 三层测试、扫描器矩阵、隔离收尾 | `testing-rules.md` | —（纪律式，无 plan） |
+| **8. 交互与无障碍** | a11y、浮层、键盘、动效、文案 | `a11y-rules.md` | `a11y-plan.md` |
+| **9. 后端接口** | 路由、鉴权、同步、AI 三段、SQL 绑定、校验分层、日志 | `backend-rules.md` | `backend-plan.md` |
+| **10. Android 桌面小组件** | 共享语义、单一权威、RemoteViews 例外 | `widget-rules.md` | `widget-plan.md` |
 
 ### 每册判据（怎么判成没成）
 
@@ -80,7 +80,7 @@
 
 理由：1（组件封闭）是其余各册的载体——组件不封闭，样式和 props 规矩无处安放；
 3、4 是静态规则，好写好锁；5、6、8、9 涉及运行时不变量，要动探针；7 收尾时把扫描器编成矩阵。
-每步的独立验证命令在 `v7-testing-rules.md` §4 和各册 plan 内。
+每步的独立验证命令在 `testing-rules.md` §4 和各册 plan 内。
 
 ---
 
@@ -89,4 +89,4 @@
 - `AGENTS.md` 是入口（往哪走 + 不变量一句话版），**不删不改**
 - `docs/业务模型.md` / `界面约定*.md` / `踩坑*.md` 仍是推导和失败症状的出处，**编号稳定引用，别改**
 - 本规范只收「不许破的那一句」+ 判据 + 扫描器；推导过程仍链回原文档
-- 旧的 `docs/superpowers/specs/2026-10-13-*-spec.md` 已重组为本目录的 rules/plan 对，**spec 路径不要再引用**
+- 旧的 `docs/superpowers/specs/` 已重组进本目录的 rules/plan 对（原目录已删除），**不要再引用旧 spec 路径**

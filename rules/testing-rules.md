@@ -1,7 +1,7 @@
 # 编码规范第 7 册 · 测试
 
 > 状态：**长期规则**（本册含验证命令，无独立 plan）
-> 依据：`docs/测试.md`、`docs/归档-重构-组件合并-实施spec.md` §8–§9（已归档）、
+> 依据：`docs/测试.md`、
 > `app/tests/`（browser-smoke/contrast/color-scan）、`server/tests/`（api/migration/ai/smoke-share）
 > 不变量：测试隔离第一（临时后端+随机端口，不碰线上库）；跑完收干净；本册只定矩阵与纪律，不写用例。
 

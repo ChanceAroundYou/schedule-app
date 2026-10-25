@@ -320,7 +320,7 @@
      · `.trash-row` 垃圾箱行 —— 只有 `.task-row` 没有 `.task-el`，拖不动，
                   里面的任务名还指着它复制出来找回东西
    ⚠️ 探针里**可以用 `.task-el` 了**（从前的禁忌：那样会把列表行扫进来变成假红，
-   见[踩坑 51](踩坑-前端.md)）；反过来，`.new-cell` 仍必须单独断言可选中。 */
+   见[踩坑 51](踩坑-前端-组件.md)）；反过来，`.new-cell` 仍必须单独断言可选中。 */
 .task-el, .habit-row, .nav-chip {
   user-select: none; -webkit-user-select: none;
   /* iOS / 安卓 WebView 的长按菜单（复制 / 查词 / 分享）同样会抢走触摸流，
