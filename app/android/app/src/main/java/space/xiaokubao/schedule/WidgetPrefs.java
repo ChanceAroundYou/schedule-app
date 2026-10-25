@@ -297,37 +297,64 @@ class WidgetPrefs {
             JSONArray dst = local.optJSONArray("tasks");
             if (src == null || dst == null) return null;
 
-            // ① 撤掉占位
-            for (int i = 0; i < dst.length(); i++) {
-                JSONObject e = dst.optJSONObject(i);
-                if (e != null && localId.equals(e.optString("id"))) { dst.remove(i); break; }
-            }
-            // ② 本地已有的 id —— 服务端多出来的那条才是刚建的
+            // ① 本地已有的 id（**占位那条不算**）—— 服务端多出来的那条才是刚建的
             java.util.HashSet<String> have = new java.util.HashSet<>();
             for (int i = 0; i < dst.length(); i++) {
                 JSONObject e = dst.optJSONObject(i);
-                if (e != null) have.add(e.optString("id"));
+                if (e == null) continue;
+                String id = e.optString("id");
+                if (localId.equals(id)) continue;
+                have.add(id);
             }
-            String t = time == null ? "" : time;
+            String t = timeOf(time);
             for (int i = 0; i < src.length(); i++) {
                 JSONObject e = src.optJSONObject(i);
                 if (e == null) continue;
                 if (have.contains(e.optString("id"))) continue;
                 if (!title.equals(e.optString("title"))) continue;
                 if (!date.equals(e.optString("date"))) continue;
-                String st = e.optString("time", "");
-                if (!t.equals(st == null ? "" : st)) continue;
+                if (!t.equals(timeOf(e))) continue;
+
+                // ② **对上之后才撤占位**。
+                //
+                // 2026-10-25 修（用户报「新建的未定时任务闪一下然后消失，
+                // 要刷新才回来」）：以前是**先撤占位、再去找真身**，一旦某个
+                // 字段对不上（未定时任务的 time 就是典型：服务端给的是 JSON
+                // null，而 Android 的 optString 会把 null 读成字符串 "null"，
+                // 跟本地的 "" 永远不相等），占位已经被删、真身又没插进来 ——
+                // 卡片就这么没了，要等下一次整表 bootstrap 才回来。
+                // 现在：没对上就原样留着占位（桌面继续显示本地那条），
+                // 最多是「等下次同步才换成真身」，绝不会凭空消失。
+                for (int k = 0; k < dst.length(); k++) {
+                    JSONObject d = dst.optJSONObject(k);
+                    if (d != null && localId.equals(d.optString("id"))) { dst.remove(k); break; }
+                }
                 dst.put(new JSONObject(e.toString()));
                 // 2026-10-14：**把服务端真 id 返回出去**。重复任务要在它
                 // 身上派生后续实例（id = `真id#日期`），本地占位 id 用不了。
                 sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
                 return e.optString("id");
             }
-            sp(c).edit().putString(KEY_SNAPSHOT, local.toString()).apply();
+            // 没对上：**不动快照**（占位留着），下次 bootstrap 会整体纠正。
             return null;
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /**
+     * 时段归一：null / 缺失 / 空串一律当空串（= 未定时）。
+     *
+     * ⚠️ 不能直接 `optString("time", "")`：Android 的 org.json 遇到
+     * {@code JSONObject.NULL} 会返回字符串 {@code "null"}，跟空串对不上。
+     * 服务端 `/widget` 视图对未定时任务给的正是 {@code time: null}。
+     */
+    private static String timeOf(JSONObject e) {
+        return e.isNull("time") ? "" : e.optString("time", "");
+    }
+
+    private static String timeOf(String time) {
+        return time == null ? "" : time;
     }
 
     /**

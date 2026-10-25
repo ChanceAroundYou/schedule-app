@@ -10,7 +10,7 @@
   2026-10-13：
   · paddingLeft 1dp → **5dp** —— 用户反馈「文本离竖线太近」，要拉开一点。
     竖条宽 2dp，留 3dp 间隔。
-  · 字号固定 9sp，不随块高变化。
+  · 字号固定 9sp，不随块高变化。（2026-10-25 → 8sp）
 
   2026-10-15：**最多两行** —— 第一行「时段 + 标题」，第二行是这条任务的
   **详细内容**（App 抽屉里那一格），超出末尾截断。
@@ -32,4 +32,4 @@
     android:paddingRight="2dp"
     android:paddingBottom="1dp"
     android:textColor="#1B3A2A"
-    android:textSize="9sp" />
+    android:textSize="8sp" />

@@ -3,8 +3,8 @@
 
      2026-10-14（第十轮）按用户要求重排：
        · 时间 / 重复 / 提醒 **各占一行**（不再并排）。
-       · 时间**只设开始时间** —— 去掉「至结束」。要设一整段时间就点开该任务、
-         在**编辑弹窗**里补结束时间（那边的时间段是完整的）。
+       · 时间**只设开始时间** —— 去掉「至结束」。
+         2026-10-25 用户要求恢复：开始 + 结束各一行，设了结束就直接按时段存。
        · 重复支持**预设 + 结束条件**（不结束 / 按次数 / 按日期）。
      -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -59,7 +59,7 @@
         android:textColor="#1B3A2A"
         android:textSize="12sp" />
 
-    <!-- 行3：开始时间（只有开始；时间段去编辑弹窗设） -->
+    <!-- 行3：开始时间 -->
     <Button
         android:id="@+id/c_start"
         style="?android:attr/borderlessButtonStyle"
@@ -73,6 +73,25 @@
         android:paddingLeft="10dp"
         android:paddingRight="10dp"
         android:text="开始时间：不设置"
+        android:textColor="#1B3A2A"
+        android:textSize="12sp" />
+
+    <!-- 行3.5：结束时间（2026-10-25 用户要求补回来 —— 只能设开始的话，
+         新建完还得点进编辑弹窗才能补结束，白跑一趟）。
+         设了结束就按时段发 duration；不设 = 沿用「默认 1 小时」。 -->
+    <Button
+        android:id="@+id/c_end"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/dialog_field"
+        android:gravity="center_vertical"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:text="结束时间：不设置"
         android:textColor="#1B3A2A"
         android:textSize="12sp" />
 

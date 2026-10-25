@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 未定时折叠提示「+N」。占一格宽度，跟卡片等分。 -->
+<!-- 未定时折叠提示「+N」。占半格（两两一行里的一个 weight=1 格子）。 -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/untimed_more"
     android:layout_width="0dp"
-    android:layout_height="15dp"
+    android:layout_height="14dp"
     android:layout_marginLeft="1dp"
     android:layout_marginRight="1dp"
     android:layout_weight="1"
@@ -11,4 +11,4 @@
     android:maxLines="1"
     android:text="+2"
     android:textColor="#7E9488"
-    android:textSize="9sp" />
+    android:textSize="8sp" />

@@ -94,9 +94,13 @@ APK_NAME="schedule-$VERSION_CODE.apk"
 
 # version.json 一起传。字段名与 AppUpdate.java 里的 Manifest 一一对应
 # （versionCode / versionName / url / sha256 / notes）。
-VJSON="$(mktemp)"
-trap 'rm -f "$VJSON"' EXIT
-cat > "$VJSON" <<EOF
+#
+# ⚠️ **不落临时文件**：以前用 `mktemp` + `trap 'rm -f ...' EXIT`，但 Git Bash 的
+# mktemp 返回的是盘符路径（C:/...），收尾那个 rm 会被本机的安全删除钩子拦下、
+# 报 SAFE_DELETE_INVALID_PATH —— 一个**已经发成功**的版本最后以非零码退出，
+# 调用方（mobile-loop）据此判定「发布失败」，连装机都跳过了。
+# 直接把 JSON 从 stdin 递过去，既少一次磁盘往返，也没有要清理的东西。
+"$SSH" "$SSH_HOST" "cat > $REMOTE_DIR/version.json" <<EOF
 {
   "versionCode": $VERSION_CODE,
   "versionName": "$VERSION_NAME",
@@ -106,7 +110,6 @@ cat > "$VJSON" <<EOF
   "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
-"$SSH" "$SSH_HOST" "cat > $REMOTE_DIR/version.json" < "$VJSON"
 "$SSH" "$SSH_HOST" "ls -la $REMOTE_DIR"
 
 say "4/4 回读校验"

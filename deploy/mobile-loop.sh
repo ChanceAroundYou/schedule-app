@@ -163,13 +163,27 @@ if [ -n "$DEVICE" ]; then
 
   if [ -z "$APK" ] && [ "$NO_PUBLISH" = "0" ] && [ "$INSTALL_ONLY" = "0" ]; then
     step "6/7a 发布 APK（publish-apk.sh）"
+    PUB_OK=0
     if bash deploy/publish-apk.sh "手机端自动发版" > /tmp/m-pub.log 2>&1; then
+      PUB_OK=1
+    else
+      # ⚠️ 别只信退出码：本机沙箱的 rm 钩子（BASH_ENV 注入，拦内嵌盘符路径）会把
+      # 已经发成功的发布绊成非零（SAFE_DELETE_INVALID_PATH，见 docs/踩坑-环境.md），
+      # 2026-10-24/25 连坑 4 次、每次都误跳装机。发布成没成，以线上 version.json
+      # 是否已是本地 versionCode 为准 —— 是就继续装机。
+      if curl -sS --noproxy '*' "$BASE/dl/version.json" 2>/dev/null \
+           | grep -q "\"versionCode\": *$LOCAL_CODE"; then
+        echo "  退出码非零，但线上 version.json 已是 $LOCAL_CODE —— 按发布成功继续（日志 /tmp/m-pub.log）"
+        PUB_OK=1
+      else
+        fail "APK 发布失败（详见 /tmp/m-pub.log）"; tail -15 /tmp/m-pub.log | sed 's/^/    /'
+      fi
+    fi
+    if [ "$PUB_OK" = "1" ]; then
       grep -E "发布完成|HTTP 200|versionCode" /tmp/m-pub.log | head -5 | sed 's/^/  /'
       APK="/tmp/m-$LOCAL_CODE.apk"
       curl -sS -o "$APK" "$BASE/dl/schedule-$LOCAL_CODE.apk" || APK=""
       [ -s "$APK" ] || fail "发布成功但下载不到 schedule-$LOCAL_CODE.apk"
-    else
-      fail "APK 发布失败（详见 /tmp/m-pub.log）"; tail -15 /tmp/m-pub.log | sed 's/^/    /'
     fi
   fi
 

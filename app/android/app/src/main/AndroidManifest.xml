@@ -51,12 +51,19 @@
         </receiver>
 
         <!--
-          两个弹框。**对话框主题**：观感是桌面上的小卡片，不是「打开 App」。
+          三个弹框。**对话框主题**：观感是桌面上的小卡片，不是「打开 App」。
           excludeFromRecents + noHistory 让它们不进最近任务、返回即消失。
+
+          ⚠️ taskAffinity="" 是关键，别删（2026-10-25 用户报「App 在后台时点小组件
+          的 + / 任务卡，背景跳进 App 本体」）：默认三个弹框和 MainActivity 同属
+          一个包的任务栈，App 在后台时拉起弹框会把整个任务栈（连着 MainActivity）
+          一起带到前台，于是半透明弹框背后看到的是 App。清空 affinity 之后它们
+          自成一个任务、背后就是桌面 —— 真正「只操作小组件，不进 App」。
         -->
         <activity
             android:name=".TaskDetailActivity"
             android:excludeFromRecents="true"
+            android:taskAffinity=""
             android:noHistory="true"
             android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />
@@ -64,6 +71,7 @@
         <activity
             android:name=".CreateTaskActivity"
             android:excludeFromRecents="true"
+            android:taskAffinity=""
             android:noHistory="true"
             android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />
@@ -71,6 +79,7 @@
         <activity
             android:name=".WidgetSettingsActivity"
             android:excludeFromRecents="true"
+            android:taskAffinity=""
             android:noHistory="true"
             android:theme="@style/AppTheme.WidgetDialog"
             android:windowSoftInputMode="adjustResize" />

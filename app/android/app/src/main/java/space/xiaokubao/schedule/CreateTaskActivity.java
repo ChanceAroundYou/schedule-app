@@ -34,8 +34,12 @@ import java.util.Locale;
  *     写出的仍是标准 RepeatRule（weekdays 用 App 口径 0=周日…6=周六）。
  *   · **提醒**：选 HH:mm，写入 reminder 字段。
  *
+ * 2026-10-25（用户要求）：**结束时间加回来**（开始 / 结束各一行）。
+ *   只设开始的话，新建完还得点进编辑弹窗补结束，白跑一趟。现在设了结束就
+ *   按时段发 duration；不设仍然发 null（= 默认 1 小时卡片高度）。
+ *
  * ⚠️ 时长字段名必须是 **duration** —— 旧代码写的是 `dur`，服务端和 App 读的
- * 都是 duration。
+ * 都是 duration。（本地快照里那个字段才叫 `dur`，见 patchEntity 那里。）
  */
 public class CreateTaskActivity extends Activity {
 
@@ -50,6 +54,8 @@ public class CreateTaskActivity extends Activity {
     private String pickedDate = null;
     /** 选中的开始时间，null = 不设置 */
     private String pickedStart = null;
+    /** 选中的结束时间，null = 不设置（不设就按默认 1 小时） */
+    private String pickedEnd = null;
     /** 重复预设：none / day / workday / week / month / year */
     private String repeatUnit = "none";
     /** 重复结束：never / count / date */
@@ -63,6 +69,7 @@ public class CreateTaskActivity extends Activity {
 
     private Button dateBtn;
     private Button startBtn;
+    private Button endBtn;
     private Button repeatBtn;
     private Button remindBtn;
     private TextView durHint;
@@ -92,6 +99,7 @@ public class CreateTaskActivity extends Activity {
 
         dateBtn = findViewById(R.id.c_date);
         startBtn = findViewById(R.id.c_start);
+        endBtn = findViewById(R.id.c_end);
         repeatBtn = findViewById(R.id.c_repeat);
         remindBtn = findViewById(R.id.c_remind);
         durHint = findViewById(R.id.c_durhint);
@@ -100,11 +108,13 @@ public class CreateTaskActivity extends Activity {
 
         updateDateLabel();
         updateStartLabel();
+        updateEndLabel();
         updateRepeatLabel();
         updateRemindLabel();
 
         dateBtn.setOnClickListener(v -> pickDate());
         startBtn.setOnClickListener(v -> pickStart());
+        endBtn.setOnClickListener(v -> pickEnd());
         repeatBtn.setOnClickListener(v -> pickRepeat());
         remindBtn.setOnClickListener(v -> pickRemind());
 
@@ -113,6 +123,13 @@ public class CreateTaskActivity extends Activity {
             if (t.isEmpty()) { title.setError("总得写点什么"); return; }
             final String date = pickedDate;
             final String tm = pickedStart;
+            final int durMin = durMinutes();
+            // 结束早于/等于开始 = 跨天，App 的时间段语义装不下 —— 拦下来让用户改，
+            // 别默默存一条看着像 0 分钟的卡片。
+            if (tm != null && pickedEnd != null && durMin <= 0) {
+                Ui.toast(this, "结束时间要晚于开始时间");
+                return;
+            }
             final String calId = defaultCalId(this);
 
             // ① 乐观更新：本地造一条（id 是临时的，服务端返回真 id 后再换掉）
@@ -122,7 +139,8 @@ public class CreateTaskActivity extends Activity {
                 f.put("title", t);
                 f.put("date", date);
                 f.put("time", tm == null ? JSONObject.NULL : tm);
-                f.put("dur", JSONObject.NULL);       // 只设开始 → 时长不设（默认一小时）
+                // 本地快照里这个字段叫 dur。设了结束就带分钟数；没设 = null（默认一小时卡高）
+                f.put("dur", durMin > 0 ? (Object) durMin : JSONObject.NULL);
                 f.put("done", false);
                 f.put("calId", calId);
                 f.put("repeat", buildRepeat(pickedDate));
@@ -138,7 +156,7 @@ public class CreateTaskActivity extends Activity {
             if (WidgetPrefs.canDirect(this) && !calId.isEmpty()) {
                 try {
                     JSONArray ops = new JSONArray();
-                    ops.put(createOp(t, date, tm, calId));
+                    ops.put(createOp(t, date, tm, calId, durMin));
                     WidgetApi.op(this, ops, new WidgetApi.OpCallback() {
                         @Override
                         public void onAccepted(JSONObject body) {
@@ -168,14 +186,14 @@ public class CreateTaskActivity extends Activity {
 
                         @Override
                         public void onUnreachable(String why) {
-                            enqueueCreate(t, date, tm, localId);
+                            enqueueCreate(t, date, tm, localId, durMin);
                         }
                     });
                 } catch (Exception e) {
-                    enqueueCreate(t, date, tm, localId);
+                    enqueueCreate(t, date, tm, localId, durMin);
                 }
             } else {
-                enqueueCreate(t, date, tm, localId);
+                enqueueCreate(t, date, tm, localId, durMin);
             }
             finish();
         });
@@ -213,11 +231,15 @@ public class CreateTaskActivity extends Activity {
         }
         TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
             pickedStart = String.format(Locale.US, "%02d:%02d", hh, mm);
+            // 换了开始时间之后原来的结束可能就站不住了（比如开始 15:00、
+            // 结束还是 10:00）—— 不偷偷清掉，标签里会直接标出「要晚于开始」。
             updateStartLabel();
         }, h, m, true);
         d.show();
         d.setButton(DialogInterface.BUTTON_NEUTRAL, "不设置", (dlg, which) -> {
             pickedStart = null;
+            // 没有开始就没有时间段，结束一起清掉
+            pickedEnd = null;
             updateStartLabel();
         });
     }
@@ -225,10 +247,77 @@ public class CreateTaskActivity extends Activity {
     private void updateStartLabel() {
         if (startBtn == null) return;
         startBtn.setText("开始时间：" + (pickedStart == null ? "不设置" : pickedStart));
-        if (durHint == null) return;
-        durHint.setText(pickedStart == null
-                ? "不设时间就落到「未定时」里；时长/时间段可在编辑里设"
-                : "时长默认 1 小时；要设时间段请点开该任务编辑");
+        updateEndLabel();
+    }
+
+    /* ==================== 结束时间 ==================== */
+
+    private void pickEnd() {
+        if (pickedStart == null) {
+            Ui.toast(this, "先设开始时间，结束时间才有意义");
+            return;
+        }
+        int[] s = hhmm(pickedStart);
+        // 默认给「开始 + 1 小时」，跟不设结束时的默认卡高一致
+        int h = Math.min(23, s[0] + 1);
+        int m = s[1];
+        if (pickedEnd != null) {
+            int[] e = hhmm(pickedEnd);
+            h = e[0];
+            m = e[1];
+        }
+        TimePickerDialog d = new TimePickerDialog(this, (view, hh, mm) -> {
+            pickedEnd = String.format(Locale.US, "%02d:%02d", hh, mm);
+            updateEndLabel();
+        }, h, m, true);
+        d.show();
+        d.setButton(DialogInterface.BUTTON_NEUTRAL, "不设置", (dlg, which) -> {
+            pickedEnd = null;
+            updateEndLabel();
+        });
+    }
+
+    private void updateEndLabel() {
+        if (endBtn == null) return;
+        String label;
+        if (pickedStart == null) {
+            label = "结束时间：先设开始";
+        } else if (pickedEnd == null) {
+            label = "结束时间：不设置";
+        } else if (durMinutes() <= 0) {
+            label = "结束时间：" + pickedEnd + "（要晚于开始）";
+        } else {
+            label = "结束时间：" + pickedEnd + "（" + durText() + "）";
+        }
+        endBtn.setText(label);
+
+        if (durHint != null) {
+            if (pickedStart == null) durHint.setText("不设时间就落到「未定时」里");
+            else if (pickedEnd == null) durHint.setText("不设结束 = 按 1 小时算；也可在编辑里改");
+            else if (durMinutes() <= 0) durHint.setText("结束要晚于开始时间");
+            else durHint.setText("时长 " + durText());
+        }
+    }
+
+    /**
+     * 开始 → 结束的分钟数。没设结束、或结束不晚于开始 → 返回 0（= 不设时长，
+     * 沿用 App 的「默认 1 小时」语义）。
+     */
+    private int durMinutes() {
+        if (pickedStart == null || pickedEnd == null) return 0;
+        int[] s = hhmm(pickedStart);
+        int[] e = hhmm(pickedEnd);
+        return (e[0] * 60 + e[1]) - (s[0] * 60 + s[1]);
+    }
+
+    /** 时长的中文说法，如「1 小时 30 分」 */
+    private String durText() {
+        int d = durMinutes();
+        if (d <= 0) return "";
+        int hh = d / 60;
+        int mm = d % 60;
+        if (hh == 0) return mm + " 分钟";
+        return mm == 0 ? hh + " 小时" : hh + " 小时 " + mm + " 分";
     }
 
     /* ==================== 重复 ==================== */
@@ -493,8 +582,11 @@ public class CreateTaskActivity extends Activity {
 
     /* ==================== 下发 ==================== */
 
-    /** ⚠️ 字段名 duration（服务端字段），不是 dur。这里没有结束时间 → 发 null */
-    private JSONObject createOp(String t, String date, String tm, String calId)
+    /**
+     * ⚠️ 字段名 duration（服务端字段），不是 dur。
+     * 设了结束时间就按时段带分钟数；没设 → null（App 默认 1 小时卡高）。
+     */
+    private JSONObject createOp(String t, String date, String tm, String calId, int durMin)
             throws Exception {
         JSONObject op = new JSONObject();
         op.put("entity", "task");
@@ -504,7 +596,7 @@ public class CreateTaskActivity extends Activity {
         fields.put("title", t);
         fields.put("date", date);
         fields.put("time", tm == null ? JSONObject.NULL : tm);
-        fields.put("duration", JSONObject.NULL);
+        fields.put("duration", durMin > 0 ? (Object) durMin : JSONObject.NULL);
         fields.put("done", false);
         fields.put("doneAt", JSONObject.NULL);
         fields.put("repeat", buildRepeat(pickedDate));
@@ -520,7 +612,7 @@ public class CreateTaskActivity extends Activity {
         return "";
     }
 
-    private void enqueueCreate(String t, String date, String tm, String localId) {
+    private void enqueueCreate(String t, String date, String tm, String localId, int durMin) {
         try {
             JSONObject op = new JSONObject();
             op.put("kind", "create");
@@ -528,7 +620,7 @@ public class CreateTaskActivity extends Activity {
             op.put("title", t);
             op.put("date", date);
             op.put("time", tm == null ? JSONObject.NULL : tm);
-            op.put("duration", JSONObject.NULL);
+            op.put("duration", durMin > 0 ? (Object) durMin : JSONObject.NULL);
             op.put("repeat", buildRepeat(pickedDate));
             op.put("reminder", pickedRemind == null ? JSONObject.NULL : pickedRemind);
             WidgetPrefs.enqueuePending(this, op);
