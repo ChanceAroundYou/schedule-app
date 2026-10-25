@@ -168,7 +168,7 @@ node app/tests/card-geometry.mjs                           # 卡片几何 + 手�
 ```text
 日程管理/
 ├── app/          前端（React + TS + Vite，有构建）
-│   ├── src/App.tsx    启动与登录分流（97 行）
+│   ├── src/App.tsx    启动与登录分流
 │   ├── src/app/       工作台：Workbench.tsx + 按职责拆开的兄弟模块
 │   ├── src/domain/    纯逻辑，零 React / DOM / 网络
 │   ├── src/data/      本地存储 + 接口封装 + 旧数据导入

@@ -68,7 +68,7 @@ ui/
 3. **组件文件按主样式归属移动一次**（`RepeatPop` 从 `ui/drawer/` → `ui/quick-add/`、
    `Clock` 从 `ui/` → `ui/quick-add/`、`DatePicker`/`TimePicker`/`WhenPop`/`MiniCalendar` → `ui/overlays/`）；
    `import` 路径归 barrel（第 4 册）管，本册只保证 `ui/kit.tsx` `ui/hooks.ts` 两个入口的导出名不变。
-4. **`views/Projects.tsx` 的 74 处内联外观类不迁**：`views/` 冻结（第 5 册 D2），本册只登记进附录。
+4. **`views/Projects.tsx` 的内联外观类不迁**：`views/` 冻结（第 5 册 D2），本册只登记进附录。
 
 **注意**：`lists/` `calendar/` 两组若 `views/**` 仍冻结（当前决策），则**暂不迁移**，留在 `views/` 引全局 CSS。第 4 册再动 `views/`。
 
@@ -174,7 +174,7 @@ cd app && npm run typecheck && npm test && node tests/color-scan.mjs && node tes
 | **A** | **业务根类补齐**：逐组件根挂稳定语义类（`.when-pop` `.fast-add` `.drawer` 已有；`.tp` `.dp` `.cp-face` `.jp-grid` `.field` 等规范化），登记进 `state.css` 同级清单 | 每个 `ui/**` 组件根有业务类；探针选择器全绿 | ✅ |
 | **B** | **建 6 个样式组**：类名按 §1 实际映射表搬进 `<组>.css`（module 方案退回普通 CSS，见 §4 风险兜底）；`styles/*.css` 对应段删除 | 6 个组 css 存在；`styles/` 只剩 5 内容文件 | ✅ |
 | **C** | **组件改引**：内部子元素用全局类裸串（module 退回后 `s.xxx` 变裸串）；根仍为业务类裸串 | typecheck 绿；`npm run build` 后页面无未加样式 | ✅ |
-| **D** | **清调用方外观类**：`ui/` 非 kit 的 74 处内联 `*-[var(--*)]` 归到语义类（`tailwind.css` 末「S7 子步 D」段） | `api-scan` 调用方 74 → 0 | ✅ |
+| **D** | **清调用方外观类**：`ui/` 非 kit 的内联 `*-[var(--*)]` 归到语义类（`tailwind.css` 末「S7 子步 D」段） | `api-scan` 调用方 → 0 | ✅ |
 | **E** | **目录落位**：组件文件按 §1 规则 3 移动；import 路径改；删空目录 | 经 import 的引用不变；探针绿 | ✅ |
 | **F** | **锁死**：`api-scan.mjs` 加两条 —— ① `styles/` 只留全局 6 文件 ② `ui/**` 零 `.css` import（module 方案退回后按实际架构重述） | 扫描器绿；故意犯规能红（TDD 先红后绿） | ✅ |
 
