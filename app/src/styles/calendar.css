@@ -450,18 +450,26 @@
   overflow: hidden; text-overflow: clip; white-space: nowrap;
 }
 .rep-flag {
-  flex: 0 0 auto; font-size: .78em; opacity: .75; margin-left: 3px;
-  /* 🔁 emoji 在部分机型渲染成黄铜色（2026-10-25 用户）——换成描线符号 ↻。
-     颜色用主题绿：用户「变成绿色，跟目前的色调保持一致」（同日第二次裁决，
-     灰色版是我做过头了） */
+  flex: 0 0 auto; display: inline-block; line-height: 0; margin-left: 3px;
+  /* 真图标（lucide Repeat，描边 3）而不是 emoji / 符号字符（2026-10-25 用户）：
+     字符的粗细与基线由字体决定，跨机型不一致；线条图标才是可控的。
+     颜色用主题绿（同日裁决：跟整体色调一致）。 */
   color: var(--primary);
+  /* 透明背景：不画底、不加内边距 —— 用户「背景透明不占位置」。
+     只让图标本体占这几个像素，行高由 `line-height: 0` 交还给外层文字。 */
+  background: none; padding: 0;
+  /* 内联站位于标题文字之后：按中线对齐，不然图标会贴着基线偏下半个字。 */
+  vertical-align: middle;
 }
+.rep-flag svg { width: 13px; height: 13px; display: block; }
 /* 任务卡右上角的层角标：绝对定位、不占文字宽度（2026-10-25 用户要求）。
-   几何随卡片：定时卡本身是 absolute，未定时卡补 relative。 */
+   几何随卡片：定时卡本身是 absolute，未定时卡补 relative。
+   比内联档小 2px（卡窄），但仍比最早那版 9px 大、描边一样粗。 */
 .rep-flag--corner {
-  position: absolute; top: 1px; right: 3px; margin: 0;
-  font-size: 9px; line-height: 1; opacity: .55;
+  position: absolute; top: 0; right: 2px; margin: 0;
+  opacity: .7;
 }
+.rep-flag--corner svg { width: 11px; height: 11px; }
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
      横向也要完整：卡片文案走紧凑写法（`timeRangeCompact`）先省掉两个空格和那根长破折号，

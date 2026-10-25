@@ -59,16 +59,29 @@ export async function run(ctx) {
     if (!card) return null;
     const f = card.querySelector('.rep-flag');
     const cs = f ? getComputedStyle(f) : null;
-    return { has: !!f, glyph: f ? f.textContent : null, pos: cs ? cs.position : null,
-      size: cs ? cs.fontSize : null, inText: !!card.querySelector('.ev-text .rep-flag'),
+    const svg = f ? f.querySelector('svg') : null;
+    const r = svg ? svg.getBoundingClientRect() : null;
+    return { has: !!f, isSvg: !!svg, text: f ? f.textContent.trim() : null,
+      pos: cs ? cs.position : null, bg: cs ? cs.backgroundColor : null,
+      w: r ? Math.round(r.width) : null,
+      strokeWidth: svg ? parseInt(getComputedStyle(svg).strokeWidth, 10) : null,
+      inText: !!card.querySelector('.ev-text .rep-flag'),
       title: (card.querySelector('.ev-title') || {}).textContent || '' };
   `);
-  ok(flag && flag.has && flag.glyph === '↻',
-    '重复任务的角标是中性描线符号 ↻（不再是黄铜色 emoji）', JSON.stringify(flag && flag.glyph));
-  ok(flag && flag.pos === 'absolute' && flag.size === '9px',
-    '角标绝对定位在卡片右上角、9px 档', JSON.stringify({ pos: flag.pos, size: flag.size }));
+  /* 2026-10-25 用户第三次裁决：「做成真正的 icon 而非 emoji，粗一点、大一点点，
+     背景透明不占位置」——从 ↻ 字形符号换成 lucide Repeat（真 SVG）。
+     字形符号的粗细由字体决定、跨机型不一致，所以这里锁死「必须是 <svg>」。 */
+  ok(flag && flag.has && flag.isSvg && flag.text === '',
+    '重复任务的角标是真 SVG 图标（不是 emoji / 字形符号），实际文本 '
+    + JSON.stringify(flag && flag.text));
+  ok(flag && flag.strokeWidth >= 3,
+    '重复图标够粗（stroke-width=' + (flag && flag.strokeWidth) + ' ≥ 3）');
+  ok(flag && flag.bg === 'rgba(0, 0, 0, 0)',
+    '重复图标背景透明（不画底块）', JSON.stringify(flag && flag.bg));
+  ok(flag && flag.pos === 'absolute' && flag.w === 11,
+    '角标绝对定位在卡片右上角、11px 档', JSON.stringify({ pos: flag && flag.pos, w: flag && flag.w }));
   ok(flag && !flag.inText && !flag.title.includes('↻'),
-    '角标不在标题行里占位（标题后不再跟图标）', flag.title);
+    '角标不在标题行里占位（标题后不再跟图标）', flag && flag.title);
 
   // 清理：4 条样例全删（墓碑），别把后面的计数断言搅了
   const del = await api('POST', '/sync', { cursor: 0, ops: [1, 2, 3, 4].map((n) => ({

@@ -673,6 +673,30 @@ export async function run(ctx) {
     })()
   `, '单位切到每年落库（带月份）', 8000);
   ok(true, '单位切到每年，月份切换 + 日期格都在');
+  /* 重复标记必须是**真 SVG 图标**（2026-10-25 用户：「做成真正的 icon 而非
+     emoji，粗一点、大一点点，背景透明不占位置」）。这条钉住三件事：
+     ① 渲染出来的是 <svg> 而不是 emoji / ↻ 这类字体符号（跨机型粗细不可控）；
+     ② 描边 ≥3（用户要的「粗一点」，lucide 默认 2 会被打回）；
+     ③ 容器背景透明（不要给 icon 加底块）。 */
+  const repFlag = await evalJs(page, `
+    return (() => {
+      const el = document.querySelector('.task-el[data-id="${rowId}"] .rep-flag');
+      if (!el) return { found: false };
+      const svg = el.querySelector('svg');
+      const cs = getComputedStyle(el);
+      return {
+        found: !!svg,
+        text: el.textContent.trim(),
+        w: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
+        strokeWidth: svg ? parseInt(getComputedStyle(svg).strokeWidth, 10) : 0,
+        bg: cs.backgroundColor,
+      };
+    })();
+  `);
+  ok(repFlag.found, '重复标记是真的 SVG 图标（不是 emoji/字符），实际文本 '
+    + JSON.stringify(repFlag.text || '') + '，宽 ' + repFlag.w + 'px');
+  ok(repFlag.strokeWidth >= 3, '重复图标够粗（stroke-width=' + repFlag.strokeWidth + ' ≥ 3）');
+  ok(repFlag.bg === 'rgba(0, 0, 0, 0)', '重复图标背景透明（不画底块，实际 ' + repFlag.bg + '）');
   // 点一下月份切换的右箭头，yearMonth 要跟着变
   const ymBefore = await evalJs(page, `
     return (() => {
