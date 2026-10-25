@@ -238,8 +238,8 @@ body.sheet-open .tab:active { background: none; }
     --card-pad-x: 2px;
     --allday-min-h: 13px;
     --tl-wrap-pad: 10px 8px 10px 48px;
-    --tl-label-left: -44px;
-    --tl-label-width: 38px;
+    --tl-label-left: -40px;
+    --tl-label-width: 30px;
     --ev-gap: 0px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
