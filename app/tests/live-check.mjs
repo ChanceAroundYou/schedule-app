@@ -211,8 +211,10 @@ async function checkNowLine(page) {
     const okColor = getComputedStyle(probe).color;
     probe.remove();
     return {
-      borderColor: cs.borderTopColor,
-      borderWidth: cs.borderTopWidth,
+      /* 线是**实心 div**（height: 2px + background），不是 border-top 那条 hack
+         —— 2026-10-25 统一骨架时定的口径，这里跟着验背景色 */
+      color: cs.backgroundColor,
+      height: cs.height,
       okColor,
       children: el.children.length,
       text: (el.textContent || '').trim(),
@@ -220,8 +222,8 @@ async function checkNowLine(page) {
     };
   });
 
-  assertOk(info.borderColor === info.okColor,
-    '线条是 --ok 深绿', `实际 ${info.borderColor}，--ok=${info.okColor}（主题 ${info.theme}）`);
+  assertOk(info.color === info.okColor,
+    '线条是 --ok 深绿', `实际 ${info.color}，--ok=${info.okColor}（主题 ${info.theme}）`);
   assertOk(info.children === 0 && info.text === '',
     '只有一根线：无圆点、无时刻文字', `子元素 ${info.children}、文本「${info.text}」`);
 }

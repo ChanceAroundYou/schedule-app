@@ -28,7 +28,14 @@
 /* 日视图布局变量 —— 桌面端默认值。移动端在 responsive.css 的
    @media (max-width: 900px) 里只改变量值，规则本身不重复写。 */
 :root {
-  --allday-zone-pad: 3px 12px 3px 60px;
+  /* **时间轴刻度列的宽 = 三视图同一个数**（日 / 3日 / 周共用；窄屏那一档在
+     responsive.css）。日视图以前是「靠 --tl-wrap-pad 的 60px 左内边距假装有一列」，
+     周视图是真的 grid 首列 46px —— 两个数对不上，用户报「时间区域宽度还是不一样」，
+     DOM 也是两套。现在两边都是**真列**，宽度只由这一个变量给。
+     ⚠️ **不能小于 44px**：`.tl-label` 是 `left: var(--tl-label-left)`（桌面 −44）
+     + `width: var(--tl-label-width)`（32）定位的，44 是它整个落在列内所需的下限。 */
+  --tl-gutter-w: 46px;
+  --allday-zone-pad: 3px 0 3px var(--tl-gutter-w);
   /* 卡与卡之间的缝 = --un-gap（tokens.css，2px，与周视图/月视图同一把尺）。
      2026-10-19 曾拉到 6px，「任务之间连在一起」；现在卡与卡靠 --un-gap，
      这里不再另设一把。 */
@@ -78,7 +85,11 @@
   /* **两个 z 变量已删**（原先 --tl-wrap-z / --allday-zone-z）：两个区现在同处
      `.day-panel` 这一个堆叠上下文，区自己不再建上下文，这两档没有意义了。
      堆叠只在卡片之间发生，用的写死的 `.task-el.dragging { z-index: 9999 }`（见下）。 */
-  --tl-wrap-pad: 8px 12px 10px 60px;
+  /* 左右内边距**都是 0**（2026-10-25）：左边那 60px 原本是「假装一列」的刻度位，
+     现在刻度列是真列（`--tl-gutter-w`）；右边那 12px 日视图独有、周视图是 0，
+     用户要求「直接贴过去」。上下两档不动 —— 那是第一根小时线和最底那个数字
+     的落笔空间，周视图 `.week-grid` 的 8/10 同源。 */
+  --tl-wrap-pad: 8px 0 10px;
   --tl-label-left: -44px;
   --tl-label-width: 32px;
   --tl-event-pad: var(--card-pad-y) var(--card-pad-x);
@@ -154,16 +165,51 @@
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
   padding: var(--tl-wrap-pad);
 }
-/* 兜底高度。真正的高度是 `.content-day .tl-wrap > .timeline` 那条 flex 给的
-   （flex:1 + min-height:0），这里只防「脚本没跑 / 不在日视图」时塌成一条。
-   **不滚** —— 整天 24 小时一次性摊在一屏里，滚轮在时间轴上是死的。 */
-.timeline { position: relative; height: 640px; }
+/* 时间轴本体 = **三视图共用的一套骨架**（2026-10-25）：
+   grid 两列 —— 左刻度列（`--tl-gutter-w`）+ 右轴体（`minmax(0, 1fr)`）。
+   日视图的轴体是 `.tl-axis`（一列），3 日 / 周视图的是 `.week-cols`（N 列）；
+   两者的刻度列、小时线、当前时间线、卡片层都是**同一组规则**。
+   以前日视图靠 `.tl-wrap` 的 60px 左内边距「假装」有一列、标签挂在轴外（负 left），
+   周视图是真 grid 首列 —— 宽度对不上、DOM 也是两套。 */
+.timeline {
+  position: relative; height: 640px;
+  display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
 /* 日视图里：时间轴填满 .tl-wrap（flex:1），高度由 flex 算出来 ——
    这样 .allday-zone 长高时时间轴同步缩，不会出现「未定时区把时间轴压成 0」
    的反馈循环（2026-10-24 对齐修复）。 */
 .day-panel .tl-wrap > .timeline { height: 100%; min-height: 0; }
-.tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
+
+/* 左刻度列 —— 日视图与 3 日 / 周视图**同一列**。
+   z-index: 5 是给窄屏 sticky 用的（见 responsive.css），桌面没有 sticky 时
+   它只是把刻度列抬到「现在线(3) / 悬停卡(4)」之上、改时长(8) / 拖拽(9999) 之下 ——
+   球画在这一层里，所以窄屏横移时不会再被刻度列盖住（2026-10-25 用户报的）。
+   **不能 overflow: hidden**：最顶 / 最底那几条数字要探出格子半截才骑得上线。 */
+.tl-gutter { position: relative; z-index: 5; min-width: 0; }
+
+/* 时刻度 = **纯定位壳**，一个像素都不画 —— 小时线统一由轴容器的背景渐变给
+   （见下面 `.tl-axis, .week-cols`），两个视图一份画法。
+   壳自己挪到列的**右沿**（= 轴起点）：`.tl-label` 的 `--tl-label-left` 是负值，
+   它相对的是**轴**而不是列；这样两边的标签落在同一条默认规则上，
+   刻度列收窄时标签跟着轴一起走，右沿到轴的间距始终是 12px（桌面）。
+   ⚠️ `.tl-hour` 只由 `TimeGutter` 渲染，而 `TimeGutter` 只出现在刻度列里。 */
+.tl-hour { position: absolute; left: 100%; width: 0; height: 0; }
 .tl-label { position: absolute; left: var(--tl-label-left); top: -12px; width: var(--tl-label-width); text-align: center; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 轴体（日 `.tl-axis` / 周·3日 `.week-cols`）：**同一条小时线规则**。
+   一格 = 一小时，`--wk-hours` 是这一屏实际覆盖的小时数（两视图都由渲染时内联设）。
+   最底下那根结束线用**第二层背景**补，不用 `border-bottom`：用 border 会让轴体的
+   内高比刻度列少 1px，而「现在」线和绿球分别落在两个元素里、都按百分比定位 ——
+   那 1px 就是同一个时刻却画在两个高度上的来源（球在线下 1px）。
+   ⚠️ 渐变自己画不到 100%，所以收尾那一根必须单独补，别删。 */
+.tl-axis, .week-cols {
+  position: relative; min-width: 0;
+  background-image:
+    linear-gradient(to bottom, transparent calc(100% - 1px), var(--border) calc(100% - 1px)),
+    repeating-linear-gradient(
+      to bottom, var(--border) 0 1px, transparent 1px calc(100% / var(--wk-hours)));
+}
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -175,14 +221,25 @@
    颜色用 --ok（深绿）而不是 --danger（红）：「当前」不是危险状态；
    --ok 是唯一**主题无关**的深绿（--primary 会跟着 6 色板变蓝/变棕/变紫，
    不能拿来表示固定语义）。 */
-/* 现在时刻线：贯穿整行的绿色实线 + 左端绿球。
-   球心落时间轴与任务区交界线：9px 球 + 1.5px 线 → top = −(9 − 1.5) / 2 = −3.75px。
-   （2026-10-22 前长期是 −4px 估值，P0-3 抽 NowLine 时按算式扶正。） */
+/* 现在时刻线：贯穿轴体的绿色实线。**球不在线上了**（2026-10-25）：
+   线在轴体里（z-index 3），球在左刻度列里（`.tl-gutter`，z-index 5）——
+   以前球是 `.tl-now::before` 的 `left: -4.5px`，等于让球向左探进刻度列 4.5px，
+   窄屏刻度列 sticky + z-index 5 就把球盖掉半边（用户报「z-index 5 还是会盖在球上面」）。
+   拆出来之后球属于刻度列那一层，**天生画在它上面**，不用再抬任何 z-index；
+   线仍然只在轴体里，2026-10-22「横滑时绿线糊到刻度列」那条不会回来。
+   球心仍落在「刻度列 ↔ 轴体」那条交界线上：球 9px 宽，`right: -4.5px` 正好一半一半。
+   颜色用 --ok（深绿）而不是 --danger（红）：「当前」不是危险状态；
+   --ok 是唯一**主题无关**的深绿（--primary 会跟着 6 色板变蓝/变棕/变紫，
+   不能拿来表示固定语义）。 */
 .tl-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--ok); z-index: 3; pointer-events: none; }
-.tl-now::before {
-  content: ''; position: absolute; left: -4.5px; top: -4px;
+/* 球：定位在**刻度列**里，`right: -4.5px` 跨在交界线上；`top` 由 JS 写（与线同一个
+   分钟值），这里只补「球心落线」的半个球高（(9 − 2) / 2 = 3.5px，2px 是线厚）。 */
+.tl-now-ball {
+  position: absolute; right: -4.5px; top: 0;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--ok); box-shadow: 0 0 0 3px rgb(from var(--ok) r g b / .16);
+  transform: translateY(-3.5px);
+  pointer-events: none;
 }
 
 /* 容器与时间轴同宽（left:0; right:0），不再缩进 —— 缩进会让定时卡片
@@ -496,7 +553,7 @@
    会不会错位只看这一处在不在同一个容器里 */
 .week-head {
   flex: 0 0 auto;
-  display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
   background: var(--panel); border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .week-head-gutter { }
@@ -530,47 +587,36 @@
 /* 时间网格本体：左刻度 + 右 7 列。**高度全部交给 flex** ——
    `.week-grid` 是 `.week-view` 的 flex 子项、`flex:1 + min-height:0`，
    它就刚好吃掉「表头和未定时行之外的全部空间」。不写 px、不写 calc(100vh - N)，
-   窗口怎么缩放都不用重算坐标。 */
+   窗口怎么缩放都不用重算坐标。
+   **它和日视图 `.timeline` 是同一副骨架**：两列 grid —— 刻度列
+   `--tl-gutter-w` + 轴体 `minmax(0,1fr)`，小时线、现在线、标签全走同一组规则。 */
 .week-grid {
   flex: 1 1 auto; min-height: 0;
-  display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
   /* 上下各留一段呼吸空隙，与日视图 .tl-wrap 的 padding 同款：
      · 顶部 8px —— 第一根小时线不顶着未定时行的分割线（贴在一起就是
        用户看到的「两条线重叠」），数字也才有地方骑到线上；
      · 底部 10px —— 最底那根线上的数字完整落笔，不再被剪掉半截。 */
   padding: 8px 0 10px;
 }
-/* 左侧刻度列。**与日视图同一副面孔**：没有自己的底色（白底）、小时线
-   不穿过数字（线只画在七列区）、没有分割线。
-   线的定位复用 .tl-hour 那个壳，只是把它的 border 关掉；数字用 .tl-label
-   的默认定位 —— **骑在线上**，跟日视图一个样。
-   不能 overflow: hidden：最顶/最底的数字要探出格子半截才骑得上线。 */
-.week-gutter {
-  position: relative; min-width: 0;
-}
-.week-gutter .tl-hour { border-top: 0; }
-.week-gutter .tl-label { left: auto; right: 6px; width: 32px; text-align: center; }
+/* 左侧刻度列：**就是日视图那个 `.tl-gutter`**（类名两个都挂，
+   探针与调试按老名字找得到，规则只在 `.tl-gutter` 一处）。 */
 
 .week-cols {
   position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0;
   overflow: visible;
-  /* 底边那根结束线：渐变画不到 100%，由这条补上 —— 与日视图的 24:00
-     那根线同源，也让最底下的数字有确切的线可骑。 */
-  border-bottom: 1px solid var(--border);
 }
 /* 三日视图：同壳，只有 3 列 —— 每列能分到 ~2.5 倍宽，字大、不挤
    （2026-10-25 用户加）。窄屏的横滑/列宽在 responsive.css 单独放行。 */
 .week-view.three-day .week-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .week-view.three-day .week-head-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .week-view.three-day .week-un-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* 每一列只画**竖直的分隔线**。横向小时线不在这一层 —— 统一由轴容器
+   （`.tl-axis, .week-cols`）的背景渐变画一份，日视图与周视图同一套。
+   分头画会出现「跨列错位 1px」「渐变与容器高差一截」这类只在某一列上看得出的毛病。 */
 .week-col {
   min-width: 0; position: relative;
   border-right: 1px solid var(--border);
-  /* 横向刻度线：与左刻度列同一套百分比位置。一格的高度就是「一小时」——
-     列高由 flex 决定（整天摊在一屏里），所以用百分比而不是像素；
-     `--wk-hours` 是这一屏实际覆盖的小时数。 */
-  background-image: repeating-linear-gradient(
-    to bottom, var(--border) 0 1px, transparent 1px calc(100% / var(--wk-hours)));
 }
 .week-col:last-child { border-right: none; }
 /* 今天**不加整列底色**（2026-10-22 用户）—— 和任务卡的淡绿撞在一起，
@@ -583,7 +629,7 @@
    **上下都要有分割线**：只有下面那条时，这一行和上面的周几表头融成一体，
    看不出「未定时」是独立的一块。 */
 .week-un-row {
-  flex: 0 0 auto; display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  flex: 0 0 auto; display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
   background: var(--panel);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);

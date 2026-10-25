@@ -23,12 +23,12 @@ import { useRef, type CSSProperties } from 'react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
-  dayTimeline, coverWindow, spanOf, untimedBlanks, untimedRowPx, windowOf,
+  dayTimeline, coverWindow, minToPct, spanOf, untimedBlanks, untimedRowPx, windowOf,
   type DayWindow,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { TimeGutter, DragRangePreview, BlankRow } from './timeline.tsx';
+import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
 import type { LayoutEvent } from './shared.ts';
@@ -37,7 +37,6 @@ import { useDragCreate, type DragRange } from './dragCreate.ts';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight, useElementWidth } from '../../ui/hooks.ts';
 import { isNarrowNow } from '../../ui/hooks/viewport.ts';
-import { NowLine } from './timeline.tsx';
 
 function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
   return dayTimeline(tasksOn(state, iso));
@@ -133,9 +132,13 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const start = dayCount === 3 ? iso : D.weekStart(iso);
   const osbWeek = useOverlayScrollbar<HTMLDivElement>();
   const weekRootRef = useRef<HTMLDivElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);
+  /* 刻度列宽**量出来**，不写第二份魔法数 —— 它是 `--tl-gutter-w`
+     （桌面 46 / 窄屏 44，见 calendar.css），量到 0（首帧还没挂上）时退回 46。 */
+  const gutterW = useElementWidth(gutterRef);
   const narrowColW = (weekWidth > 0 && isNarrowNow())
-    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 46) / 4)))
+    ? Math.max(70, Math.min(90, Math.floor((weekWidth - (gutterW || 46)) / 4)))
     : 0;
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
@@ -144,6 +147,10 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   /* 七天的事件先算出来 —— 时间窗要按它们自动往外让（coverWindow） */
   const perDay = days.map((d) => dayEvents(state, d));
   const win = coverWindow(windowOf(state.ui), perDay.flat());
+  /* 「现在」线 / 球的纵向位置。**三件事一起判**（与日视图同口径）：
+     今天不在这一屏、或者当前时刻落在窗外 → null，线球都不画
+     （画出来是贴边的一条假线）。以前这里不看日期，翻到下周照样有一条绿线。 */
+  const nowPct = days.includes(today) ? minToPct(nowMin, win) : null;
 
   const colsRef = useRef<HTMLDivElement | null>(null);
   const { hours } = useTimelineMetrics(win, colsRef);
@@ -196,18 +203,20 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
       </div>
 
       <div className="week-grid">
-        {/* 左侧刻度列。**标签用的是日视图那两个类**（.tl-hour / .tl-label），
-            只是把「挂在轴外」改成「贴在格子内」—— 这里右边是七天的起点，
-            没有位置往左伸。 */}
-        <div className="week-gutter">
+        {/* 左侧刻度列：**就是日视图那个 `.tl-gutter`**（骨架同一套，见 calendar.css），
+            `.week-gutter` 这个老类名留着 —— 探针和调试按它找。 */}
+        <div className="tl-gutter week-gutter" ref={gutterRef}>
           <TimeGutter hours={hours} win={win} />
+          {/* 绿球挂刻度列里，半个球本来就在这一列；放进这层之后窄屏 sticky
+              再也盖不住它（2026-10-25 用户报的 z-index 5 遮挡） */}
+          <NowBall pct={nowPct} win={win} />
         </div>
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
-          style={{ '--wk-hours': spanOf(win) / 60, position: 'relative' } as CSSProperties}
+          style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
         >
-          <NowLine pct={(D.nowMin() - win.from) / spanOf(win) * 100} span="week" win={win} />
+          <NowLine pct={nowPct} span="week" win={win} />
           {days.map((d, i) => (
             <WeekColumn
               key={d} state={state} d={d} today={today} win={win}

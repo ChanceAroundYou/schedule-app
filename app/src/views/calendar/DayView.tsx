@@ -35,7 +35,7 @@ import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { TimeGutter, NowLine, DragRangePreview, BlankRow } from './timeline.tsx';
+import { TimeGutter, NowLine, NowBall, DragRangePreview, BlankRow } from './timeline.tsx';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 
@@ -141,59 +141,74 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         </div>
 
         <div className="tl-wrap">
+          {/* 骨架与 3 日 / 周视图**同一套**（2026-10-25）：`.timeline` 是两列 grid，
+              左列刻度列 `.tl-gutter`（与周视图同一个类、同一条 CSS 规则，宽度都是
+              `--tl-gutter-w`）、右列轴体 `.tl-axis`（落点区 + NFC 卡片层）。
+              `data-from` / `data-to` 在两处都留着：探针按 `.timeline` 读，
+              拖拽 / 点空白按 zone 读。 */}
           <div
-            className="timeline" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
-            data-zone-id={`timeline:${iso}`}
-            data-date={iso} data-from={win.from} data-to={win.to}
-            onPointerDown={drag.onPointerDown}
+            className="timeline"
+            data-from={win.from} data-to={win.to}
+            style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
           >
-          <TimeGutter hours={hours} win={win} />
+            <div className="tl-gutter">
+              <TimeGutter hours={hours} win={win} />
+              {/* 绿球在刻度列里（见 timeline.tsx 的 NowBall）——
+                  它有一半本来就在这一列，放进这层才不会被窄屏的 sticky 盖住 */}
+              {isToday && <NowBall pct={nowPct} win={win} />}
+            </div>
+            <div
+              className="tl-axis" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
+              data-zone-id={`timeline:${iso}`}
+              data-date={iso} data-from={win.from} data-to={win.to} data-timeline=""
+              onPointerDown={drag.onPointerDown}
+            >
+              <div className="tl-layer">
+                {events.map((e) => {
+                  const w = 100 / e.cols;
+                  const box = pctRange(e.start, e.end, win);
+                  if (!box) return null;
+                  return (
+                    <div
+                      className={'tl-busy' + (activeId === e.item.id ? ' drag-src' : '')}
+                      key={e.item.id}
+                      data-busy={e.item.id}
+                      style={{
+                        top: box.top + '%',
+                        height: Math.max(0.3, box.height) + '%',
+                        left: `${e.col * w}%`,
+                        width: `calc(${w}% - 4px)`,
+                      }}
+                    />
+                  );
+                })}
+              </div>
 
-          <div className="tl-layer">
-            {events.map((e) => {
-              const w = 100 / e.cols;
-              const box = pctRange(e.start, e.end, win);
-              if (!box) return null;
-              return (
-                <div
-                  className={'tl-busy' + (activeId === e.item.id ? ' drag-src' : '')}
-                  key={e.item.id}
-                  data-busy={e.item.id}
-                  style={{
-                    top: box.top + '%',
-                    height: Math.max(0.3, box.height) + '%',
-                    left: `${e.col * w}%`,
-                    width: `calc(${w}% - 4px)`,
-                  }}
+              {/* 当前时间线：**只要一条线**（用户 2026-10-17：「不要显示具体
+                  的时间，只是有一条线就够了」）。圆点和时刻文字都去掉了，
+                  只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。
+                  窗外不画（`NowLine` 收到 null 返回 null）—— 落在窗外的位置，
+                  画出来是贴边的一条假线。球在刻度列里（见上面的 NowBall）。 */}
+              {isToday && <NowLine pct={nowPct} win={win} />}
+
+              <div className="tl-events">
+                {events.map((e) => (
+                  <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH} />
+                ))}
+              </div>
+
+              {/* 草稿框挂在卡片层之后 —— 同 z 序下后来者在上，省掉一层 z-index */}
+              {draftTl && (
+                <NewCellSlot
+                  state={state} zoneId={`timeline:${iso}`}
+                  className="new-cell--abs" style={draftBox(draftTl, win)}
                 />
-              );
-            })}
+              )}
+
+              {/* 拉时间段的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
+              <DragRangePreview range={drag.range} win={win} />
+            </div>
           </div>
-
-          {/* 当前时间线：**只要一条线**（用户 2026-10-17：「不要显示具体
-              的时间，只是有一条线就够了」）。圆点和时刻文字都去掉了，
-              只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。
-              窗外不画（`NowLine` 收到 null 返回 null）—— 落在窗外的位置，
-              画出来是贴边的一条假线。 */}
-          {isToday && <NowLine pct={nowPct} win={win} />}
-
-          <div className="tl-events">
-            {events.map((e) => (
-              <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH} />
-            ))}
-          </div>
-
-          {/* 草稿框挂在卡片层之后 —— 同 z 序下后来者在上，省掉一层 z-index */}
-          {draftTl && (
-            <NewCellSlot
-              state={state} zoneId={`timeline:${iso}`}
-              className="new-cell--abs" style={draftBox(draftTl, win)}
-            />
-          )}
-
-          {/* 拉时间段的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
-          <DragRangePreview range={drag.range} win={win} />
-        </div>
         </div>
       </div>
     </>

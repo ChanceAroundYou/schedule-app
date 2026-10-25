@@ -224,7 +224,10 @@ body.sheet-open .tab:active { background: none; }
 
   /* 日程时间轴：移动端只改变量值，规则本身在 calendar.css 里用 var() 引用。 */
   :root {
-    --allday-zone-pad: 3px 8px 3px 48px;
+    /* 刻度列窄屏一档（桌面 46 在 calendar.css）。**三视图共用这一个数**，
+       与 --tl-label-left / -width（−40 / 30）配套 —— 再窄标签就探出面板了。 */
+    --tl-gutter-w: 44px;
+    --allday-zone-pad: 3px 0 3px var(--tl-gutter-w);
     /* 未定时区在窄屏**一条一行、占满整行**（用户 2026-10-22：两列时每条只剩
        半行宽，标题只看得见前几个字）。列数由 DayView 按 isNarrowNow 算成 1，
        这里不再覆盖 grid-template-columns —— 两处各算一套迟早对不上。
@@ -237,7 +240,7 @@ body.sheet-open .tab:active { background: none; }
        上下留白不降（--card-pad-y 仍 1px）：卡高等于 --row，多 1px 就露半截。 */
     --card-pad-x: 2px;
     --allday-min-h: 13px;
-    --tl-wrap-pad: 10px 8px 10px 48px;
+    --tl-wrap-pad: 10px 0 10px;
     --tl-label-left: -40px;
     --tl-label-width: 30px;
     --ev-gap: 0px;
@@ -320,11 +323,12 @@ body.sheet-open .tab:active { background: none; }
   /* 一屏看几天由这里定：44px 刻度列 + 7×78px = 590px。
      视口 360px 时 → (360-44)/78 ≈ 4.05 列，**一屏看得见四天**（2026-10-25
      用户「还是挤，拓宽一点不用太多」：72 → 78；再宽就掉到 3.6 天了）。
-     64px 太挤（10-22）、92px 只有 3.4 天（被否过）。 */
-  .week-un-row { min-width: calc(44px + 7 * var(--week-col-w, 78px)); }
+     64px 太挤（10-22）、92px 只有 3.4 天（被否过）。
+     刻度列宽走 `--tl-gutter-w`（与日视图同一个数），不再写第二遍 44px。 */
+  .week-un-row { min-width: calc(var(--tl-gutter-w) + 7 * var(--week-col-w, 78px)); }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
   }
   .week-head-cols, .week-un-cols, .week-cols {
     /* 列宽按设备实时量出（--week-col-w），fallback 78px；目标 4 完整列 + peek。 */
@@ -343,15 +347,15 @@ body.sheet-open .tab:active { background: none; }
   .week-view.three-day .week-grid { min-width: 0; }
   .week-view.three-day .week-un-row { min-width: 0; }
   /* 左侧刻度列跟着横向滚动会露出来，钉在左边。
-     ⚠️ z-index 必须是 5，不能和 `.tl-now`（3）一样：两者同值时**后出现的赢**，
-     而「现在」线在 DOM 里排在刻度列后面，于是横向滚动时那条绿线会糊在
-     刻度列（09:00 那一列）上 —— 2026-10-22 用户报的就是这个。
+     ⚠️ z-index 5 这条**只为止住「现在」那条线**：线在轴体里（3），横滑时
+     会滑到刻度列上，刻度列必须盖住它（2026-10-22 用户报的）。
      5 这个值：盖住「现在」线(3) 和悬停卡片(4)，又低于改时长(8)/拖拽(9)，
-     拖着的卡片照样能从刻度列上面过去。 */
-  .week-head-gutter, .week-un-gutter, .week-gutter {
+     拖着的卡片照样能从刻度列上面过去。
+     **绿球不在线上了**（2026-10-25）：它是刻度列自己的孩子（`.tl-now-ball`），
+     所以天生画在这一层之上，再也不会被这条 z-index 盖住半个。 */
+  .week-head-gutter, .week-un-gutter, .tl-gutter {
     position: sticky; left: 0; z-index: 5; background: var(--panel);
   }
-  .week-gutter .tl-label { right: auto; left: 4px; text-align: center; width: 30px; }
   /* 表头窄屏档（与桌面**同步收小**，2026-10-24 五项反馈④）：
      日期数字 15 → 12、圆圈 24 → 20、上下留白 7/5 → 4/3。 */
   .week-head-cell { padding: 4px 1px 3px; }
