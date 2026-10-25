@@ -446,7 +446,7 @@
      触摸区 6px 高、横条 2px，用 align-items 把条**推到卡片最边缘** ——
      bottom 把手的条贴底沿、top 把手的条贴顶沿，一眼就知道「拉这里改边」。
      透明度维持上一版的 .16。 */
-  position: absolute; left: 50%; width: min(40px, 45%); min-width: 16px;
+  position: absolute; left: 50%; width: min(32px, 30%); min-width: 12px;
   transform: translateX(-50%); bottom: 0;
   height: min(6px, 22%); min-height: 3px;
   cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center;
