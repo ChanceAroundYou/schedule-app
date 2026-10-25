@@ -324,7 +324,13 @@
    `--task-text` / `--task-line`）—— 2026-10-22 用户：「日视图的字体也同样缩小，
    不用加粗」。行高必须写死：--row 参与容器高度计算（见 .allday-zone）。 */
 .task-el--untimed {
-  width: 100%; padding: var(--allday-pill-pad); min-width: 0;
+  /* 右侧让出 **1px 缝**（2026-10-25 用户：「卡片右边和底部都改为 1px 的空白」）。
+     定时卡那 1px 由 `CARD_SEAM` 在 `TaskCard.tsx` 的内联 `calc(宽% − 1px)` 里扣；
+     未定时卡是网格 / flex 流里的一项、没有内联宽度，只能在这里扣 —— **两处必须
+     同值**，否则同一列里两种卡的右沿又错开（那正是踩坑 50 第三条的形态）。
+     底部那 1px 本来就有：容器的 `--un-gap: 1px`。
+     全站 `box-sizing: border-box`，所以这 1px 是从卡外缘让出去的，不吃 --card-pad-x。 */
+  width: calc(100% - 1px); padding: var(--allday-pill-pad); min-width: 0;
   font-size: var(--fs-title); overflow: hidden;
   /* 高度走 `--row`。--row 由所在容器算：`max(一行字 + padding + 边框, --row-hour)`，
      `--row-hour` 是 DayView / WeekView 按「这一屏上的一小时」写进来的（untimedRowPx，

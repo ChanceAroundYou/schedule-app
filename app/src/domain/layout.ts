@@ -340,7 +340,7 @@ export function untimedBlanks(count: number, cols: number): number {
  * 返回 0 = 「还没量到容器 / 窗口非法」，调用方回落到 CSS 默认的 `--row`，首帧不塌。
  * 太矮的屏幕（一小时算出来比一行字还窄）由 CSS 那条 `max()` 兜底，不在这里夹。
  */
-export const CARD_SEAM = 1.5;
+export const CARD_SEAM = 1;
 
 /** 整天那档的跨度 —— 未定时行高的换算基准（见上面那段） */
 const MAX_SPAN = FULL_DAY.to - FULL_DAY.from;

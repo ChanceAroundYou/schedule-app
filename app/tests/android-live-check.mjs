@@ -624,7 +624,9 @@ async function checkLook() {
   assert(w.tallR >= 10, '高卡圆角仍是圆的（≥10px）', `${w.tallR}px`);
   assert(w.shortR < w.tallR && w.shortR <= 8, '矮卡的圆角跟着高度收（不再是个药丸）',
     `80px 高的 ${w.tallR}px / 20px 高的 ${w.shortR}px`);
-  assert(w.minGap === null || w.minGap >= 2, '首尾相接的两条任务之间留出了缝',
+  /* 缝在 2026-10-25 由 1.5px 收成 1px（用户：「卡片右边和底部都改为 1px 的空白」），
+     所以这里的下限跟着改成 1 —— 判据还是「有缝、不是贴死」。 */
+  assert(w.minGap === null || w.minGap >= 1, '首尾相接的两条任务之间留出了缝',
     w.minGap === null ? `当前数据里没有相邻的两条卡（这一周 ${w.realCards} 张定时卡）` : `最小缝 ${w.minGap}px`);
   /* 2026-10-22：今天不再加整列/整格底色，改成一个深绿圆圈圈住日期数字 */
   assert(w.todayBg === 'rgba(0, 0, 0, 0)', '「今天」那一列不再加底色（和任务卡的淡绿彻底分开）',
@@ -651,9 +653,19 @@ async function checkLook() {
     cards.forEach(function(c){
       if(!tallest||c.getBoundingClientRect().height>tallest.getBoundingClientRect().height) tallest=c;
     });
-    /* 比把手还窄的卡不该再画上下把手（把手各 8px） */
+    /* 比把手还窄的卡不该再画上下把手（把手各 8px）。
+       2026-10-25 起判据分两档：**≥1 小时的卡一定有把手**（用户：「1 小时长度的
+       卡片也给显示时间调节把手」），哪怕它只有 20px 高；**不足 1 小时**的卡才
+       受 26px 像素门槛管。所以这里只数「不足 1 小时却画了把手」的卡。 */
+    var stHW={}; try{ stHW=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}'); }catch(e){ stHW={}; }
+    var tasksHW=stHW.tasks||{};
     var tinyWithHandle=cards.filter(function(c){
-      return c.getBoundingClientRect().height < 24 && c.querySelector('.ev-resize');
+      if(!c.querySelector('.ev-resize')) return false;
+      var id=c.getAttribute('data-id')||'';
+      var t=tasksHW[id]||tasksHW[id.split('#')[0]];
+      if(!t) return false;                       /* 读不到时长 → 不判它 */
+      var dur=t.duration&&t.duration>0?t.duration:60;
+      return dur<60 && c.getBoundingClientRect().height < 26;
     }).length;
     var body=document.querySelector('.week-col .task-el--timed .ev-body');
     /* 2026-10-22：现在线改成**整周一条**（画在 .week-cols 上），不是每列一段 */
@@ -758,8 +770,9 @@ async function checkLook() {
       `定时 ${p.tbr} / 未定时 ${p.ubr}`);
     assert(p.tpad === p.upad, '两种卡左右留白同一份', `定时 ${p.tpad} / 未定时 ${p.upad}`);
   }
-  assert(look.tinyWithHandle === 0, '比把手还窄的卡不再画上下把手',
-    `${look.tinyWithHandle} 张窄卡还带把手（共 ${look.cards} 张）`);
+  assert(look.tinyWithHandle === 0,
+    '不足 1 小时的窄卡不画把手（≥1 小时的一律画，见 TaskCard 的 canResize）',
+    `${look.tinyWithHandle} 张不足 1 小时的窄卡还带把手（共 ${look.cards} 张）`);
   assert(look.bodyOverflow === 'hidden', '内容层负责裁剪（超出卡片的东西不外溢）',
     `overflow=${look.bodyOverflow}`);
   /* 2026-10-22：现在线横贯整周（从周一到周日），不再是每天各画一段 */

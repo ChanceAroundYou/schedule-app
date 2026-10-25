@@ -2959,8 +2959,8 @@ try {
       let worst = null;
       for (const el of document.querySelectorAll('.timeline .task-el--timed')) {
         const top = parseFloat(el.style.top) || 0;
-        /* height 现在是 calc(百分比 - 1.5px)（2026-10-22 九条回归），内联值解析
-           出来是 NaN —— 改量**实际渲染高度**折算回百分比，语义不变 */
+        /* height 现在是 calc(百分比 - 1px)（卡缝 2026-10-25 由 1.5px 收成 1px），
+           内联值解析出来是 NaN —— 改量**实际渲染高度**折算回百分比，语义不变 */
         const h = (el.getBoundingClientRect().height / tlH) * 100;
         const over = Math.max(-top, top + h - 100);
         if (over > 0.01 && (!worst || over > worst.over)) {
