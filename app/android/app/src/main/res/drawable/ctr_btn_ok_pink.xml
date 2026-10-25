@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「改数字」小窗的确定键（naonao 粉） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/ctrPinkPlus" />
+    <corners android:radius="14dp" />
+</shape>

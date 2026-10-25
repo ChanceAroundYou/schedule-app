@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- naonao 分区的底色。两块各自有底、中间留一条白缝，名字和数字才分得开。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/ctrPinkBg" />
+    <corners android:radius="22dp" />
+</shape>

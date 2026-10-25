@@ -53,6 +53,7 @@ const syncState = require('./db/sync-state.js');
 const revoked = require('./db/revoked.js');
 const ai = require('./db/ai.js');
 const memory = require('./db/memory.js');
+const counters = require('./db/counters.js');
 
 module.exports = {
   // schema
@@ -128,4 +129,13 @@ module.exports = {
   pruneMemories: memory.pruneMemories,
   getAuthorizations: memory.getAuthorizations,
   putAuthorizations: memory.putAuthorizations,
+  // counters（桌面计数器，v5）
+  listCounters: counters.listCounters,
+  getCounter: counters.getCounter,
+  addCounter: counters.addCounter,
+  setCounter: counters.setCounter,
+  renameCounter: counters.renameCounter,
+  COUNTER_DEFAULTS: counters.DEFAULTS,
+  COUNTER_MIN: counters.MIN_VALUE,
+  COUNTER_MAX: counters.MAX_VALUE,
 };

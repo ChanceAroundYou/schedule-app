@@ -27,6 +27,7 @@
 
 const sync = require('../lib/sync');
 const calendars = require('../lib/calendars');
+const db = require('../lib/db');
 const crypto = require('node:crypto');
 
 /** 前后各取多少天。小组件日期条要点到明天/后天，取宽点省得来回拉 */
@@ -153,8 +154,50 @@ module.exports = {
         user: { id: me.user.id, name: me.user.name },
         defaultCalId: fallback ? fallback.id : null,
         cals: mine.map((c) => ({ id: c.id, name: c.name, role: c.role })),
+        // 桌面计数器（v5）。**不属于日程集**，所以不在 widgetView 里 ——
+        // 那份视图是「今天前后的任务 + 打卡」，形状由 app 侧快照决定。
+        counters: db.listCounters(me.user.id),
       },
     };
+  },
+
+  /**
+   * 只取计数器（桌面那块每次刷新都要，别让它把整份任务快照也拖下来）。
+   * 形状与 bootstrap 里的 counters 完全一致，原生侧只养一个解析器。
+   */
+  'GET /api/widget/counters': (ctx, me) => ({
+    status: 200,
+    body: { counters: db.listCounters(me.user.id) },
+  }),
+
+  /**
+   * 桌面计数器写入口。两种形态，一条接口：
+   *   { id, delta }  在当前值上加减（点 + / −，可一次 ±100）
+   *   { id, value }  直接设成某个数（点数字手输 300）
+   *
+   * **为什么不走 /api/widget/op 的 applyOps**：那条通道是逐字段整值替换，
+   * 用它在服务端算好再写会把并发 +1 丢掉（两条请求都读到 5，都写 6）。
+   * 这里交给 db.addCounter 的 `value = value + ?` 原子语句。
+   * 计数器按 user_id 归属，没有日程集那套角色权限，能登录就是唯一的门槛。
+   */
+  'POST /api/widget/counter': (ctx, me) => {
+    const body = ctx.body || {};
+    const id = typeof body.id === 'string' ? body.id.slice(0, 64) : '';
+    if (!id) return { status: 400, body: { error: 'id 不能为空' } };
+
+    const delta = typeof body.delta === 'number' && Number.isFinite(body.delta) ? body.delta : null;
+    const value = typeof body.value === 'number' && Number.isFinite(body.value) ? body.value : null;
+    if (delta == null && value == null) {
+      return { status: 400, body: { error: 'delta 和 value 至少给一个' } };
+    }
+
+    // 一次最多一万，挡掉手滑传个 1e9 把数字顶到上限
+    const out = delta != null
+      ? db.addCounter(me.user.id, id, Math.max(-10000, Math.min(10000, Math.round(delta))))
+      : db.setCounter(me.user.id, id, value);
+
+    if (!out) return { status: 404, body: { error: '没有这个计数器' } };
+    return { status: 200, body: { counter: out, counters: db.listCounters(me.user.id) } };
   },
 
   /**

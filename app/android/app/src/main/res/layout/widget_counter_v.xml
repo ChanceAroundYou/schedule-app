@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  计数器小组件 —— **方的**（2×2 用）。上下两块，各占一半。
+
+  ## 为什么是两套 layout 而不是一套自适应
+  RemoteViews 里的控件全是固定 dp，没有 flex-percent 那套（layout_weight
+  只能分配剩余空间，改不了按钮的绝对尺寸）。方形和扁形需要的按钮尺寸、
+  名字字号都不一样，与其在两套之间做一堆运行时计算，不如各写一份、
+  由 provider 按宽高比挑。**两份的 id 必须完全一致** —— 渲染代码只有一套。
+
+  ## 名字为什么是两个 TextView 叠着
+  用户要的是「果冻气泡字」：圆体超粗 + 一圈同底色描边。Android 的 TextView
+  没有 text-stroke，shadow 又只能投一个方向。所以底层放一个**同底色、字号大
+  3sp** 的字当描边，上层放彩色字压在上面，四周就露出一圈底色 —— 和设计稿
+  里用 text-shadow 四向描出来的是同一个效果。
+
+  ⚠️ 数字的长度不定（0 到 6 位），字号由 CounterWidgetProvider.fitValue()
+  在渲染时改，别在这里写死一个尺寸就以为万事大吉。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ctr_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ctr_card_bg"
+    android:orientation="vertical"
+    android:padding="5dp">
+
+    <!-- ── naonao ───────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="4dp"
+        android:background="@drawable/ctr_zone_pink"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="22dp">
+
+            <TextView
+                android:id="@+id/ctr_a_name_outline"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.05"
+                android:maxLines="1"
+                android:textColor="@color/ctrPinkOutline"
+                android:textSize="20sp" />
+
+            <TextView
+                android:id="@+id/ctr_a_name"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.05"
+                android:maxLines="1"
+                android:textColor="@color/ctrPinkName"
+                android:textSize="17sp" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp">
+
+            <TextView
+                android:id="@+id/ctr_a_minus"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/ctr_btn_minus_pink"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="−"
+                android:textColor="@color/ctrPinkMinusInk"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/ctr_a_value"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/ctrPinkInk"
+                android:textSize="21sp" />
+
+            <TextView
+                android:id="@+id/ctr_a_plus"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/ctr_btn_plus_pink"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="+"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ── Kutai ────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/ctr_zone_green"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="22dp">
+
+            <TextView
+                android:id="@+id/ctr_b_name_outline"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.05"
+                android:maxLines="1"
+                android:textColor="@color/ctrGreenOutline"
+                android:textSize="20sp" />
+
+            <TextView
+                android:id="@+id/ctr_b_name"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.05"
+                android:maxLines="1"
+                android:textColor="@color/ctrGreenName"
+                android:textSize="17sp" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp">
+
+            <TextView
+                android:id="@+id/ctr_b_minus"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/ctr_btn_minus_green"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="−"
+                android:textColor="@color/ctrGreenMinusInk"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/ctr_b_value"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/ctrGreenInk"
+                android:textSize="21sp" />
+
+            <TextView
+                android:id="@+id/ctr_b_plus"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/ctr_btn_plus_green"
+                android:fontFamily="@font/baloo2_extra_bold"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="+"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

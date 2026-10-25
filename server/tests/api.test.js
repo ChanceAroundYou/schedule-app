@@ -1067,3 +1067,69 @@ test('标记落在旁支成员上（根不在发起端本机）：按真根级�
   assert.ok(after.tasks[`${SERIES}#2026-10-16`], '载体在结束日之前，是故意留给它的，要留');
   assert.ok(after.tasks[SERIES], '系列根本身不受影响（还没到结束日）');
 });
+
+/* ------------------------------------------------------- 桌面计数器（v5） */
+
+/**
+ * 计数器最关键的一条：**并发 +1 不能丢**。
+ * 这是它没走 applyOps（整值替换）的唯一理由，所以必须有测试钉住，
+ * 否则哪天有人「顺手统一到 sync 通道」，症状是用户点了很多下、数字只长一两格。
+ */
+test('计数器：默认两个、原子自增、手输改值、夹在 0..上限', async () => {
+  const relogin = await api('POST', '/api/auth/login', {
+    body: { name: '爸爸', password: 'dad-new-2026' },
+  });
+  assert.strictEqual(relogin.status, 200, JSON.stringify(relogin.body));
+  const token = relogin.body.token;
+
+  // 未登录进不来
+  assert.strictEqual((await api('POST', '/api/widget/counter', { body: { id: 'naonao', delta: 1 } })).status, 401);
+
+  // bootstrap 自带两个计数器，初值 0
+  const boot = await api('GET', '/api/widget/bootstrap', { token });
+  assert.strictEqual(boot.status, 200);
+  const names = boot.body.counters.map((c) => c.name);
+  assert.deepStrictEqual(names, ['naonao', 'Kutai'], '默认顺序：naonao 在上');
+  assert.strictEqual(boot.body.counters[0].value, 0);
+
+  // 单次自增
+  const one = await api('POST', '/api/widget/counter', { token, body: { id: 'naonao', delta: 1 } });
+  assert.strictEqual(one.status, 200, JSON.stringify(one.body));
+  assert.strictEqual(one.body.counter.value, 1);
+
+  // 并发 20 次 +1 —— 整值替换的写法在这里会丢到个位数
+  await Promise.all(Array.from({ length: 20 }, () => api('POST', '/api/widget/counter', {
+    token, body: { id: 'naonao', delta: 1 },
+  })));
+  const afterBurst = await api('GET', '/api/widget/bootstrap', { token });
+  assert.strictEqual(
+    afterBurst.body.counters.find((c) => c.id === 'naonao').value, 21,
+    '20 次并发 +1 必须一次不丢',
+  );
+
+  // 一次加几百
+  const bulk = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', delta: 300 } });
+  assert.strictEqual(bulk.body.counter.value, 300);
+
+  // 手输直接改
+  const set = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', value: 7 } });
+  assert.strictEqual(set.body.counter.value, 7);
+
+  // 减到负数要夹回 0
+  const neg = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', delta: -100 } });
+  assert.strictEqual(neg.body.counter.value, 0, '计数不能是负数');
+
+  // 不认识的 id 不悄悄建一条
+  assert.strictEqual(
+    (await api('POST', '/api/widget/counter', { token, body: { id: 'nope', delta: 1 } })).status, 404,
+  );
+  // 两个参数都不给
+  assert.strictEqual(
+    (await api('POST', '/api/widget/counter', { token, body: { id: 'naonao' } })).status, 400,
+  );
+
+  // 归属是账号：另一个账号看到的还是自己的 0
+  const other = await registerUser('计数器隔离', 'ctr-iso-2026');
+  const theirs = await api('GET', '/api/widget/bootstrap', { token: other.token });
+  assert.strictEqual(theirs.body.counters.find((c) => c.id === 'naonao').value, 0, '不能串号');
+});
