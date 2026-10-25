@@ -130,18 +130,62 @@ class CounterStore {
         save(c, items);
     }
 
-    /** 用服务端返回的 counters 覆盖本地。**只在请求成功时调**，失败时本地才是唯一线索 */
-    static void applyServer(Context c, JSONArray counters) {
+    /**
+     * 用服务端返回的 counters 校准本地。
+     *
+     * ⚠️ **不能直接照抄服务端的值。** 服务端回的是「它已经收到的那些改动」的结果，
+     * 而队列里可能还躺着用户刚点、还没发出去的几下。直接覆盖的表现是：
+     * 连点三下 → 第一下的请求回来 → 数字从 23 掉回 21 → 第二个请求回来再变 22。
+     * 用户看到的是一次莫名其妙的回退。
+     *
+     * 所以规则是：
+     *   · 队列里这个 id 还有「设置成 X」→ 本地就是 X，服务端的值作废（绝对值优先）
+     *   · 否则 → 用 服务端值 + 队列里剩余的 delta
+     *
+     * @param stillQueued 此刻**还没发出去**的意图（已发成功的那几条调用方要先扣掉）
+     */
+    static void applyServer(Context c, JSONArray counters, JSONArray stillQueued) {
         if (counters == null) return;
-        List<Item> items = new ArrayList<>();
+
+        java.util.Map<String, Integer> pendDelta = new java.util.HashMap<>();
+        java.util.Set<String> pendingSet = new java.util.HashSet<>();
+        if (stillQueued != null) {
+            for (int i = 0; i < stillQueued.length(); i++) {
+                JSONObject o = stillQueued.optJSONObject(i);
+                if (o == null) continue;
+                String qid = o.optString("id", "");
+                if (qid.isEmpty()) continue;
+                if (o.has("value")) {
+                    pendingSet.add(qid);
+                } else {
+                    int prev = pendDelta.containsKey(qid) ? pendDelta.get(qid) : 0;
+                    pendDelta.put(qid, prev + o.optInt("delta", 0));
+                }
+            }
+        }
+
+        List<Item> local = load(c);
+        List<Item> next = new ArrayList<>();
         for (int i = 0; i < counters.length(); i++) {
             JSONObject o = counters.optJSONObject(i);
             if (o == null) continue;
             String id = o.optString("id", "");
             if (id.isEmpty()) continue;
-            items.add(new Item(id, o.optString("name", id), o.optInt("value", 0)));
+            String name = o.optString("name", id);
+            int serverValue = o.optInt("value", 0);
+
+            int v;
+            if (pendingSet.contains(id)) {
+                // 用户手输了一个绝对值还没发出去 —— 本地那个才是他想看到的
+                Item mine = find(local, id);
+                v = mine != null ? mine.value : clamp(serverValue);
+            } else {
+                Integer extra = pendDelta.get(id);
+                v = clamp((long) serverValue + (extra == null ? 0 : extra.intValue()));
+            }
+            next.add(new Item(id, name, v));
         }
-        if (!items.isEmpty()) save(c, items);
+        if (!next.isEmpty()) save(c, next);
     }
 
     /* ------------------------------------------------------------ 离线队列 */
@@ -257,7 +301,15 @@ class CounterStore {
         WidgetApi.counterWrite(c, id, delta, value, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                applyServer(c, body.optJSONArray("counters"));
+                // 先把这个 id 从队列里划掉，再校准 —— 顺序反了会把「已经发出去的那条」
+                // 当成还没发的，重复加一遍。见 applyServer 的说明。
+                JSONArray rest = new JSONArray();
+                for (int k = i + 1; k < q.length(); k++) {
+                    JSONObject o = q.optJSONObject(k);
+                    if (o != null) rest.put(o);
+                }
+                writeQueue(c, rest);
+                applyServer(c, body.optJSONArray("counters"), rest);
                 step(c, q, i + 1, done);
             }
 
@@ -281,7 +333,7 @@ class CounterStore {
         WidgetApi.counters(c, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                applyServer(c, body.optJSONArray("counters"));
+                applyServer(c, body.optJSONArray("counters"), queue(c));
                 if (done != null) done.run();
             }
 
