@@ -195,7 +195,7 @@
    刻度列收窄时标签跟着轴一起走，右沿到轴的间距始终是 12px（桌面）。
    ⚠️ `.tl-hour` 只由 `TimeGutter` 渲染，而 `TimeGutter` 只出现在刻度列里。 */
 .tl-hour { position: absolute; left: 100%; width: 0; height: 0; }
-.tl-label { position: absolute; left: var(--tl-label-left); top: -12px; width: var(--tl-label-width); text-align: center; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tl-label { position: absolute; left: var(--tl-label-left); top: calc(var(--fs-meta) * -0.6); width: var(--tl-label-width); text-align: center; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 /* 轴体（日 `.tl-axis` / 周·3日 `.week-cols`）：**同一条小时线规则**。
    一格 = 一小时，`--wk-hours` 是这一屏实际覆盖的小时数（两视图都由渲染时内联设）。
@@ -438,7 +438,7 @@
   flex: 1 1 auto; min-width: 0; min-height: 0;
 }
 /* 溢出**不出省略号**（2026-10-22 九条，与月视图同版式）：那个「…」占一整个
-   字宽，72px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
+   字宽，78px 的周视图格子少看一个字；裁切交给 overflow，边界处整字消失。 */
 .ev-title {
   min-width: 0;
   /* 默认值在 `.task-el`（宽松档），这里**不给兜底值**：那五处兜底会把「变量名写错」
