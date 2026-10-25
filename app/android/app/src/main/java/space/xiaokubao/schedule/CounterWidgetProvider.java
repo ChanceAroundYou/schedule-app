@@ -67,7 +67,24 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     public void onAppWidgetOptionsChanged(Context c, AppWidgetManager mgr,
                                           int widgetId, Bundle newOptions) {
         // 用户拖动改了尺寸 —— 宽高比可能跨过阈值，必须整份换布局
+        if (android.util.Log.isLoggable(TAG, android.util.Log.DEBUG)) {
+            Log.d(TAG, "onAppWidgetOptionsChanged id=" + widgetId
+                    + " minW=" + (newOptions == null ? -1 : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH))
+                    + " minH=" + (newOptions == null ? -1 : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)));
+        }
         render(c, mgr, widgetId);
+    }
+
+    @Override
+    public void onEnabled(Context c) {
+        super.onEnabled(c);
+        Log.i(TAG, "CounterWidgetProvider enabled (first instance added)");
+    }
+
+    @Override
+    public void onDisabled(Context c) {
+        super.onDisabled(c);
+        Log.i(TAG, "CounterWidgetProvider disabled (last instance removed)");
     }
 
     @Override

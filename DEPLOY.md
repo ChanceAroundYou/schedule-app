@@ -91,7 +91,7 @@ curl -sk -o /dev/null -w '%{http_code} %{redirect_url}\n' $B  # 301
 | 页面能开但资源全 404 | 访问的是 `/schedule`（无尾斜杠） |
 | 两台设备数据不一致 | 顶栏同步图标还在转？逐字段 LWW |
 | 数据不对 | **先看服务器库** |
-| 所有人都掉登录了 | `secret.key` 被换/删 |
+| 桌面看不到「计数器」小组件 | ① 关于页 versionCode 是否 61（没到就先更新 App）；② 重启启动器/整机；③ `adb shell dumpsys appwidget` 看 CounterWidgetProvider 是否注册 |
 | 后端起不来 EADDRINUSE | `ss -lptn 'sport = :25692'` |
 
 环境细节见 [docs/踩坑-环境.md](docs/踩坑-环境.md)。
