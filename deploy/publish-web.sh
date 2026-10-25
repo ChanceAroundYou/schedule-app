@@ -177,6 +177,12 @@ say "5/6 备份现有版本 → 切换"
 # 容器里那个挂载点还指着旧 inode —— 而旧目录已经被删了，于是 nginx 立刻 403
 # `directory index of "/data/schedule-web/" is forbidden`，而且**重启容器前
 # 不会自愈**。所以目标目录的 inode 从建好那天起就不能变。
+#
+# ⚠️⚠️ 下面这个 ssh 参数是**双引号串**：引号内除了 $VAR 与 \" 转义，**不能出现
+# 反引号**（会被本地当命令替换执行）、不能有裸的 $（会被本地展开）。2026-10-25
+# 就在这儿炸过：有人在串内注释里给 -rollback- 加了一对反引号做行内代码，bash
+# 去执行那个词并报 command not found，整条 ssh 命令根本没发出去，发布静默停在
+# 5/6 却报「发布失败」。串内注释请写纯文本。
 "$SSH" "$SSH_HOST" "set -e
 mkdir -p $REMOTE_WEB
 if [ -f $REMOTE_WEB/index.html ]; then
@@ -186,9 +192,9 @@ fi
 rm -rf $REMOTE_WEB/*
 cp -r $REMOTE_WEB.new/. $REMOTE_WEB/
 rm -rf $REMOTE_WEB.new
-# 只留最近 $KEEP 份（两类分开计，普通快照与回滚快照互不挤占）。
-# ⚠️ 按 **mtime** 排、并区分 `-rollback-`：备份名有 `<version>-<MMDD>` /
-# `prod-<YYYYMMDD>` / `rollback-<MMDD>` 三种格式，字典序会把最老的当成最新的
+# 只留最近 N 份（两类分开计，普通快照与回滚快照互不挤占）。
+# 按 **mtime** 排、并区分 -rollback-：备份名有 <version>-<MMDD> /
+# prod-<YYYYMMDD> / rollback-<MMDD> 三种格式，字典序会把最老的当成最新的
 # 留下来，删掉的正好是刚发的那几份。回滚挑的就是这批目录，两处必须同一口径。
 $(pf_prune_backups_cmd "$REMOTE_WEB" "$KEEP")
 ls -1dt $REMOTE_WEB.bak-* 2>/dev/null | sed 's/^/    /' || true"

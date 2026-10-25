@@ -3,7 +3,6 @@
  */
 
 import type { ReactNode } from 'react';
-import { Repeat } from 'lucide-react';
 import type { Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
@@ -60,12 +59,10 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
     }
     if (t.duration && t.time) meta.push(<span className="m-dur" key="u">{D.fmtDuration(t.duration)}</span>);
     if (t.repeat && t.repeat.unit !== 'none') {
-      meta.push(
-        <span className="m-repeat" key="r">
-          <Repeat size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />
-          {repeatLabel(t.repeat)}
-        </span>,
-      );
+      /* 只留文字（「每天」/「每周日、五、六」）。**不再在 meta 前也挂一枚循环图标**
+         —— 标题末尾已经有 RepeatFlag 当路标，一行里两枚循环图标纯属重复
+         （2026-10-25 截图核对时发现：标题后一个、meta 前一个，看着像两条任务）。 */
+      meta.push(<span className="m-repeat" key="r">{repeatLabel(t.repeat)}</span>);
     }
     /* 有详细内容就给个标记 —— 它是「这条还有更多，点开看」的路标。
        有了下面那行摘要之后它看着冗余，但摘要是**截断**的：截断到看不出
