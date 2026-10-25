@@ -1,6 +1,6 @@
 # 编码规范第 3 册 · 命名
 
-> 状态：**长期规则**（实施另见 `v3-naming-plan.md`）
+> 状态：**长期规则**（实施另见 `naming-plan.md`）
 > 依据：`docs/界面约定.md` §变量名与令牌、`AGENTS.md` 三、令牌三条、
 > `domain/types/*`、`domain/model/*`、`ui/kit/*`、`data-*` 实测清单
 > 不变量：**外部 import 路径一律不变**；本册只定名字，不改任何导出。

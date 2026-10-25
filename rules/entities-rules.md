@@ -1,6 +1,6 @@
 # 编码规范第 6 册 · 数据实体与行为
 
-> 状态：**长期规则**（实施另见 `v6-entities-plan.md`）
+> 状态：**长期规则**（实施另见 `entities-plan.md`）
 > 依据：`domain/types/*`（Task/Habit/Project/Op/SyncMeta/Cal/RepeatRule）、
 > `domain/model/*`（make/hydrate/visibility/tasks/project/permission/migration/id）、
 > `docs/业务模型.md` §数据结构、`data/store/commit.ts`、`data/store/moveToCal.ts`

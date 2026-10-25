@@ -1,7 +1,7 @@
 # 第 1 册 · 组件 API 与样式归属 — 实施计划
 
 > 状态：**已定稿**（实施计划，分期完成）
-> **规则见** [`v1-component-api-rules.md`](v1-component-api-rules.md)——本文件只放「按什么顺序修、修哪些」。
+> **规则见** [`component-api-rules.md`](component-api-rules.md)——本文件只放「按什么顺序修、修哪些」。
 > 改动若触及第 5/8 册（数据流、无障碍），回对应册的 plan 登记。
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）。
 
@@ -9,7 +9,7 @@
 
 ## 0. 怎么读本文件
 
-本册规则在 `v1-component-api-rules.md`，本文件只放实施侧：**在哪落地、按什么顺序、怎么验**。
+本册规则在 `component-api-rules.md`，本文件只放实施侧：**在哪落地、按什么顺序、怎么验**。
 段号在本文件内从 1 起算（原来 spec 的 §4–§6 + 附录），不回指 rules 的段号。
 
 ---

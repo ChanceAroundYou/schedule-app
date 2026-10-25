@@ -1,6 +1,6 @@
 # 组件 API 与样式归属规范（第一册）
 
-> 状态：**长期规则**（本册规则已定，实施另见 `v1-component-api-plan.md`）
+> 状态：**长期规则**（本册规则已定，实施另见 `component-api-plan.md`）
 > 依据：`ui/` `views/` `styles/` 逐文件审计 + 组件库现状（`docs/组件库.md`）+ 令牌三轴
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）；
 >           `domain/` 保持零 React / DOM / 网络；后端只引 AI 那组依赖（见第 9 册 B5）。

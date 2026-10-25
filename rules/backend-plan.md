@@ -1,7 +1,7 @@
 # 第 9 册 · 后端接口 — 违规清单与实施
 
 > 状态：**已定稿**（实施计划，分期完成）
-> **规则见** [`v9-backend-rules.md`](v9-backend-rules.md)。
+> **规则见** [`backend-rules.md`](backend-rules.md)。
 > 不变量：后端只引 AI 那组依赖，其余 Node 标准库；`server/data/` 永不进仓库。
 
 ---

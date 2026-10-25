@@ -1,6 +1,6 @@
 # 编码规范第 10 册 · Android 桌面小组件
 
-> 状态：**长期规则**（规则已定，实施另见 v10-widget-plan.md）
+> 状态：**长期规则**（规则已定，实施另见 widget-plan.md）
 > 依据：`app/android/app/src/main/java/space/xiaokubao/schedule/`（ScheduleWidgetProvider / WidgetData / RepeatSpawn / WidgetApi / TaskDetailActivity / CreateTaskActivity / WidgetSettingsActivity）、`app/src/domain/widgetSnapshot.ts`、`app/src/data/widget.ts`、`docs/架构决策.md` 五、小组件
 > 不变量：小组件**只约束 Android 桌面小组件**（ScheduleWidgetProvider 这类）—— 不扩展到 Capacitor 容器或一般原生 Activity / 设置页。网页与小组件共享**同一权威数据模型**，RemoteViews 的限制只能作为明文例外，不静默改变业务含义。
 
@@ -74,7 +74,7 @@
 ## 5. 实施状态
 
 - 本册 rules **刚立**（2026-10-15），实施随开发推进。
-- plan 文件 `v10-widget-plan.md` 列出当前小组件未收敛点。
+- plan 文件 `widget-plan.md` 列出当前小组件未收敛点。
 
 ---
 

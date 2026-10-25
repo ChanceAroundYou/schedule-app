@@ -1,7 +1,7 @@
 # 第 10 册 · Android 桌面小组件 — 违规清单与实施
 
 > 状态：**已定稿**（实施计划，分期完成）
-> **规则见** [`v10-widget-rules.md`](v10-widget-rules.md)。
+> **规则见** [`widget-rules.md`](widget-rules.md)。
 > 不变量：**外部 import 路径一律不变**；小组件只约束 Android 桌面；网页与小组件共享同一权威数据。
 
 ---

@@ -1,6 +1,6 @@
 # 编码规范第 9 册 · 后端接口
 
-> 状态：**长期规则**（实施另见 `v9-backend-plan.md`）
+> 状态：**长期规则**（实施另见 `backend-plan.md`）
 > 依据：`server/routes/*`（auth/cals/sync/ai 四组）、`server/lib/sync.js`（Rejected 三态）、
 > `server/lib/auth.js`（自签 JWT+jti 吊销）、`server/lib/ai/*`（工具→提案→确认三段）、
 > `server/tests/*`、`docs/接口*.md`、`AGENTS.md` 二、AI

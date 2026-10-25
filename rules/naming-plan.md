@@ -1,7 +1,7 @@
 # 第 3 册 · 命名 — 违规清单与实施
 
 > 状态：**已定稿**（实施计划，分期完成）
-> **规则见** [`v3-naming-rules.md`](v3-naming-rules.md)。
+> **规则见** [`naming-rules.md`](naming-rules.md)。
 > 不变量：**本册只定名字，不改任何导出**。
 
 ---

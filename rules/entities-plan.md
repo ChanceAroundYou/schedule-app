@@ -1,7 +1,7 @@
 # 第 6 册 · 数据实体与行为 — 违规清单与实施
 
 > 状态：**已定稿**（实施计划，分期完成）
-> **规则见** [`v6-entities-rules.md`](v6-entities-rules.md)。
+> **规则见** [`entities-rules.md`](entities-rules.md)。
 > 不变量：字段清单以 `domain/types/*` + `docs/业务模型.md` 为准，**本册不重写字段，只定行为归属**。
 
 ---
