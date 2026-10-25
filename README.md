@@ -239,8 +239,12 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 | [docs/踩坑.md](docs/踩坑.md) | AI | **改代码前先读**：54 条坑的索引（1–4 同步 / 数据） |
 | [docs/踩坑-前端-交互.md](docs/踩坑-前端-交互.md) · [踩坑-前端-组件.md](docs/踩坑-前端-组件.md) | AI | 第 5–20 条（交互 / 拖拽）· 第 41–54 条（组件 / 无障碍） |
 | [docs/踩坑-环境.md](docs/踩坑-环境.md) | AI | 第 21–40 条：环境 / 工具 |
+| [docs/踩坑-流程.md](docs/踩坑-流程.md) | AI | 流程坑（无编号） |
 | [docs/测试.md](docs/测试.md) | AI | 怎么验：跑哪些测试、每个探针节在验什么 |
-| [docs/业务模型.md](docs/业务模型.md) | AI | 字段表、重复规则、逾期、冲突提示、AI 三段式 |
+| [docs/业务模型.md](docs/业务模型.md) | AI | 字段表、重复规则、逾期、冲突提示 |
+| [docs/AI.md](docs/AI.md) | AI | AI 助手：读写路径、提案闸门、接口、配置 |
+| [docs/组件库.md](docs/组件库.md) | AI | 基础组件 API（Btn / Input / Dropdown / Sheet …） |
+| [docs/工作区保护.md](docs/工作区保护.md) | AI | 多端 / 多会话的 git 铁律 |
 | [docs/界面约定.md](docs/界面约定.md) | AI | 配色令牌、变量名对照表（+ `-无障碍` / `-布局` / `-快速添加`） |
-| [docs/接口.md](docs/接口.md) | 人 + AI | HTTP 接口总览 + 认证（+ `-日程集` / `-同步` / `-AI` 三份） |
+| [docs/接口.md](docs/接口.md) | 人 + AI | HTTP 接口总览 + 认证（+ `-日程集` / `-同步` 两份） |
 | [rules/README.md](rules/README.md) | AI | 项目编码规范总纲（10 册规则 + 实施计划） |
