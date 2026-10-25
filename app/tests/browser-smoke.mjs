@@ -1268,37 +1268,47 @@ try {
   `);
   ok((await inbox()).join('') === '甲乙丙', '三条任务按添加顺序排，实际 ' + JSON.stringify(await inbox()));
 
-  // —— 触摸设备任务卡禁文字选择（2026-10-24）——
+  // —— 拖拽表面禁文字选择（2026-10-24 起，2026-10-25 扩大）——
   // 安卓 WebView 长按文字会启动文本选择，和 TouchSensor 的激活延迟竞速，
   // 拖拽就「有时灵有时不灵」（真机：周视图任务拖到明天后拖不回来）。
-  // 修复是 calendar.css 的 `.task-el--timed / --untimed / .task-pill { user-select: none }`
-  // —— **只这三面卡片表面**；列表行（.task-row）的文字保持可复制
-  // （用户 2026-10-22 明确，AGENTS.md 与 docs/界面约定.md 都钉着这条）。
-  // 用一张离线探针卡量（不依赖当前页有没有真卡片），列表行量**真的那一行**。
+  // 口径 2026-10-25 用户定：**能拖动的一律不许复制**（不再按界面分档）——
+  // calendar.css 那条收的是拖拽标记 `.task-el / .habit-row / .nav-chip`，
+  // 所以列表行也在内；`.new-cell`（打字用的）与 `.trash-row`（拖不动的）不在内。
+  // 用离线元素量（不依赖当前页有没有真卡片），列表行另量**真的那一行**。
   const selGate = await evalJs(page, `
     const d = document.createElement('div');
     d.innerHTML = '<div class="task-el task-el--timed"><div class="ev-body">'
       + '<div class="ev-text"><span class="ev-title">测</span></div></div></div>'
       + '<div class="task-el task-el--untimed"><div class="ev-body">'
       + '<div class="ev-text"><span class="ev-title">测</span></div></div></div>'
-      + '<div class="task-pill task-el"><span class="pill-title">测</span></div>';
+      + '<div class="task-pill task-el"><span class="pill-title">测</span></div>'
+      + '<div class="habit-row"><div class="habit-main">测</div></div>'
+      + '<div class="nav-chip">测</div>'
+      + '<textarea class="new-cell"></textarea>'
+      + '<div class="task-row trash-row"><div class="row-main">'
+      + '<div class="row-title">测</div></div></div>';
     document.body.appendChild(d);
-    const sel = [...d.children].map((el) => getComputedStyle(el).userSelect);
+    /* 只读 user-select。-webkit-touch-callout 是 WebKit 的属性，Chrome 两头都
+       读不到（CSS.supports 返回 false、getComputedStyle 读到空串、CSSOM 连声明都
+       丢掉），没有意义去量它 —— 那条声明存在与否由 card-geometry 读样式表原文
+       断言，这里不重复。 */
+    const read = (el) => getComputedStyle(el).userSelect;
+    const drag = [...d.children].slice(0, 5).map(read);
+    const keep = [...d.children].slice(5).map(read);
     d.remove();
     const row = document.querySelector('[data-scope="inbox"] .task-el');
-    return {
-      coarse: matchMedia('(pointer: coarse)').matches,
-      cards: sel,
-      row: row ? getComputedStyle(row).userSelect : 'no-row',
-    };
+    return { coarse: matchMedia('(pointer: coarse)').matches,
+             drag, keep, row: row ? read(row) : null };
   `);
-  ok(selGate.coarse && selGate.cards.every((s) => s === 'none'),
-    '触摸设备上任务卡**禁文字选择**（长按只剩拖拽一个含义）',
-    `coarse=${selGate.coarse} · 三种卡片 user-select=${JSON.stringify(selGate.cards)}`);
-  /* 列表行不在那一档里 —— 那条文字本来就要能复制。这条断言防「顺手把
-     `pointer: coarse` 那版放宽到全部 .task-el」退回来（dev 1054723 是那么写的）。 */
-  ok(selGate.row === 'auto' || selGate.row === 'no-row',
-    '列表行的文字**仍可选中复制**（卡片那档不扩到列表行）', selGate.row);
+  ok(selGate.drag.every((s) => s === 'none'),
+    '拖拽表面**禁文字选择**（长按只剩拖拽一个含义）',
+    `coarse=${selGate.coarse} · ${JSON.stringify(selGate.drag)}`);
+  /* 列表行是拖拽表面，也在那一档里（2026-10-25 用户改的口径）。 */
+  ok(!selGate.row || selGate.row === 'none',
+    '列表行同样不许复制（它也是拖拽排序的表面）', String(selGate.row));
+  /* 两个例外：草稿框是拿来打字的；垃圾箱行拖不动，里面的任务名要能复制出去。 */
+  ok(selGate.keep.every((s) => s !== 'none'),
+    '草稿框 / 垃圾箱行**仍可选中复制**（都不拖）', JSON.stringify(selGate.keep));
 
   const rectOf = (text) => evalJs(page, `
     const el = [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
