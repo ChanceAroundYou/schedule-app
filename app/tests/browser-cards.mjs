@@ -1,8 +1,7 @@
 /**
  * browser-cards.mjs —— 卡片版面回归探针
  *
- *   CHROME='C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' \
- *     node app/tests/browser-cards.mjs
+ *   node app/tests/browser-cards.mjs        # CHROME=/path/to/chrome 可指定浏览器
  *
  * ## 为什么单独一个探针，而不是塞进 browser-smoke.mjs
  *
@@ -32,10 +31,12 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CHROME } from './lib/probe-env.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = path.join(ROOT, 'dist');
-const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+/* Chrome 只从 lib/probe-env.mjs 拿 —— 那里已经做了「CHROME 环境变量 →
+   各平台常见位置」的探测。这里原来写死 Windows 路径，Linux / mac 上必然起不来。 */
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
