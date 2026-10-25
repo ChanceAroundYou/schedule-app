@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  计数器组件在「桌面 → 添加小组件」列表里的图标。
+  一个粉色圆饼加一个白色加号 —— 跟组件本体同一套语言，不另做一套图形。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#D4537E"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11,7h2v4h4v2h-4v4h-2v-4H7v-2h4z" />
+</vector>

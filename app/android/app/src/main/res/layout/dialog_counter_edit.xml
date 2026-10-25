@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  点桌面计数器上的**数字**弹出的那个小窗。
+
+  为什么需要它：用户偶尔要一次加几百（「今天喝了 300 毫升就记 300」），
+  连点加号几十下不能用。桌面组件里放不了输入框（RemoteViews 只支持
+  一小组固定控件，而且弹不出键盘），所以只能开一个对话框主题的 Activity。
+
+  样式跟计数器同一套：名字是彩色小字、数字是大号气泡字、确定键用那一块的色。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/dialog_bg"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/ctr_edit_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/baloo2_extra_bold"
+        android:letterSpacing="0.05"
+        android:textSize="17sp" />
+
+    <EditText
+        android:id="@+id/ctr_edit_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/ctr_edit_field"
+        android:fontFamily="@font/baloo2_extra_bold"
+        android:gravity="center"
+        android:importantForAutofill="no"
+        android:inputType="number"
+        android:maxLength="6"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:selectAllOnFocus="true"
+        android:textColor="#2C2C2A"
+        android:textSize="40sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="直接输入想要的数字"
+        android:textColor="#888780"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ctr_edit_cancel"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_weight="1"
+            android:background="@drawable/ctr_btn_flat"
+            android:gravity="center"
+            android:text="取消"
+            android:textColor="#5F5E5A"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/ctr_edit_ok"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_weight="1"
+            android:layout_marginLeft="10dp"
+            android:background="@drawable/ctr_btn_ok_pink"
+            android:gravity="center"
+            android:text="确定"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp" />
+    </LinearLayout>
+</LinearLayout>

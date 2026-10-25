@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 改数字的输入框底：浅浅一层，不带边框，数字直接站在上面 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#F7F6F1" />
+    <corners android:radius="16dp" />
+</shape>

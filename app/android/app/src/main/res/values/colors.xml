@@ -12,4 +12,27 @@
 
     <!-- 输入框底：极浅的绿灰白，不是纯灰（用户：不要灰色的调子） -->
     <color name="dialogField">#F4FAF6</color>
+
+    <!--
+      桌面计数器。两套色：粉给 naonao、薄荷绿给 Kutai。
+      **减号用浅一档、加号用深一档** —— 同一分区里靠明度分主次，
+      不用「红=减、绿=加」那套语义色，否则粉色分区里会跳出一个突兀的按钮。
+    -->
+    <color name="ctrPinkBg">#FBEAF0</color>
+    <color name="ctrPinkName">#D4537E</color>
+    <color name="ctrPinkInk">#4B1528</color>
+    <color name="ctrPinkMinus">#F7C1C1</color>
+    <color name="ctrPinkMinusInk">#993556</color>
+    <color name="ctrPinkPlus">#D4537E</color>
+
+    <color name="ctrGreenBg">#E1F5EE</color>
+    <color name="ctrGreenName">#1D9E75</color>
+    <color name="ctrGreenInk">#04342C</color>
+    <color name="ctrGreenMinus">#97C459</color>
+    <color name="ctrGreenMinusInk">#173404</color>
+    <color name="ctrGreenPlus">#1D9E75</color>
+
+    <!-- 名字描边层用分区底色本身（不是纯白），从彩色字四周露出一圈 -->
+    <color name="ctrPinkOutline">#FBEAF0</color>
+    <color name="ctrGreenOutline">#E1F5EE</color>
 </resources>

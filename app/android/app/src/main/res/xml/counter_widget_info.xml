@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面计数器小组件的元信息。
+
+  **一个 provider，两种形状**：用户在桌面拖成 2×2 就用 widget_counter_v
+  （上下两块），拖成 4×1 就用 widget_counter_h（左右两块）。provider 在
+  onAppWidgetOptionsChanged 里按 minWidth/minHeight 的宽高比挑，不靠用户手动选。
+
+  minWidth/minHeight 取 110×60：110 是「2 列」的下限，60 是「1 行」的下限 ——
+  两个都放开，才能从 2×2 一路拖到 4×1。**minResize 不要调大**：
+  一旦抬到 130 之类，4×1 那种扁形状就拖不出来了。
+
+  updatePeriodMillis 给 0：这块数据全靠点击和 App 主动刷新，定时顶用不上，
+  设成 30 分钟只会白耗电。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_counter_v"
+    android:minWidth="110dp"
+    android:minHeight="60dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="60dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_counter_v"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2" />

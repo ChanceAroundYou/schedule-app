@@ -51,6 +51,26 @@
         </receiver>
 
         <!--
+          桌面计数器。**和日程组件是两个独立条目**（桌面「添加小组件」列表里
+          分开出现），互不影响 —— 用户可能只要计数器、不要时间轴。
+
+          一个 receiver 同时支持 2×2 和 4×1：尺寸不同时由 provider 换一套布局，
+          所以这里只登记一份 meta-data。见 CounterWidgetProvider.isWide()。
+        -->
+        <receiver
+            android:name=".CounterWidgetProvider"
+            android:label="计数器"
+            android:icon="@drawable/ic_counter_logo"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/counter_widget_info" />
+        </receiver>
+
+        <!--
           三个弹框。**对话框主题**：观感是桌面上的小卡片，不是「打开 App」。
           excludeFromRecents + noHistory 让它们不进最近任务、返回即消失。
 
@@ -78,6 +98,19 @@
 
         <activity
             android:name=".WidgetSettingsActivity"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:noHistory="true"
+            android:theme="@style/AppTheme.WidgetDialog"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!--
+          点计数器上的数字弹出来的输入小窗。三条属性都与上面三个弹框同理：
+          对话框主题、不进最近任务、taskAffinity 清空（背后是桌面不是 App）。
+          adjustResize 是必须的：要弹数字键盘，窗口得跟着键盘让出位置。
+        -->
+        <activity
+            android:name=".CounterEditActivity"
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:noHistory="true"

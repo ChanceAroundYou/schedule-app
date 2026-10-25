@@ -32,6 +32,22 @@ class WidgetIntent {
                 codeKey == null ? action.hashCode() : codeKey.hashCode());
     }
 
+    /**
+     * 指定接收方 Provider。
+     *
+     * ⚠️ 每个 provider **必须用不同的 requestCode 命名空间**：PendingIntent 的
+     * 缓存键是 (包名, requestCode)，两个 provider 撞到同一个 code 时，后建的会
+     * 把前一个顶掉（extra 被合并覆盖），表现是「点计数器的 + 却翻了日程的日期」。
+     * 这里给计数器的 code 加一个固定前缀偏移。
+     */
+    static WidgetIntent of(Context c, Class<?> target, String action, String codeKey) {
+        int code = (codeKey == null ? action.hashCode() : codeKey.hashCode()) + CODE_SALT_COUNTER;
+        return new WidgetIntent(new Intent(c, target).setAction(action), code);
+    }
+
+    /** 计数器那套的 requestCode 偏移。换个值就等于换了一套 code 空间，别乱改。 */
+    private static final int CODE_SALT_COUNTER = 0x5A5A0000;
+
     WidgetIntent put(String key, String value) {
         intent.putExtra(key, value);
         return this;

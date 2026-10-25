@@ -78,6 +78,48 @@ class WidgetApi {
     }
 
     /**
+     * 只取计数器（naonao / Kutai）。
+     *
+     * 单独一条接口而不是复用 bootstrap：桌面上点一下就要刷一次，
+     * 拿整份「今天 ±45 天的任务 + 打卡」来换两个数字，白流量也白解析。
+     */
+    static void counters(Context c, Callback cb) {
+        String token = WidgetPrefs.token(c);
+        if (token == null || token.isEmpty()) {
+            Log.w(TAG, "counters 跳过：本地还没有票（App 没登录过？）");
+            cb.onFail("no-token");
+            return;
+        }
+        request(c, "GET", "/api/widget/counters", null, token, cb);
+    }
+
+    /**
+     * 写计数器。delta 与 value **二选一**（用装箱类型是为了能表达"这次不传"）：
+     *   delta  在当前值上加减
+     *   value  直接设成某个数
+     *
+     * 注意服务端做的是原子自增，不是整值替换 —— 所以这里可以放心地只发增量，
+     * 两台设备同时点也不会互相盖掉。
+     */
+    static void counterWrite(Context c, String id, Integer delta, Integer value, Callback cb) {
+        String token = WidgetPrefs.token(c);
+        if (token == null || token.isEmpty()) {
+            Log.w(TAG, "counterWrite 跳过：本地还没有票（App 没登录过？）");
+            cb.onFail("no-token");
+            return;
+        }
+        try {
+            JSONObject body = new JSONObject();
+            body.put("id", id);
+            if (delta != null) body.put("delta", delta.intValue());
+            if (value != null) body.put("value", value.intValue());
+            request(c, "POST", "/api/widget/counter", body, token, cb);
+        } catch (Exception e) {
+            cb.onFail("build-body: " + e.getMessage());
+        }
+    }
+
+    /**
      * 发一批写操作。
      *
      * @param ops 简化 op 数组，元素形如

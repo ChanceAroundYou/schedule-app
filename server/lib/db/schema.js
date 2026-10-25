@@ -7,7 +7,32 @@
  */
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
+
+/* --------------------------------------------------------------- v5 新增 */
+
+/**
+ * 桌面计数器（v5）。
+ *
+ * **按 user_id 归属，不进 field_state / changes**，理由与 AI 那三张表相同：
+ * 计数器是「我自己的两个数字」，不是日程集里的共享内容，没有 owner/editor/
+ * viewer 那套权限语义。硬塞进 LWW 通道还会带来一个真问题 —— 字段级同步是
+ * **整值替换**，两台设备同时点 +1，后写的把前一次覆盖掉，加两次只长 1。
+ * 所以这里用一条独立的原子自增语句，见 db/counters.js。
+ *
+ * id 用固定值（naonao / kutai），name 可改 —— 改名字不该换 id，否则
+ * 桌面上的小组件会指向一条空记录。
+ */
+const COUNTER_TABLES = [
+  `CREATE TABLE IF NOT EXISTS counters (
+     user_id    TEXT    NOT NULL,
+     id         TEXT    NOT NULL,
+     name       TEXT    NOT NULL,
+     value      INTEGER NOT NULL DEFAULT 0,
+     updated_at INTEGER NOT NULL,
+     PRIMARY KEY (user_id, id)
+   )`,
+];
 
 /* --------------------------------------------------------------- v3 新增 */
 
@@ -109,6 +134,8 @@ const MIGRATIONS = {
       updated_at             INTEGER NOT NULL
     )`,
   ],
+  // v4 → v5：桌面计数器。只加一张新表，不动任何已有表。
+  4: COUNTER_TABLES,
 };
 
 const SCHEMA = `
@@ -188,8 +215,8 @@ CREATE INDEX IF NOT EXISTS idx_revoked_exp ON revoked(expires_at);
 
 `;
 
-/** 建库语句 = v2 那七张 + v3 追加的三张。两处拼同一个真源，见 AI_TABLES */
-const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n';
+/** 建库语句 = v2 那七张 + v3 追加的三张 + v5 的计数器 */
+const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n' + COUNTER_TABLES.join(';\n\n') + ';\n';
 
 /** 旧 schema 的全部表名 —— 库是空的时候用来推倒重建 */
 const ALL_TABLES = [
@@ -197,6 +224,7 @@ const ALL_TABLES = [
   'field_state', 'changes', 'revoked',
   'ai_settings', 'ai_sessions', 'ai_messages',
   'ai_memory', 'ai_authorizations',
+  'counters',
 ];
 
 module.exports = {
