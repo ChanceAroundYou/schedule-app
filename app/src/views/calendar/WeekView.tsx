@@ -35,7 +35,9 @@ import type { LayoutEvent } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate, type DragRange } from './dragCreate.ts';
 import { useTimelineMetrics } from './metrics.ts';
-import { useElementHeight } from '../../ui/hooks.ts';
+import { useElementHeight, useElementWidth } from '../../ui/hooks.ts';
+import { isNarrowNow } from '../../ui/hooks/viewport.ts';
+import { NowLine } from './timeline.tsx';
 
 function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
   return dayTimeline(tasksOn(state, iso));
@@ -85,6 +87,8 @@ function WeekColumn({
       )}
       {/* 拉时间段时的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
       <DragRangePreview range={range} win={win} />
+      {/* 当天的「现在」线：日视图那根，周/3日视图复用 */}
+      {d === today && <NowLine pct={(D.nowMin() - win.from) / spanOf(win) * 100} week />}
     </div>
   );
 }
@@ -129,6 +133,11 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
      不对齐到周起点，‹ › 每次翻 3 天。周视图照旧从周一开始铺 7 天。 */
   const start = dayCount === 3 ? iso : D.weekStart(iso);
   const osbWeek = useOverlayScrollbar<HTMLDivElement>();
+  const weekRootRef = useRef<HTMLDivElement | null>(null);
+  const weekWidth = useElementWidth(weekRootRef);
+  const narrowColW = (weekWidth > 0 && isNarrowNow())
+    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 44) / 4.3)))
+    : 0;
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
   const nowMin = D.nowMin();
@@ -157,7 +166,8 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   });
 
   return (
-    <div className={'week-view osb' + (dayCount === 3 ? ' three-day' : '')} id="weekView" ref={osbWeek}>
+    <div className={'week-view osb' + (dayCount === 3 ? ' three-day' : '')} id="weekView" ref={(n) => { osbWeek(n); weekRootRef.current = n; }}
+      style={narrowColW > 0 ? ({ '--week-col-w': narrowColW + 'px' } as CSSProperties) : undefined}>
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
         <div className="week-head-cols">
@@ -205,9 +215,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
               range={drag.range && drag.range.date === d ? drag.range : null}
             />
           ))}
-          {/* 「现在」线已删（2026-10-25 用户：周视图里那根绿线不要了 ——
-              半夜它会卡在时间窗顶上的 8:00，白天又是长长一条横在卡上。
-              日视图的还在，见 DayView。） */}
+          {/* 「现在」线已恢复（2026-10-25 用户：日/3日/周都复用 .tl-now）。 */}
         </div>
       </div>
     </div>

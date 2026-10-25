@@ -321,16 +321,15 @@ body.sheet-open .tab:active { background: none; }
      视口 360px 时 → (360-44)/78 ≈ 4.05 列，**一屏看得见四天**（2026-10-25
      用户「还是挤，拓宽一点不用太多」：72 → 78；再宽就掉到 3.6 天了）。
      64px 太挤（10-22）、92px 只有 3.4 天（被否过）。 */
-  .week-un-row { min-width: 590px; }
+  .week-un-row { min-width: calc(44px + 7 * var(--week-col-w, 78px)); }
   /* 三行的日期列宽必须一致，横向滚动时靠同一个宽度基准对齐 */
   .week-head, .week-un-row, .week-grid {
     grid-template-columns: 44px minmax(0, 1fr);
   }
   .week-head-cols, .week-un-cols, .week-cols {
-    /* 每列至少 78px（2026-10-25 用户「还是挤」，72 → 78），7 列 = 546px，
-       靠横滑看全周。78px 里减掉内边距还有 ~60px，10px 字号约 6 个汉字。 */
-    grid-template-columns: repeat(7, minmax(78px, 1fr));
-    min-width: 546px;
+    /* 列宽按设备实时量出（--week-col-w），fallback 78px；目标 4 完整列 + peek。 */
+    grid-template-columns: repeat(7, minmax(var(--week-col-w, 78px), 1fr));
+    min-width: calc(7 * var(--week-col-w, 78px));
   }
   /* 三日视图：3 列一屏放得下（44 + 3×96 = 332px < 360px），
      **不需要横滑** —— 列宽上限放开，铺满整屏 */

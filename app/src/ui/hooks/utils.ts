@@ -61,3 +61,26 @@ export function useDebounced<T>(value: T, ms = 180): T {
   }, [value, ms]);
   return v;
 }
+
+
+/**
+ * 实测一个元素的**自身宽度**（不含滚动内容），返回像素数。
+ *
+ * 与 {@link useElementHeight} 对称；用于按设备实时算列宽（如周视图移动端），
+ * 首帧返回 0，调用方要把 0 当「还没量到」处理。
+ */
+export function useElementWidth<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+): number {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const apply = () => setW(el.getBoundingClientRect().width);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}

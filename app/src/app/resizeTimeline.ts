@@ -50,35 +50,50 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
     const getY = (e: MouseEvent | TouchEvent): number =>
       'touches' in e ? e.touches[0]?.clientY ?? 0 : e.clientY;
 
+    /* 触屏长按 100ms 才激活：避免划过误触。鼠标路径保持立即激活。 */
+    let pendingTimer: number | null = null;
+    let pendingStart: { x: number; y: number } | null = null;
+
+    const activate = () => {
+      if (!rz) return;
+      rz.el?.classList.add('resizing');
+      showTip(rz.el, rz.dur, rz.edge);
+      if (rz.tl) {
+        const at = rz.edge === 'top' ? rz.start : rz.end;
+        drawTimeGuide(rz.tl, at, rz.win);
+        drawTimeCursor(rz.tl, at, rz.win);
+      }
+    };
+
+    const cancelPending = () => {
+      if (pendingTimer != null) { clearTimeout(pendingTimer); pendingTimer = null; }
+      pendingStart = null;
+    };
+
     const down = (e: MouseEvent | TouchEvent) => {
       const h = (e.target as HTMLElement).closest<HTMLElement>('[data-act="resize"],[data-act="resize-top"]');
       if (!h) return;
       const t = store.get().tasks[h.dataset.id || ''];
       if (!t) return;
       const start = D.timeToMin(t.time) || 0;
-      /* 时间轴 = 把手所在的那根。日视图是 `.timeline`，周视图那一列标了
-         `data-timeline`（它俩同构；以前只看全局第一个 `.timeline`，
-         周视图复用日视图那张卡之后会把它们认错）。 */
       const tl = h.closest<HTMLElement>('.timeline, [data-timeline]');
       const boxH = tl?.getBoundingClientRect().height || HOUR_H * 24;
       rz = {
         id: t.id, y: getY(e),
         edge: h.dataset.act === 'resize-top' ? 'top' : 'bottom',
         start, end: start + D.durOf(t.duration), dur: D.durOf(t.duration), cur: D.durOf(t.duration),
-        /* document 级找：卡片 dt 可能同时出现在两个视图的 DOM 里
-           （日视图 + 周视图都渲染同一批任务），按 host 找会串到另一个去 */
         el: document.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
         win: domWindow(tl), boxH, tl,
       };
-      rz.el?.classList.add('resizing');
-      showTip(rz.el, rz.dur, rz.edge);
-      /* 按下那一刻就把绿线画出来 —— 它是「当前这条沿在哪」的指示，
-         不等第一次 move（手指在屏幕上按住不动一会儿才拖的情形）。
-         上沿画开始时间，下沿画结束时间。 */
-      if (rz.tl) {
-        const at = rz.edge === 'top' ? rz.start : rz.end;
-        drawTimeGuide(rz.tl, at, rz.win);
-        drawTimeCursor(rz.tl, at, rz.win);
+      const isTouch = 'touches' in e;
+      if (isTouch) {
+        pendingStart = { x: (e as TouchEvent).touches[0]?.clientX ?? 0, y: getY(e) };
+        pendingTimer = window.setTimeout(() => {
+          pendingTimer = null; pendingStart = null;
+          activate();
+        }, 100);
+      } else {
+        activate();
       }
       e.preventDefault();
     };
@@ -87,6 +102,13 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
     const pct = (min: number) => (min - rz!.win.from) / spanOf(rz!.win) * 100;
 
     const move = (e: MouseEvent | TouchEvent) => {
+      /* 长按期间移动超过容差 → 取消激活（避免误触） */
+      if (pendingTimer != null && pendingStart) {
+        const dx = (e as TouchEvent).touches?.[0]?.clientX ?? (e as MouseEvent).clientX - pendingStart.x;
+        const dy = getY(e) - pendingStart.y;
+        if (Math.hypot(dx, dy) > 8) cancelPending();
+        return;
+      }
       if (!rz) return;
       const minPerPx = spanOf(rz.win) / rz.boxH;
       const addMin = Math.round((getY(e) - rz.y) * minPerPx / 15) * 15;
@@ -115,6 +137,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
     };
 
     const up = () => {
+      cancelPending();
       if (!rz) return;
       const patchFields: Partial<Task> = { duration: Math.max(15, rz.cur) };
       if (rz.edge === 'top' && rz.curStart != null) patchFields.time = D.minToTime(rz.curStart);
