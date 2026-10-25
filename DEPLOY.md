@@ -507,7 +507,7 @@ systemctl --user start schedule-backend    # 起来时自动建空库 + 新 secr
 
 | 文件 | 内容 |
 |---|---|
-| [AGENTS.md](AGENTS.md) | 结构、不变量、界面硬规则、给 AI 的硬约束 |
+| [AGENTS.md](AGENTS.md) | 结构、不变量、工作约束 |
 | [README.md](README.md) | 怎么用、日常命令 |
 | [docs/架构决策.md](docs/架构决策.md) | 为什么是现在这样（同步 / 多账户 / 小组件 / 不做的事） |
 | [docs/接口.md](docs/接口.md) | HTTP 接口总览（+ `-日程集` / `-同步` / `-AI`） |

@@ -2,7 +2,7 @@
   "name": "schedule-server",
   "private": true,
   "type": "commonjs",
-  "description": "日程清单后端。零 npm 依赖。type 必须写 commonjs —— 外层 app/ 是 type:module，不写的话 server.js 的 require() 直接崩。",
+  "description": "日程清单后端。type 必须写 commonjs —— 外层 app/ 是 type:module，不写的话 server.js 的 require() 直接崩。",
   "engines": {
     "node": ">=22.5"
   },

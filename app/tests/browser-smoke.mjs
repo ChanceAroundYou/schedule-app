@@ -265,7 +265,7 @@ try {
       const pc = p && typeof p.className === 'string' && p.className ? p.className.split(' ')[0] : (p ? p.tagName.toLowerCase() : '?');
       return own + ' in .' + pc;
     };
-    /* 勾选圈必须是真 button（见 AGENTS.md 三、无障碍 2）。
+    /* 勾选圈必须是真 button（见 docs/界面规则.md 六、无障碍 2）。
 
        **例外：aria-hidden 的圈，且它在一个真 button 里面** —— 那种圈是那个
        按钮的**状态指示**，不是独立控件。侧栏日程集那一行就是这种：整行是一个

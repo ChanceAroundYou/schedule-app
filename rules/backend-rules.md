@@ -4,7 +4,7 @@
 > 依据：`server/routes/*`（auth/cals/sync/ai 四组）、`server/lib/sync.js`（Rejected 三态）、
 > `server/lib/auth.js`（自签 JWT+jti 吊销）、`server/lib/ai/*`（工具→提案→确认三段）、
 > `server/tests/*`、`docs/接口*.md`、`AGENTS.md` 二、AI
-> 不变量：后端只引 AI 那组依赖，其余 Node 标准库；`server/data/` 永不进仓库。
+> 不变量：后端依赖按需引（加一个说清「标准库做不到什么」并锁精确版本）；`server/data/` 永不进仓库。
 
 ---
 
@@ -81,8 +81,9 @@
 
 ### B5 后端依赖与数据目录
 
-- 后端只许 AI 那组依赖（`@earendil-works/pi-agent-core` + `pi-ai`），其余 Node 标准库。
-  "零依赖"已于 2026-10-06 被推翻（为接 pi），但**有范围的让步，不是随便引**。
+- 后端依赖按需引：**标准库够用就先用标准库**；有成熟库能把一段自写代码省掉，就用库。
+  加之前说清「标准库做不到什么」，引入时锁精确版本。
+  目前运行时依赖只有 AI 那一组（`@earendil-works/pi-agent-core` + `pi-ai`），这不是上限。
 - `server/data/`（SQLite 权威库）gitignored；测试换目录跑（`SCHEDULE_DATA_DIR=/tmp/x`）。
 - 不引入 `v1/v2` 版本号并存；不改 nginx 路径结构（无 `/schedule2/`），回滚靠换 `dist/`。
 

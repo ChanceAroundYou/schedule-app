@@ -19,7 +19,7 @@ import { Btn } from './Btn.tsx';
  * 和旁边按钮不是一个数」—— 用户看到的就是「颜色和风格这些按钮跟别的不一样」。
  * 组件库的意义就是**没有第二套**，所以这里只有 `Btn` 一种画法。
  *
- * 全局原则见 AGENTS.md「三、界面硬规则 · 令牌三条」。
+ * 全局原则见 docs/界面规则.md「二、令牌五条」。
  */
 export function Chips<K extends string | number>({ value, options, onPick, render, labelOf, label, labelledBy }: {
   value: K;

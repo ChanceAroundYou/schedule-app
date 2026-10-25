@@ -3,7 +3,7 @@
 > 状态：**长期规则**（本册规则已定，实施另见 `component-api-plan.md`）
 > 依据：`ui/` `views/` `styles/` 逐文件审计 + 组件库现状（`docs/组件库.md`）+ 令牌三轴
 > 不变量：**外部 import 路径一律不变**（barrel / 就地重构，调用方无感）；
->           `domain/` 保持零 React / DOM / 网络；后端只引 AI 那组依赖（见第 9 册 B5）。
+>           `domain/` 保持零 React / DOM / 网络；后端依赖按需引（见第 9 册 B5）。
 
 ---
 
@@ -57,7 +57,7 @@
 调用方想要别的样子就改 kit 或派生，不散写。
 
 调用方（`ui/` 非 kit、`app/`）**可以**用 Tailwind 工具类 + CSS 变量——这是本项目的
-既有正确写法（`AGENTS.md` 三、界面硬规则里 `rounded-[var(--r-md)]` 就是推荐写法），
+既有正确写法（[界面规则.md](../docs/界面规则.md)里 `rounded-[var(--r-md)]` 就是推荐写法），
 **但只减不增**：`tests/api-scan.mjs` 的 ratchet 锁着调用方外观类总数不许涨。
 
 **两条硬锁**（`api-scan.mjs` 强制，出现即失败）：

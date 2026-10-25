@@ -178,7 +178,7 @@ node app/tests/card-geometry.mjs                           # 卡片几何 + 手�
 │   ├── src/styles/    语义样式模块 + tailwind.css
 │   ├── public/        icon.svg / manifest.json / sw.js（离线外壳）
 │   └── tests/         单元测试 + 探针（contrast / color-scan / browser-smoke / …）
-├── server/       后端（Node 22，**只引 AI 那一组依赖**）
+├── server/       后端（Node 22 + SQLite；npm 依赖按需引，见 AGENTS.md 五、1）
 │   ├── lib/           db · auth · calendars（**权限唯一实现处**）· invites · ratelimit · sync
 │   ├── lib/ai/        AI 对话：工具、提示词、SSE、提案确认
 │   └── tests/         api · migration · ai · smoke-share
@@ -222,9 +222,10 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 **为什么不引数据库 / ORM / 同步框架**：数据量是「一个人一辈子的待办」，SQLite 单文件
 足够；同步用「逐字段 LWW + 幂等 op」就够，不需要 CRDT。
 
-**AI 那一组是「零依赖」唯一的有范围让步**：为了接 pi 的 agent 框架（tools / 流式 /
-工具循环都是它管的）而不是自己手搓一遍。依赖锁精确版本、只在一个文件里调用，
-**加别的仍然要先问**。没装也能起服务、也能用剩下所有功能，只是 AI 页报「依赖没装好」。
+**后端依赖**：不追求「零依赖」—— 标准库够用就用标准库，有成熟库能省一大截就直接用，
+但**每加一个先说清「标准库做不到什么」**，并锁精确版本。目前唯一的运行时依赖是 AI 那一组
+（`@earendil-works/pi-agent-core` + `pi-ai`，管 tools / 流式 / 工具循环）。没装也能起服务、
+也能用剩下所有功能，只是 AI 页报「依赖没装好」。
 
 ---
 
@@ -233,7 +234,8 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 | 文件 | 读者 | 内容 |
 |---|---|---|
 | `README.md` | 人 | 本文件：网址、怎么用、数据在哪、故障排查 |
-| [AGENTS.md](AGENTS.md) | AI | **往哪走**：结构、不变量、界面硬规则、硬约束 |
+| [AGENTS.md](AGENTS.md) | AI | **往哪走**：结构、不变量、工作约束 |
+| [docs/界面规则.md](docs/界面规则.md) | AI | **改 UI 前必读**：交互语言、令牌五条、时间与卡片、无障碍、文案 |
 | [DEPLOY.md](DEPLOY.md) | 人 + AI | 拓扑、发布、nginx / conf、排障 |
 | [docs/架构决策.md](docs/架构决策.md) | 人 + AI | **为什么是现在这样**：选型 / 同步 / 多账户 / 小组件 / 不做的事 |
 | [docs/踩坑.md](docs/踩坑.md) | AI | **改代码前先读**：54 条坑的索引（1–4 同步 / 数据） |

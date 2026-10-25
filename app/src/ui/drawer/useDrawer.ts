@@ -47,7 +47,7 @@ export function useDrawer({ state, id, onClose, onPatch, onToggle, onDelete }: D
   /** 每个字段的 label / 控件配对用的 id 前缀。
    *  `.field label` 是**兄弟**关系且没有 htmlFor —— 点 label 不会聚焦控件，
    *  读屏也念不出这个框是干什么的。用 useId 配上，别写死字符串（同页面
-   *  万一渲染两份就撞了）。见 AGENTS.md「三、界面硬规则 · 无障碍」。 */
+   *  万一渲染两份就撞了）。见 docs/界面规则.md「六、无障碍」。 */
   const fid = useId();
 
   // 标题是本地草稿：每敲一个字都写库会让输入框在重渲染里跳光标（旧版踩过）
