@@ -1,3 +1,5 @@
+import { useRef, useEffect } from 'react';
+import * as D from '../../domain/date.ts';
 /**
  * timeline.tsx —— 日 / 周两视图共用的时间轴小件（P0-3）
  *
@@ -45,9 +47,33 @@ export function TimeGutter({ hours, win }: { hours: number[]; win: DayWindow }) 
  * 现在线 / 拖拽线。`pct` 为 null = 窗外 / 今天不在这一周，不画
  * （画出来是贴边的一条假线）。
  */
-export function NowLine({ pct, week }: { pct: number | null; week?: boolean }) {
+export function NowLine({ pct, span = 'day', win }: { pct: number | null; span?: 'day' | 'week'; win?: DayWindow }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || pct === null) return;
+    const tick = () => {
+      const now = D.nowMin();
+      const p = (win && (now < win.from || now > win.to)) ? null
+        : (win ? (now - win.from) / spanOf(win) * 100 : pct);
+      if (p === null) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.style.top = p + '%';
+    };
+    tick();
+    const now = new Date();
+    const delay = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+    const t0 = setTimeout(() => { tick(); const id = setInterval(tick, 60000); (el as any).__iv = id; }, delay);
+    return () => { clearTimeout(t0); if ((el as any).__iv) clearInterval((el as any).__iv); };
+  }, [pct, win]);
   if (pct === null) return null;
-  return <div className={'tl-now' + (week ? ' week-now' : '')} style={{ top: pct + '%' }} />;
+  return (
+    <div
+      ref={ref}
+      className={'tl-now' + (span === 'week' ? ' week-now' : '')}
+      style={{ top: pct + '%' }}
+    />
+  );
 }
 
 /** 拉时间段的预览框：跟着橡皮筋长，松手就照这段开草稿。 */

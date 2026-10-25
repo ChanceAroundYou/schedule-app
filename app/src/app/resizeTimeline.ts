@@ -91,7 +91,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         pendingTimer = window.setTimeout(() => {
           pendingTimer = null; pendingStart = null;
           activate();
-        }, 100);
+        }, 250);
       } else {
         activate();
       }

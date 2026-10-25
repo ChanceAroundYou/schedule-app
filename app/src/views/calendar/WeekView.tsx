@@ -87,8 +87,7 @@ function WeekColumn({
       )}
       {/* 拉时间段时的预览框：跟着橡皮筋长，松手就照这段开草稿 */}
       <DragRangePreview range={range} win={win} />
-      {/* 当天的「现在」线：日视图那根，周/3日视图复用 */}
-      {d === today && <NowLine pct={(D.nowMin() - win.from) / spanOf(win) * 100} week />}
+      {/* 「现在」线已移至 .week-cols 容器层，贯穿整周/整3日（见下方） */}
     </div>
   );
 }
@@ -136,7 +135,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const weekRootRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);
   const narrowColW = (weekWidth > 0 && isNarrowNow())
-    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 44) / 4.3)))
+    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 44) / 4.1)))
     : 0;
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
@@ -206,8 +205,9 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
-          style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
+          style={{ '--wk-hours': spanOf(win) / 60, position: 'relative' } as CSSProperties}
         >
+          <NowLine pct={(D.nowMin() - win.from) / spanOf(win) * 100} span="week" win={win} />
           {days.map((d, i) => (
             <WeekColumn
               key={d} state={state} d={d} today={today} win={win}

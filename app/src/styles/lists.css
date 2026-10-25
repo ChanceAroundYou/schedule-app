@@ -344,7 +344,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
    （onDragEnd 的 week: 分支）不经过引导线，照旧。 */
 .tl-guide {
   position: absolute; left: 0; right: 0; height: 0;
-  border-top: 1.5px dashed var(--primary); z-index: 20; pointer-events: none;
+  border-top: 1.5px dashed var(--primary); z-index: 10000; pointer-events: none;
 }
 .tl-guide::before {
   /* 球心落线：9px 球 + 1.5px 虚线 → top = −(9 − 1.5) / 2 = −3.75px（与 .tl-now 同算式） */

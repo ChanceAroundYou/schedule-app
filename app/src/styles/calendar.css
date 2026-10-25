@@ -178,9 +178,9 @@
 /* 现在时刻线：贯穿整行的绿色实线 + 左端绿球。
    球心落时间轴与任务区交界线：9px 球 + 1.5px 线 → top = −(9 − 1.5) / 2 = −3.75px。
    （2026-10-22 前长期是 −4px 估值，P0-3 抽 NowLine 时按算式扶正。） */
-.tl-now { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px solid var(--ok); z-index: 3; pointer-events: none; }
+.tl-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--ok); z-index: 3; pointer-events: none; }
 .tl-now::before {
-  content: ''; position: absolute; left: -4.5px; top: -4.25px;
+  content: ''; position: absolute; left: -4.5px; top: -4px;
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--ok); box-shadow: 0 0 0 3px rgb(from var(--ok) r g b / .16);
 }
