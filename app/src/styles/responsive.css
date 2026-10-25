@@ -351,7 +351,7 @@ body.sheet-open .tab:active { background: none; }
   .week-head-gutter, .week-un-gutter, .week-gutter {
     position: sticky; left: 0; z-index: 5; background: var(--panel);
   }
-  .week-gutter .tl-label { right: auto; left: 3px; text-align: left; width: 34px; }
+  .week-gutter .tl-label { right: auto; left: 4px; text-align: center; width: 30px; }
   /* 表头窄屏档（与桌面**同步收小**，2026-10-24 五项反馈④）：
      日期数字 15 → 12、圆圈 24 → 20、上下留白 7/5 → 4/3。 */
   .week-head-cell { padding: 4px 1px 3px; }

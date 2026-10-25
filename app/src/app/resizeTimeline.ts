@@ -29,6 +29,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
       /** 时间轴元素 —— 绿线/绿时间的宿主，跟 win 一起按下时存住 */
       tl: HTMLElement | null;
     } | null = null;
+    let active = false;
 
     /* 拉伸时的浮标：只显示持续时长。
        上沿拖动时 tag 在卡片**上方**，下沿拖动时在**下方**。 */
@@ -56,6 +57,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
 
     const activate = () => {
       if (!rz) return;
+      active = true;
       rz.el?.classList.add('resizing');
       showTip(rz.el, rz.dur, rz.edge);
       if (rz.tl) {
@@ -68,6 +70,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
     const cancelPending = () => {
       if (pendingTimer != null) { clearTimeout(pendingTimer); pendingTimer = null; }
       pendingStart = null;
+      active = false;
     };
 
     const down = (e: MouseEvent | TouchEvent) => {
@@ -85,14 +88,16 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         el: document.querySelector<HTMLElement>(`.task-el--timed[data-id="${t.id}"]`),
         win: domWindow(tl), boxH, tl,
       };
+      active = false;
       const isTouch = 'touches' in e;
       if (isTouch) {
         pendingStart = { x: (e as TouchEvent).touches[0]?.clientX ?? 0, y: getY(e) };
         pendingTimer = window.setTimeout(() => {
           pendingTimer = null; pendingStart = null;
-          activate();
+          if (rz) { active = true; activate(); }
         }, 250);
       } else {
+        active = true;
         activate();
       }
       e.preventDefault();
@@ -109,7 +114,7 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
         if (Math.hypot(dx, dy) > 8) cancelPending();
         return;
       }
-      if (!rz) return;
+      if (!rz || !active) return;
       const minPerPx = spanOf(rz.win) / rz.boxH;
       const addMin = Math.round((getY(e) - rz.y) * minPerPx / 15) * 15;
       if (rz.edge === 'top') {
@@ -138,7 +143,8 @@ function useResizeTimeline(host: React.RefObject<HTMLDivElement | null>) {
 
     const up = () => {
       cancelPending();
-      if (!rz) return;
+      if (!rz) { cancelPending(); return; }
+      if (!active) { cancelPending(); rz = null; return; }
       const patchFields: Partial<Task> = { duration: Math.max(15, rz.cur) };
       if (rz.edge === 'top' && rz.curStart != null) patchFields.time = D.minToTime(rz.curStart);
       rz.el?.classList.remove('resizing');

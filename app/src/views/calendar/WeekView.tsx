@@ -135,7 +135,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const weekRootRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);
   const narrowColW = (weekWidth > 0 && isNarrowNow())
-    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 44) / 4.1)))
+    ? Math.max(70, Math.min(90, Math.floor((weekWidth - 46) / 4)))
     : 0;
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();

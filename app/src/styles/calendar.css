@@ -163,7 +163,7 @@
    的反馈循环（2026-10-24 对齐修复）。 */
 .day-panel .tl-wrap > .timeline { height: 100%; min-height: 0; }
 .tl-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
-.tl-label { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: right; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tl-label { position: absolute; left: var(--tl-label-left); top: -8px; width: var(--tl-label-width); text-align: center; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -549,7 +549,7 @@
   position: relative; min-width: 0;
 }
 .week-gutter .tl-hour { border-top: 0; }
-.week-gutter .tl-label { left: auto; right: 5px; width: 38px; }
+.week-gutter .tl-label { left: auto; right: 6px; width: 32px; text-align: center; }
 
 .week-cols {
   position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0;
