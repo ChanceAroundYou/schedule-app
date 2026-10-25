@@ -461,7 +461,7 @@
   /* 内联站位于标题文字之后：按中线对齐，不然图标会贴着基线偏下半个字。 */
   vertical-align: middle;
 }
-.rep-flag svg { width: 13px; height: 13px; display: block; }
+.rep-flag svg { width: 14px; height: 14px; display: block; }
 /* 任务卡右上角的层角标：绝对定位、不占文字宽度（2026-10-25 用户要求）。
    几何随卡片：定时卡本身是 absolute，未定时卡补 relative。
    比内联档小 2px（卡窄），但仍比最早那版 9px 大、描边一样粗。 */
