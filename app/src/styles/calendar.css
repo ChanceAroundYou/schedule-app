@@ -459,8 +459,12 @@
 /* 任务卡右上角的层角标：绝对定位、不占文字宽度（2026-10-25 用户要求）。
    几何随卡片：定时卡本身是 absolute，未定时卡补 relative。 */
 .rep-flag--corner {
-  position: absolute; top: 1px; right: 3px; margin: 0;
-  font-size: 9px; line-height: 1; opacity: .55;
+  position: absolute; top: 0; right: 1px; margin: 0;
+  font-size: 9px; line-height: 1; opacity: .35;
+}
+/* 已完成的任务：右上角重复记号同步变灰（2026-10-25 用户） */
+.task-el.done .rep-flag--corner {
+  color: var(--text-3); opacity: .3;
 }
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
