@@ -10,7 +10,7 @@
 ## 为什么立这套规范
 
 散规现状：800 行 / 50 行 / 嵌套 4 层出自全局 `security-review.md`；
-命名、令牌、变量名散在 `AGENTS.md` + `docs/界面约定*.md`；
+命名、令牌、变量名散在 `docs/界面规则.md` + `docs/界面约定*.md`；
 六条数据不变量散在 `AGENTS.md`「二、不变量」+ `docs/业务模型.md`；
 数据流（`domain→data→views` 单向、`views/` 零回调）散在 `AGENTS.md`「一、结构」+ `docs/架构决策.md`；
 测试三层散在 `docs/测试.md`。
