@@ -21,7 +21,6 @@
    文档与探针里的代码片段是给人看的，不是类名。 */
 @source not "../../tests";
 @source not "../../../docs";
-@source not "../../../legacy";
 @import "./tokens.css";
 @import "../ui/shell/shell.css";
 @import "./calendar.css";

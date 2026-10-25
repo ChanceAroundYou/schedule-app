@@ -183,10 +183,10 @@ node app/tests/card-geometry.mjs                           # 卡片几何 + 手�
 │   ├── lib/ai/        AI 对话：工具、提示词、SSE、提案确认
 │   └── tests/         api · migration · ai · smoke-share
 ├── deploy/       发布脚本 + nginx conf / systemd 单元的本地副本
-└── dist/         构建产物（生成物，勿手改）· legacy/（旧版冻结）· docs/
+└── dist/         构建产物（生成物，勿手改）· docs/
 ```
 
-**线上只有 `~/.local/schedule/web` 会被 nginx 伺服**，源码 / `server/` / `legacy/` /
+**线上只有 `~/.local/schedule/web` 会被 nginx 伺服**，源码 / `server/` /
 文档全部 404。工程里的 `dist/` 只是本地产物，**不等于上线**。
 
 ---
@@ -225,9 +225,6 @@ AI      接 pi 的 agent 框架（@earendil-works/pi-agent-core / pi-ai），
 **AI 那一组是「零依赖」唯一的有范围让步**：为了接 pi 的 agent 框架（tools / 流式 /
 工具循环都是它管的）而不是自己手搓一遍。依赖锁精确版本、只在一个文件里调用，
 **加别的仍然要先问**。没装也能起服务、也能用剩下所有功能，只是 AI 页报「依赖没装好」。
-
-**为什么保留 `legacy/`**：旧版是能用的，新版出问题时可以整体退回去
-（回滚办法见 [DEPLOY.md](DEPLOY.md)）。旧数据 key 也一直没删。
 
 ---
 

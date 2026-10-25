@@ -1,7 +1,7 @@
 /**
  * Calendar.tsx —— 日 / 周 / 月三视图（桶文件，保持 import 路径不变）
  *
- * 类名与 DOM 结构照抄 legacy/views.js —— styles.css 就是按这套写的。
+ * 类名与 DOM 结构照抄原 legacy/views.js（已删，类名冻结） —— styles.css 就是按这套写的。
  * 契约里最容易被「顺手简化」掉、但一改就出 bug 的几条：
  *
  *   · 每个可落点的区块（`.allday-zone` / `.timeline` / `.week-col` / `.wun-cell` /

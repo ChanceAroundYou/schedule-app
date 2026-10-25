@@ -1,7 +1,7 @@
 /**
  * date.ts —— 日期与格式化。纯函数，不碰 DOM、不碰网络。
  *
- * 从 legacy/store.js 的 `U` 逐条搬过来。语义完全照旧，特别是这几条踩过坑的：
+ * 从原 legacy/store.js（已删） 的 `U` 逐条搬过来。语义完全照旧，特别是这几条踩过坑的：
  *   · weekStart 以周一为一周起点（不是周日）
  *   · addMonths 先把日期截到 1 号再进月，避免 1/31 + 1 个月滚到 3/3
  *   · relLabel 的「逾期 N 天」与 DB.overdueCount 是同一个口径

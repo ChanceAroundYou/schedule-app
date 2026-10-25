@@ -409,7 +409,7 @@ systemd timer 里都没有），换证书就是覆盖四个 pem 然后 `nginx -t
 ```bash
 B=https://home.xiaokubao.space/schedule
 for p in "/" "/manifest.json" "/icon.svg" "/api/health" "/api/me" \
-         "/app/src/main.tsx" "/server/server.js" "/legacy/dist/app.js" "/.git/config"; do
+         "/app/src/main.tsx" "/server/server.js" "/.git/config"; do
   printf '%-24s %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' $B$p)"
 done
 ```
@@ -463,7 +463,7 @@ systemctl --user start schedule-backend    # 起来时自动建空库 + 新 secr
 | APK 坏包 | 改回 `apk/version.json` 的 versionCode，或删掉 version.json |
 | nginx 整体起不来 | 恢复 `docker-compose.yml.bak-*` / `schedule.conf.bak-*`，再 `docker compose up -d` |
 
-> 退回旧版（`legacy/`）时：旧版读 localStorage 的 `schedule-app-v1`，新版从不写那个 key
+> （`legacy/` 已删除，回滚靠换线上目录内容）
 > （只读一次），所以旧数据还在，只是新版期间新增的任务看不到 —— 它们在服务器库里。
 
 ---
