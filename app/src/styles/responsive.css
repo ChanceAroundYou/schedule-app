@@ -243,7 +243,7 @@ body.sheet-open .tab:active { background: none; }
     --ev-gap: 0px;
   }
   /* 触屏没有 hover：拖拽抓手常显。opacity .5 保持可见但不抢眼。 */
-  .ev-resize { opacity: .5; width: min(24px, 25%); min-width: 12px; }
+  .ev-resize { opacity: .5; width: min(32px, 25%); min-width: 12px; }
 
   /* 任务抽屉：从底部整块弹出。**高度按内容走**（2026-10-12）——
      用户报「移动端下有大量空白」：写死 88dvh，四行字段只占三百来像素，

@@ -664,5 +664,6 @@ export function draftBox(seed: DraftSeed, win: DayWindow): CSSProperties {
   const top = minToPct(Math.max(win.from, Math.min(win.to, min)), win) ?? 0;
   const len = seed.duration && seed.duration > 0 ? seed.duration : D.durOf(null);
   const h = Math.min(len, win.to - min);
-  return { top: top + '%', height: Math.max(1.2, (h / spanOf(win)) * 100) + '%' };
+  const pct = Math.max(1.2, (h / spanOf(win)) * 100);
+  return { top: top + '%', height: 'calc(' + pct + '% - 1px)' };
 }

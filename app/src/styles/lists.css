@@ -197,6 +197,7 @@
   width: var(--check-size); height: var(--check-size);
   flex: 0 0 var(--check-size); padding: 0;
   border: 1.5px solid var(--input); border-radius: 50%;
+  margin: 1px;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
 }
@@ -427,6 +428,7 @@ body.dragging-active { user-select: none; -webkit-user-select: none; cursor: gra
   width: var(--check-size); height: var(--check-size);
   flex: 0 0 var(--check-size); padding: 0;
   border: 1.5px solid var(--input); border-radius: 50%;
+  margin: 1px;
   background: none; position: relative;
   transition: border-color .14s, background .14s, transform .12s;
 }

@@ -290,6 +290,8 @@
    灰底 + 灰字已经足够说明「这条做完了」，横线反而让 10px 的小字更难认。 */
 .task-el--timed.done .ev-title, .task-el--untimed.done .ev-title { color: var(--text-3); }
 .task-el--timed.done .ev-time, .task-el--untimed.done .ev-time { color: var(--text-3); }
+/* 完成态把手也灰掉：完成卡其余元素全灰，把手不该 lone wolf 一个绿。 */
+.task-el--timed.done .ev-resize::after, .task-el--untimed.done .ev-resize::after { background: rgb(from var(--text-3) r g b / .5); }
 /* 已完成卡上的勾选圈不再额外挪动（2026-10-24 修复：之前只在 done 时加 2px
    margin-left，勾选瞬间圈会跳 2px）。留白统一走 --card-pad-x，不再按状态分化。 */
 /* 拖动中的样式是**行为**不是外观，所有 task-el 表面共用，保持不限定修饰类 */
@@ -446,7 +448,7 @@
      触摸区 6px 高、横条 2px，用 align-items 把条**推到卡片最边缘** ——
      bottom 把手的条贴底沿、top 把手的条贴顶沿，一眼就知道「拉这里改边」。
      透明度维持上一版的 .16。 */
-  position: absolute; left: 50%; width: min(32px, 30%); min-width: 12px;
+  position: absolute; left: 50%; width: min(48px, 30%); min-width: 12px;
   transform: translateX(-50%); bottom: 0;
   height: min(6px, 22%); min-height: 3px;
   cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center;
@@ -793,20 +795,20 @@ body.is-drag-range { user-select: none; }
    会长在这里的那张卡」，所以用同一批视觉令牌，不挂同一个类名。 */
 .new-cell {
   display: block; box-sizing: border-box;
-  width: 100%; min-height: 26px; padding: 4px 8px;
+  width: 100%; padding: var(--card-pad-y, 1px) var(--card-pad-x);
   resize: none; overflow: hidden;
   font-size: var(--fs-title); line-height: 1.3; color: var(--text);
   background: var(--panel);
   border: var(--border-w) solid var(--primary);
-  /* 圆角跟着卡片那一条算式走（--card-h 报 min-height 这一档）：
+  /* 圆角跟着卡片那一条算式走（--card-h 报 --card-px 这一档）：
      它是「将来会长在这里的那张卡」的样子，圆角不该另成一档。 */
-  --card-h: 26px;
+  --card-h: var(--card-px, 20px);
   box-shadow: var(--shadow-md);
   outline: none;
 }
 .new-cell::placeholder { color: var(--text-3); }
 /* 落在带时间的区域里（日视图时间轴、周视图列）：由父级给 top / height */
-.new-cell--abs { position: absolute; left: 2px; right: 2px; z-index: 6; }
+.new-cell--abs { position: absolute; left: 0; right: 1px; z-index: 6; }
 
 /* ================= 任务胶囊 / 列表行 ================= */
 

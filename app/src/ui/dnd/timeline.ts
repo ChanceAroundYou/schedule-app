@@ -85,12 +85,12 @@ export function useTimelineDrag() {
       drawTimeGuide(zone, min, win);
       drawTimeCursor(zone, min, win);
     } else if (overId.startsWith('week:')) {
-      /* 周视图**不再画落点引导线**（用户 2026-10-17：「拖动任务的时候，
-         页面底下有一条虚线，把这个虚线给去掉」）。
-         zoneRef 照记 —— onDragEnd 的落点逻辑不经过引导线，不受影响；
-         clearTimeGuide 是防止从日视图拖进来时留着上一根的线。 */
+      /* 周 / 3 日视图也画落点引导线（2026-10-25 用户：日视图有绿色虚线，
+         周 / 3 日视图同样操作也要有）。zone 为 week-col，含 data-from/data-to，
+         drawTimeGuide 按其实测高度换算分钟。 */
       zoneRef.current = { el: zone, id: overId };
-      clearTimeGuide();
+      const win = zoneWindow(zone);
+      drawTimeGuide(zone, min, win);
       clearTimeCursor();
     } else {
       zoneRef.current = null;
@@ -127,9 +127,10 @@ export function useTimelineDrag() {
       const win = zoneWindow(z.el);
       drawTimeGuide(z.el, min, win);
       drawTimeCursor(z.el, min, win);
+    } else if (z.id.startsWith('week:')) {
+      const win = zoneWindow(z.el);
+      drawTimeGuide(z.el, min, win);
     }
-    /* 周视图分支整个去掉了：不画引导线（用户 2026-10-17）。onDragOver
-       进入周视图时已经 clear 过一次，这里不需要每帧再清。 */
   }, []);
 
   const onDragEnd = useCallback((event: DragEndEvent) => {
