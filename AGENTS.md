@@ -113,7 +113,7 @@ deploy/           发布脚本 + nginx conf / systemd 单元
 
 **代码**
 1. **后端可以用 npm 库**，但每加一个都要先说清「标准库做不到什么」；引入就锁精确版本。
-   **pi 的 import 只许在 `server/lib/ai/`**（现 8 个文件），别扩散到同步 / 鉴权等核心路径。
+   **pi 的 import 只许在 `server/lib/ai/`**（现 16 个顶层文件 + `tools/` 子目录），别扩散到同步 / 鉴权等核心路径。
 2. 不引入版本号并存（`v1`/`v2` 文件、数据 key）；结构变了就归档旧 key + 写迁移。
 3. `domain/` 保持纯净（无 React / DOM / 网络），它要能在 Capacitor 与 Node 里跑。
 4. 权限判断只在 `canWrite` / `canManage` / `db.roleOf()` 三个入口。
