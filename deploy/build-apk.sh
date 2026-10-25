@@ -33,9 +33,9 @@ APP="$ROOT/app"
 API_BASE="${API_BASE:-https://home.xiaokubao.space/schedule}"
 
 NODE="${NODE:-node}"
-GRADLE="${GRADLE:-$HOME/gradle-dist/gradle-8.14.3/bin/gradle}"
-JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
-ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
+# 工具链（gradle 发行版 / SDK / JDK）统一由 deploy/gradle.sh 探测，这里不再重复写死。
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
+export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
 
 echo "==> 1/4 构建网页资源（VITE_API_BASE=$API_BASE）"
 cd "$APP"
@@ -53,7 +53,7 @@ echo "==> 3/4 同步到 APK 内置资源（cap copy）"
 
 echo "==> 4/4 编译 APK"
 cd "$APP/android"
-JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" "$GRADLE" assembleDebug
+"$ROOT/deploy/gradle.sh" :app:assembleDebug
 
 APK="$APP/android/app/build/outputs/apk/debug/app-debug.apk"
 echo

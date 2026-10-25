@@ -123,6 +123,7 @@ deploy/           发布脚本 + nginx conf / systemd 单元
 **验证**
 7. 写完新组件顺手跑 `contrast.mjs` + `color-scan.mjs`（令牌唯一自动守卫）；端到端交互没有自动化覆盖，改完手工走一遍。
 8. 探针/构建/测试命令见 [docs/测试.md](docs/测试.md)；发布与排障见 [DEPLOY.md](DEPLOY.md)。
+   **Android 编译只走 `deploy/gradle.sh`** —— 裸 `./gradlew` 会去下 230MB 发行版（[DEPLOY](DEPLOY.md#android-编译工具链别手动敲-gradle)）。
 
 **Git 与发布**
 9. 动 git 前先看 `status` / `stash list` / `ls-files -u`；有别人的改动先存档，**绝不覆盖**。

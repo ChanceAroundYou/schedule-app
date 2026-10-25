@@ -30,10 +30,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID="$ROOT/app/android"
 
-# Windows 上的 JDK / SDK 路径。换机器要改这里。
+# JDK / SDK 路径。工具链探测统一交给 deploy/gradle.sh（gradle 发行版 / SDK / JDK
+# 三件事都在那儿，别在这里再写死某个用户名下的绝对路径 —— 换机器就炸）。
 export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
-export ANDROID_HOME="${ANDROID_HOME:-/c/Users/小哭包/Android}"
-GRADLE="${GRADLE:-/c/Users/小哭包/gradle-dist/gradle-8.14.3/bin/gradle}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
 AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt.exe"
 SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版 ssh 不读 ~/.ssh/config
@@ -71,7 +71,7 @@ if [ -f "$ROOT/dist/index.html" ] && [ -f "$ANDROID/app/src/main/assets/public/i
   fi
 fi
 cd "$ANDROID"
-"$GRADLE" assembleRelease --quiet
+"$ROOT/deploy/gradle.sh" :app:assembleRelease --quiet
 
 # ⚠️ aapt.exe 是 **Windows 程序**，不认 Git Bash 的 `/c/...` 路径 —— 传绝对路径
 # 进去它当成相对路径找，静默返回空，症状是「读不到 versionCode」。所以下面一律
