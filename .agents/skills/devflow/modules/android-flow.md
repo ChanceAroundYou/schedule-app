@@ -118,6 +118,16 @@ MSYS_NO_PATHCONV=1 "$ADB" install -r "C:/Users/小哭包/coding/schedule-wt/app/
 的顺序问题（本项目 `AppUpdate.java` 已修：标记后移 + 授权回来自动补刀 + 关于页有
 「检查更新」按钮）。再遇到就往这个方向查。
 
+用户说「装成功了，但装完又弹一次『已安装相同版本』」→ **时序问题，不是包坏了**。
+查两处：`onResume` 里 `confirmInstalled` 是否排在 `recoverPending` **之前**；
+`confirmInstalled` 冷启动时 `pendingVc` 是否从 SharedPreferences 捞回来（内存里是 0
+会早退）。外加 `verifyAndInstall` 抢锁后要比 `selfVersionCode >= pendingVersionCode`，
+`recoverPending` 要 `sRecovering` 挡并发。详见 `docs/踩坑-流程.md` 同名条目。
+
+验证口径：`logcat -s AppUpdate:V` 应为「接手烂尾（**仅一条**）→ 已经装上 vc=N，
+不再重装 → 确认已装上、清掉 pending → 已是最新」。看到 `已安装相同版本` 弹窗时
+先 `am force-stop com.oplus.appdetail`：常是 OPPO 安装器旧页面残留在任务栈。
+
 ## 没人会踩的坑（记下来省时间）
 
 - **App 没有 `[data-nav="calendar"]`**：网页端登录后落在「今天」列表页，要先点这个
