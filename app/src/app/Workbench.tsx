@@ -273,10 +273,20 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
               />
             )}
             {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
-                时用户完全不知道为什么内容不变 */}
+                时用户完全不知道为什么内容不变。右上角 ✕ 只清显示不拦下次同步：
+                下一轮还报错会再弹出来，不会把问题藏住 */}
             {!!state.lastError && (
-              <div className="wb-err mx-4 mb-2 px-3 py-1.5 text-[12.5px]">
-                {state.lastError}
+              <div className="wb-err mx-4 mb-2 flex items-center gap-2 px-3 py-1.5 text-[12.5px]">
+                <span className="min-w-0 flex-1">{state.lastError}</span>
+                <button
+                  type="button"
+                  aria-label="关闭同步提示"
+                  data-wb="dismiss-error"
+                  className="shrink-0 rounded-[var(--r-sm)] px-1.5 py-0.5 text-[14px] leading-none opacity-70 hover:opacity-100"
+                  onClick={() => store.setError(null)}
+                >
+                  ✕
+                </button>
               </div>
             )}
           </>
