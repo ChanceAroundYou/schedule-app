@@ -90,6 +90,8 @@ class AppUpdate {
 
     /** 「已经进了安装流程」防重入：广播和轮询可能同时报到，只许一个进 */
     private static volatile boolean sInstallStarted = false;
+    /** 抢 {@link #sInstallStarted} 用的锁，见 verifyAndInstall 开头 */
+    private static final Object INSTALL_LOCK = new Object();
 
     /**
      * 2026-10-23 用户实锤：点「立即更新」后包下到了手机里，安装界面却永远
@@ -197,7 +199,7 @@ class AppUpdate {
                     // 之前是无条件走下载，filename 又是 schedule-<vc>.apk 固定名，
                     // DownloadManager 去重/覆盖行为各家不同，就会出现「下了却装旧包」。
                     if (force && m.versionCode == sPendingVersionCode) {
-                        File pending = new File(c.getFilesDir(), "update/schedule.apk");
+                        File pending = pendingApkFile(c, m.versionCode);
                         if (pending.exists() && pending.length() > 0) {
                             Log.i(TAG, "pending 包还在，直接重装 " + pending.length() + " 字节");
                             sInstallStarted = false;
@@ -514,8 +516,8 @@ class AppUpdate {
         // st <= 0（id 查不到，多半被系统清了任务）：缓存被清过一条下载记录就没了，
         // 但**内部那份安装包可能还在** —— 直接装它，别让用户白下一次。
         if (st <= 0) {
-            File dst = new File(c.getFilesDir(), "update/schedule.apk");
             sPendingVersionCode = pendingVc(c);
+            File dst = pendingApkFile(c, sPendingVersionCode);
             sPendingSha256 = pendingSha(c);
             if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
                 Log.i(TAG, "下载记录没了，但内部包还在（" + dst.length() + " 字节），直接装");
@@ -578,6 +580,36 @@ class AppUpdate {
      * 没记 sha 的老记录一律放过：宁可让安装器去报签名/版本不对，也不要
      * 因为缺个校验值就把一份完好的包丢掉（丢了的代价是重下 3.5MB 还不一定成功）。
      */
+    /**
+     * 内部那一份安装包的路径。**文件名必须带版本号**。
+     *
+     * ⚠️ 2026-10-26 实锤的坑：FileProvider 给出的 URI 是
+     * `…/fileprovider/app_update/<文件名>`，文件名固定成 `schedule.apk` 时
+     * **每次升级都是同一个 URI**。OPPO 的安装器（appdetail）按 URI 缓存解析结果 ——
+     * 装 2.4.2 的时候它弹「已安装更高版本「日程清单(2.4.1)」」，因为它读到的
+     * 还是上一次那份包的解析缓存，于是**死活不让装**。换文件名 = 换 URI = 不吃旧缓存。
+     */
+    private static File pendingApkFile(Context c, int versionCode) {
+        return new File(c.getFilesDir(), "update/schedule-" + versionCode + ".apk");
+    }
+
+    /** 清掉内部目录里其它版本的包，别每升一次就白留 3.5MB（也顺手清掉旧的固定名那份） */
+    private static void sweepOldApks(Context c, File keep) {
+        File[] fs = new File(c.getFilesDir(), "update").listFiles();
+        if (fs == null) {
+            return;
+        }
+        for (File f : fs) {
+            if (keep != null && f.getAbsolutePath().equals(keep.getAbsolutePath())) {
+                continue;
+            }
+            if (f.getName().endsWith(".apk")) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        }
+    }
+
     private static boolean matchesPendingSha(File f) {
         String want = sPendingSha256;
         if (want == null || want.isEmpty()) {
@@ -613,11 +645,16 @@ class AppUpdate {
      *  三种来源（清单广播 / 前台接收器 / 轮询）都可能叫它，{@code sInstallStarted} 挡重入。 */
     private static void verifyAndInstall(Context c) {
         c = c.getApplicationContext();
-        if (sInstallStarted) {
-            Log.i(TAG, "安装流程已在进行，跳过重入");
-            return;
+        /* 必须**原子地**抢这个标记：冷启动时 checkOnLaunch 和 onResume 会各起一个
+           线程调进来，先 check 后 set 的写法两边都能通过 → 同一份包唤起两次安装器
+           （2026-10-26 真机上抓到过两条「已唤起系统安装器」）。 */
+        synchronized (INSTALL_LOCK) {
+            if (sInstallStarted) {
+                Log.i(TAG, "安装流程已在进行，跳过重入");
+                return;
+            }
+            sInstallStarted = true;
         }
-        sInstallStarted = true;
         File tmp = new File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
                 "schedule-" + sPendingVersionCode + ".apk");
         /* 内部目录那一份：**拷完外部那份就删掉了**（见下面拷贝那段）。
@@ -626,7 +663,7 @@ class AppUpdate {
            把 pending 记录和内部那份好包一起扔掉。
            2026-10-26 用户实锤：连着几次更新都卡死在这儿，而且 cooldown 已经被
            标过，24 小时内连提示都不再弹，看起来就是「App 更新功能坏了」。 */
-        File dst = new File(c.getFilesDir(), "update/schedule.apk");
+        File dst = pendingApkFile(c, sPendingVersionCode);
         if (!tmp.exists()) {
             if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
                 Log.i(TAG, "外部包已删、内部那份还在（" + dst.length() + " 字节），直接重装");
@@ -654,6 +691,7 @@ class AppUpdate {
             return;
         }
         // 拷进内部存储再装 —— 见类注释第 2 条
+        sweepOldApks(c, dst);
         try {
             File dir = dst.getParentFile();
             if (dir != null && !dir.exists() && !dir.mkdirs()) {
