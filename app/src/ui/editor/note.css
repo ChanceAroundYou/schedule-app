@@ -17,16 +17,26 @@
 .note-edit:focus-within { border-color: var(--primary); background: var(--panel); }
 
 /* 书写区。**它自己滚**，不让整个抽屉跟着长 ——
-   抽屉要滚的话，滚到一半的时候工具条会跑出可视区。 */
+   抽屉要滚的话，滚到一半的时候工具条会跑出可视区。
+
+   高度（2026-10-26 加过一次）：320px → **420px**。备注是拿来写会议纪要的，
+   320px 大概只够三五行，一屏里剩下的空间全空着。 */
 .note-edit-surface {
-  min-height: 320px;
-  max-height: 56vh;
+  min-height: 420px;
+  max-height: 62vh;
   overflow-y: auto;
   padding: 10px 12px;
   cursor: text;
+  /* 让可编辑区**撑满整个框**（下面那三行）。不撑的话 contenteditable 只有
+     一两行高，下面那片全是容器的留白 —— 点上去落在容器上，编辑器拿不到
+     焦点，表现就是「只有第一行能点进去」。 */
+  display: flex;
 }
+.note-edit-surface > div { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 
-.note-prose { outline: none; font-size: 14px; line-height: 1.75; color: var(--text); }
+/* 正文自己也要撑满：这既是「整个区域都能点」的关键，
+   也保证空文档时占位提示仍在左上角（文字本身还是贴顶的）。 */
+.note-prose { flex: 1 1 auto; outline: none; font-size: 14px; line-height: 1.75; color: var(--text); }
 .note-prose > *:first-child { margin-top: 0; }
 .note-prose > *:last-child { margin-bottom: 0; }
 .note-prose p { margin: 0 0 .55em; }
@@ -179,9 +189,10 @@
   border: none; background: rgba(255, 255, 255, .16); color: #fff;
 }
 
-/* 窄屏：书写区矮一点，让一整行字段 + 工具条还在同一屏里 */
+/* 窄屏：书写区仍然要占大头。手机上整屏才 800 来 dp，抽屉留 12% 做「能下滑
+   关掉」的暗示，字段那三行占掉一截，剩下全给正文 —— 不然写两句就得滚。 */
 @media (max-width: 640px) {
-  .note-edit-surface { min-height: 38dvh; max-height: 44dvh; padding: 9px 10px; }
+  .note-edit-surface { min-height: 46dvh; max-height: 54dvh; padding: 9px 10px; }
   .note-prose { font-size: 14.5px; }
   .note-prose img { max-height: 200px; }
 }

@@ -29,8 +29,13 @@ function useKeyboard(deps: {
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      /* 「正在打字」的三类容器都要认，**contenteditable 尤其不能漏**：
+         详细内容是富文本编辑器（2026-10-26 起是 contenteditable），漏了它
+         就等于「在备注里敲 d 会跳到日程页、敲 1 会切日视图」，而且用户
+         完全想不到是快捷键干的。 */
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable === true;
       if (e.key === 'Escape') {
         // 逐层关闭，一次只关一层：更多抽屉 → 搜索浮条 → 找日期面板 → 抽屉。
         // 一次全关会让用户不知道自己刚关掉了什么
@@ -71,12 +76,11 @@ function useKeyboard(deps: {
         return;
       }
       if (e.key === 't' || e.key === 'T') { e.preventDefault(); nav('today'); return; }
-      // 1/2/3 切日 / 周 / 月 —— **要连带切到日程页**，否则在今天 / 待办箱这些
-      // 页面上按了毫无反应（视图切了，但那些页面根本不渲染视图切换按钮）
-      if (e.key === '1' || e.key === '2' || e.key === '3') {
-        e.preventDefault();
-        store.setUi({ nav: 'calendar', view: (['day', 'week', 'month'] as const)[+e.key - 1] });
-      }
+      /* 1/2/3 切日/周/月这条**整个删掉了**（2026-10-26 用户要求）。
+         它只在「焦点不在输入框里」时才生效，本身没写错 —— 但它是**裸数字键**：
+         用户手放在数字键上打的是内容，不是想切视图。真留着就必须在每个
+         可编辑区里逐个挡，挡漏一个就是「打不出 1」。
+         要切视图去点顶栏那四档，那是看得见的东西。 */
     };
     document.addEventListener('keydown', on);
     return () => document.removeEventListener('keydown', on);

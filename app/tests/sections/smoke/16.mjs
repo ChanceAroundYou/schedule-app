@@ -248,6 +248,43 @@ export async function run(ctx) {
   ok(body.bold.includes('重点'),
     '点完「粗体」还能接着打字，且字是粗的，实际「' + body.bold + '」');
 
+  /* 整个框都能点进正文 + 数字键不再透传成「切视图」（2026-10-26）
+   *
+   * 前者原来只有第一行能点：contenteditable 只有一行高，下面那片是外层容器
+   * 的留白，点了落在容器上、编辑器拿不到焦点。
+   * 后者是全局快捷键 1/2/3 切日/周/月，它判断「是否在打字」时漏了
+   * contenteditable —— 于是备注里敲 1 会当场跳视图。 */
+  const box = await evalJs(page, `return {
+    surface: document.querySelector('.drawer.open .note-edit-surface').getBoundingClientRect().height,
+    editable: document.querySelector('.drawer.open .note-prose').getBoundingClientRect().height,
+  };`);
+  ok(box.editable >= box.surface - 30,
+    '可编辑区撑满整个书写框（不是只有第一行能点），实际 正文 ' + Math.round(box.editable) + ' / 框 ' + Math.round(box.surface));
+
+  await clickEl(page, `document.querySelector('.drawer.open .note-edit-surface')`);
+  const VIEW = `((document.querySelector('[data-view].on')||{}).dataset||{}).view || ''`;
+  const focused = await evalJs(page, `return {
+    onEditor: document.activeElement === document.querySelector('.drawer.open .note-prose'),
+    view: ${VIEW},
+  };`);
+  ok(focused.onEditor, '点书写框的空白处，光标进得去正文');
+
+  /* 真按键：CDP 的 dispatchKeyEvent 走浏览器自己的默认行为，
+     和「用户手放在数字键上」是同一条路。
+     判据取三样：视图没变、抽屉没被跳页带走、焦点还在正文里 ——
+     旧行为是「按 1 当场切到日视图」，抽屉会被这一跳带走，三样至少坏一样。 */
+  const before = focused.view;
+  await key(page, '1', 'Digit1', 49);
+  await key(page, '2', 'Digit2', 50);
+  const after = await evalJs(page, `return {
+    view: ${VIEW},
+    drawer: !!document.querySelector('.drawer.open'),
+    focus: document.activeElement === document.querySelector('.drawer.open .note-prose'),
+  };`);
+  ok(after.view === before && after.drawer && after.focus,
+    '在备注里敲 1 / 2 不切视图、不跳页、焦点仍在正文，实际 '
+    + JSON.stringify({ 视图: before + '→' + after.view, 抽屉还在: after.drawer, 焦点: after.focus }));
+
   // 关掉再打开：内容要真落了库（这一条同时覆盖 400ms 防抖 + 卸载时 flush）
   // 用 Escape 关：标题栏那个「完成」图标在 32px 圆钮里，探针的合成点击
   // 落到它身上不会走完整条指针链（真手指可以），Escape 是同一份 onClose。
