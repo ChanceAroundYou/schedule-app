@@ -10,6 +10,7 @@ import { useOutsideClose } from '../hooks.ts';
 import { useOverlayScrollbar } from '../scroll.ts';
 import { Btn } from '../kit.tsx';
 import { Pulse } from './Pulse.tsx';
+import { CountersCard } from './CountersCard.tsx';
 import { badge, DEFAULT_ORDER, navDef } from './nav.tsx';
 
 function Sidebar({ state, onNav }: {
@@ -87,6 +88,8 @@ function Sidebar({ state, onNav }: {
       <nav className={'nav ' + "nav-bottom"} id="navBottom">{bottoms.map((d) => item(d.key))}</nav>
 
       <Pulse state={state} />
+      {/* 计数器：桌面与窄屏「更多」两处渲染同一个组件 */}
+      <CountersCard />
 
       <div className="sidebar-footer">
         {/* 设置不参加排序，入口固定在这儿（和窄屏「更多」里那格是同一件事）。

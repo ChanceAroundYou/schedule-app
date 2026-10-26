@@ -33,7 +33,13 @@ function migrateFrom(from) {
   _db.exec('BEGIN IMMEDIATE');
   try {
     for (let v = from; v < SCHEMA_VERSION; v += 1) {
-      for (const sql of MIGRATIONS[v]) _db.exec(sql);
+      for (const sql of MIGRATIONS[v]) {
+        // 有的步骤必须是函数而不是 SQL 字符串 —— 例如 SQLite 缺少
+        // `ADD COLUMN IF NOT EXISTS`，要先查 PRAGMA 才知道该不该 ALTER。
+        // 见 schema.js 的 COUNTER_CREDIT_COLUMNS。
+        if (typeof sql === 'function') sql(_db);
+        else _db.exec(sql);
+      }
     }
     _db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     _db.exec('COMMIT');

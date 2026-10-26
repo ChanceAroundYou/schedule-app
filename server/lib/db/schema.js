@@ -7,7 +7,7 @@
  */
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /* --------------------------------------------------------------- v5 新增 */
 
@@ -29,9 +29,39 @@ const COUNTER_TABLES = [
      id         TEXT    NOT NULL,
      name       TEXT    NOT NULL,
      value      INTEGER NOT NULL DEFAULT 0,
+     -- 每天自动加多少（v6）。0 = 关闭自动增加。
+     daily_increment INTEGER NOT NULL DEFAULT 6,
+     -- 上一次「结算」到哪一天（YYYY-MM-DD，北京时间）。NULL = 还没结算过，
+     -- 第一次读到它时才设为当天并且**不加**（从那天开始算，不追历史）。
+     last_credit_date TEXT,
      updated_at INTEGER NOT NULL,
      PRIMARY KEY (user_id, id)
    )`,
+];
+
+/* --------------------------------------------------------------- v6 新增 */
+
+/** SQLite 没有 `ADD COLUMN IF NOT EXISTS`，只能先问 PRAGMA 再决定加不加。 */
+function addColumnIfMissing(handle, table, column, decl) {
+  const cols = handle.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) handle.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+/**
+ * v5 → v6：计数器加「每日增量」和「上次结算日」两列。
+ *
+ * ⚠️ **为什么这两条不是 SQL 字符串**：v4→v5 那步建 counters 用的就是上面
+ * COUNTER_TABLES，而它已经是**最新结构**（新建库和迁移共用一份，否则两边会悄悄
+ * 分叉）。于是一个 v2 老库升级时会先按最新结构建出 counters，紧接着 v6 再
+ * `ALTER ADD` 同样的列 → `duplicate column name`，整个迁移回滚，服务起不来。
+ * 用函数先查 PRAGMA 就能同时伺候「刚建好的新表」和「真正的 v5 老表」。
+ *
+ * 两列都可空 / 有默认值，老数据不用回填：last_credit_date 留空表示「还没结算过」，
+ * 第一次读到它时设为当天并且**不加**（从升级那天起算，不追历史）。
+ */
+const COUNTER_CREDIT_COLUMNS = [
+  (handle) => addColumnIfMissing(handle, 'counters', 'daily_increment', 'INTEGER NOT NULL DEFAULT 6'),
+  (handle) => addColumnIfMissing(handle, 'counters', 'last_credit_date', 'TEXT'),
 ];
 
 /* --------------------------------------------------------------- v3 新增 */
@@ -136,6 +166,9 @@ const MIGRATIONS = {
   ],
   // v4 → v5：桌面计数器。只加一张新表，不动任何已有表。
   4: COUNTER_TABLES,
+  // v5 → v6：计数器「每天自动加」。见 COUNTER_CREDIT_COLUMNS 上那段注释
+  // —— 为什么这两列不是普通 SQL 字符串。
+  5: COUNTER_CREDIT_COLUMNS,
 };
 
 const SCHEMA = `

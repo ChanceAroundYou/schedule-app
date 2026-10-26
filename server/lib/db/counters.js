@@ -31,6 +31,20 @@ const DEFAULTS = [
 const MIN_VALUE = 0;
 const MAX_VALUE = 999999;
 
+/** 每日增量的合理区间。0 = 关掉自动增加；上限只为挡住手滑传个一万。 */
+const MIN_DAILY = 0;
+const MAX_DAILY = 1000;
+
+/**
+ * 「今天」按**北京时间**算，不看服务器所在时区（线上机器是 UTC，
+ * 直接用本地日期会在早上 8 点才换日，用户看到的「过 0 点没加 6」就是这个）。
+ * 中国没有夏令时，固定 +08:00 即可。
+ */
+function todayStr(ts) {
+  const t = ts == null ? Date.now() : ts;
+  return new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 const isDefaultId = (id) => DEFAULTS.some((d) => d.id === id);
 
 /** 确保两个默认计数器存在。INSERT OR IGNORE：已存在就不动（绝不覆盖用户的值）。 */
@@ -44,28 +58,91 @@ function ensureDefaults(userId) {
   }
 }
 
+/**
+ * 把「每天自动加」结算到当天。**所有读入口都必须先过这里**，
+ * 桌面组件、网页卡片、bootstrap 共用同一套数字 —— 有一处绕过就会出现
+ * 「两个地方数字不一样」。
+ *
+ * 两条语句，都是**一条 SQL 内完成的原子操作**，不需要显式事务：
+ *   1. last_credit_date 为空的行 → 设成今天，**不加钱**（从今天起算）。
+ *   2. last_credit_date 早于今天的行 → 补 `天数 × 每日增量`，并把日期推到今天。
+ *
+ * 「按实际天数补」而不是「只加一次」：服务器停三天、手机三天没开，
+ * 回来一次补 18。日期差在 SQL 里用 julianday 算，两条日期串都是
+ * `YYYY-MM-DD`（同为 .5 的小数部分），相减后截断就是整天数，
+ * 不受时区 / 夏令时影响。
+ *
+ * 并发安全：两台设备同时打开，第二条 UPDATE 的 `AND last_credit_date < ?`
+ * 由数据库串行化保证只有一条生效（后到的那条已经找不到旧日期）。
+ */
+function creditDaily(userId, now) {
+  const today = todayStr(now);
+  const uid = String(userId);
+
+  run(
+    'UPDATE counters SET last_credit_date = ? WHERE user_id = ? AND last_credit_date IS NULL',
+    today, uid,
+  );
+
+  run(
+    `UPDATE counters
+        SET value = MAX(?, MIN(?,
+              value + daily_increment *
+                      (CAST(julianday(?) AS INTEGER) - CAST(julianday(last_credit_date) AS INTEGER)))),
+            last_credit_date = ?,
+            updated_at = ?
+      WHERE user_id = ?
+        AND last_credit_date IS NOT NULL
+        AND last_credit_date < ?`,
+    MIN_VALUE, MAX_VALUE, today, today, now == null ? Date.now() : now, uid, today,
+  );
+}
+
 /** 我全部的计数器，按默认顺序（naonao 在上、kutai 在下）。 */
 function listCounters(userId) {
   ensureDefaults(userId);
-  const rows = all('SELECT id, name, value, updated_at FROM counters WHERE user_id = ?', String(userId));
+  creditDaily(userId);
+  const rows = all(
+    'SELECT id, name, value, daily_increment, last_credit_date FROM counters WHERE user_id = ?',
+    String(userId),
+  );
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const shape = (r) => ({
+    id: r.id,
+    name: r.name,
+    value: Number(r.value),
+    dailyIncrement: Number(r.daily_increment),
+    lastCreditDate: r.last_credit_date || null,
+  });
   const out = [];
   // 先按默认顺序，再补上以后可能新增的自定义计数器（按名字排）
   for (const d of DEFAULTS) {
     const r = byId.get(d.id);
-    if (r) out.push({ id: r.id, name: r.name, value: Number(r.value) });
+    if (r) out.push(shape(r));
     byId.delete(d.id);
   }
   for (const r of [...byId.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
-    out.push({ id: r.id, name: r.name, value: Number(r.value) });
+    out.push(shape(r));
   }
   return out;
 }
 
 function getCounter(userId, id) {
   ensureDefaults(userId);
-  const r = get('SELECT id, name, value FROM counters WHERE user_id = ? AND id = ?', String(userId), String(id));
-  return r ? { id: r.id, name: r.name, value: Number(r.value) } : null;
+  creditDaily(userId);
+  const r = get(
+    'SELECT id, name, value, daily_increment, last_credit_date FROM counters WHERE user_id = ? AND id = ?',
+    String(userId), String(id),
+  );
+  return r
+    ? {
+      id: r.id,
+      name: r.name,
+      value: Number(r.value),
+      dailyIncrement: Number(r.daily_increment),
+      lastCreditDate: r.last_credit_date || null,
+    }
+    : null;
 }
 
 /**
@@ -121,7 +198,25 @@ function renameCounter(userId, id, name) {
   return getCounter(userId, id);
 }
 
+/**
+ * 改「每天加多少」。**不动 last_credit_date** —— 今天已经结算过了，
+ * 改了新值不会在今天重复补一次；下一次换日才按新值算。0 = 关掉自动增加。
+ */
+function setDailyIncrement(userId, id, n) {
+  ensureDefaults(userId);
+  const cur = getCounter(userId, id);
+  if (!cur) return null;
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return cur;
+  run(
+    'UPDATE counters SET daily_increment = MAX(?, MIN(?, ?)), updated_at = ? WHERE user_id = ? AND id = ?',
+    MIN_DAILY, MAX_DAILY, v, Date.now(), String(userId), String(id),
+  );
+  return getCounter(userId, id);
+}
+
 module.exports = {
-  DEFAULTS, MIN_VALUE, MAX_VALUE, isDefaultId,
-  ensureDefaults, listCounters, getCounter, addCounter, setCounter, renameCounter,
+  DEFAULTS, MIN_VALUE, MAX_VALUE, MIN_DAILY, MAX_DAILY, isDefaultId, todayStr,
+  ensureDefaults, creditDaily, listCounters, getCounter,
+  addCounter, setCounter, renameCounter, setDailyIncrement,
 };

@@ -95,6 +95,67 @@
 .sp-foot { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
 .sp-over { color: var(--danger); }
 
+/* 计数器（CountersCard.tsx）。和上面那块进度卡同一套外框语言：
+   panel-2 底 + 一像素描边 + r-md 圆角，两块并排在侧栏底部才像一家人。
+
+   数值本身是**按钮**（点开直接手输），所以它得看起来像「一块能点的数字」而不是
+   正文 —— 加号的实心圆才是这一块里唯一的重色，主次一眼分得开。 */
+.side-counters { margin: 10px 0 2px; display: flex; flex-direction: column; gap: 8px; }
+.sc-item {
+  padding: 9px 11px 7px;
+  background: var(--panel-2); border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+}
+.sc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sc-name {
+  min-width: 0; padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font-size: 11.5px; color: var(--text-2); letter-spacing: .3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sc-name:hover { color: var(--text); }
+.sc-zero {
+  flex: 0 0 auto; padding: 1px 3px; border: 0; background: none; cursor: pointer;
+  font-size: 10.5px; color: var(--text-3); border-radius: var(--r-sm);
+}
+.sc-zero:hover { color: var(--danger); background: var(--danger-soft); }
+
+.sc-row { display: flex; align-items: center; gap: 8px; margin: 5px 0 4px; }
+.sc-btn {
+  flex: 0 0 auto; width: 27px; height: 27px; display: grid; place-items: center;
+  border: var(--border-w) solid var(--border); border-radius: 50%;
+  background: var(--panel); color: var(--text-2); cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s;
+}
+.sc-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
+/* 加号是重色（主动作），减号只是描边（次要）—— 和桌面小组件那套主次一致 */
+.sc-plus { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.sc-plus:hover { background: var(--primary); border-color: var(--primary); color: var(--on-primary); filter: brightness(1.08); }
+
+.sc-value, .sc-value-input {
+  flex: 1; min-width: 0; padding: 0 2px; border: 0; background: none; cursor: pointer;
+  font-size: 20px; font-weight: 650; line-height: 1.1; color: var(--text);
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.sc-value:hover { color: var(--primary); }
+.sc-value-input {
+  cursor: text; text-align: center; border-radius: var(--r-sm);
+  background: var(--panel-3); outline: 2px solid var(--primary); outline-offset: 0;
+}
+.sc-name-input, .sc-daily-input {
+  min-width: 0; padding: 1px 4px; border: 0; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text); font-size: 11.5px;
+  outline: 2px solid var(--primary);
+}
+.sc-name-input { flex: 1; }
+
+.sc-foot { display: flex; align-items: center; gap: 6px; }
+.sc-daily {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font-size: 10.5px; color: var(--text-3); letter-spacing: .2px;
+}
+.sc-daily:hover { color: var(--primary); }
+
+.sc-err { font-size: 10.5px; color: var(--danger); padding: 0 2px; line-height: 1.5; }
+
 /* `position: relative` 是给 `.side-more-pop` 当包含块用的（浮层要横跨整行，
    包含块必须是这一行，不能是「更多」那个钮）—— 见 `.side-more-pop` 的注释。 */
 .sidebar-footer { position: relative; padding-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }

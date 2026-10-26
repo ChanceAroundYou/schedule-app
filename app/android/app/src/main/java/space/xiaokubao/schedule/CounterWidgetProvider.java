@@ -1,5 +1,6 @@
 package space.xiaokubao.schedule;
 
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
@@ -18,6 +19,7 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.widget.RemoteViews;
 
+import java.util.Calendar;
 import java.util.List;
 
 /**
@@ -62,6 +64,24 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     /** 点 − / + ：带 id 和 delta（±1），走广播，不打开任何界面 */
     static final String ACTION_STEP = "space.xiaokubao.schedule.CTR_STEP";
 
+    /**
+     * 每天 0 点后自动刷新一次（2026-10-26 加）。
+     *
+     * 「每天 +6」是**服务端在读到计数器时结算的**，所以客户端这边不需要算日期、
+     * 也不需要判断「过了几天」—— 只要在换日之后去读一次，数字就是新的。
+     * 这里做的全部事情就是「0 点过后催一次读取」。
+     *
+     * 用 setAndAllowWhileIdle 而不是精确闹钟：精确闹钟在 Android 12+ 要单独申请
+     * SCHEDULE_EXACT_ALARM 权限，为了「晚几分钟变数字」去要那个权限不值。
+     * 而且**晚到不影响正确性** —— 结算按日期差算，哪怕 0 点过 40 分钟才跑，
+     * 补的还是整整一天的量。
+     */
+    static final String ACTION_DAILY = "space.xiaokubao.schedule.CTR_DAILY";
+
+    /** 换日之后等 5 分钟再刷新：给系统一点时间把日期真的翻过去 */
+    private static final int DAILY_HOUR = 0;
+    private static final int DAILY_MINUTE = 5;
+
     static final String EXTRA_ID = "id";
     static final String EXTRA_DELTA = "delta";
 
@@ -77,6 +97,8 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         // 组件被系统重新 inflate（开机 / 换主题 / 从缓存恢复）时顺手对齐一次服务端：
         // 先把离线攒的发出去，再用服务端的值校准显示。
         resync(c);
+        // 闹钟不会跨开机保留，重建组件时补排一次（幂等，FLAG_UPDATE_CURRENT 覆盖）
+        scheduleDaily(c);
     }
 
     @Override
@@ -94,18 +116,29 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     @Override
     public void onEnabled(Context c) {
         super.onEnabled(c);
+        scheduleDaily(c);
         Log.i(TAG, "CounterWidgetProvider enabled (first instance added)");
     }
 
     @Override
     public void onDisabled(Context c) {
         super.onDisabled(c);
+        cancelDaily(c);
         Log.i(TAG, "CounterWidgetProvider disabled (last instance removed)");
     }
 
     @Override
     public void onReceive(Context c, Intent intent) {
         super.onReceive(c, intent);
+
+        // 每天换日：拉一次就是新的数（服务端读的时候就结算了）
+        if (ACTION_DAILY.equals(intent.getAction())) {
+            Log.i(TAG, "daily refresh");
+            resync(c);
+            scheduleDaily(c);   // 一次性闹钟，自己续明天的
+            return;
+        }
+
         if (!ACTION_STEP.equals(intent.getAction())) return;
 
         String id = intent.getStringExtra(EXTRA_ID);
@@ -456,6 +489,53 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     }
 
     /** 先补发离线改动，再用服务端的值校准（顺序不能反，反了本地新改动会被旧值盖掉） */
+    /**
+     * 排下一次「换日刷新」。
+     *
+     * 用的是**一次性闹钟 + 每次触发时续一条**，不是 setRepeating ——
+     * setRepeating 在 Doze 下会被推迟到不可预期，而且重复闹钟的间隔
+     * 是按 24 小时算的，跨夏令时/手动改时间之后就永久偏了。
+     * 每次 onUpdate / 每天触发时都重排一次，等于自我纠偏。
+     */
+    static void scheduleDaily(Context c) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextDailyAt(), dailyIntent(c));
+        } catch (Exception e) {
+            Log.w(TAG, "排每日刷新失败: " + e);
+        }
+    }
+
+    private static void cancelDaily(Context c) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.cancel(dailyIntent(c));
+        } catch (Exception e) {
+            Log.w(TAG, "取消每日刷新失败: " + e);
+        }
+    }
+
+    private static long nextDailyAt() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, DAILY_HOUR);
+        cal.set(Calendar.MINUTE, DAILY_MINUTE);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long t = cal.getTimeInMillis();
+        if (t <= System.currentTimeMillis()) {
+            cal.add(Calendar.DAY_OF_YEAR, 1);
+            t = cal.getTimeInMillis();
+        }
+        return t;
+    }
+
+    private static PendingIntent dailyIntent(Context c) {
+        Intent i = new Intent(c, CounterWidgetProvider.class).setAction(ACTION_DAILY);
+        return PendingIntent.getBroadcast(c, ACTION_DAILY.hashCode(), i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
     private static void resync(final Context c) {
         final Context app = c.getApplicationContext();
         CounterStore.flush(app, new Runnable() {

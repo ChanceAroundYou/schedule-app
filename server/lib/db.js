@@ -135,6 +135,8 @@ module.exports = {
   addCounter: counters.addCounter,
   setCounter: counters.setCounter,
   renameCounter: counters.renameCounter,
+  setDailyIncrement: counters.setDailyIncrement,
+  creditDailyCounters: counters.creditDaily,
   COUNTER_DEFAULTS: counters.DEFAULTS,
   COUNTER_MIN: counters.MIN_VALUE,
   COUNTER_MAX: counters.MAX_VALUE,

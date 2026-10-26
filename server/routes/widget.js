@@ -174,9 +174,11 @@ module.exports = {
   }),
 
   /**
-   * 桌面计数器写入口。两种形态，一条接口：
-   *   { id, delta }  在当前值上加减（点 + / −，可一次 ±100）
-   *   { id, value }  直接设成某个数（点数字手输 300）
+   * 计数器写入口。四种形态，一条接口（可以组合，但至少要给一个）：
+   *   { id, delta }           在当前值上加减（点 + / −，可一次 ±100）
+   *   { id, value }           直接设成某个数（点数字手输 300 / 归零传 0）
+   *   { id, name }            改名（id 不动 —— 桌面组件按 id 找记录）
+   *   { id, dailyIncrement }  每天自动加多少（0 = 关掉）
    *
    * **为什么不走 /api/widget/op 的 applyOps**：那条通道是逐字段整值替换，
    * 用它在服务端算好再写会把并发 +1 丢掉（两条请求都读到 5，都写 6）。
@@ -190,14 +192,30 @@ module.exports = {
 
     const delta = typeof body.delta === 'number' && Number.isFinite(body.delta) ? body.delta : null;
     const value = typeof body.value === 'number' && Number.isFinite(body.value) ? body.value : null;
-    if (delta == null && value == null) {
-      return { status: 400, body: { error: 'delta 和 value 至少给一个' } };
+    const name = typeof body.name === 'string' ? body.name : null;
+    const daily = typeof body.dailyIncrement === 'number' && Number.isFinite(body.dailyIncrement)
+      ? body.dailyIncrement : null;
+
+    if (delta == null && value == null && name == null && daily == null) {
+      return { status: 400, body: { error: 'delta / value / name / dailyIncrement 至少给一个' } };
     }
 
-    // 一次最多一万，挡掉手滑传个 1e9 把数字顶到上限
-    const out = delta != null
-      ? db.addCounter(me.user.id, id, Math.max(-10000, Math.min(10000, Math.round(delta))))
-      : db.setCounter(me.user.id, id, value);
+    // 顺序有意义：先改名和每日增量（都不碰 value），再做加减 / 设值。
+    // 反过来的话「改名 + 设值」会多跑一次读，而且改名失败时值已经变了。
+    if (name != null && !db.renameCounter(me.user.id, id, name)) {
+      return { status: 400, body: { error: '名字不能为空' } };
+    }
+    if (daily != null && !db.setDailyIncrement(me.user.id, id, daily)) {
+      return { status: 404, body: { error: '没有这个计数器' } };
+    }
+
+    let out = db.getCounter(me.user.id, id);
+    if (delta != null) {
+      // 一次最多一万，挡掉手滑传个 1e9 把数字顶到上限
+      out = db.addCounter(me.user.id, id, Math.max(-10000, Math.min(10000, Math.round(delta))));
+    } else if (value != null) {
+      out = db.setCounter(me.user.id, id, value);
+    }
 
     if (!out) return { status: 404, body: { error: '没有这个计数器' } };
     return { status: 200, body: { counter: out, counters: db.listCounters(me.user.id) } };

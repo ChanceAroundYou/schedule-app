@@ -1133,3 +1133,72 @@ test('计数器：默认两个、原子自增、手输改值、夹在 0..上限'
   const theirs = await api('GET', '/api/widget/bootstrap', { token: other.token });
   assert.strictEqual(theirs.body.counters.find((c) => c.id === 'naonao').value, 0, '不能串号');
 });
+
+/**
+ * 每天自动 +6（v6）。这块的坑全在「补几天」和「补几次」上：
+ *   · 服务器是 UTC，用本地日期会在早上 8 点才换日 → 必须按北京时间算；
+ *   · 两台设备同时打开 → 只能补一次，不能各补一次；
+ *   · 同一天反复刷新 → 不能每刷新一次就加 6。
+ * 直接改库里的 last_credit_date 来模拟「隔了 N 天」，不靠等真实时间。
+ */
+test('计数器：每天 0 点按天数补、同一天只补一次、可关掉', async () => {
+  // 复用上一个用例建的账号：注册有 IP 限流（一小时），测试里不能一路新注册
+  const login = await api('POST', '/api/auth/login', {
+    body: { name: '计数器隔离', password: 'ctr-iso-2026' },
+  });
+  assert.strictEqual(login.status, 200, JSON.stringify(login.body));
+  const me = await api('GET', '/api/me', { token: login.body.token });
+  const u = { token: login.body.token, userId: me.body.user.id };
+  const t = () => api('GET', '/api/widget/bootstrap', { token: u.token });
+  const val = async (id) => (await t()).body.counters.find((c) => c.id === id).value;
+
+  // 新账号：从今天起算，不追历史
+  const boot = await t();
+  assert.strictEqual(boot.body.counters[0].value, 0, '第一次读不该凭空多出 6');
+  assert.strictEqual(boot.body.counters[0].dailyIncrement, 6, '默认每天 6');
+
+  // 模拟「三天没读」：把上次结算日往前拨 3 天
+  const back = (n) => new Date(Date.now() + 8 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  db.run('UPDATE counters SET last_credit_date = ? WHERE user_id = ? AND id = ?', back(3), u.userId, 'naonao');
+  assert.strictEqual(await val('naonao'), 18, '隔 3 天补 18（不是只补 6）');
+
+  // 同一天再读两次：不能每读一次就加 6
+  assert.strictEqual(await val('naonao'), 18);
+  assert.strictEqual(await val('naonao'), 18);
+
+  // 手动设值不破坏「今天已结算」：设成 5 之后再看还是 5
+  await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'naonao', value: 5 } });
+  assert.strictEqual(await val('naonao'), 5, '手输之后当天不该被再补一次');
+
+  // 归零同样是当天生效，第二天照样加
+  await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'naonao', value: 0 } });
+  db.run('UPDATE counters SET last_credit_date = ? WHERE user_id = ? AND id = ?', back(1), u.userId, 'naonao');
+  assert.strictEqual(await val('naonao'), 6, '归零之后第二天照样 +6');
+
+  // 关掉自动增加 → 隔几天都不动
+  const off = await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'kutai', dailyIncrement: 0 } });
+  assert.strictEqual(off.body.counter.dailyIncrement, 0);
+  db.run('UPDATE counters SET last_credit_date = ? WHERE user_id = ? AND id = ?', back(5), u.userId, 'kutai');
+  assert.strictEqual(await val('kutai'), 0, '每日增量为 0 就不该补');
+
+  // 增量可以改成别的值（比如 8）
+  await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'kutai', dailyIncrement: 8 } });
+  db.run('UPDATE counters SET last_credit_date = ? WHERE user_id = ? AND id = ?', back(2), u.userId, 'kutai');
+  assert.strictEqual(await val('kutai'), 16, '改成 8 之后隔 2 天 = 16');
+
+  // 并发读只补一次：两个请求同时发现「欠了 2 天」
+  db.run('UPDATE counters SET last_credit_date = ?, value = 0 WHERE user_id = ? AND id = ?', back(2), u.userId, 'naonao');
+  await Promise.all([t(), t(), t(), t()]);
+  assert.strictEqual(await val('naonao'), 12, '4 个并发读只能补一次');
+
+  // 改名 + id 不变（桌面组件按 id 找记录，换 id 等于数字归零）
+  const rn = await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'naonao', name: '喝水' } });
+  assert.strictEqual(rn.body.counter.id, 'naonao');
+  assert.strictEqual(rn.body.counter.name, '喝水');
+  assert.strictEqual(rn.body.counter.value, 12, '改名不动数字');
+
+  // 空白名要挡住（否则卡片上是个空格，用户以为坏了）
+  assert.strictEqual(
+    (await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'naonao', name: '   ' } })).status, 400,
+  );
+});
