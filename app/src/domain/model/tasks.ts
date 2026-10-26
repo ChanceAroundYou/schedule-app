@@ -5,6 +5,7 @@
 import type { LocalState, Task } from '../types/types.ts';
 import * as D from '../date.ts';
 import { isGone, isTrashed } from './visibility.ts';
+import { plain } from './richText.ts';
 
 export function liveTasks(s: LocalState): Task[] { return Object.values(s.tasks).filter((t) => !isGone(t)); }
 
@@ -20,7 +21,10 @@ export function taskById(s: LocalState, id: string): Task | null {
 function matches(t: { title: string; note?: string }, kw: string): boolean {
   if (!kw) return true;
   const k = kw.toLowerCase();
-  return t.title.toLowerCase().includes(k) || (t.note || '').toLowerCase().includes(k);
+  /* 详细内容已经是富文本（2026-10-26）：**必须剥掉标签再比**。
+     不剥的话搜「p」「div」这种字母会把所有带段落的备注都搜出来，
+     而真正的字反而可能被标签切断（`加钱请 <strong>RA</strong>`）。 */
+  return t.title.toLowerCase().includes(k) || plain(t.note || '').toLowerCase().includes(k);
 }
 
 /** 某一天的任务（按时间/位次排好序） */

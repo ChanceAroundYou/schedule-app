@@ -193,17 +193,74 @@ export async function run(ctx) {
   ok(draw.bad.length === 0, '详情抽屉里每个输入框都有名字、每个 label 都配上了控件'
     + (draw.bad.length ? '：\n      ' + draw.bad.join('\n      ') : ''));
 
-  // htmlFor 真配上没配上，光看属性不算数 —— 点一下 label，光标该进对应控件。
-  // 这一条同时也是「移动端点小字标签能不能聚焦到框」的代理断言
-  const focusOk = await evalJs(page, `
-    const l = document.querySelector('.drawer.open .field label[for]');
-    if (!l) return '没有带 for 的 label';
-    const want = l.htmlFor;
-    l.click();
-    const a = document.activeElement;
-    return a && a.id === want ? 'ok' : ('焦点跑到了 ' + (a ? (a.id || a.tagName) : 'null'));
+  // htmlFor 真配上没配上，光看属性不算数。
+  //
+  // 2026-10-26：详细内容从 textarea 换成 contenteditable 富文本之后，`<label for>`
+  // 对它**完全不生效**（那套只对表单控件有用），抽屉里于是没有一条 label[for] 了。
+  // 换成查它真正的无障碍名字：`aria-labelledby` 必须指向那行「详细内容」。
+  // 这比原来那句「点一下 label 看焦点跑没跑」更贴近真实需求 —— 读屏念的就是这个名字。
+  const nameOk = await evalJs(page, `
+    const ed = document.querySelector('.drawer.open [contenteditable="true"]');
+    if (!ed) return '抽屉里没有找到富文本编辑器';
+    const id = ed.getAttribute('aria-labelledby');
+    if (!id) return '编辑器没有 aria-labelledby（读屏会把它念成「可编辑文本」）';
+    const t = document.getElementById(id);
+    if (!t) return 'aria-labelledby 指向的节点不存在：' + id;
+    const s = t.textContent.trim();
+    return s === '详细内容' ? 'ok' : ('名字是「' + s + '」');
   `);
-  ok(focusOk === 'ok', '点「日期」这个 label 能把光标送进日期框，实际 ' + focusOk);
+  ok(nameOk === 'ok', '详细内容编辑器有可读的名字（aria-labelledby → 「详细内容」），实际 ' + nameOk);
+
+  /* ---- 富文本（2026-10-26）----
+   *
+   * 这一节守三件容易悄悄坏掉的事：
+   *   1. 工具条分层有没有退化（第一排 4 个直点 + 3 个分组）；
+   *   2. **点完工具条还能接着打字** —— 按钮不拦 mousedown 就会把编辑器焦点
+   *      抢走，表现为「点了粗体，再打字不进编辑器」。这是这类工具栏最常见的坑；
+   *   3. 内容真落库：关掉再打开，字还在（不是只在内存里）。
+   */
+  const bar = await evalJs(page, `return {
+    direct: document.querySelectorAll('.drawer.open .note-bar .note-btn:not(.note-btn--group)').length,
+    groups: document.querySelectorAll('.drawer.open .note-bar .note-btn--group').length,
+    editable: !!document.querySelector('.drawer.open .note-prose[contenteditable="true"]'),
+  };`);
+  ok(bar.editable, '详细内容是可编辑的富文本区（不再是 textarea）');
+  ok(bar.direct === 4, '第一排 4 个直点按钮（粗 / 待办 / 图片 / 链接），实际 ' + bar.direct);
+  ok(bar.groups === 3, '后面 3 个分组（字体 / 列表 / 段落），实际 ' + bar.groups);
+
+  await evalJs(page, `const el=document.querySelector('.drawer.open .note-prose'); el.focus(); return document.activeElement===el;`);
+  await page.send('Input.insertText', { text: '加钱请 RA 帮忙优化' });
+  await key(page, 'Enter', 'Enter', 13);
+  await page.send('Input.insertText', { text: 'PCHH 多中心验证' });
+
+  // 点「粗体」再打字：字必须真的变粗，而不是「点了没反应」
+  await clickEl(page, `document.querySelector('.drawer.open .note-btn[aria-label="粗体"]')`);
+  await page.send('Input.insertText', { text: '重点' });
+
+  const body = await evalJs(page, `return {
+    text: document.querySelector('.drawer.open .note-prose').innerText.replace(/\\s+/g,' ').trim(),
+    paras: document.querySelectorAll('.drawer.open .note-prose p').length,
+    bold: (document.querySelector('.drawer.open .note-prose strong')||{}).textContent || '',
+  };`);
+  ok(body.text.includes('加钱请 RA') && body.text.includes('PCHH 多中心验证'),
+    '正文里能打字、回车能分段，实际「' + body.text.slice(0, 40) + '」');
+  ok(body.paras >= 2, '敲回车真的分出了新段落（不是挤在同一段里），实际 ' + body.paras + ' 段');
+  ok(body.bold.includes('重点'),
+    '点完「粗体」还能接着打字，且字是粗的，实际「' + body.bold + '」');
+
+  // 关掉再打开：内容要真落了库（这一条同时覆盖 400ms 防抖 + 卸载时 flush）
+  // 用 Escape 关：标题栏那个「完成」图标在 32px 圆钮里，探针的合成点击
+  // 落到它身上不会走完整条指针链（真手指可以），Escape 是同一份 onClose。
+  await key(page, 'Escape', 'Escape', 27);
+  await waitFor(page, `!document.querySelector('.drawer.open')`, '抽屉关掉', 8000);
+  await clickEl(page, `
+    [...document.querySelectorAll('[data-scope="inbox"] .task-el')]
+      .find((e) => e.textContent.includes('无障碍检查'))
+  `);
+  await waitFor(page, `!!document.querySelector('.drawer.open .note-prose')`, '抽屉重新打开', 8000);
+  const again = await evalJs(page, `return document.querySelector('.drawer.open .note-prose').innerText.replace(/\\s+/g,' ').trim();`);
+  ok(again.includes('加钱请 RA') && again.includes('重点'),
+    '关掉抽屉再打开，详细内容还在（说明真的写回库了），实际「' + again.slice(0, 40) + '」');
 
   // 顺手把这条任务填上日期 —— 下面月视图要用的那条**有日期的**任务就是它。
   //

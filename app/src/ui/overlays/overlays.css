@@ -18,8 +18,11 @@
 }
 .mask.show { opacity: 1; pointer-events: auto; }
 
+/* 宽度 615px（2026-10-26）：原 410px 时「详细内容」一栏只够放二十来个字，
+   写会议纪要得一直横向折行。410 × 1.5 = 615，用户要的就是这个比例。
+   `max-width: 94vw` 兜住小笔记本（1280 屏上 615 仍然只占一半）。 */
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 410px; max-width: 92vw;
+  position: fixed; top: 0; right: 0; bottom: 0; width: 615px; max-width: 94vw;
   background: var(--panel); border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg); z-index: 50;
   transform: translateX(100%); transition: transform .24s cubic-bezier(.3, .8, .3, 1);

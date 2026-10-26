@@ -1,0 +1,187 @@
+/* note.css —— 详细内容编辑器（RichNote / Toolbar）
+ *
+ * 规则和全局那几条一样：**颜色 / 圆角 / 间距只引令牌**，不给兜底值
+ * （tests/contrast.mjs 会抓没声明过的 --var，写了兜底值就不会有人发现）。
+ *
+ * 排版层级刻意比界面文字大一号：这是「正文」，13px 编辑区 === 界面文字时
+ * 读起来像在填表，不像在写东西。正文 14px / 行高 1.75。
+ */
+
+.note-edit {
+  border: var(--border-w) solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+  overflow: hidden;
+  transition: border-color .14s, background .14s;
+}
+.note-edit:focus-within { border-color: var(--primary); background: var(--panel); }
+
+/* 书写区。**它自己滚**，不让整个抽屉跟着长 ——
+   抽屉要滚的话，滚到一半的时候工具条会跑出可视区。 */
+.note-edit-surface {
+  min-height: 320px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  cursor: text;
+}
+
+.note-prose { outline: none; font-size: 14px; line-height: 1.75; color: var(--text); }
+.note-prose > *:first-child { margin-top: 0; }
+.note-prose > *:last-child { margin-bottom: 0; }
+.note-prose p { margin: 0 0 .55em; }
+.note-prose h1 { font-size: 19px; font-weight: 650; margin: .8em 0 .35em; line-height: 1.35; }
+.note-prose h2 { font-size: 17px; font-weight: 650; margin: .75em 0 .3em; line-height: 1.4; }
+.note-prose h3 { font-size: 15px; font-weight: 650; margin: .7em 0 .3em; line-height: 1.45; }
+.note-prose strong { font-weight: 650; }
+.note-prose mark { background: var(--primary-pale); color: inherit; border-radius: 3px; padding: 0 2px; }
+.note-prose ul, .note-prose ol { margin: 0 0 .55em; padding-left: 1.5em; }
+.note-prose li { margin: .15em 0; }
+.note-prose blockquote {
+  margin: .5em 0; padding: .1em 0 .1em .8em;
+  border-left: 2px solid var(--border); color: var(--text-2);
+}
+.note-prose pre {
+  margin: .5em 0; padding: 9px 11px; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.6;
+  overflow-x: auto;
+}
+.note-prose code {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px;
+  background: var(--panel-3); border-radius: 3px; padding: 1px 4px;
+}
+.note-prose pre code { background: none; padding: 0; }
+.note-prose hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+
+/* 链接：主题色 + 下划线 + 手形。自动识别出来的和手动加的走同一套 */
+.note-prose a {
+  color: var(--primary); text-decoration: underline; text-underline-offset: 2px;
+  cursor: pointer;
+}
+.note-prose a:hover { color: var(--primary); opacity: .82; }
+
+/* 图片按**上限高度**显示：备注里是缩略图，点开才是原尺寸。
+   260px 大约是一屏的四分之一，一屏能看见两三张还不至于要滚很久。 */
+.note-prose img {
+  display: block; max-width: 100%; max-height: 260px;
+  width: auto; height: auto;
+  border-radius: var(--r-sm); border: var(--border-w) solid var(--border);
+  margin: .4em 0; cursor: zoom-in;
+}
+.note-prose img.ProseMirror-selectednode { outline: 2px solid var(--primary); }
+
+/* 待办清单：勾选框就是 Tiptap 自己渲染的 input，
+   这里只把它和文字的间距理顺，不改组件 */
+.note-prose ul[data-type="taskList"] { list-style: none; padding-left: .2em; }
+.note-prose ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 7px; }
+.note-prose ul[data-type="taskList"] li > label { flex: 0 0 auto; padding-top: 3px; }
+.note-prose ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.note-prose ul[data-type="taskList"] input[type="checkbox"] {
+  accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer;
+}
+.note-prose ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--text-3); text-decoration: line-through;
+}
+
+/* 空编辑器提示 */
+.note-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left; height: 0; pointer-events: none;
+  color: var(--text-3);
+}
+
+/* ================= 工具条 ================= */
+
+/* 贴在编辑框**底部**：手机上打字时手指在下方，工具条离键盘近才够得着；
+   放顶部的话每次都要把手指抬到屏幕上半截。 */
+.note-bar {
+  display: flex; align-items: center; gap: 3px; flex-wrap: nowrap;
+  padding: 5px 6px; border-top: var(--border-w) solid var(--border);
+  background: var(--panel-3);
+  overflow-x: auto; scrollbar-width: none;
+}
+.note-bar::-webkit-scrollbar { display: none; }
+
+.note-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  flex: 0 0 auto;
+  min-width: 30px; height: 28px; padding: 0 6px;
+  border: none; border-radius: var(--r-sm); background: none;
+  color: var(--text-2); font-size: 12px;
+  transition: background .12s, color .12s;
+}
+.note-btn:hover { background: var(--panel-2); color: var(--text); }
+.note-btn.on { background: var(--primary-soft); color: var(--primary); }
+.note-btn:disabled { opacity: .45; cursor: default; }
+.note-btn--group { padding: 0 7px; }
+.note-bar-sep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; flex: 0 0 auto; }
+
+/* 分组浮层。z 要压过抽屉(50)，和 DatePicker 的浮层(70)同一层 */
+.note-menu {
+  position: fixed; z-index: 72; min-width: 148px; padding: 4px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--shadow-lg);
+}
+.note-menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: none; border-radius: var(--r-sm); background: none;
+  color: var(--text); font-size: 12.5px; text-align: left;
+  transition: background .12s, color .12s;
+}
+.note-menu-item:hover { background: var(--panel-3); }
+.note-menu-item.on { color: var(--primary); }
+.note-menu-item:disabled { opacity: .45; }
+.note-menu-check { margin-left: auto; }
+
+/* ================= 链接输入 ================= */
+
+.note-link-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 8px; border-top: var(--border-w) solid var(--border);
+  background: var(--panel-2);
+}
+.note-link-input {
+  flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 8px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--text); font-size: 12.5px; outline: none;
+}
+.note-link-input:focus { border-color: var(--primary); }
+.note-link-ok, .note-link-x {
+  flex: 0 0 auto; height: 28px; padding: 0 9px;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--text-2); font-size: 12px;
+}
+.note-link-ok { border-color: var(--primary); color: var(--primary); }
+.note-link-x:hover { color: var(--danger); border-color: var(--danger); }
+
+.note-err {
+  padding: 6px 10px; font-size: 12px;
+  color: var(--danger); background: var(--panel-2);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* ================= 看大图 ================= */
+
+.note-lightbox {
+  position: fixed; inset: 0; z-index: 86;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(12, 14, 18, .86);
+}
+.note-lightbox img {
+  max-width: 92vw; max-height: 88vh; object-fit: contain;
+  border-radius: var(--r-sm);
+}
+.note-lightbox-x {
+  position: absolute; top: 14px; right: 14px;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: rgba(255, 255, 255, .16); color: #fff;
+}
+
+/* 窄屏：书写区矮一点，让一整行字段 + 工具条还在同一屏里 */
+@media (max-width: 640px) {
+  .note-edit-surface { min-height: 38dvh; max-height: 44dvh; padding: 9px 10px; }
+  .note-prose { font-size: 14.5px; }
+  .note-prose img { max-height: 200px; }
+}

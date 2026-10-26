@@ -98,13 +98,20 @@ function send(res, status, body) {
   res.end(text);
 }
 
-function readBody(req) {
+/**
+ * 收请求体。
+ *
+ * `limit` 默认是全局的 MAX_BODY（16MB，给首次导入几千条 op 用的）；图片上传
+ * 那条有自己的上限，由 router.js 显式传进来 —— 共用 16MB 的话，一张图就能
+ * 吃掉总量的三十分之一。
+ */
+function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         const e = new Error('请求体过大');
         e.status = 413;
         reject(e);

@@ -17,6 +17,7 @@
 import type { LocalState } from './types/types.ts';
 import * as D from './date.ts';
 import { liveTasks, liveHabits, habitStreak } from './model.ts';
+import { plain } from './model/richText.ts';
 
 /** 前后各带几周。少了箭头切不远，多了白写 —— 9 周够了 */
 export const WIDGET_WEEKS = 4;
@@ -143,7 +144,9 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       time: t.time,
       dur: t.duration,
       title: t.title,
-      note: t.note || '',
+      /* **必须是纯文本**：小组件是原生 TextView，喂 `<p>开会</p>` 进去
+         桌面上就原样显示标签（详细内容 2026-10-26 起是富文本） */
+      note: plain(t.note || ''),
       done: t.done,
       reminder: t.reminder ?? null,
       repeat: t.repeat ?? null,

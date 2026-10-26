@@ -22,6 +22,22 @@ const HOST = process.env.HOST || '127.0.0.1';
 /** 首次导入历史数据可能一次推几千条 op */
 const MAX_BODY = 16 * 1024 * 1024;
 
+/* ---------- 详细内容里的图片（2026-10-26） ----------
+ *
+ * 只存**压缩后**的图：前端在上传前用 canvas 重编码（长边 2560、质量 0.82），
+ * 一张手机截图从 3MB 掉到 200~400KB。所以这两个上限是给「万一有人绕过前端
+ * 直接打接口」留的护栏，不是给正常使用卡的 —— 卡太小会让正常截图传不上去。
+ *
+ * 落在 data/media 下，跟 schedule.db 同一个 data 目录，**备份必须带上它**，
+ * 否则恢复之后所有图全裂。
+ */
+const MEDIA_DIR = process.env.SCHEDULE_MEDIA_DIR || path.join(DATA_DIR, 'media');
+/** 单个文件上限。前端压完通常 0.4MB，6MB 够放没压过的长截图 */
+const MEDIA_FILE_MAX = 6 * 1024 * 1024;
+/** 总量上限。1500~2000 张压缩图，家庭场景几年用不完 */
+const MEDIA_TOTAL_MAX = 500 * 1024 * 1024;
+
+
 /** 一次问 AI 的字数上限。够写一大段话了，再长基本是粘错了东西 */
 const TEXT_MAX = 4000;
 
@@ -48,5 +64,6 @@ const SECRET = loadSecret();
 
 module.exports = {
   DATA_DIR, PORT, HOST, MAX_BODY, TEXT_MAX, MAX_USERS,
+  MEDIA_DIR, MEDIA_FILE_MAX, MEDIA_TOTAL_MAX,
   SECRET, loadSecret,
 };

@@ -1202,3 +1202,77 @@ test('计数器：每天 0 点按天数补、同一天只补一次、可关掉',
     (await api('POST', '/api/widget/counter', { token: u.token, body: { id: 'naonao', name: '   ' } })).status, 400,
   );
 });
+
+/* ------------------------------------------------------------------
+ * 详细内容里的图片（2026-10-26）
+ *
+ * 这条通路是全新的、也是**公开可读**的（`<img>` 带不了 Bearer 头），
+ * 所以这里重点验三件「一旦错了就是安全事故或数据损坏」的事：
+ *   1. 只收位图，且回来的是同一份字节（不能变形、不能变成 0 字节）；
+ *   2. 文件名非法（`../` 之类）必须 404，不能真的去读别的文件；
+ *   3. 写进去要登录，读不要 —— 读要登录的话网页上的图会全部裂掉。
+ * ------------------------------------------------------------------ */
+
+/* 1×1 透明 PNG，够小了但也真是一张合法图片 */
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+async function upload(buf, type, token) {
+  const headers = { 'Content-Type': type };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch(base + '/api/media', { method: 'POST', headers, body: buf });
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
+
+test('图片：上传 → 读回 → 字节完全一致', async () => {
+  const up = await upload(PNG_1PX, 'image/png', dad.token);
+  assert.strictEqual(up.status, 200);
+  assert.match(up.body.url, /^\/api\/media\/[a-f0-9]{64}\.png$/, '文件名是内容哈希 + 扩展名');
+
+  /* 读的时候**不带 token**：这正是不加鉴权的原因，顺便把这条约束钉住 */
+  const got = await fetch(base + up.body.url);
+  assert.strictEqual(got.status, 200);
+  assert.strictEqual(got.headers.get('content-type'), 'image/png');
+  assert.match(got.headers.get('cache-control'), /immutable/, '内容哈希名可以永久缓存');
+  const back = Buffer.from(await got.arrayBuffer());
+  assert.strictEqual(back.length, PNG_1PX.length);
+  assert.deepStrictEqual(back, PNG_1PX, '字节不能变');
+});
+
+test('图片：同一张图传两次只存一份', async () => {
+  const a = await upload(PNG_1PX, 'image/png', dad.token);
+  const b = await upload(PNG_1PX, 'image/png', dad.token);
+  assert.strictEqual(a.body.url, b.body.url, '内容一样 → 名字一样 → 不重复占地方');
+});
+
+test('图片：写要登录，读不要', async () => {
+  assert.strictEqual((await upload(PNG_1PX, 'image/png', null)).status, 401, '没登录不能往服务器塞文件');
+});
+
+test('图片：只收位图（不收 svg，它能带脚本）', async () => {
+  const r = await upload(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), 'image/svg+xml', dad.token);
+  assert.strictEqual(r.status, 415);
+  const t = await upload(Buffer.from('hello'), 'text/plain', dad.token);
+  assert.strictEqual(t.status, 415);
+});
+
+test('图片：空内容挡住', async () => {
+  const r = await upload(Buffer.alloc(0), 'image/png', dad.token);
+  assert.strictEqual(r.status, 400);
+});
+
+test('图片：文件名非法 / 不存在都是 404，且不会读到别的文件', async () => {
+  /* 路径穿越：编码过的 `../` 在路由匹配阶段会被 decode，落到参数里是 `../secret.key`。
+     文件名白名单不认它，必须 404 —— 不能去读 data 目录里的密钥。 */
+  const bad = [
+    '/api/media/..%2Fsecret.key',
+    '/api/media/secret.key',
+    '/api/media/' + 'a'.repeat(64) + '.png',   // 合法格式但从没上传过
+  ];
+  for (const p of bad) {
+    const r = await fetch(base + p);
+    assert.strictEqual(r.status, 404, p + ' 必须 404');
+  }
+});

@@ -6,12 +6,16 @@
  *
  * 四行排布（2026-10-11）：日期+时间一行、日程集+项目一行、重复一行、
  * 详细内容一行。原先六个字段各占一整行，抽屉要滚很久才够到底。
+ *
+ * 2026-10-26：重复和提醒并成一行（两个都是「什么时候再提醒我」这一类，
+ * 各占一整行太浪费纵向空间），详细内容从 textarea 换成富文本编辑器。
  */
 
 import type { Project, Task } from '../../domain/types.ts';
 import { DatePicker } from '../overlays/DatePicker.tsx';
 import { TimePicker } from '../overlays/TimePicker.tsx';
-import { Dropdown, Textarea } from '../kit.tsx';
+import { Dropdown } from '../kit.tsx';
+import { RichNote } from '../editor/RichNote.tsx';
 
 /** 日历集 / 项目那一行的两个下拉。**项目和日程集用同一个简单下拉框**
  *  （2026-10-11）：原先项目走 SheetPicker（弹一整张 Sheet），两个并排放着时
@@ -120,12 +124,14 @@ function RepeatRow({ repLabel, onOpen }: { repLabel: string; onOpen: () => void 
  *
  *  2026-10-14 新增：小组件也能设提醒，到点由小组件的通知负责；这里让 App
  *  也能看到 / 编辑同一个字段，两端口径一致。复用 TimePicker（自带清除 ✕）。 */
-function ReminderRow({ task, onPatch }: {
+function ReminderRow({ task, onPatch, half }: {
   task: Task;
   onPatch: (id: string, fields: Partial<Task>) => void;
+  /** 和「重复」并排时占一半宽（2026-10-26） */
+  half?: boolean;
 }) {
   return (
-    <div className="field">
+    <div className={'field' + (half ? ' field--half' : '')}>
       <span className="flabel">提醒</span>
       <TimePicker
         value={task.reminder ?? null}
@@ -136,27 +142,28 @@ function ReminderRow({ task, onPatch }: {
 }
 
 /**
- * 详细内容那一行（2026-10-15）。
+ * 详细内容（2026-10-15 起是「标题之外放正文的地方」；2026-10-26 升级成富文本）。
  *
- * 任务是「一个标题 + 可选的整段内容」：标题是给它一个名字，这一格才是放正文的
- * 地方 —— 注意事项、清单、一段原话。所以它是**多行、自动长高**的 `<textarea>`，
- * 不是单行输入框：单行框写长内容会横向滚着看不见头，那等于把功能做废了。
- * 抽屉里它独占一行（不与其他字段并排），因为它是唯一可能写很长的字段。
+ * 为什么必须是可排版的富文本而不是 textarea：用户真实写的东西是「会议要点 +
+ * 一串待办 + 一条会议链接 + 现场照片」，纯文本只能把它们压成一坨 ——
+ * 长链接断成两截、清单没法勾、图片贴不进来。
  *
  * 字段名仍然是 `note`（服务端按字段名存，改名等于做一次数据迁移），
  * **只有界面上叫它「详细内容」** —— 用户的口径是「标题 + 详细内容」。
+ *
+ * ⚠️ `key` 由调用方给（`task.id`）：编辑器是**非受控**的，只在挂载时灌一次
+ * 内容。不换 key 的话切到另一个任务，里面还是上一条任务的字。
  */
-function NoteRow({ fid, note, onPatch }: { fid: string; note: string; onPatch: (v: string) => void }) {
+function NoteRow({ fid, note, onChange }: {
+  fid: string;
+  note: string;
+  /** 已节流后的 HTML。空内容回空串 */
+  onChange: (html: string) => void;
+}) {
   return (
-    <div className="field">
-      <label htmlFor={fid + '-note'}>详细内容</label>
-      <Textarea
-        id={fid + '-note'}
-        rows={3}
-        placeholder="补充说明、注意事项…"
-        value={note}
-        onChange={(e) => onPatch(e.target.value)}
-      />
+    <div className="field field--note">
+      <span className="flabel" id={fid + '-note-l'}>详细内容</span>
+      <RichNote initial={note} onChange={onChange} labelledBy={fid + '-note-l'} />
     </div>
   );
 }

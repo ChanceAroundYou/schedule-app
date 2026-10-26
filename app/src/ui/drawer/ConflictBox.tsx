@@ -5,6 +5,7 @@
 import { History } from 'lucide-react';
 import type { FieldConflict } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
+import { plain } from '../../domain/model/richText.ts';
 
 /** 冲突提示里那个字段叫什么。没列到的（将来加的）就直接显示字段名，不猜。 */
 const FIELD_NAME: Record<string, string> = {
@@ -18,6 +19,9 @@ function showVal(field: string, v: unknown): string {
   if (field === 'date') return D.fmtMD(String(v));
   if (field === 'duration') return D.fmtDuration(Number(v));
   if (field === 'done') return v ? '已完成' : '未完成';
+  /* 详细内容是富文本，这一行是给人读的 —— 标签得剥掉，
+     否则会显示成「<p>开会</p>」，而且很容易把这一条挤成三行 */
+  if (field === 'note') return plain(String(v));
   if (field === 'repeat' || field === 'time') return typeof v === 'string' ? v : JSON.stringify(v);
   return String(v);
 }

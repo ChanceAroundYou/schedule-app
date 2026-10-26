@@ -17,6 +17,7 @@ const http = require('node:http');
 
 const { handlers } = require('./routes');
 const { send, readBody, currentUser, applyCors, preflight } = require('./http');
+const { MAX_BODY, MEDIA_FILE_MAX } = require('./config');
 
 /** 把 '/api/cals/:calId/members' 编译成正则 + 参数名。静态段要转义。 */
 function compile(pattern) {
@@ -31,7 +32,27 @@ function compile(pattern) {
   return { rx: new RegExp(`^${body}$`), names };
 }
 
-const PUBLIC = new Set(['GET /api/health', 'POST /api/auth/register', 'POST /api/auth/login']);
+/**
+ * 公开路由：不需要登录。
+ *
+ * `GET /api/media/:name` 在这里的原因是 `<img src>` **带不了 Authorization 头**
+ * —— 登录鉴权在这条路上根本没法生效。安全性靠文件名（内容 sha256，猜不到）
+ * 和「只收位图」，见 routes/media.js 顶部那三条。
+ */
+const PUBLIC = new Set([
+  'GET /api/health', 'POST /api/auth/register', 'POST /api/auth/login',
+  'GET /api/media/:name',
+]);
+
+/**
+ * 请求体**不是 JSON** 的那几条。
+ *
+ * router 默认把所有 POST/PUT/PATCH 的 body 当 JSON 解析，图片上传是裸二进制，
+ * 走到 JSON.parse 就会 400「请求体不是合法 JSON」。这里点名放行，交给
+ * handler 自己当 Buffer 用 —— 不要改成「看 content-type 猜」，那种规则在
+ * 有人发 `image/png` 却塞了 JSON 时会静默变形。
+ */
+const RAW_KEYS = new Set(['POST /api/media']);
 
 const ROUTES = Object.keys(handlers).map((key) => {
   const at = key.indexOf(' ');
@@ -94,12 +115,17 @@ function createServer() {
     let body = {};
     if (HAS_BODY.has(req.method)) {
       let raw;
+      const isRaw = RAW_KEYS.has(route.key);
       try {
-        raw = await readBody(req);
+        /* 图片那条走自己的上限（MEDIA_FILE_MAX），不能借 16MB 的 MAX_BODY ——
+           那等于允许单张 16MB 的图落盘，而总量上限才 500MB。 */
+        raw = await readBody(req, isRaw ? MEDIA_FILE_MAX : MAX_BODY);
       } catch (e) {
         return send(res, e.status || 400, { error: e.message || '读取请求体失败' });
       }
-      if (raw.length) {
+      if (isRaw) {
+        body = raw;
+      } else if (raw.length) {
         try {
           body = JSON.parse(raw.toString('utf8'));
         } catch (_) {

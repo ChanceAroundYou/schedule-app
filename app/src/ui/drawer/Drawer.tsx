@@ -130,7 +130,10 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
             onMoveToCal={onMoveToCal}
           />
 
-          <div className="field">
+          {/* 重复 + 提醒同一行（2026-10-26 用户要求）：这两个是同一类信息
+              （「什么时候再叫我一次」），各占一整行纯属浪费纵向空间。 */}
+          <div className="field-row">
+          <div className="field field--half">
             <span className="flabel" id={fid + '-rep-l'}>重复</span>
             {/* 一个按钮开一个浮层。原先是 chips + 一整个面板摊在抽屉里 ——
                 展开之后比「项目」和「详细内容」加起来还长。 */}
@@ -174,18 +177,21 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
             </button>
           </div>
 
-          {/* ⚠️ onPatch 里**必须先 setNote**（2026-10-24 用户报「详细内容打字没反应」）：
-              Textarea 是受控组件，value 走的是本地草稿 state——原先 onChange 只
-              patch store、从不 setNote，于是每敲一个字 store 更新触发重渲染，
-              受控 value 被拉回旧 state，输入的字当场消失。标题框（上面）是
-              「setTitle + 失焦 patch」的正确示范，这里对齐。 */}
-          <NoteRow
-            fid={fid} note={s.note}
-            onPatch={(v) => { s.setNote(v); if (v !== (task.note || '')) patch({ note: v }); }}
-          />
-
           {/* 提醒：与小组件同一个字段（reminder = "HH:mm"） */}
-          <ReminderRow task={task} onPatch={onPatch} />
+          <ReminderRow task={task} onPatch={onPatch} half />
+          </div>
+
+          {/* 详细内容（富文本）。`key={task.id}` 是必须的：编辑器非受控，
+              换任务要整块重建，否则里面还是上一条任务的字。
+
+              ⚠️ 不要改成受控 value。每敲一个字 setContent 回去会让光标跳到
+              行首 —— 旧版 textarea 就是栽在这上面（2026-10-24「打字没反应」）。 */}
+          <NoteRow
+            key={task.id}
+            fid={fid}
+            note={task.note || ''}
+            onChange={(v) => { if (v !== (task.note || '')) patch({ note: v }); }}
+          />
         </div>
       </aside>
 
