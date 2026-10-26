@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  桌面计数器小组件的元信息。
+  桌面计数器小组件的元信息 —— **方入口**（2×2 用，上下两块）。
 
-  **一个 provider，两种形状**：用户在桌面拖成 2×2 就用 widget_counter_v
-  （上下两块），拖成 4×1 就用 widget_counter_h（左右两块）。provider 在
-  onAppWidgetOptionsChanged 里按 minWidth/minHeight 的宽高比挑，不靠用户手动选。
+  和 counter_widget_wide_info.xml（4×1 入口）是同一套代码的两个桌面条目：
+  本文件对应 CounterWidgetProvider，宽入口对应 CounterWidgetWideProvider
+  （零逻辑，全继承）。渲染按实测宽高比挑布局（isWide），入口只决定
+  添加页里的预设形状。
 
   minWidth/minHeight 取 110×60：110 是「2 列」的下限，60 是「1 行」的下限 ——
   两个都放开，才能从 2×2 一路拖到 4×1。**minResize 不要调大**：

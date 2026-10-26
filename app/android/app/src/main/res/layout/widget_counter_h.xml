@@ -2,11 +2,19 @@
 <!--
   计数器小组件 —— **扁的**（4×1 用）。左右两块，各占一半。
 
-  和 widget_counter_v.xml 是同一套内容换方向：**id 必须一一对应**
-  （渲染代码只有一套，按 width/height 比挑布局）。扁的时候横向空间多出来，
-  按钮从 40dp 放到 46dp —— 这是这套设计里最想要的手感：按钮大、好点。
+  和 widget_counter_v.xml 是同一套内容换方向：**id 必须一一对应，且控件类型
+  必须一致**（渲染代码只有一套，按 width/height 比挑布局）。
 
-  名字的「双 TextView 描边」做法见 widget_counter_v.xml 顶部那段说明。
+  ⚠️ 2026-10-26 修正：这里的数字 / 加 / 减原先还是 TextView + 文字，而渲染代码
+  用的是 setImageViewBitmap()。RemoteViews 对 TextView 调 setImageBitmap 会抛
+  ActionException，整份 RemoteViews **apply 失败** —— 表现就是「4×1 上怎么改都
+  没反应」。现在四个位置全部是 ImageView。
+
+  ⚠️ **scaleType 必须是 center**（原因见 widget_counter_v.xml 顶部注释）。
+
+  ⚠️ 所有尺寸都与 CounterWidgetProvider 的常量一一对应：
+    整卡 padding 3dp / 块间 margin 3dp / 名字行高 28dp / 按钮 40dp / 数字行左右 1dp
+  4×1 的卡高只有 78dp，扣掉上下 padding 后剩 72dp —— 名字行 28dp，数字行剩 44dp 全给数字。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ctr_root"
@@ -14,22 +22,22 @@
     android:layout_height="match_parent"
     android:background="@drawable/ctr_card_bg"
     android:orientation="horizontal"
-    android:padding="5dp">
+    android:padding="3dp">
 
     <!-- ── naonao ───────────────────────────────────────────────── -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:layout_marginRight="4dp"
+        android:layout_marginRight="3dp"
         android:background="@drawable/ctr_zone_pink"
         android:orientation="vertical">
 
         <ImageView
             android:id="@+id/ctr_a_name"
             android:layout_width="match_parent"
-            android:layout_height="22dp"
-            android:scaleType="fitCenter" />
+            android:layout_height="28dp"
+            android:scaleType="center" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -37,44 +45,29 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp">
+            android:paddingLeft="1dp"
+            android:paddingRight="1dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_a_minus"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@drawable/ctr_btn_minus_pink"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="−"
-                android:textColor="@color/ctrPinkMinusInk"
-                android:textSize="24sp" />
+                android:scaleType="center" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_a_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrPinkInk"
-                android:textSize="22sp" />
+                android:scaleType="center" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_a_plus"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@drawable/ctr_btn_plus_pink"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="+"
-                android:textColor="#FFFFFF"
-                android:textSize="24sp" />
+                android:scaleType="center" />
         </LinearLayout>
     </LinearLayout>
 
@@ -89,8 +82,8 @@
         <ImageView
             android:id="@+id/ctr_b_name"
             android:layout_width="match_parent"
-            android:layout_height="22dp"
-            android:scaleType="fitCenter" />
+            android:layout_height="28dp"
+            android:scaleType="center" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -98,44 +91,29 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp">
+            android:paddingLeft="1dp"
+            android:paddingRight="1dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_b_minus"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@drawable/ctr_btn_minus_green"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="−"
-                android:textColor="@color/ctrGreenMinusInk"
-                android:textSize="24sp" />
+                android:scaleType="center" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_b_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrGreenInk"
-                android:textSize="22sp" />
+                android:scaleType="center" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_b_plus"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@drawable/ctr_btn_plus_green"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="+"
-                android:textColor="#FFFFFF"
-                android:textSize="24sp" />
+                android:scaleType="center" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

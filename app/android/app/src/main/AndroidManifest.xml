@@ -51,11 +51,11 @@
         </receiver>
 
         <!--
-          桌面计数器。**和日程组件是两个独立条目**（桌面「添加小组件」列表里
-          分开出现），互不影响 —— 用户可能只要计数器、不要时间轴。
-
-          一个 receiver 同时支持 2×2 和 4×1：尺寸不同时由 provider 换一套布局，
-          所以这里只登记一份 meta-data。见 CounterWidgetProvider.isWide()。
+          桌面计数器。**两个独立条目**（桌面「添加小组件」列表里分开出现）：
+          CounterWidgetProvider 是 2×2（上下两块），CounterWidgetWideProvider
+          是 4×1（左右两块），后者零逻辑、全继承前者。渲染按实测宽高比挑布局
+          （见 isWide），入口只决定添加页里的预设形状；refreshAll 把两个入口
+          的实例一起刷，点哪边两边都对得上。
         -->
         <receiver
             android:name=".CounterWidgetProvider"
@@ -68,6 +68,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/counter_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".CounterWidgetWideProvider"
+            android:label="+1 宽"
+            android:icon="@drawable/ic_counter_logo"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/counter_widget_wide_info" />
         </receiver>
 
         <!--

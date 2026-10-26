@@ -14,8 +14,8 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.util.TypedValue;
 import android.widget.RemoteViews;
 
 import java.util.List;
@@ -43,6 +43,17 @@ import java.util.List;
  * ## 拿不到手势
  * 桌面组件收不到长按/滑动/双击，所以「直接改数字」只能靠点数字弹一个小窗
  * （CounterEditActivity），不是长按菜单。
+ *
+ * ## 渲染规则（2026-10-26 定稿：双字号 + 底对齐）
+ * 两个独立字号常量：名字 NAME_FONT_DP = 30dp 固定字号、落笔按更高的
+ * Kutai 取底边（naonao 下移底对齐）；数字按墨迹高 VALUE_INK_DP = 18dp
+ * 反推字号。名字行高 ROW_DP = 28dp，按钮 BTN_DP = 40dp。位图按视图的
+ * 像素尺寸 1:1 生成，ImageView 用 scaleType=center（不缩放，超宽居中裁切）。
+ *
+ * 为什么不再缩放：以前 fitTextSize 会因为「位图比视图大」而把字缩掉，
+ * 于是改字号肉眼看不出。现在数字区净宽只保证 3～4 位数（`348` 占 45.8dp，
+ * 净宽 67dp）；`00000` 会溢出被裁（用户 2026-10-26 选定方案 A），这是桌面
+ * 组件宽度由 launcher 决定的物理上限，不是参数没调好。
  */
 public class CounterWidgetProvider extends AppWidgetProvider {
 
@@ -109,19 +120,39 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
     /* -------------------------------------------------------------- 渲染 */
 
-    /** 重画所有计数器实例（本进程内所有桌面上的这块） */
+    /** 重画所有计数器实例（本进程内所有桌面上的这块，2×2 与 4×1 两个入口一起刷） */
     static void refreshAll(Context c) {
         try {
             AppWidgetManager mgr = AppWidgetManager.getInstance(c);
-            int[] ids = mgr.getAppWidgetIds(new ComponentName(c, CounterWidgetProvider.class));
+            int[] ids = concatIds(mgr, c, CounterWidgetProvider.class, CounterWidgetWideProvider.class);
             for (int id : ids) render(c, mgr, id);
         } catch (Exception e) {
             Log.w(TAG, "refreshAll 失败: " + e);
         }
     }
 
+    private static int[] concatIds(AppWidgetManager mgr, Context c, Class<?>... klasses) {
+        int total = 0;
+        int[][] all = new int[klasses.length][];
+        for (int i = 0; i < klasses.length; i++) {
+            try {
+                all[i] = mgr.getAppWidgetIds(new ComponentName(c, klasses[i]));
+            } catch (Exception e) {
+                all[i] = new int[0];
+            }
+            total += all[i].length;
+        }
+        int[] out = new int[total];
+        int p = 0;
+        for (int[] a : all) {
+            for (int id : a) out[p++] = id;
+        }
+        return out;
+    }
+
     private static void render(Context c, AppWidgetManager mgr, int widgetId) {
-        boolean wide = isWide(mgr, widgetId);
+        int[] dp = optionsDp(mgr, widgetId);
+        boolean wide = isWide(dp);
         int layout = wide ? R.layout.widget_counter_h : R.layout.widget_counter_v;
         RemoteViews v = new RemoteViews(c.getPackageName(), layout);
 
@@ -129,8 +160,9 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         CounterStore.Item a = items.size() > 0 ? items.get(0) : null;
         CounterStore.Item b = items.size() > 1 ? items.get(1) : null;
 
-        bind(c, v, true, a, wide);
-        bind(c, v, false, b, wide);
+        Box box = Box.of(c, wide, dp);
+        bind(c, v, true, a, box);
+        bind(c, v, false, b, box);
 
         try {
             mgr.updateAppWidget(widgetId, v);
@@ -139,27 +171,91 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         }
     }
 
+    /** 组件当前的 dp 尺寸；launcher 没报（少见）时给一个合理默认值 */
+    private static int[] optionsDp(AppWidgetManager mgr, int widgetId) {
+        try {
+            Bundle o = mgr.getAppWidgetOptions(widgetId);
+            int w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
+            int h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+            if (w > 0 && h > 0) return new int[]{w, h};
+        } catch (Exception e) {
+            Log.w(TAG, "读组件尺寸失败: " + e);
+        }
+        return null;
+    }
+
     /**
      * 扁还是方。以宽高比 1.9 为界：
      *   4×1 大约 320×78 → 比 4.1   ✓ 扁
      *   2×2 大约 155×155 → 比 1.0   ✓ 方
      * 中间那些奇怪的比例（比如 3×2）按方的处理 —— 上下排更不容易挤。
      */
-    private static boolean isWide(AppWidgetManager mgr, int widgetId) {
-        try {
-            Bundle o = mgr.getAppWidgetOptions(widgetId);
-            int w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
-            int h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
-            if (w <= 0 || h <= 0) return false;
-            return w >= h * 1.9;
-        } catch (Exception e) {
-            return false;
+    private static boolean isWide(int[] dp) {
+        if (dp == null) return false;
+        return dp[0] >= dp[1] * 1.9;
+    }
+
+    /* -------------------------------------------------- 尺寸（与 layout 一一对应） */
+
+    // ⚠️ 下面这些数必须和 widget_counter_v.xml / widget_counter_h.xml 里的
+    //    padding / margin / layout_height / layout_width 完全一致。
+    //    位图按这些 dp 反算出的像素尺寸生成，RemoteViews 没有测量回调，
+    //    这是拿到「数字那块到底有多宽多高」的唯一办法。改了布局就要改这里。
+    private static final float PAD_DP = 3f;    // 整卡 padding
+    private static final float GAP_DP = 3f;    // 两块之间的缝
+    private static final float ROW_DP = 28f;   // 名字行高（数字行另算，见 Box）
+    private static final float BTN_DP = 40f;   // 加减按钮直径
+    private static final float SIDE_DP = 1f;   // 数字行左右内边距
+
+    /**
+     * 名字与数字是**两个独立的字号常量**（2026-10-26 定稿）。
+     *
+     * 名字：固定字号 NAME_FONT_DP = 30dp，不再按墨迹一样大。naonao 与 Kutai
+     * 用同一字号画，落笔按两者中更高的 Kutai 取底边，naonao 下移与 Kutai
+     * 底对齐（见 renderName）。行高 28dp，Kutai 墨迹高 ~21.8dp，
+     * 余 (28−21.8)/2 ≈ 3.1dp 上下留白。
+     *
+     * 数字：按墨迹高 VALUE_INK_DP = 18dp 反推字号（fontFor），不同数字
+     * 字号不同但墨迹一样高。2×2 数字区净宽 67dp（145−2−80），`348` 占
+     * 45.8dp 余 21.2dp；`00000` 占 83.2dp 会被裁 —— 方案 A：宁可裁，不缩字。
+     */
+    private static final float NAME_FONT_DP = 30f;
+    private static final float VALUE_INK_DP = 18f;
+
+    /** 名字描边宽度 = 字号 × 这个比例（同底色描边，让字有厚度） */
+    private static final float STROKE_RATIO = 0.10f;
+
+    /** 一块里每个位图该多大（像素）。 */
+    private static final class Box {
+        int lineW;    // 名字行位图宽 = 整格宽
+        int lineH;    // 名字行高 = ROW_DP
+        int valueW;   // 数字行位图宽 = 净宽（格宽 − 两侧边 − 两个按钮）
+        int valueH;   // 数字行高 = 格高 − 名字行（剩余全给数字）
+        int btn;
+
+        static Box of(Context c, boolean wide, int[] dp) {
+            float d = c.getResources().getDisplayMetrics().density;
+            if (dp == null) dp = wide ? new int[]{320, 78} : new int[]{155, 155};
+            float zoneW = wide ? (dp[0] - 2 * PAD_DP - GAP_DP) / 2f : (dp[0] - 2 * PAD_DP);
+            float zoneH = wide ? (dp[1] - 2 * PAD_DP) : (dp[1] - 2 * PAD_DP - GAP_DP) / 2f;
+
+            Box b = new Box();
+            b.btn = px(BTN_DP, d);
+            b.lineW = px(zoneW, d);
+            b.lineH = px(ROW_DP, d);
+            b.valueW = px(zoneW - 2 * SIDE_DP - 2 * BTN_DP, d);
+            b.valueH = px(Math.max(20f, zoneH - ROW_DP), d);
+            return b;
+        }
+
+        private static int px(float dp, float density) {
+            return Math.max(1, Math.round(dp * density));
         }
     }
 
     /** 填一块（a = naonao 那块，b = Kutai 那块）。两块的 id 不同，所以只差在映射表 */
     private static void bind(Context c, RemoteViews v, boolean first,
-                             CounterStore.Item item, boolean wide) {
+                             CounterStore.Item item, Box box) {
         final int idName, idValue, idMinus, idPlus;
         if (first) {
             idName = R.id.ctr_a_name;
@@ -173,21 +269,28 @@ public class CounterWidgetProvider extends AppWidgetProvider {
             idPlus = R.id.ctr_b_plus;
         }
 
-        // 名字用位图渲染，RemoteViews 的 TextView 不支持自定义字体（Baloo2）。
+        // 名字和数字都用位图渲染：RemoteViews 的 TextView 不支持自定义字体（Baloo2）。
         String id = item == null ? (first ? "naonao" : "kutai") : item.id;
         String name = item == null ? id : item.name;
         int value = item == null ? 0 : item.value;
         String text = String.valueOf(value);
 
-        float nameSp = wide ? 19f : 18f;
-        if (name.length() > 6) nameSp -= 3f;
-        else if (name.length() > 5) nameSp -= 2f;
-        int nameColor = first ? 0xFFD4537E : 0xFF1D9E75;   // ctrPinkName / ctrGreenName
+        int nameColor = first ? 0xFFD4537E : 0xFF1D9E75;    // ctrPinkName / ctrGreenName
         int outlineColor = first ? 0xFFFBEAF0 : 0xFFE1F5EE; // ctrPinkOutline / ctrGreenOutline
-        v.setImageViewBitmap(idName, renderName(c, name, nameSp, nameColor, outlineColor, wide));
-
         int inkColor = first ? 0xFF4B1528 : 0xFF04342C;     // ctrPinkInk / ctrGreenInk
-        v.setImageViewBitmap(idValue, renderValue(c, text, valueSp(text, wide), inkColor));
+
+        float stroke = STROKE_RATIO * NAME_FONT_DP * c.getResources().getDisplayMetrics().density;
+        v.setImageViewBitmap(idName,
+                renderName(c, name, box.lineW, box.lineH, nameColor, outlineColor, stroke));
+        v.setImageViewBitmap(idValue,
+                renderValue(c, text, box.valueW, box.valueH, inkColor));
+
+        // − / + 也画成位图：这一对必须「同长同粗、在圆里正中」，
+        // 用字体字符做不到（Baloo2 没有 U+2212，`-` 又比 `+` 细短且偏下），
+        // 所以两个都按同一组比例画出来。见 glyphPlus / glyphMinus。
+        int minusInk = first ? 0xFF993556 : 0xFF173404;     // ctrPinkMinusInk / ctrGreenMinusInk
+        v.setImageViewBitmap(idMinus, glyphMinus(c, box.btn, minusInk));
+        v.setImageViewBitmap(idPlus, glyphPlus(c, box.btn, Color.WHITE));
 
         // 加减按钮：一律走广播，不打开 App
         v.setOnClickPendingIntent(idMinus, stepIntent(c, id, -1));
@@ -196,61 +299,121 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         v.setOnClickPendingIntent(idValue, editIntent(c, id, name, value));
     }
 
-    private static Bitmap renderValue(Context c, String text, float sp, int color) {
-        float density = c.getResources().getDisplayMetrics().density;
-        int w = (int) (160 * density);
-        int h = (int) (46 * density);
-        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bmp);
-        Typeface tf;
-        try { tf = c.getResources().getFont(R.font.baloo2_extra_bold); } catch (Exception e) { tf = Typeface.DEFAULT_BOLD; }
+    /* -------------------------------------------------------------- 位图 */
+
+    private static Paint balooPaint(Context c, int color, float textSizePx) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setTypeface(tf);
+        try {
+            p.setTypeface(c.getResources().getFont(R.font.baloo2_extra_bold));
+        } catch (Exception e) {
+            p.setTypeface(Typeface.DEFAULT_BOLD);
+        }
         p.setColor(color);
-        p.setTextSize(sp * density);
+        p.setTextSize(textSizePx);
         p.setTextAlign(Paint.Align.CENTER);
-        float x = w / 2f;
-        float y = h / 2f - (p.descent() + p.ascent()) / 2f;
-        canvas.drawText(text, x, y, p);
-        return bmp;
+        return p;
     }
 
-    private static Bitmap renderName(Context c, String name, float nameSp, int nameColor, int outlineColor, boolean wide) {
-        float density = c.getResources().getDisplayMetrics().density;
-        int w = (int) (120 * density);
-        int h = (int) (26 * density);
+    /**
+     * 名字绘制。固定字号 NAME_FONT_DP，**底对齐**：落笔按两者中更高的
+     * Kutai 取底边，naonao 下移与 Kutai 底对齐（预览 NameDbg 验证过，
+     * d=2.0 时两底同为 49.81px，距行底 3.09dp，字不飞）。
+     * 垂直不再居中 —— 居中会让 naonao 看起来往上飘。
+     */
+    private static Bitmap renderName(Context c, String text, int w, int h,
+                                     int color, int outlineColor, float strokePx) {
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
-        Typeface tf = null;
-        try { tf = c.getResources().getFont(R.font.baloo2_extra_bold); } catch (Exception e) { tf = Typeface.DEFAULT_BOLD; }
-        Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
-        outline.setTypeface(tf);
-        outline.setColor(outlineColor);
-        outline.setTextSize(nameSp * density);
-        outline.setTextAlign(Paint.Align.CENTER);
-        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setTypeface(tf);
-        fill.setColor(nameColor);
-        fill.setTextSize(nameSp * density);
-        fill.setTextAlign(Paint.Align.CENTER);
-        float x = w / 2f;
-        float y = h / 2f - (outline.descent() + outline.ascent()) / 2f;
-        canvas.drawText(name, x, y, outline);
-        canvas.drawText(name, x, y, fill);
+        float d = c.getResources().getDisplayMetrics().density;
+        float px = NAME_FONT_DP * d;
+        Rect rMax = new Rect();
+        Paint probe = balooPaint(c, color, px);
+        // 两名字中更高的决定底边：Kutai 带 K 的升部 + 降部，恒高于 naonao
+        probe.getTextBounds("Kutai", 0, "Kutai".length(), rMax);
+        Rect rSelf = new Rect();
+        probe.getTextBounds(text, 0, text.length(), rSelf);
+        // 底边按两者中更高的取：默认名里 Kutai 恒高于 naonao；用户改名后
+        // 若新名更高则按新名取，避免写死 Kutai 把高字裁掉
+        float maxH = Math.max((float) (rMax.bottom - rMax.top),
+                (float) (rSelf.bottom - rSelf.top));
+        float insetPx = Math.max(0f, (h - maxH) / 2f);
+        float baseline = h - insetPx - rSelf.bottom;
+
+        if (outlineColor != 0) {
+            Paint outline = balooPaint(c, outlineColor, px);
+            outline.setStyle(Paint.Style.STROKE);
+            outline.setStrokeWidth(strokePx);
+            canvas.drawText(text, w / 2f, baseline, outline);
+        }
+
+        Paint fill = balooPaint(c, color, px);
+        canvas.drawText(text, w / 2f, baseline, fill);
         return bmp;
     }
 
     /**
-     * 数字字号：位数越多越小。数字区宽度只有 40dp 左右，
-     * 21sp 撑死放三位，四位往上必须收，否则会被布局裁掉一半。
+     * 数字绘制。字号按墨迹高 VALUE_INK_DP 反推（fontFor），不同数字
+     * 字号不同但墨迹一样高。超宽居中溢出被 Canvas 裁掉 —— 方案 A。
+     * 垂直按**墨迹盒**居中，不是 fontMetrics：数字没有下行笔画，
+     * 按 ascent/descent 居中会整体偏上。
      */
-    private static float valueSp(String text, boolean wide) {
-        float base = wide ? 24f : 22f;
-        int n = text.length();
-        if (n <= 3) return base;
-        if (n == 4) return base - 4f;
-        if (n == 5) return base - 7f;
-        return base - 9f;
+    private static Bitmap renderValue(Context c, String text, int w, int h, int color) {
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        float d = c.getResources().getDisplayMetrics().density;
+        Paint probe = balooPaint(c, color, 10f * d);
+        Rect r1 = new Rect();
+        probe.getTextBounds(text, 0, text.length(), r1);
+        float inkH1 = Math.max(1f, (float) (r1.bottom - r1.top));
+        // 10dp 字号下墨迹 inkH1 px → 墨迹密度 inkH1/(10·d) px/dp，反推目标字号
+        float px = 10f * VALUE_INK_DP * d * d / inkH1;
+
+        Paint fill = balooPaint(c, color, px);
+        Rect r = new Rect();
+        fill.getTextBounds(text, 0, text.length(), r);
+        canvas.drawText(text, w / 2f, h / 2f - (r.top + r.bottom) / 2f, fill);
+        return bmp;
+    }
+
+    /* ------------------------------------------------------------ 加减号 */
+
+    // 笔画比例，都相对**按钮直径**。取值来自 Baloo2 的 '+' 字形（墨迹 0.485em 宽、
+    // 0.135em 粗）按「字号 ≈ 0.86×按钮直径」折算 —— 也就是这套卡片放大字号之后
+    // '+' 在圆里的观感。减号就是加号去掉竖臂：两者等长、等粗、同心。
+    private static final float BAR_LEN = 0.42f;
+    private static final float BAR_THICK = 0.118f;
+
+    private static Bitmap glyphPlus(Context c, int size, int color) {
+        Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Paint p = barPaint(color, size);
+        float c0 = size / 2f;
+        // 圆头会把线端再往外扩 strokeWidth/2，所以线本身要缩回去，
+        // 保证墨迹的外接尺寸正好是 BAR_LEN × size（否则 + 和 − 会长短不一）
+        float half = size * BAR_LEN / 2f - p.getStrokeWidth() / 2f;
+        canvas.drawLine(c0 - half, c0, c0 + half, c0, p);
+        canvas.drawLine(c0, c0 - half, c0, c0 + half, p);
+        return bmp;
+    }
+
+    private static Bitmap glyphMinus(Context c, int size, int color) {
+        Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Paint p = barPaint(color, size);
+        float c0 = size / 2f;
+        float half = size * BAR_LEN / 2f - p.getStrokeWidth() / 2f;
+        canvas.drawLine(c0 - half, c0, c0 + half, c0, p);
+        return bmp;
+    }
+
+    private static Paint barPaint(int color, int size) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(color);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(size * BAR_THICK);
+        // 圆头：Baloo2 的 + 是圆角的，方头会显得硬
+        p.setStrokeCap(Paint.Cap.ROUND);
+        return p;
     }
 
     private static PendingIntent stepIntent(Context c, String id, int delta) {

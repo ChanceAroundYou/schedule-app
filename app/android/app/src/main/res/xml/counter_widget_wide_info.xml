@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面计数器小组件的元信息 —— **宽入口**（4×1 用，左右两块）。
+
+  和 counter_widget_info.xml（2×2 入口）是同一套代码的两个桌面条目：
+  CounterWidgetProvider 走 widget_counter_v，CounterWidgetWideProvider
+  走 widget_counter_h。渲染、点击、同步全是同一套（wide 类零逻辑），
+  refreshAll 把两个入口的实例一起刷。
+
+  布局选择不靠入口靠实测宽高比（isWide）：用户把宽入口拖成方块也会
+  落到 v 布局，反之亦然 —— 入口只决定「添加页里的预设形状」。
+
+  minWidth 取 250（4 列下限），minHeight 取 40（1 行下限）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_counter_h"
+    android:minWidth="250dp"
+    android:minHeight="40dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_counter_h"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1" />
