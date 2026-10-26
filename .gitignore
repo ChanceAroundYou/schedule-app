@@ -36,3 +36,8 @@ app/android/keystore.properties
 
 # 每台设备各自的构建/发布环境（模板 .env.template 进库）
 .env
+
+# 临时发版便条（各机器/各会话自己写的 one-off 脚本：写死本机 JDK/SDK 路径、
+# 指向 /c/repo 那种只在这台机器成立的目录）。留着方便随时手发，但**不进库**。
+# 只锚定仓库根，不影响 deploy/ 下的正式脚本。
+/publish.sh
