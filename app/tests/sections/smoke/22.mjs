@@ -687,15 +687,19 @@ export async function run(ctx) {
   const hid = new Set(ui2.navHidden);
   const shownKeys = ui2.navOrder.filter((k) => !hid.has(k));
   const hiddenKeys = ui2.navOrder.filter((k) => hid.has(k));
-  ok(ui2.navHidden.slice().sort().join() === 'ai,done' && shownKeys.length === 7 && hiddenKeys.length === 2,
-    'navHidden 记下了藏起来的两项（显示组 7 · 隐藏组 2），实际 ' + JSON.stringify(ui2.navHidden));
+  /* 显示组几项**别写死**：功能区是会长的（2026-10-26 加了「+1」计数器页），
+     写死 7 的下场是每加一个功能项这条就假红一次。按 navOrder 长度算。 */
+  const shownN = ui2.navOrder.length - 2;
+  ok(ui2.navHidden.slice().sort().join() === 'ai,done' && shownKeys.length === shownN && hiddenKeys.length === 2,
+    'navHidden 记下了藏起来的两项（显示组 ' + shownN + ' · 隐藏组 2），实际 '
+    + JSON.stringify(ui2.navHidden));
   const grid0 = [...shownKeys, ...hiddenKeys];
   ok((await navKeys()).join() === grid0.join(),
     '网格次序 = 「显示中的在前 + 被隐藏的按原序在后」（不再交叉排列），实际 '
     + JSON.stringify(await navKeys()));
   const wOn = await navOn();
-  ok(wOn.slice(0, 7).every(Boolean) && wOn.slice(7).every((v) => !v),
-    '前 7 格显示中、后 2 格隐藏，实际 ' + JSON.stringify(wOn));
+  ok(wOn.slice(0, shownN).every(Boolean) && wOn.slice(shownN).every((v) => !v),
+    '前 ' + shownN + ' 格显示中、后 2 格隐藏，实际 ' + JSON.stringify(wOn));
 
   // ③ 跨组落位：**拖是自由的，落点被钳回本组**。显示项拖进隐藏区 → 落到显示组
   //    末位；隐藏项拖进显示区 → 落到隐藏组最前位。原先两组混着排。
@@ -709,7 +713,7 @@ export async function run(ctx) {
   ok((await navKeys()).join() === grid2.join(),
     '隐藏项拖进显示区 → 落到隐藏组最前位，实际 ' + JSON.stringify(await navKeys()));
   const wOn2 = await navOn();
-  ok(wOn2.slice(0, 7).every(Boolean) && wOn2.slice(7).every((v) => !v),
+  ok(wOn2.slice(0, shownN).every(Boolean) && wOn2.slice(shownN).every((v) => !v),
     '落位之后仍然是显示中的在前');
 
   // ④ 侧栏底部的「更多」：桌面没有底栏那个抽屉，被藏起来的项得有个地方够得着
@@ -747,7 +751,7 @@ export async function run(ctx) {
   ok(popBox.dy <= 0.5, '浮层开在触发键**上方**，实际 ' + JSON.stringify(popBox));
   const tuckedKeys = () => evalJs(page,
     `return [...document.querySelectorAll('.side-more-pop .nav-item')].map((x) => x.dataset.nav);`);
-  ok((await tuckedKeys()).join() === grid2.slice(7).join(),
+  ok((await tuckedKeys()).join() === grid2.slice(shownN).join(),
     '浮层里列出的正是被藏起来的那两项（顺序跟 navOrder），实际 '
     + JSON.stringify(await tuckedKeys()));
   ok(await evalJs(page, `return [...document.querySelectorAll('.side-more-pop .nav-item .label')].every((x) => x.textContent.trim());`),
