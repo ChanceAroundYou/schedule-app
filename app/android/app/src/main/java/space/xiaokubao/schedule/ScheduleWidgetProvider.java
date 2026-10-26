@@ -774,6 +774,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         final boolean on = !(target.log != null && target.log.optBoolean(day, false));
 
+        /* 新意图作废旧意图（2026-10-26）：队列里同一格的老操作先丢掉。
+           不丢的话，这次直连写成功后紧接着 flush，旧 op 重放会把刚打上的
+           勾又抹掉 —— 表现就是「点完变灰、马上回绿」。 */
+        WidgetPrefs.dropQueuedHabit(c, habitId, day);
+
         // ① 乐观更新 + **立刻重绘**。写的是 log 里那一天，跟渲染取值口径一致
         //    （渲染读 log[day]，不再读 h.done）。
         try {
@@ -896,6 +901,42 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
+     * 排队超过这么久还没发出去的意图就作废。
+     *
+     * 一周足够覆盖「出门断网几天」这种正常离线；再老的意图基本已经不是
+     * 用户现在的意思了，重放只会制造错误数据。
+     */
+    private static final long PENDING_TTL_MS = 7L * 24 * 3600 * 1000;
+
+    /**
+     * 丢掉过期 / 历史遗留的排队操作。
+     *
+     * **2026-10-26 用户报「打卡点完又回绿、App 也不同步」的真凶之一**：
+     * 上一版之前打卡根本发不出去（快照没带 log，usablePrefix 把整队挡住），
+     * 于是那段时间每一次点打卡都进队列、只在本地显示。等这一版把 log 补上、
+     * 队列解封，那些**几天前互相抵消的旧意图**就一起重放了 —— 新的打卡刚
+     * 直连写成功，紧随其后的 flush 又把一条旧的「取消打卡」发上去，把勾抹掉。
+     * 实证：一次点击在服务端留下 `{→true}` 紧跟 `{}` 两条相反写入。
+     *
+     * 判据是 {@code queuedAt}：没有它 = 这一版之前入队的老操作。这类只在
+     * habit 上出现（task 一直能正常发），所以只丢 habit，别误伤任务改动。
+     */
+    private static List<JSONObject> dropStale(List<JSONObject> raw) {
+        long now = System.currentTimeMillis();
+        List<JSONObject> keep = new ArrayList<>();
+        for (JSONObject p : raw) {
+            long at = p.optLong("queuedAt", 0);
+            if (at == 0) {
+                if (!"habit".equals(p.optString("kind"))) keep.add(p);
+                continue;
+            }
+            if (now - at > PENDING_TTL_MS) continue;
+            keep.add(p);
+        }
+        return keep;
+    }
+
+    /**
      * 队首开始、**能安全发出去**的最长前缀长度。
      *
      * 两类发不了：
@@ -933,7 +974,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     /** 把待同步队列发出去。App 启动时 / 组件刷新时 / 每次点击后调用，补上离线期间攒的改动 */
     static void flushPending(Context c) {
         if (!WidgetPrefs.canDirect(c)) return;
-        List<JSONObject> pending = dedupe(WidgetPrefs.pendingOps(c));
+        List<JSONObject> pending = dropStale(dedupe(WidgetPrefs.pendingOps(c)));
         if (pending.isEmpty()) {
             WidgetPrefs.clearPending(c);
             return;

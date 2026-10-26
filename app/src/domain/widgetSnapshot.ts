@@ -173,7 +173,12 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
     });
 
   const habits: SnapshotHabit[] = liveHabits(s)
-    .sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9))
+    /* 排序必须与**服务端 widgetView 的排序完全一致**（2026-10-26）：
+     * 以前这里 `order ?? 1e9`（缺 order 排最后），服务端是 `order || 0`
+     * （缺 order 排最前）—— 同一批习惯换一条数据来源就整体换位置，用户
+     * 看到的是「打完卡格子自己换了位置」。两边都用「order 升序 + id 兜底」
+     * 之后，序列唯一，无论快照由谁写都不会跳。 */
+    .sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || a.id.localeCompare(b.id))
     .map((h) => ({
       id: h.id,
       calId: h.calId,

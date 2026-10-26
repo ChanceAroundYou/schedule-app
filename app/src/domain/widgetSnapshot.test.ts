@@ -105,6 +105,25 @@ test('打卡记录整张表进快照 —— 缺了它小组件「点完又弹回
     'done 仍按基准日算，保持兼容');
 });
 
+test('习惯排序：order 升序 + id 兜底，缺 order 排最后（与服务端逐字一致）', () => {
+  // 两边的排序口径以前不一致（JS 缺 order 排最后、服务端排最前），同一批
+  // 习惯换一条数据来源就整体换位置 —— 用户看到「打完卡格子自己换了位置」。
+  // 这里把契约钉死：order 升序，同 order 用 id 字典序，缺 order 视作最大。
+  const mk = (title: string, order: number | undefined, id: string) => {
+    const h = { ...makeHabit(title, order ?? 0, 'c1'), id };
+    if (order === undefined) delete (h as { order?: number }).order;
+    return h;
+  };
+  const s2 = state([], {
+    h3: mk('无order', undefined, 'h3'),
+    h1: mk('第二个', 2, 'h1'),
+    h2: mk('并列A', 1, 'h2'),   // 与下一条 order 相同 → 按 id 字典序（h2 < h4）
+    h4: mk('并列B', 1, 'h4'),
+  });
+  const got = buildWidgetSnapshot(s2, T).habits.map((h) => h.title);
+  assert.deepEqual(got, ['并列A', '并列B', '第二个', '无order']);
+});
+
 test('没有打卡记录的打卡，log 是空对象而不是缺字段', () => {
   const habit = makeHabit('学英语', 0, 'c1');
   const snap = buildWidgetSnapshot(state([], { h1: habit }), T);

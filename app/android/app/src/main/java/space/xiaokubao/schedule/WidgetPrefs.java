@@ -100,8 +100,35 @@ class WidgetPrefs {
         } catch (Exception e) {
             arr = new JSONArray();
         }
+        // 入队时刻。给别人一个「这条意图有多老」的判据 ——
+        // 2026-10-26：没有它就没法区分「刚点的、要发」和「几天前的旧意图」，
+        // 而旧意图重放会直接盖掉用户刚做的操作（见 dropStale 的说明）。
+        try {
+            if (!op.has("queuedAt")) op.put("queuedAt", System.currentTimeMillis());
+        } catch (Exception ignored) {
+        }
         arr.put(op);
         p.edit().putString(KEY_PENDING, arr.toString()).apply();
+    }
+
+    /**
+     * 丢掉某个习惯某一天的排队操作。
+     *
+     * **新意图作废旧意图**：同一格打卡，用户此刻点的是最终意图，队列里
+     * 躺着的旧「打卡/取消」一概作废。不丢的话，新的直连写成功后顺手
+     * flush，旧 op 会随后重放，把刚打上的勾又抹掉 —— 用户看到的就是
+     * 「点完变灰，马上又回绿」（2026-10-26 实证：一次点击在服务端留下
+     * 两条相反写入）。
+     */
+    static void dropQueuedHabit(Context c, String habitId, String date) {
+        List<JSONObject> keep = new ArrayList<>();
+        for (JSONObject o : pendingOps(c)) {
+            boolean same = "habit".equals(o.optString("kind"))
+                    && habitId.equals(o.optString("habitId"))
+                    && date.equals(o.optString("date"));
+            if (!same) keep.add(o);
+        }
+        setPending(c, keep);
     }
 
     static List<JSONObject> pendingOps(Context c) {

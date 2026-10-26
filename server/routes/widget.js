@@ -125,7 +125,10 @@ function widgetView(userId) {
       log: (h.log && typeof h.log === 'object') ? h.log : {},
     });
   }
-  habits.sort((a, b) => (a.order || 0) - (b.order || 0));
+  // 与 app/src/domain/widgetSnapshot.ts 的排序**逐字对齐**：order 升序 + id 兜底。
+  // 两边口径不一致时，同一批习惯换一条数据来源就会整体换位置（用户看到
+  // 「打完卡格子自己换了位置」，2026-10-26）。
+  habits.sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || String(a.id).localeCompare(String(b.id)));
 
   return {
     v: 1,
