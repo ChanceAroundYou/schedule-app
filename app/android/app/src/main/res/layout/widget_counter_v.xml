@@ -61,17 +61,12 @@
                 android:textColor="@color/ctrPinkMinusInk"
                 android:textSize="22sp" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_a_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrPinkInk"
-                android:textSize="21sp" />
+                android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/ctr_a_plus"
@@ -122,17 +117,12 @@
                 android:textColor="@color/ctrGreenMinusInk"
                 android:textSize="22sp" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_b_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrGreenInk"
-                android:textSize="21sp" />
+                android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/ctr_b_plus"
