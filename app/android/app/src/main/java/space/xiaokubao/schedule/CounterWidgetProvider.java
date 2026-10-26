@@ -198,8 +198,8 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
     private static Bitmap renderValue(Context c, String text, float sp, int color) {
         float density = c.getResources().getDisplayMetrics().density;
-        int w = (int) (180 * density);
-        int h = (int) (70 * density);
+        int w = (int) (160 * density);
+        int h = (int) (46 * density);
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Typeface tf;
@@ -245,7 +245,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
      * 21sp 撑死放三位，四位往上必须收，否则会被布局裁掉一半。
      */
     private static float valueSp(String text, boolean wide) {
-        float base = wide ? 34f : 32f;
+        float base = wide ? 24f : 22f;
         int n = text.length();
         if (n <= 3) return base;
         if (n == 4) return base - 4f;
