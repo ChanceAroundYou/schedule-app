@@ -89,7 +89,26 @@ test('打卡：done 看今天，streak 按今天/昨天起算', () => {
   const snap = buildWidgetSnapshot(state([], { h1: habit }), T);
   assert.deepEqual(snap.habits, [{
     id: habit.id, calId: 'c1', title: '学英语', done: true, streak: 3,
+    // 整张表必须原样带上（2026-10-26：缺了它小组件上打完卡会弹回浅色）
+    log,
   }]);
+});
+
+test('打卡记录整张表进快照 —— 缺了它小组件「点完又弹回浅色」', () => {
+  // 用户在桌面点了 10-07 的卡（不是今天），原生按 log[选中日] 取色。
+  // 只带 done 的话：那一格永远浅色，而且下次 App 推快照会把历史抹平。
+  const log: Record<string, true> = { [T]: true, '2026-10-07': true };
+  const habit = { ...makeHabit('学英语', 0, 'c1'), log };
+  const raw = JSON.parse(serializeWidgetSnapshot(state([], { h1: habit })));
+  assert.deepEqual(raw.habits[0].log, log, '序列化后 log 必须还在');
+  assert.equal(buildWidgetSnapshot(state([], { h1: habit }), T).habits[0].done, true,
+    'done 仍按基准日算，保持兼容');
+});
+
+test('没有打卡记录的打卡，log 是空对象而不是缺字段', () => {
+  const habit = makeHabit('学英语', 0, 'c1');
+  const snap = buildWidgetSnapshot(state([], { h1: habit }), T);
+  assert.deepEqual(snap.habits[0].log, {}, '缺字段等于「老服务端」，原生要能区分');
 });
 
 test('每条都带 calId，快照带 today —— 原生直连写服务器缺了这两样就写不进去', () => {

@@ -279,7 +279,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                      *
                      * 颜色变化**跟随日程**：未完成=深色实心（主绿）+ 白字；
                      * 完成=浅底 + 灰字，与任务卡「完成变淡」一致。 */
-                    boolean hDone = h.log != null && h.log.optBoolean(day, false);
+                    /* 没有 log 表的老快照（App 侧 2026-10-26 之前推的那种只带
+                       done/streak）→ 只能拿 done 兜底，而且只对「今天」有意义：
+                       done 表达的就是今天。有 log 时一律按天读（见上面那段注释）。 */
+                    boolean hDone = h.log != null
+                            ? h.log.optBoolean(day, false)
+                            : (h.done && day.equals(today));
                     chip.setInt(R.id.habit_chip, "setBackgroundResource",
                             hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
                     chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
