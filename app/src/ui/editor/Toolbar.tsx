@@ -75,8 +75,10 @@ function GroupMenu({ label, items, anyOn }: {
   const panel = useRef<HTMLDivElement>(null);
   useOutsideClose(panel, open, () => setOpen(false), btn);
   useEscape(open, () => setOpen(false));
-  /* forceUp：工具条贴在编辑框底部，菜单往上弹才不会被屏幕下沿截掉 */
-  const pos = useAnchoredPosition(btn, panel, open, [items.map((i) => i.on).join()], true);
+  /* forceUp 传 false：工具条在**顶部**（2026-10-26 改的位置），菜单要往下弹。
+     之前工具条在底部，传 true 让菜单往上弹才不被屏幕下沿截掉 —— 两者必须跟着
+     工具条的位置一起改，不然菜单会弹到屏幕外面去。 */
+  const pos = useAnchoredPosition(btn, panel, open, [items.map((i) => i.on).join()], false);
 
   return (
     <>

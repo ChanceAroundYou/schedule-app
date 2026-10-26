@@ -49,8 +49,10 @@
    上面那条贴内容宽的规则是有意的默认值，所以想等分必须显式写出来。 */
 .field--half { flex: 1 1 0; min-width: 0; }
 .field--half > div, .field--half .dp-btn, .field--half .rep-open, .field--half .tp { width: 100%; }
-/* 详细内容是最后一块，它自己的上下留白由编辑器卡片算，不要再叠一层 */
-.field--note { margin-bottom: 0; width: 100%; }
+/* 详细内容是最后一块，它自己的上下留白由编辑器卡片算，不要再叠一层。
+   display:flex + min-height:0 是为了让里头的编辑器能「吃掉剩余高度」——
+   窄屏上那一整屏放得下，靠的就是这条链（见 ui/editor/note.css 窄屏段）。 */
+.field--note { margin-bottom: 0; width: 100%; display: flex; flex-direction: column; min-height: 0; }
 .field label, .field .flabel { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 6px; letter-spacing: .2px; }
 .field .sub { color: var(--text-3); }
 /* Field 组件的提示 / 错误行。hint 是格式示例那类常驻说明，

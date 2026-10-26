@@ -228,6 +228,14 @@ export async function run(ctx) {
   ok(bar.direct === 4, '第一排 4 个直点按钮（粗 / 待办 / 图片 / 链接），实际 ' + bar.direct);
   ok(bar.groups === 3, '后面 3 个分组（字体 / 列表 / 段落），实际 ' + bar.groups);
 
+  /* 工具条必须在**书写区上方**（2026-10-26 用户改的位置）。
+     用 DOM 顺序判，不量坐标 —— 坐标会随屏幕高度变，顺序不会。 */
+  const order = await evalJs(page, `const bar=document.querySelector('.drawer.open .note-bar');
+    const surf=document.querySelector('.drawer.open .note-edit-surface');
+    if(!bar||!surf) return 'missing';
+    return (bar.compareDocumentPosition(surf) & Node.DOCUMENT_POSITION_FOLLOWING) ? 'above' : 'below';`);
+  ok(order === 'above', '工具条在书写区上方（不是底部），实际 ' + order);
+
   await evalJs(page, `const el=document.querySelector('.drawer.open .note-prose'); el.focus(); return document.activeElement===el;`);
   await page.send('Input.insertText', { text: '加钱请 RA 帮忙优化' });
   await key(page, 'Enter', 'Enter', 13);
@@ -298,6 +306,44 @@ export async function run(ctx) {
   const again = await evalJs(page, `return document.querySelector('.drawer.open .note-prose').innerText.replace(/\\s+/g,' ').trim();`);
   ok(again.includes('加钱请 RA') && again.includes('重点'),
     '关掉抽屉再打开，详细内容还在（说明真的写回库了），实际「' + again.slice(0, 40) + '」');
+
+  /* ---- 小屏能不能一屏放下（2026-10-26 用户给的截图是 375×667）----
+   *
+   * 上面那些断言跑在桌面宽度上，媒体查询一条都没生效 —— 而这批紧凑化改动
+   * 全写在 `@media (max-width: 900px)` 里，桌面宽度下测了等于没测。
+   *
+   * ⚠️ **抽屉已经开着，直接压视口量**，不要先切尺寸再点任务：窄屏下列表
+   * 布局会变（列表行换了容器），按选择器找那一行会找不到，测的就不是本意了。
+   * 量三件事：抽屉没被屏幕切掉 / 正文不用滚 / 书写区底边还在屏幕内且高度够用。
+   * 量完立刻清掉覆盖，后面几节还在桌面宽度上跑。 */
+  await page.send('Emulation.setDeviceMetricsOverride', {
+    width: 375, height: 667, deviceScaleFactor: 2, mobile: true,
+  });
+  await new Promise((r) => setTimeout(r, 450));
+  const fit = await evalJs(page, `return (() => {
+    const d = document.querySelector('.drawer.open');
+    if (!d) return { gone: true };
+    const r = d.getBoundingClientRect();
+    const body = d.querySelector('.drawer-body');
+    const bar = d.querySelector('.note-bar').getBoundingClientRect();
+    const surf = d.querySelector('.note-edit-surface').getBoundingClientRect();
+    return {
+      drawerH: Math.round(r.height), vh: Math.round(innerHeight),
+      overflow: body.scrollHeight - body.clientHeight,
+      surfH: Math.round(surf.height), surfBottom: Math.round(surf.bottom),
+      barAbove: bar.bottom <= surf.top + 1,
+    };
+  })();`);
+  ok(!fit.gone, '切到 375×667 后抽屉还在');
+  ok(fit.drawerH <= fit.vh, '375×667 下抽屉没被屏幕切掉，实际 ' + fit.drawerH + ' / ' + fit.vh + '（书写区 ' + fit.surfH + 'px）');
+  ok(fit.overflow <= 4, '375×667 下详情页正文**不用滚**（一屏放得下），实际溢出 ' + fit.overflow + 'px');
+  ok(fit.surfBottom <= fit.vh, '375×667 下书写区底边在屏幕内，实际底边 ' + fit.surfBottom + ' / 视口 ' + fit.vh);
+  ok(fit.surfH >= 180, '375×667 下书写区还有足够高度写字（≥180px ≈ 8 行），实际 ' + fit.surfH + 'px');
+  ok(fit.barAbove, '375×667 下工具条仍在书写区上方');
+
+  await page.send('Emulation.clearDeviceMetricsOverride');
+  await new Promise((r) => setTimeout(r, 400));
+  await waitFor(page, `!!document.querySelector('.drawer.open .note-edit-surface')`, '量完抽屉还在', 8000);
 
   // 顺手把这条任务填上日期 —— 下面月视图要用的那条**有日期的**任务就是它。
   //

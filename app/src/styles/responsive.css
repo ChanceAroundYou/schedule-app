@@ -250,7 +250,10 @@ body.sheet-open .tab:active { background: none; }
 
   /* 任务抽屉：从底部整块弹出。**高度按内容走**（2026-10-12）——
      用户报「移动端下有大量空白」：写死 88dvh，四行字段只占三百来像素，
-     剩下两百多像素是空的。改 height:auto，max-height 兜底防长内容撑爆。 */
+     剩下两百多像素是空的。改 height:auto，max-height 兜底防长内容撑爆。
+     2026-10-26 又一版：目标是 375×667 一屏放得下，所以字号/行距/控件高度
+     各降一档，并且把「详细内容」接成 flex 尾巴吃掉剩余高度 —— 它多高
+     由剩下的空间决定，不同机型不用各写一套。 */
   .drawer {
     top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
     height: auto; max-height: 88dvh;
@@ -260,11 +263,21 @@ body.sheet-open .tab:active { background: none; }
     transition: transform .24s cubic-bezier(.3, .8, .3, 1);
   }
   .drawer.open { transform: none; }
-  .drawer-head { padding: 14px 15px; }
-  .drawer-title { font-size: 17px; }
-  .drawer-body { padding: 15px; }
+  .drawer-head { padding: 10px 13px; }
+  .drawer-title { font-size: 15.5px; }
+  /* 竖排 flex：`> * { flex: 0 0 auto }` 是必须的 —— flex 子项默认会**被压扁**，
+     而压扁之后 overflow 永远不触发，抽屉该滚的时候滚不动。 */
+  .drawer-body { padding: 12px 13px; display: flex; flex-direction: column; }
+  .drawer-body > * { flex: 0 0 auto; }
+  .drawer-body > .field--note { flex: 1 1 auto; min-height: 0; }
+  .field--note .note-edit { flex: 1 1 auto; min-height: 0; }
   .drawer-foot { padding: 12px 15px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
-  .field-row { gap: 10px; }
+  .field-row { gap: 8px; margin-bottom: 10px; }
+  .field { margin-bottom: 10px; }
+  .field label, .field .flabel { font-size: 11px; margin-bottom: 3px; }
+  /* 四个下拉/时间按钮统一矮 2px：一行省 2px，四行就是 8px，
+     加上行距从 14 降到 10（每行省 4px），一屏净多出 20 多像素给正文 */
+  .drawer .dp-btn, .drawer .tp-btn, .drawer .rep-open { height: 28px; font-size: 12.5px; }
 
   /* 习惯页：热力点放大一点 */
   .heat-dot { width: 15px; height: 15px; }

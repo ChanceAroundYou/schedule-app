@@ -187,20 +187,15 @@ export function RichNote({ initial, onChange, labelledBy }: {
 
   return (
     <div className="note-edit">
-      {/* 点图放大。编辑态下点一下是「选中图片」，所以只在图片上直接开预览。
-          点在容器的留白上（不是正文里）要**手动把光标送进去** —— 否则那一圈
-          内边距点了没反应，用户以为坏了。 */}
-      <div
-        className="note-edit-surface"
-        onClick={(e) => {
-          const t = e.target as HTMLElement;
-          if (t && t.tagName === 'IMG') { setPreview((t as HTMLImageElement).src); return; }
-          const surface = e.currentTarget as HTMLElement;
-          if (t === surface || t.parentElement === surface) editor.commands.focus('end');
-        }}
-      >
-        <EditorContent editor={editor} />
-      </div>
+      {/* 工具条在**顶部**（2026-10-26 用户要求，原在底部）：写字时不会被
+          手指盖住，也不会跟着软键盘上下跳。 */}
+      <NoteToolbar
+        editor={editor}
+        narrow={narrow}
+        uploading={uploading}
+        onPickImage={() => fileRef.current?.click()}
+        onOpenLink={openLink}
+      />
 
       {linkOpen && (
         <div className="note-link-row">
@@ -223,13 +218,20 @@ export function RichNote({ initial, onChange, labelledBy }: {
 
       {error && <div className="note-err">{error}</div>}
 
-      <NoteToolbar
-        editor={editor}
-        narrow={narrow}
-        uploading={uploading}
-        onPickImage={() => fileRef.current?.click()}
-        onOpenLink={openLink}
-      />
+      {/* 点图放大。编辑态下点一下是「选中图片」，所以只在图片上直接开预览。
+          点在容器的留白上（不是正文里）要**手动把光标送进去** —— 否则那一圈
+          内边距点了没反应，用户以为坏了。 */}
+      <div
+        className="note-edit-surface"
+        onClick={(e) => {
+          const t = e.target as HTMLElement;
+          if (t && t.tagName === 'IMG') { setPreview((t as HTMLImageElement).src); return; }
+          const surface = e.currentTarget as HTMLElement;
+          if (t === surface || t.parentElement === surface) editor.commands.focus('end');
+        }}
+      >
+        <EditorContent editor={editor} />
+      </div>
 
       <input
         ref={fileRef}

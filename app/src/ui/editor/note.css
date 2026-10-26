@@ -13,6 +13,9 @@
   background: var(--panel-2);
   overflow: hidden;
   transition: border-color .14s, background .14s;
+  /* 竖排：工具条在上、书写区在下。让书写区吃掉剩余高度（窄屏一整屏放得下） */
+  display: flex; flex-direction: column;
+  min-height: 0;
 }
 .note-edit:focus-within { border-color: var(--primary); background: var(--panel); }
 
@@ -31,6 +34,7 @@
      一两行高，下面那片全是容器的留白 —— 点上去落在容器上，编辑器拿不到
      焦点，表现就是「只有第一行能点进去」。 */
   display: flex;
+  flex: 1 1 auto;
 }
 .note-edit-surface > div { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 
@@ -103,11 +107,13 @@
 
 /* ================= 工具条 ================= */
 
-/* 贴在编辑框**底部**：手机上打字时手指在下方，工具条离键盘近才够得着；
-   放顶部的话每次都要把手指抬到屏幕上半截。 */
+/* 工具条在**输入框顶部**（2026-10-26 用户改的位置，原在底部）。
+ * 顶部的好处是写字时不会被手指盖住，也不会跟着软键盘上下跳；
+ * 代价是离键盘远一点，所以按钮保持 28px 高、不做得更小。
+ * 分隔线相应从 `border-top` 换成 `border-bottom`。 */
 .note-bar {
   display: flex; align-items: center; gap: 3px; flex-wrap: nowrap;
-  padding: 5px 6px; border-top: var(--border-w) solid var(--border);
+  padding: 5px 6px; border-bottom: var(--border-w) solid var(--border);
   background: var(--panel-3);
   overflow-x: auto; scrollbar-width: none;
 }
@@ -148,7 +154,7 @@
 
 .note-link-row {
   display: flex; align-items: center; gap: 5px;
-  padding: 7px 8px; border-top: var(--border-w) solid var(--border);
+  padding: 7px 8px; border-bottom: var(--border-w) solid var(--border);
   background: var(--panel-2);
 }
 .note-link-input {
@@ -189,10 +195,30 @@
   border: none; background: rgba(255, 255, 255, .16); color: #fff;
 }
 
-/* 窄屏：书写区仍然要占大头。手机上整屏才 800 来 dp，抽屉留 12% 做「能下滑
-   关掉」的暗示，字段那三行占掉一截，剩下全给正文 —— 不然写两句就得滚。 */
-@media (max-width: 640px) {
-  .note-edit-surface { min-height: 46dvh; max-height: 54dvh; padding: 9px 10px; }
-  .note-prose { font-size: 14.5px; }
-  .note-prose img { max-height: 200px; }
+/* 窄屏：目标是 **375×667 也要一屏放下**（2026-10-26 用户给了截图）。
+ *
+ * 做法不是「把编辑区压小」，而是**让它吃掉剩下的高度**：抽屉正文改成竖排
+ * flex，最后那块（详细内容）`flex: 1 1 auto`，于是上面四行字段占多少、
+ * 它就自动拿剩下的多少 —— 不同机型不用各写一套高度。
+ *
+ * 字号和行距同时降一档：正文 14.5 → 13.5px、行高 1.75 → 1.55、字段标签
+ * 12 → 11px、控件 30 → 28px。这是「能多塞一行字」的关键，比缩编辑区划算。 */
+@media (max-width: 900px) {
+  /* 书写区高度必须**从视口算**，不能只靠 flex 分配：
+     抽屉是 `height:auto`（按内容长），auto 高度的容器里 flex-grow 没有
+     多余空间可分，实测 375×667 上书写区被压到只剩 63px（一条缝）。
+     30dvh ≈ 667 屏上的 200px，约 9 行 ——「小屏也能完整显示」靠的是这个下限。
+     上限 46dvh 是为了打字时上面四行字段还在，不至于被挤出去。 */
+  .note-edit-surface { min-height: 30dvh; max-height: 46dvh; padding: 8px 9px; }
+  .note-prose { font-size: 13.5px; line-height: 1.55; }
+  .note-prose p { margin: 0 0 .4em; }
+  .note-prose h1 { font-size: 16.5px; margin: .55em 0 .2em; }
+  .note-prose h2 { font-size: 15px; margin: .5em 0 .2em; }
+  .note-prose h3 { font-size: 14px; margin: .45em 0 .2em; }
+  .note-prose ul, .note-prose ol { margin: 0 0 .4em; }
+  .note-prose li { margin: .05em 0; }
+  .note-prose img { max-height: 180px; margin: .3em 0; }
+  .note-bar { padding: 3px 4px; gap: 2px; }
+  .note-btn { min-width: 27px; height: 26px; padding: 0 5px; }
+  .note-menu-item { padding: 7px 9px; }   /* 触屏命中区别再缩，反而要够大 */
 }
