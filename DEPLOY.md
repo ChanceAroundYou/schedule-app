@@ -8,6 +8,7 @@
 
 | 脚本 | 用途 |
 |---|---|
+| `deploy/env.sh` | **构建环境统一入口**：读 `.env` + 按平台探测 JDK / SDK / Gradle / aapt（被下面几个脚本 source） |
 | `deploy/web-loop.sh` | 网页端一键闭环：可追溯 → tsc → 单测 → 本地深测 → 发布 → 线上实测 |
 | `deploy/mobile-loop.sh` | 手机端：+版本号自检 → 打包 → 发布 → 装机 → 真机冒烟 |
 | `deploy/publish-web.sh` | 前端发布（构建 → 上传 → 备份 → 切换 → 回读） |
@@ -16,6 +17,39 @@
 | `deploy/install-deps.sh` | 首次安装 / 换机器装 AI 依赖 |
 
 参数（所有 publish 脚本通用）：`--approve` 真发布 · `--force` 强制重发 · `--rollback` 回滚（也要 `--approve`）· `--skip-build` 仅 web 用现有 dist · `--allow-dirty` / `--allow-unpushed` 逃生口。
+
+## 构建环境（每台设备一份 .env）
+
+APK 构建要 JDK 21 + Android SDK（`platforms;android-36`、`build-tools;36.0.0`）+ Gradle
+8.14.3。路径**不再写死在脚本里**，统一由 `deploy/env.sh` 处理：
+
+1. 读项目根的 `.env`（本机私有，已 gitignore）；
+2. 没写的变量按平台探测（Windows 的 `C:/Program Files/Microsoft/jdk-21…`、
+   Linux 的 `/vol2/.toolchains/…` 与 `~/.local/toolchains/…`、`/usr/lib/jvm/…`）；
+3. 仍找不到就报错并提示改 `.env`，不会再让 gradle 抛半截错误。
+
+首次在新设备上构建：
+
+```bash
+cp .env.template .env      # 按本机路径改
+# 变量：JAVA_HOME / ANDROID_HOME / GRADLE / SSH_HOST / BASE_URL / API_BASE
+# 密码不进 .env —— keystore 密码只在 app/android/keystore.properties（已 gitignore）
+```
+
+本机（fn / NAS Linux）的持久工具链放在 `/vol2/.toolchains/`：
+
+```text
+/vol2/.toolchains/jdk-21                 JDK 21.0.13
+/vol2/.toolchains/android-sdk            SDK（platform-tools / android-36 / build-tools 36.0.0）
+/vol2/.toolchains/gradle-8.14.3          Gradle 8.14.3
+```
+
+Windows 笔记本继续用它自己的 `C:/Users/小哭包/...` 路径（写进各自的 `.env` 即可）。
+两边跑的是**同一套** `deploy/*.sh`，不再有分叉版本。
+
+签名：`app/android/keystore.properties` 与 `~/.android/schedule-release.jks` 必须成对
+存在（Linux 侧 `storeFile` 写 `/home/xiaokubao/.android/schedule-release.jks`，
+Windows 侧写 `C:/Users/小哭包/.android/schedule-release.jks`）。
 
 ## 发布流程
 
@@ -76,7 +110,10 @@ curl -sk -o /dev/null -w '%{http_code} %{redirect_url}\n' $B  # 301
 | 页面能开但资源全 404 | 访问的是 `/schedule`（无尾斜杠） |
 | 两台设备数据不一致 | 顶栏同步图标还在转？逐字段 LWW |
 | 数据不对 | **先看服务器库** |
-| 桌面看不到「计数器」小组件 | ① 关于页 versionCode 是否 61（没到就先更新 App）；② 重启启动器/整机；③ `adb shell dumpsys appwidget` 看 CounterWidgetProvider 是否注册 |
+| 桌面看不到「计数器」小组件 | ① 关于页 versionCode 是否 ≥61（没到就先更新 App）；② 重启启动器/整机；③ `adb shell dumpsys appwidget` 看 CounterWidgetProvider 是否注册 |
+| 构建报 `invalid source release: 21` | `.env` 的 `JAVA_HOME` 指到了 JDK 17；换成 21 |
+| 构建报找不到 `cordova.variables.gradle` | 先 `cd app && npx cap sync android` |
+| 构建报 `SDK location not found` | `.env` 的 `ANDROID_HOME` 没设或目录里没有 `platforms/` |
 | 后端起不来 EADDRINUSE | `ss -lptn 'sport = :25692'` |
 
 环境细节见 [docs/踩坑-环境.md](docs/踩坑-环境.md)。

@@ -29,13 +29,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/app"
 
-# 与 build.gradle 的 UPDATE_BASE 保持一致 —— 换域名时两处一起改
-API_BASE="${API_BASE:-https://home.xiaokubao.space/schedule}"
+# JDK / SDK / Gradle / API_BASE 全部由 .env + 平台探测决定（见 deploy/env.sh）
+source "$ROOT/deploy/env.sh"
 
 NODE="${NODE:-node}"
-GRADLE="${GRADLE:-$HOME/gradle-dist/gradle-8.14.3/bin/gradle}"
-JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
-ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
 
 echo "==> 1/4 构建网页资源（VITE_API_BASE=$API_BASE）"
 cd "$APP"

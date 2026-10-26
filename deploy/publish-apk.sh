@@ -30,27 +30,26 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID="$ROOT/app/android"
 
-# Windows 上的 JDK / SDK 路径。换机器要改这里。
-export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
-export ANDROID_HOME="${ANDROID_HOME:-/c/Users/小哭包/Android}"
-GRADLE="${GRADLE:-/c/Users/小哭包/gradle-dist/gradle-8.14.3/bin/gradle}"
-AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt.exe"
-SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
+# JDK / SDK / Gradle / SSH_HOST / BASE_URL 全部由 .env + 平台探测决定（见 deploy/env.sh）
+source "$ROOT/deploy/env.sh"
+env_require
+
+SSH_HOST="${SSH_HOST:-ubuntu}"
+REMOTE_DIR='~/.local/schedule/apk'
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版 ssh 不读 ~/.ssh/config
 # 里的 Host 别名（`ssh ubuntu` 会退化成用本机名当用户名，然后 publickey 失败）
 # ssh 可执行文件由 preflight.sh 的 pick_ssh() 探测：
 #   显式 `SSH=` → Windows 自带的 ssh.exe → PATH 里的 ssh。
 # **别在这里再写死某个平台的路径** —— 那样 Linux 侧会静默失败。
 # 注意也别在这里给 SSH 赋任何值，会盖掉用户传进来的那个。
-REMOTE_DIR='~/.local/schedule/apk'
-BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule/dl}"
+BASE_URL="${BASE_URL%/}/dl"
 
 # 版本记录（state/app.version）与 publish-web.sh 对齐，靠 preflight.sh 的
 # pf_gather / pf_write_version。⚠️ 2026-10-17 补的：以前这里没有，发完 APK
 # 线上记录不更新（上上个版本就停更过）。
 source "$ROOT/deploy/preflight.sh"
 
-NOTES="${1:-$(date +%Y-%m-%d 发布)}"
+NOTES="${1:-$(date '+%Y-%m-%d 发布')}"
 
 say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
@@ -71,7 +70,7 @@ if [ -f "$ROOT/dist/index.html" ] && [ -f "$ANDROID/app/src/main/assets/public/i
   fi
 fi
 cd "$ANDROID"
-"$GRADLE" assembleRelease --quiet
+JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" "$GRADLE" assembleRelease --quiet
 
 # ⚠️ aapt.exe 是 **Windows 程序**，不认 Git Bash 的 `/c/...` 路径 —— 传绝对路径
 # 进去它当成相对路径找，静默返回空，症状是「读不到 versionCode」。所以下面一律

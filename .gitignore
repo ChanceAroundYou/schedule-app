@@ -33,3 +33,6 @@ legacy-dist-backup/
 # release 签名：keystore 密码表（keystore 本体在 ~/.android/，本就不在仓库里）
 app/android/keystore.properties
 *.jks
+
+# 每台设备各自的构建/发布环境（模板 .env.template 进库）
+.env
