@@ -44,7 +44,12 @@ deploy/           发布脚本 + nginx conf / systemd 单元
 **点击在 `#content` 上委托**（`app/clickDispatch.ts` 是唯一的 `onClick`，靠 `data-*` 分派）：
 行由 React 渲染、拖拽与同步会换掉它们，挂行上的 handler 会丢。`views/` 因此**零回调**。
 分派顺序 `[data-act]` → `[data-jump]`/`[data-nav]` → `.task-el` → `[data-zone-id]`
-（第四步必须在第三步之后：`.month-cell` 带 `data-no-draft`）。
+（第四步必须在第三步之后，否则「点开某条任务」会变成「新建一条空任务」）。
+`data-no-draft` 如今**只剩邻月灰格**带（点空白不弹草稿）。
+月视图三档点击（2026-10-26 用户定，细节见 `views/calendar/MonthView.tsx` 头注释）：
+点**日期数字**（`.cell-date` 的 `data-jump`）→ 那一天日视图；点**格子空白**→ 就地新建
+（本月格子**不挂** `data-jump`，否则第 2 步先命中、轮不到第 4 步）；点**任务胶囊**→
+开详情抽屉（胶囊本体不挂 `data-jump`，只有尾巴 `+N` 挂，点了去看那天的日视图）。
 
 **跨集口径**由 Workbench 传哪份 state 决定：今天 / 逾期 / 待办箱 / 垃圾箱 / AI 看**全量**；
 日程 / 打卡 / 已完成 / 项目看**选中集**（`scoped`）。侧栏徽标与顶栏一律全量口径。

@@ -89,6 +89,16 @@ git log @{u}.. --oneline
 `gradle.sh` 三件事全做（探测顺序：显式环境变量 → 常见路径 → 报错并给提示），
 `build-apk.sh` / `publish-apk.sh` 都已改成调它，换机器不再需要改脚本里的绝对路径。
 
+**⚠️ 两套入口别互相覆盖**（2026-10-26 实测踩的，`52131ad` 已修）：`env.sh` 会
+`export GRADLE`，而 `gradle.sh` 的逻辑是「`${GRADLE:-}` 非空就直接用」——
+于是 `env.sh` 里默认指向仓库 wrapper 的那一版会**盖掉** `gradle.sh` 的
+「优先用 `~/gradle-dist`」探测，构建照样去下 230MB，代理环境下 `read timeout`，
+表现为**打包卡 20 分钟、零产物、最后报 Downloading failed**。
+→ 两边的探测顺序必须一致（显式 `$GRADLE` → `~/gradle-dist/gradle-*/bin/gradle`
+里版本最大的 → wrapper 兜底）。改其中任何一个，另一个也要同步。
+排查线索：`gradle.sh` 第一行会打印 `==> gradle <路径>`，看到 `app/android/gradlew`
+就是退回 wrapper 了。
+
 ## 发布约束（不能破）
 
 1. 只换目录内容，**绝不 `mv` 目录本身**（Docker bind mount 认 inode）。
