@@ -10,6 +10,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.widget.RemoteViews;
 
@@ -170,22 +175,18 @@ public class CounterWidgetProvider extends AppWidgetProvider {
             idPlus = R.id.ctr_b_plus;
         }
 
+        // 名字用位图渲染，RemoteViews 的 TextView 不支持自定义字体（Baloo2）。
         String id = item == null ? (first ? "naonao" : "kutai") : item.id;
         String name = item == null ? id : item.name;
         int value = item == null ? 0 : item.value;
         String text = String.valueOf(value);
 
-        // 名字写两遍：底层是描边（同底色、大 3sp），上层是彩色字。
-        // 只设一个的话那个"气泡"就没有了 —— 见布局文件里的说明。
-        v.setTextViewText(idName, name);
-        v.setTextViewText(idOutline, name);
-
-        // 名字长了要收字号，否则会被 maxLines=1 直接截断
         float nameSp = wide ? 18f : 17f;
         if (name.length() > 6) nameSp -= 3f;
         else if (name.length() > 5) nameSp -= 2f;
-        v.setTextViewTextSize(idName, TypedValue.COMPLEX_UNIT_SP, nameSp);
-        v.setTextViewTextSize(idOutline, TypedValue.COMPLEX_UNIT_SP, nameSp + 3f);
+        int nameColor = first ? 0xFFE4577A : 0xFF3A8F5C; // ctrPinkName / ctrGreenName 近似
+        int outlineColor = first ? 0xFFF2B5C5 : 0xFFB7D9C2;
+        v.setImageViewBitmap(idName, renderName(c, name, nameSp, nameColor, outlineColor, wide));
 
         v.setTextViewText(idValue, text);
         v.setTextViewTextSize(idValue, TypedValue.COMPLEX_UNIT_SP, valueSp(text, wide));
@@ -195,6 +196,31 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         v.setOnClickPendingIntent(idPlus, stepIntent(c, id, 1));
         // 点数字：弹出直接输入的小窗（组件里放不了输入框，只能开一个对话框主题的 Activity）
         v.setOnClickPendingIntent(idValue, editIntent(c, id, name, value));
+    }
+
+    private static Bitmap renderName(Context c, String name, float nameSp, int nameColor, int outlineColor, boolean wide) {
+        float density = c.getResources().getDisplayMetrics().density;
+        int w = (int) (120 * density);
+        int h = (int) (22 * density);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Typeface tf = null;
+        try { tf = c.getResources().getFont(R.font.baloo2_extra_bold); } catch (Exception e) { tf = Typeface.DEFAULT_BOLD; }
+        Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+        outline.setTypeface(tf);
+        outline.setColor(outlineColor);
+        outline.setTextSize(nameSp * density);
+        outline.setTextAlign(Paint.Align.CENTER);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setTypeface(tf);
+        fill.setColor(nameColor);
+        fill.setTextSize(nameSp * density);
+        fill.setTextAlign(Paint.Align.CENTER);
+        float x = w / 2f;
+        float y = h / 2f - (outline.descent() + outline.ascent()) / 2f;
+        canvas.drawText(name, x, y, outline);
+        canvas.drawText(name, x, y, fill);
+        return bmp;
     }
 
     /**

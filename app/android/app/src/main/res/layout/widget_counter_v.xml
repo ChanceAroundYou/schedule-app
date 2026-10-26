@@ -34,34 +34,11 @@
         android:background="@drawable/ctr_zone_pink"
         android:orientation="vertical">
 
-        <FrameLayout
+        <ImageView
+            android:id="@+id/ctr_a_name"
             android:layout_width="match_parent"
-            android:layout_height="22dp">
-
-            <TextView
-                android:id="@+id/ctr_a_name_outline"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:letterSpacing="0.05"
-                android:maxLines="1"
-                android:textColor="@color/ctrPinkOutline"
-                android:textSize="20sp" />
-
-            <TextView
-                android:id="@+id/ctr_a_name"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:letterSpacing="0.05"
-                android:maxLines="1"
-                android:textColor="@color/ctrPinkName"
-                android:textSize="17sp" />
-        </FrameLayout>
+            android:layout_height="22dp"
+            android:scaleType="fitCenter" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -118,34 +95,11 @@
         android:background="@drawable/ctr_zone_green"
         android:orientation="vertical">
 
-        <FrameLayout
+        <ImageView
+            android:id="@+id/ctr_b_name"
             android:layout_width="match_parent"
-            android:layout_height="22dp">
-
-            <TextView
-                android:id="@+id/ctr_b_name_outline"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:letterSpacing="0.05"
-                android:maxLines="1"
-                android:textColor="@color/ctrGreenOutline"
-                android:textSize="20sp" />
-
-            <TextView
-                android:id="@+id/ctr_b_name"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:letterSpacing="0.05"
-                android:maxLines="1"
-                android:textColor="@color/ctrGreenName"
-                android:textSize="17sp" />
-        </FrameLayout>
+            android:layout_height="22dp"
+            android:scaleType="fitCenter" />
 
         <LinearLayout
             android:layout_width="match_parent"
