@@ -160,16 +160,14 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     /** 填一块（a = naonao 那块，b = Kutai 那块）。两块的 id 不同，所以只差在映射表 */
     private static void bind(Context c, RemoteViews v, boolean first,
                              CounterStore.Item item, boolean wide) {
-        final int idName, idOutline, idValue, idMinus, idPlus;
+        final int idName, idValue, idMinus, idPlus;
         if (first) {
             idName = R.id.ctr_a_name;
-            idOutline = R.id.ctr_a_name_outline;
             idValue = R.id.ctr_a_value;
             idMinus = R.id.ctr_a_minus;
             idPlus = R.id.ctr_a_plus;
         } else {
             idName = R.id.ctr_b_name;
-            idOutline = R.id.ctr_b_name_outline;
             idValue = R.id.ctr_b_value;
             idMinus = R.id.ctr_b_minus;
             idPlus = R.id.ctr_b_plus;
@@ -181,15 +179,15 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         int value = item == null ? 0 : item.value;
         String text = String.valueOf(value);
 
-        float nameSp = wide ? 18f : 17f;
+        float nameSp = wide ? 19f : 18f;
         if (name.length() > 6) nameSp -= 3f;
         else if (name.length() > 5) nameSp -= 2f;
-        int nameColor = first ? 0xFFE4577A : 0xFF3A8F5C; // ctrPinkName / ctrGreenName 近似
-        int outlineColor = first ? 0xFFF2B5C5 : 0xFFB7D9C2;
+        int nameColor = first ? 0xFFD4537E : 0xFF1D9E75;   // ctrPinkName / ctrGreenName
+        int outlineColor = first ? 0xFFFBEAF0 : 0xFFE1F5EE; // ctrPinkOutline / ctrGreenOutline
         v.setImageViewBitmap(idName, renderName(c, name, nameSp, nameColor, outlineColor, wide));
 
-        v.setTextViewText(idValue, text);
-        v.setTextViewTextSize(idValue, TypedValue.COMPLEX_UNIT_SP, valueSp(text, wide));
+        int inkColor = first ? 0xFF4B1528 : 0xFF04342C;     // ctrPinkInk / ctrGreenInk
+        v.setImageViewBitmap(idValue, renderValue(c, text, valueSp(text, wide), inkColor));
 
         // 加减按钮：一律走广播，不打开 App
         v.setOnClickPendingIntent(idMinus, stepIntent(c, id, -1));
@@ -198,10 +196,29 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         v.setOnClickPendingIntent(idValue, editIntent(c, id, name, value));
     }
 
+    private static Bitmap renderValue(Context c, String text, float sp, int color) {
+        float density = c.getResources().getDisplayMetrics().density;
+        int w = (int) (160 * density);
+        int h = (int) (46 * density);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Typeface tf;
+        try { tf = c.getResources().getFont(R.font.baloo2_extra_bold); } catch (Exception e) { tf = Typeface.DEFAULT_BOLD; }
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setTypeface(tf);
+        p.setColor(color);
+        p.setTextSize(sp * density);
+        p.setTextAlign(Paint.Align.CENTER);
+        float x = w / 2f;
+        float y = h / 2f - (p.descent() + p.ascent()) / 2f;
+        canvas.drawText(text, x, y, p);
+        return bmp;
+    }
+
     private static Bitmap renderName(Context c, String name, float nameSp, int nameColor, int outlineColor, boolean wide) {
         float density = c.getResources().getDisplayMetrics().density;
         int w = (int) (120 * density);
-        int h = (int) (22 * density);
+        int h = (int) (26 * density);
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Typeface tf = null;
@@ -228,7 +245,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
      * 21sp 撑死放三位，四位往上必须收，否则会被布局裁掉一半。
      */
     private static float valueSp(String text, boolean wide) {
-        float base = wide ? 22f : 21f;
+        float base = wide ? 24f : 22f;
         int n = text.length();
         if (n <= 3) return base;
         if (n == 4) return base - 4f;

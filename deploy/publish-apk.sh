@@ -30,27 +30,28 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID="$ROOT/app/android"
 
-# JDK / SDK 路径。工具链探测统一交给 deploy/gradle.sh（gradle 发行版 / SDK / JDK
-# 三件事都在那儿，别在这里再写死某个用户名下的绝对路径 —— 换机器就炸）。
-export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
-AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt.exe"
-SSH_HOST="${SSH_HOST:-ubuntu}"          # ~/.ssh/config 里的别名
+# JDK / SDK / Gradle / SSH_HOST / BASE_URL 全部由 .env + 平台探测决定（见 deploy/env.sh）。
+# AAPT 也由它提供（挑 build-tools 里版本最大的那个）—— 这里**不再写死某个用户名下的
+# 绝对路径、也不写死 build-tools 版本**（2026-10-26 合流时统一收口）。
+source "$ROOT/deploy/env.sh"
+env_require
+
+SSH_HOST="${SSH_HOST:-ubuntu}"
+REMOTE_DIR='~/.local/schedule/apk'
 # 必须用 Windows 自带的 ssh.exe —— Git Bash 的 MSYS 版 ssh 不读 ~/.ssh/config
 # 里的 Host 别名（`ssh ubuntu` 会退化成用本机名当用户名，然后 publickey 失败）
 # ssh 可执行文件由 preflight.sh 的 pick_ssh() 探测：
 #   显式 `SSH=` → Windows 自带的 ssh.exe → PATH 里的 ssh。
 # **别在这里再写死某个平台的路径** —— 那样 Linux 侧会静默失败。
 # 注意也别在这里给 SSH 赋任何值，会盖掉用户传进来的那个。
-REMOTE_DIR='~/.local/schedule/apk'
-BASE_URL="${BASE_URL:-https://home.xiaokubao.space/schedule/dl}"
+BASE_URL="${BASE_URL%/}/dl"
 
 # 版本记录（state/app.version）与 publish-web.sh 对齐，靠 preflight.sh 的
 # pf_gather / pf_write_version。⚠️ 2026-10-17 补的：以前这里没有，发完 APK
 # 线上记录不更新（上上个版本就停更过）。
 source "$ROOT/deploy/preflight.sh"
 
-NOTES="${1:-$(date +%Y-%m-%d 发布)}"
+NOTES="${1:-$(date '+%Y-%m-%d 发布')}"
 
 say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
@@ -71,6 +72,9 @@ if [ -f "$ROOT/dist/index.html" ] && [ -f "$ANDROID/app/src/main/assets/public/i
   fi
 fi
 cd "$ANDROID"
+# 走 deploy/gradle.sh 而不是 env.sh 的 $GRADLE：后者默认是仓库 wrapper（gradlew），
+# 本机没配 .env 时会去下 230MB 发行版，表现为「卡半小时且没有任何输出」。
+# gradle.sh 优先用 ~/gradle-dist 下已解压的那份，顺带锁 JDK 21 与 SDK。
 "$ROOT/deploy/gradle.sh" :app:assembleRelease --quiet
 
 # ⚠️ aapt.exe 是 **Windows 程序**，不认 Git Bash 的 `/c/...` 路径 —— 传绝对路径

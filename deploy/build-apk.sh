@@ -29,13 +29,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/app"
 
-# 与 build.gradle 的 UPDATE_BASE 保持一致 —— 换域名时两处一起改
-API_BASE="${API_BASE:-https://home.xiaokubao.space/schedule}"
+# JDK / SDK / Gradle / API_BASE 全部由 .env + 平台探测决定（见 deploy/env.sh）
+source "$ROOT/deploy/env.sh"
 
 NODE="${NODE:-node}"
-# 工具链（gradle 发行版 / SDK / JDK）统一由 deploy/gradle.sh 探测，这里不再重复写死。
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android}"
-export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot}"
+# JDK / SDK / Gradle / API_BASE 全部由 .env + 平台探测决定（deploy/env.sh）。
+# ⚠️ 这里**不再写死** ANDROID_HOME / JAVA_HOME（2026-10-26 合流时统一收口）——
+# 写死会在换机器时静默指向不存在的目录，而 env.sh 会先探测再回落。
+# gradle 的执行入口仍走 deploy/gradle.sh：它优先用 ~/gradle-dist 下已解压的
+# 发行版，**绕开 wrapper 下载 230MB 那个坑**（env.sh 的 GRADLE 默认是 gradlew）。
 
 echo "==> 1/4 构建网页资源（VITE_API_BASE=$API_BASE）"
 cd "$APP"

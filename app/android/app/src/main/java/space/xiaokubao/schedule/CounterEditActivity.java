@@ -45,9 +45,17 @@ public class CounterEditActivity extends Activity {
         setContentView(R.layout.dialog_counter_edit);
         setFinishOnTouchOutside(true);
 
-        // 弹窗默认按内容收缩，太窄。加宽到屏幕宽度的 90%，约一倍。
+        // 弹窗固定在上半屏，不随软键盘升降而抖动：ADJUST_NOTHING + 固定高度 + 顶部 margin。
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-        getWindow().setLayout((int) (dm.widthPixels * 0.9), android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        int w = (int) (dm.widthPixels * 0.9);
+        int h = (int) (260 * dm.density);   // 键盘升起后的稳定高度
+        getWindow().setLayout(w, h);
+        android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.gravity = android.view.Gravity.TOP;
+        lp.y = (int) (48 * dm.density);     // 距顶 margin
+        getWindow().setAttributes(lp);
+        getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 
         counterId = getIntent().getStringExtra(EXTRA_ID);
         String name = getIntent().getStringExtra(EXTRA_NAME);

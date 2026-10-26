@@ -51,8 +51,8 @@
 
             <TextView
                 android:id="@+id/ctr_a_minus"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:background="@drawable/ctr_btn_minus_pink"
                 android:fontFamily="@font/baloo2_extra_bold"
                 android:gravity="center"
@@ -61,22 +61,17 @@
                 android:textColor="@color/ctrPinkMinusInk"
                 android:textSize="22sp" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_a_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="46dp"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrPinkInk"
-                android:textSize="21sp" />
+                android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/ctr_a_plus"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:background="@drawable/ctr_btn_plus_pink"
                 android:fontFamily="@font/baloo2_extra_bold"
                 android:gravity="center"
@@ -112,8 +107,8 @@
 
             <TextView
                 android:id="@+id/ctr_b_minus"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:background="@drawable/ctr_btn_minus_green"
                 android:fontFamily="@font/baloo2_extra_bold"
                 android:gravity="center"
@@ -122,22 +117,17 @@
                 android:textColor="@color/ctrGreenMinusInk"
                 android:textSize="22sp" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/ctr_b_value"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="46dp"
                 android:layout_weight="1"
-                android:fontFamily="@font/baloo2_extra_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ctrGreenInk"
-                android:textSize="21sp" />
+                android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/ctr_b_plus"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:background="@drawable/ctr_btn_plus_green"
                 android:fontFamily="@font/baloo2_extra_bold"
                 android:gravity="center"

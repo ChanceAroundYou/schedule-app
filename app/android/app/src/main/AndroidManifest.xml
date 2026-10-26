@@ -59,7 +59,7 @@
         -->
         <receiver
             android:name=".CounterWidgetProvider"
-            android:label="计数器"
+            android:label="+1"
             android:icon="@drawable/ic_counter_logo"
             android:exported="false">
             <intent-filter>
