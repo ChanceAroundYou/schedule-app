@@ -92,6 +92,9 @@ class AppUpdate {
     private static volatile boolean sInstallStarted = false;
     /** 抢 {@link #sInstallStarted} 用的锁，见 verifyAndInstall 开头 */
     private static final Object INSTALL_LOCK = new Object();
+    /** 「接手烂尾」同一时刻只跑一份：checkOnLaunch 与 onResume 会同时叫它 */
+    private static volatile boolean sRecovering = false;
+    private static final Object RECOVER_LOCK = new Object();
 
     /**
      * 2026-10-23 用户实锤：点「立即更新」后包下到了手机里，安装界面却永远
@@ -161,8 +164,12 @@ class AppUpdate {
      * 期间进程被杀的话，静态字段全没了，只有这里能把记录里的 id 捞回来。
      */
     static void onResume(final Activity activity) {
-        recoverPending(activity);
+        /* 顺序不能反：**先确认上一轮到底装上没有**，再谈接手烂尾。
+           反过来的话，装完的那一刻（安装器把进程杀了重启，内存字段全空）会先被
+           「接手烂尾」看见包还在内部目录 → 照着重装一遍 → OPPO 弹「已安装相同版本」
+           （2026-10-26 真机，2.4.3→2.4.4 装成功后立刻复现）。 */
         confirmInstalled(activity.getApplicationContext());
+        recoverPending(activity);
         if (!sWaitingForPermission) return;
         sWaitingForPermission = false;
         Log.i(TAG, "授权回来，补一次更新检查");
@@ -489,6 +496,23 @@ class AppUpdate {
      * 失败了清掉记录。用户不用再点一次、也不再白下载一份。
      */
     private static void recoverPending(Activity activity) {
+        /* checkOnLaunch 与 onResume 都会叫这里，早前实测同一次启动起了两条线程、
+           各唤起一次安装器（日志里两条一模一样的「接手烂尾」）。串行 + 标志挡掉。 */
+        synchronized (RECOVER_LOCK) {
+            if (sRecovering) {
+                Log.i(TAG, "接手烂尾已在进行，跳过重入");
+                return;
+            }
+            sRecovering = true;
+        }
+        try {
+            recoverPendingLocked(activity);
+        } finally {
+            sRecovering = false;
+        }
+    }
+
+    private static void recoverPendingLocked(Activity activity) {
         Context c = activity.getApplicationContext();
         long id = pendingId(c);
         if (id < 0) {
@@ -655,6 +679,18 @@ class AppUpdate {
             }
             sInstallStarted = true;
         }
+        /* 兜底：走到这里说明有人在催「装一下」，但可能**其实已经装上了** ——
+           装完之后进程被杀、内部那份包还没来得及清，接手逻辑会把同一个包再唤起一次，
+           系统安装器就弹「已安装相同版本」让人白点一遍（2026-10-26 真机抓到）。
+           已装上的唯一正确动作是结清记录、回家。 */
+        long selfNow = selfVersionCode(c);
+        if (sPendingVersionCode > 0 && selfNow >= sPendingVersionCode) {
+            Log.i(TAG, "已经装上 versionCode=" + selfNow + "（pending=" + sPendingVersionCode + "），不再重装");
+            clearPending(c);
+            sDownloadId = -1L;
+            sInstallStarted = false;
+            return;
+        }
         File tmp = new File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
                 "schedule-" + sPendingVersionCode + ".apk");
         /* 内部目录那一份：**拷完外部那份就删掉了**（见下面拷贝那段）。
@@ -734,6 +770,11 @@ class AppUpdate {
      * 之前没有这一步：verifyAndInstall 里下完就清记录，用户取消一次就得重下。
      */
     private static void confirmInstalled(Context c) {
+        /* 冷启动时静态字段全是 0（安装器装完会把进程杀掉），只靠内存值判断就等于
+           「什么都没装过」→ 上一步的接手逻辑会把内部那份包再装一遍。从记录里捞回来。 */
+        if (sPendingVersionCode <= 0) {
+            sPendingVersionCode = pendingVc(c);
+        }
         if (sPendingVersionCode <= 0) {
             return;
         }
