@@ -11,7 +11,7 @@ import { MIN_SPAN } from '../layout.ts';
 // 另外 navOrder 也是照着这张表补全的，老用户本地存的那份顺序里没有新页 ——
 // 补在这里，他们不用清 localStorage 就能看见它。
 const NAV_ALL = [
-  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'done', 'ai', 'trash', 'settings',
+  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'counter', 'done', 'ai', 'trash', 'settings',
 ];
 
 /**

@@ -37,6 +37,7 @@ const HIDDEN_NAVS = [
   'done',      // 已完成：新建的任务不会是已完成
   'trash',
   'settings',
+  'counter',   // 「+1」是计数器页，没有"加一条任务"这回事
 ];
 
 export function QuickAdd({ state, onSubmit }: {

@@ -1,0 +1,92 @@
+/* 「+1」功能区（views/Counter.tsx）
+   两块竖向堆叠、卡片加宽；加减按钮是整页唯一的圆形重物，数字让位居中。
+   所有颜色 / 圆角 / 边框一律走令牌（见 styles/tokens.css），别在这里写死。 */
+
+.ctr-page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ctr-pad {
+  padding: 16px 20px 14px;
+  background: var(--panel-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+.ctr-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.ctr-name {
+  min-width: 0; padding: 2px 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: .2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctr-name:hover { color: var(--primary); }
+
+.ctr-zero {
+  flex: 0 0 auto; padding: 3px 7px; border: 0; cursor: pointer;
+  background: none; color: var(--text-3); font-size: 11.5px; border-radius: var(--r-sm);
+}
+.ctr-zero:hover { color: var(--danger); background: var(--danger-soft); }
+
+.ctr-row { display: flex; align-items: center; gap: 16px; margin: 10px 0 8px; }
+
+.ctr-btn {
+  flex: 0 0 auto; width: 56px; height: 56px; display: grid; place-items: center;
+  border-radius: 50%; cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s, transform .08s;
+}
+.ctr-btn:active { transform: scale(.95); }
+
+/* 减号：描边，轻 */
+.ctr-minus { border: var(--border-w) solid var(--border); background: var(--panel); color: var(--text-2); }
+.ctr-minus:hover { background: var(--panel-3); color: var(--text); border-color: var(--text-3); }
+
+/* 加号：实心主色，重 —— 主动作只有这一个 */
+.ctr-plus { border: 0; background: var(--primary); color: var(--on-primary); }
+.ctr-plus:hover { filter: brightness(1.08); }
+
+.ctr-value, .ctr-value-input {
+  flex: 1; min-width: 0; padding: 0 4px; border: 0; background: none; cursor: pointer;
+  font-size: 42px; font-weight: 650; line-height: 1.05; color: var(--text);
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.ctr-value:hover { color: var(--primary); }
+.ctr-value-input {
+  cursor: text; border-radius: var(--r-md); background: var(--panel-3);
+  outline: 2px solid var(--primary); outline-offset: 0;
+}
+
+.ctr-name-input, .ctr-daily-input {
+  padding: 2px 6px; border: 0; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text); font-size: 14px;
+  outline: 2px solid var(--primary);
+}
+.ctr-name-input { flex: 1; min-width: 0; font-weight: 600; }
+.ctr-daily-input { width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.ctr-foot { display: flex; align-items: center; justify-content: flex-end; }
+.ctr-daily {
+  padding: 2px 0; border: 0; background: none; cursor: pointer;
+  font-size: 11.5px; color: var(--text-3); letter-spacing: .2px;
+}
+.ctr-daily:hover { color: var(--primary); }
+
+.ctr-empty, .ctr-err {
+  padding: 26px 2px; text-align: center;
+  font-size: 12.5px; color: var(--text-3); line-height: 1.6;
+}
+.ctr-err { color: var(--danger); padding: 0 2px; text-align: left; }
+
+/* 窄屏：按钮和数字各让一档，两块之间的缝收一点 */
+@media (max-width: 520px) {
+  .ctr-page { padding: 12px 12px 24px; gap: 12px; }
+  .ctr-pad { padding: 14px 16px 12px; }
+  .ctr-btn { width: 50px; height: 50px; }
+  .ctr-row { gap: 12px; }
+  .ctr-value, .ctr-value-input { font-size: 36px; }
+}

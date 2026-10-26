@@ -129,6 +129,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'trash') { title = '垃圾箱'; range = ''; }
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
+  else if (ui.nav === 'counter') { title = '+1'; range = '每天 0 点自己往上加'; }
   // 页名归**顶栏**（用户 2026-10-09：「设置页的 header 的左上角没有设置字样」，
   // 要求就是写进 header 里）。设置页那张 tab 栏是**页内的分段开关**，不是 header，
   // 所以页名只此一处 —— 顶栏写、页面里就别再写一遍，否则两行都是「设置」。

@@ -10,6 +10,7 @@ import { TrashView } from '../views/Trash.tsx';
 import { ProjectsView } from '../views/Projects.tsx';
 import { AiPanel } from '../ui/AiPanel.tsx';
 import { CalendarView } from '../views/Calendar.tsx';
+import { CounterView } from '../views/Counter.tsx';
 import { Empty } from '../views/parts.tsx';
 
 /**
@@ -43,6 +44,10 @@ function contentDispatch(state: LocalState, scoped: LocalState, user: PublicUser
       />
     );
   }
+  /* 计数器**不属于任何日程集**（counters 表按 user_id），所以必须放在下面那道
+     「一个集都没拿到」的门禁之前 —— 否则断网首启时看不见自己的数字。 */
+  if (state.ui.nav === 'counter') return <CounterView />;
+
   if (!state.cals.length) {
     // 一个集都没有 = 还没跟服务器对上（首次离线启动）。服务器保证每个账号
     // 至少有一个集，所以这不是「空账号」而是「没同步到」，别在这里引导建集

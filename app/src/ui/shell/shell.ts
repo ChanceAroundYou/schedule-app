@@ -5,7 +5,6 @@
 export { NAV, TRASH_NAV, SETTINGS_NAV, navDef, badge } from './nav.tsx';
 export type { NavDef } from './nav.tsx';
 export { Pulse } from './Pulse.tsx';
-export { CountersCard } from './CountersCard.tsx';
 export { Sidebar } from './Sidebar.tsx';
 export { JumpPop } from './JumpPop.tsx';
 export { CalSubheader, Topbar } from './Topbar.tsx';

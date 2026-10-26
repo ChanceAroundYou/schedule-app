@@ -23,6 +23,7 @@
 @source not "../../../docs";
 @import "./tokens.css";
 @import "../ui/shell/shell.css";
+@import "../ui/counters/counters.css";
 @import "./calendar.css";
 @import "./lists.css";
 @import "../ui/quick-add/quick-add.css";

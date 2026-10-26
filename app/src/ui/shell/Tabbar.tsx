@@ -8,7 +8,6 @@ import type { LocalState } from '../../domain/types.ts';
 import { counts } from '../../domain/model.ts';
 import { useFocusTrap, useModalFocus } from '../hooks.ts';
 import { Pulse } from './Pulse.tsx';
-import { CountersCard } from './CountersCard.tsx';
 import { badge, DEFAULT_ORDER, navDef, type NavDef } from './nav.tsx';
 
 /* ============================ 底部标签栏 ============================ */
@@ -134,7 +133,6 @@ export function MoreSheet({ state, open, onClose, onNav, onInvites, onCals }: {
         </div>
         {/* 窄屏侧栏是收起的，进度搬进抽屉里，两处渲染的是同一个 Pulse */}
         <div className="ms-pulse"><Pulse state={state} /></div>
-        <div className="ms-pulse"><CountersCard /></div>
       </div>
     </>
   );
