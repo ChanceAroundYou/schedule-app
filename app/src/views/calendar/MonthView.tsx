@@ -16,12 +16,15 @@
  * 宽屏照旧灰色邻月格（`.out`）—— 邻月格照画、照能点。
  *
  * ⚠️ 这里零回调，全由 `#content` 上那一个委托处理（见 app/clickDispatch.ts
- *   与 AGENTS.md「点击事件必须走委托」）：
- *   · 点任务（含 "+N"）= `data-jump` → 那一天的**日视图**（不是开抽屉）；
- *   · 点月份数字 = `data-jump` → 那一天的日视图；
- *   · 点**空白处** = `data-jump`（挂在整个格子上）→ 那一天的日视图；
- *   · 点邻月数字 = `data-jump-month` → 那一个月（邻月格子不挂 data-jump，不挡它）；
- *   · 月视图**不提供就地新建**（`data-no-draft`）—— 格子太挤。
+ *   与 AGENTS.md「点击事件必须走委托」）。**点击分三档**（2026-10-26 用户改）：
+ *   · 点**日期数字** = `data-jump` → 那一天的日视图；
+ *   · 点**格子空白处** = 就地弹出新建输入框（`day:<日期>` 这一块由 NewCellSlot
+ *     认领），日期跟着格子走、时间未定 —— 打不出字就回车落库、Esc 取消；
+ *   · 点**任务条** = 开这条任务的详情抽屉（不再是跳日视图，同日用户改）；
+ *     `+N` 尾巴例外，点它 = 去看那一天（它的意思是「还有 N 条，去日视图看」）；
+ *   · 点邻月数字 = `data-jump-month` → 那一个月；
+ *   · **邻月格子点空白不弹输入框**（`data-no-draft`，同日用户定：灰格里
+ *     误触新建更烦）；邻月格子本来也不挂 `data-jump`。
  * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（45px 宽放不下圈 + 字），想勾完成要点开
  *   抽屉；时间也放不下 —— 这两个都是窄屏取舍，不是漏了。
  */
@@ -32,6 +35,7 @@ import * as D from '../../domain/date.ts';
 import { dayLoad, tasksOn, openFirst } from '../../domain/model.ts';
 import { monthCellCapacity } from '../../domain/layout.ts';
 import { TaskPill, loadLevel } from '../parts.tsx';
+import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
 
@@ -66,14 +70,13 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
       className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '') + (lv ? ' lv' + lv : '')}
       ref={zone.ref}
       data-zone-id={`day:${d}`}
-      /* 月视图**不提供「点空白处就地新建」**（用户 2026-10-19：格子本来就挤），
-         改成**点空白处 = 去看那一天的日视图**（同日再次要求，与点任务同一条路）。
-         `data-zone-id` 还得留着 —— 拖拽落点（dnd/timeline.ts）靠它找 DOM；
-         `data-no-draft` 只让 clickDispatch 的 draftSeedFrom 别在这儿开草稿框。
-         ⚠️ `data-jump` 只挂在本月的格子上：邻月格子挂了会把「点邻月数字跳那个月」
-         （第 2.1 步 data-jump-month）挡在前面那一步之外。 */
-      data-no-draft="1"
-      data-jump={out ? undefined : d}
+      /* 点击分档见文件头。两个标记各管一件事：
+         · 本月的格子**不再挂 `data-jump`** —— 那会让「点空白」先跳日视图，
+           轮不到第 4 步的草稿逻辑；跳转改由里面的 `.cell-date`（日期数字）承担。
+         · `data-no-draft` 只留在**邻月格子**上：灰格子点空白不弹输入框
+           （2026-10-26 用户定），点数字照旧跳那个月。
+         `data-zone-id` / `data-date` 必须留 —— 拖拽落点与草稿种子都靠它们。 */
+      data-no-draft={out ? '1' : undefined}
       data-date={d}
     >
       <div className="cell-head">
@@ -91,14 +94,15 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
         )}
       </div>
       <div className="cell-tasks">
-        {/* 最后一条可见的挂 "+N"（more > 0 时）—— 行内的，不单独占一行。
-            ⚠️ 只有窄屏走这套：宽屏格子不截断（全部渲染 + `.cell-tasks` 格内滚动，
-            2026-10-22 用户「显示不完就滚着看全部」），没有 more 可言。
-            点这一行 = 去看那一天的**日视图**（jumpDay），不是开任务抽屉
-            —— 用户 2026-10-19 明确要求。 */}
+        {/* 就地新建的草稿框（2026-10-26）：认领 `day:<日期>` 这一块。
+            放在任务条**前面** —— 刚点出来的输入框就在格子上方、离手指最近，
+            打完字的落库日期由这一格的 `data-date` 决定（时间未定）。
+            邻月格子不会走到这里：那边 `data-no-draft` 让 draftSeedFrom 直接返回 null，
+            不会有草稿认领，渲染出来也是个 null。 */}
+        <NewCellSlot state={state} zoneId={`day:${d}`} />
         {shown.map((t, i) => (
           <TaskPill
-            key={t.id} task={t} jumpDay={d}
+            key={t.id} task={t} moreJumpDay={d}
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
           />
         ))}
@@ -131,14 +135,15 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
         {weeks.map((row) => row.map((d) => {
           /* 未完成在前、已完成在后（openFirst，2026-10-23 起三处视图共用同一口径） */
           const ts = openFirst(tasksOn(state, d));
-          /* 月格的 `data-no-draft` 让 clickDispatch 的 draftSeedFrom 直接返回 null ——
-             这里根本不开草稿框，所以**不需要**为草稿预留一行（dev 侧那句
-             `draftHere` 在合并时删掉，避免留一个永远为 false 的变量）。 */
+          /* 这一格正开着草稿箱时，任务少显示一条给它让位（`reserveDraft`）。
+             不预留的话草稿框会把格子撑高、整屏行高跟着重排，点一下跳一下。
+             邻月格子永远没有草稿（data-no-draft），hasDraft 恒为 false。 */
+          const hasDraft = !!draftOn(state.ui, `day:${d}`);
           /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
              尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
              看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */
           const { shown, more } = narrow
-            ? cellCounts(ts, monthCellCapacity(cellH))
+            ? cellCounts(ts, monthCellCapacity(cellH, hasDraft))
             : { shown: ts, more: 0 };
           return (
             <MonthCell

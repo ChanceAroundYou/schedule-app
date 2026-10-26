@@ -307,5 +307,35 @@ export async function run(ctx) {
     '宽屏格子溢出格内滚动、系统滚动条已藏（浮条不占横向宽度）');
   ok(!mv.err && mv.gridH <= mv.viewH, '月视图网格不超出一屏（' + mv.gridH + ' ≤ ' + mv.viewH + '）');
 
+  /* 2026-10-26 用户改的月视图点击分档 —— 这里钉住**标记契约**（实际点击链
+     由真机/线上实测覆盖，DOM 标记一错就是从根上错）：
+       · 本月格子：不挂 data-jump（挂了会先跳日视图、轮不到就地新建）、
+         也不带 data-no-draft（要能点空白新建）
+       · 日期数字 `.cell-date`：挂 data-jump（点数字 = 去那天的日视图）
+       · 任务胶囊：整条不挂 data-jump（点它 = 开详情抽屉），只有 +N 挂
+       · 邻月格子：带 data-no-draft（灰格点空白不弹输入框） */
+  const clickMap = await evalJs(page, `return (() => {
+    const inCell = document.querySelector('.month-cell:not(.out)');
+    const outCell = document.querySelector('.month-cell.out');
+    const date = inCell && inCell.querySelector('.cell-date');
+    const pills = [...document.querySelectorAll('.month-cell .task-pill')];
+    return {
+      inCellNoDraft: inCell ? inCell.hasAttribute('data-no-draft') : null,
+      inCellJump: inCell ? inCell.getAttribute('data-jump') : null,
+      dateJump: date ? date.getAttribute('data-jump') : null,
+      pillJump: pills.filter((p) => p.hasAttribute('data-jump')).length,
+      outNoDraft: outCell ? outCell.getAttribute('data-no-draft') : null,
+    };
+  })();`);
+  ok(clickMap.inCellNoDraft === false && clickMap.inCellJump === null,
+    '本月格子不抢点击：没挂 data-jump、没带 data-no-draft（点空白就地新建）',
+    JSON.stringify(clickMap));
+  ok(!!clickMap.dateJump,
+    '日期数字自己挂 data-jump（点数字 = 去那天的日视图）', JSON.stringify(clickMap.dateJump));
+  ok(clickMap.pillJump === 0,
+    '任务胶囊不挂 data-jump（点它 = 开详情；只有 +N 跳日视图）', JSON.stringify(clickMap.pillJump));
+  ok(clickMap.outNoDraft === '1',
+    '邻月格子带 data-no-draft（灰格点空白不弹输入框）', JSON.stringify(clickMap.outNoDraft));
+
 
 }
