@@ -56,8 +56,11 @@ export GRADLE_BIN="$(pick_gradle)"
 # ------------------------------------------------------------ 2. Android SDK
 pick_android_home() {
   local c
+  # 注：${USERNAME:-} —— Linux 下 USERNAME 未定义，set -u 会直接炸（2026-10-26 合后构建挂在这行）。
+  # 后面三项是 Linux 本机 toolchain 位置（见 deploy/env.sh 同口径），standalone 直接跑本脚本时也找得到。
   for c in "${ANDROID_HOME:-}" "$HOME/Android" "$HOME/AppData/Local/Android/Sdk" \
-           "/c/Users/$USERNAME/AppData/Local/Android/Sdk" "/c/Android/Sdk"; do
+           "$HOME/.local/toolchains/android-sdk" /vol2/.toolchains/android-sdk "$HOME/android-sdk" \
+           "/c/Users/${USERNAME:-}/AppData/Local/Android/Sdk" "/c/Android/Sdk"; do
     [ -n "$c" ] || continue
     [ -d "$c/platforms" ] && { echo "$c"; return; }
   done
@@ -70,7 +73,11 @@ export ANDROID_HOME
 # ------------------------------------------------------------------ 3. JDK
 pick_java_home() {
   local c
-  for c in "${JAVA_HOME:-}" /c/Program\ Files/Microsoft/jdk-21* /c/Program\ Files/Java/jdk-21*; do
+  # 同上：Linux 补 toolchain 口径（见 deploy/env.sh），Windows 保持原样。
+  # 注意已转义空格的路径不要再加引号 —— for c in "a\ b" 会把反斜杠当字面量。
+  for c in "${JAVA_HOME:-}" "$HOME/.local/toolchains/jdk-21" /vol2/.toolchains/jdk-21 \
+           /usr/lib/jvm/java-21-openjdk-amd64 \
+           /c/Program\ Files/Microsoft/jdk-21* /c/Program\ Files/Java/jdk-21*; do
     [ -n "$c" ] || continue
     [ -x "$c/bin/java" ] || [ -x "$c/bin/java.exe" ] && { echo "$c"; return; }
   done
