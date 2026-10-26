@@ -202,14 +202,19 @@ fi
 
 # ---------------------------------------------------------------- 校验
 say "6/6 回读校验"
-LOCAL_HASHES="$(grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' dist/index.html | sort)"
+# ⚠️ `sort` 必须带 LC_ALL=C：这堆文件名里大写（index-QWRE..js）和小写
+# （index-h1XU..css）混在一起，Git Bash 与 Linux 用的**排序规则不同**
+# —— 一个按字节（大写在前）、一个按区域语言（不分大小写）。两边内容完全
+# 一致却排成不同顺序，回读校验就会判「还是旧 hash」。2026-10-26 误报过一次，
+# 实际情况是线上早就是新版。归一成 C 语言环境后两边必然一致。
+LOCAL_HASHES="$(grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' dist/index.html | LC_ALL=C sort)"
 printf '  本地 index.html 引用：\n%s\n' "$(printf '%s' "$LOCAL_HASHES" | sed 's/^/    /')"
 
 # ⚠️ **先跟服务器磁盘上那一份比**（2026-10-24 P3）。以前只从公网抓 HTML 再 grep，
 # 于是「线上已经是新 hash、公网那份还是旧的」也报「发布可能没生效」—— 假阴性，
 # 每次都得手动 `grep` 一遍才知道到底成没成。服务器那份才是真相，
 # 公网那一趟降级成链路体检（不一致只提示，不判定失败）。
-REMOTE_HASHES="$("$SSH" "$SSH_HOST" "grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' $REMOTE_WEB/index.html 2>/dev/null | sort" || true)"
+REMOTE_HASHES="$("$SSH" "$SSH_HOST" "grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)' $REMOTE_WEB/index.html 2>/dev/null | LC_ALL=C sort" || true)"
 [ "$REMOTE_HASHES" = "$LOCAL_HASHES" ] || die "服务器上的 web/index.html 引用的还是旧 hash
     线上 $REMOTE_WEB/index.html → $(printf '%s' "${REMOTE_HASHES:-<读不到文件>}" | tr '\n' ' ')
     本地 dist/index.html      → $(printf '%s' "$LOCAL_HASHES" | tr '\n' ' ')
