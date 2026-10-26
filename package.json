@@ -1,7 +1,7 @@
 {
   "name": "schedule",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "日程清单后端。只在这里声明 AI 那一组依赖 —— 其余一律用 Node 标准库，见 AGENTS.md 五、第 1 条。",
   "scripts": {
     "test": "node --disable-warning=ExperimentalWarning --test server/tests/api.test.js server/tests/migration.test.js server/tests/ai.test.js"

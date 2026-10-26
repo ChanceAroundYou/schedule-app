@@ -511,9 +511,20 @@ class AppUpdate {
             registerLiveReceiver(c);
             startPolling(c);
         }
-        // st <= 0（id 查不到，多半被系统清了任务）：留着记录没用，也清掉
+        // st <= 0（id 查不到，多半被系统清了任务）：缓存被清过一条下载记录就没了，
+        // 但**内部那份安装包可能还在** —— 直接装它，别让用户白下一次。
         if (st <= 0) {
+            File dst = new File(c.getFilesDir(), "update/schedule.apk");
+            sPendingVersionCode = pendingVc(c);
+            sPendingSha256 = pendingSha(c);
+            if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
+                Log.i(TAG, "下载记录没了，但内部包还在（" + dst.length() + " 字节），直接装");
+                sInstallStarted = false;
+                installApk(c, dst);
+                return;
+            }
             clearPending(c);
+            clearPromptCooldown(c);
         }
     }
 
@@ -561,6 +572,37 @@ class AppUpdate {
         return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_PENDING_VC, 0);
     }
 
+    /**
+     * 内部那份是不是「就是要装的这一版」。
+     *
+     * 没记 sha 的老记录一律放过：宁可让安装器去报签名/版本不对，也不要
+     * 因为缺个校验值就把一份完好的包丢掉（丢了的代价是重下 3.5MB 还不一定成功）。
+     */
+    private static boolean matchesPendingSha(File f) {
+        String want = sPendingSha256;
+        if (want == null || want.isEmpty()) {
+            return true;
+        }
+        try {
+            return want.equalsIgnoreCase(sha256(f));
+        } catch (Exception e) {
+            Log.w(TAG, "算内部包的 sha 失败: " + e);
+            return false;
+        }
+    }
+
+    /**
+     * 清掉「这个版本 24 小时内别再弹」的冷却。
+     *
+     * 只在**这次更新彻底没成**时调（包没了 / 换了新版本号重来）。不清的话，
+     * 用户会陷入「提示过一次 → 装不上 → 之后 24 小时静默」的死角，
+     * 表现就是「更新功能坏了」。
+     */
+    private static void clearPromptCooldown(Context c) {
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .remove(KEY_LAST_PROMPT_CODE).remove(KEY_LAST_PROMP_AT).apply();
+    }
+
     private static void clearPending(Context c) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .remove(KEY_PENDING_ID).remove(KEY_PENDING_SHA).remove(KEY_PENDING_VC)
@@ -578,11 +620,24 @@ class AppUpdate {
         sInstallStarted = true;
         File tmp = new File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
                 "schedule-" + sPendingVersionCode + ".apk");
+        /* 内部目录那一份：**拷完外部那份就删掉了**（见下面拷贝那段）。
+           所以「外部文件不在」根本不能推出「没下载成功」—— 上一次装到一半
+           被用户取消 / 安装器自己退了，下次进来外部早没了，这里却当失败处理，
+           把 pending 记录和内部那份好包一起扔掉。
+           2026-10-26 用户实锤：连着几次更新都卡死在这儿，而且 cooldown 已经被
+           标过，24 小时内连提示都不再弹，看起来就是「App 更新功能坏了」。 */
+        File dst = new File(c.getFilesDir(), "update/schedule.apk");
         if (!tmp.exists()) {
-            Log.w(TAG, "下载的文件不在: " + tmp);
-            toast(c, "下载失败，文件不存在");
+            if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
+                Log.i(TAG, "外部包已删、内部那份还在（" + dst.length() + " 字节），直接重装");
+                installApk(c, dst);
+                return;
+            }
+            Log.w(TAG, "下载的文件不在（内部目录也没有）: " + tmp);
+            toast(c, "安装包不见了，稍后会重新提示更新");
             sInstallStarted = false;
             clearPending(c);
+            clearPromptCooldown(c);   // 否则 24h 内不再提示，用户只能以为它坏了
             sDownloadId = -1L;
             return;
         }
@@ -599,7 +654,6 @@ class AppUpdate {
             return;
         }
         // 拷进内部存储再装 —— 见类注释第 2 条
-        File dst = new File(c.getFilesDir(), "update/schedule.apk");
         try {
             File dir = dst.getParentFile();
             if (dir != null && !dir.exists() && !dir.mkdirs()) {
