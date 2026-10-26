@@ -179,7 +179,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         int value = item == null ? 0 : item.value;
         String text = String.valueOf(value);
 
-        float nameSp = wide ? 18f : 17f;
+        float nameSp = wide ? 19f : 18f;
         if (name.length() > 6) nameSp -= 3f;
         else if (name.length() > 5) nameSp -= 2f;
         int nameColor = first ? 0xFFD4537E : 0xFF1D9E75;   // ctrPinkName / ctrGreenName
@@ -198,8 +198,8 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
     private static Bitmap renderValue(Context c, String text, float sp, int color) {
         float density = c.getResources().getDisplayMetrics().density;
-        int w = (int) (110 * density);
-        int h = (int) (42 * density);
+        int w = (int) (180 * density);
+        int h = (int) (70 * density);
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Typeface tf;
@@ -218,7 +218,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     private static Bitmap renderName(Context c, String name, float nameSp, int nameColor, int outlineColor, boolean wide) {
         float density = c.getResources().getDisplayMetrics().density;
         int w = (int) (120 * density);
-        int h = (int) (22 * density);
+        int h = (int) (26 * density);
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Typeface tf = null;
@@ -245,7 +245,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
      * 21sp 撑死放三位，四位往上必须收，否则会被布局裁掉一半。
      */
     private static float valueSp(String text, boolean wide) {
-        float base = wide ? 22f : 21f;
+        float base = wide ? 34f : 32f;
         int n = text.length();
         if (n <= 3) return base;
         if (n == 4) return base - 4f;
