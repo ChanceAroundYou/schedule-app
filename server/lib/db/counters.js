@@ -93,7 +93,10 @@ function creditDaily(userId, now) {
             updated_at = ?
       WHERE user_id = ?
         AND last_credit_date IS NOT NULL
-        AND last_credit_date < ?`,
+        AND last_credit_date < ?
+        -- 日期串被写坏时 julianday 返回 NULL，value + NULL 会变成 NULL，
+        -- 撞上 value 的 NOT NULL 约束 → 整个读接口 500。宁可不结算也别炸。
+        AND julianday(last_credit_date) IS NOT NULL`,
     MIN_VALUE, MAX_VALUE, today, today, now == null ? Date.now() : now, uid, today,
   );
 }

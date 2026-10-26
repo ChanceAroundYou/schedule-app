@@ -123,8 +123,20 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     @Override
     public void onDisabled(Context c) {
         super.onDisabled(c);
-        cancelDaily(c);
+        // onDisabled 只代表**这一个入口**的实例全没了。2×2 与 4×1 是两个 receiver
+        // 共用同一条闹钟，删掉其中一个就 cancel 的话，另一个还在桌面上却不刷新了。
+        if (!hasAnyInstance(c)) cancelDaily(c);
         Log.i(TAG, "CounterWidgetProvider disabled (last instance removed)");
+    }
+
+    /** 桌面上还留着任何一个计数器实例（两个入口都查） */
+    private static boolean hasAnyInstance(Context c) {
+        try {
+            AppWidgetManager mgr = AppWidgetManager.getInstance(c);
+            return concatIds(mgr, c, CounterWidgetProvider.class, CounterWidgetWideProvider.class).length > 0;
+        } catch (Exception e) {
+            return true;   // 查不到就当还有 —— 多留一条闹钟无害，掐错了才不刷新
+        }
     }
 
     @Override

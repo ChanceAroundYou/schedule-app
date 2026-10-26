@@ -16,7 +16,7 @@
  * id / name / value 三个字段，多给的字段它忽略）。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { fetchCounters, patchCounter, type Counter, type CounterPatch } from '../../data/api/counters.ts';
 
@@ -27,13 +27,18 @@ export function CountersCard() {
   const [list, setList] = useState<Counter[]>([]);
   const [edit, setEdit] = useState<Editing | null>(null);
   const [err, setErr] = useState('');
+  /* 连点时只认**最后一次**请求的响应。反例：点两下 +，两个请求都在飞，
+     第一个（+1）的响应晚到，界面就从 2 掉回 1，停在那儿等下一次刷新。
+     桌面小组件那边为此专门改过一次（CounterStore.applyServer），这里是同一个坑。 */
+  const seq = useRef(0);
 
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     try {
-      setList(await fetchCounters());
-      setErr('');
+      const next = await fetchCounters();
+      if (mine === seq.current) { setList(next); setErr(''); }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '读不到计数器');
+      if (mine === seq.current) setErr(e instanceof Error ? e.message : '读不到计数器');
     }
   }, []);
 
@@ -56,9 +61,11 @@ export function CountersCard() {
     if (optimistic) {
       setList((prev) => prev.map((c) => (c.id === id ? optimistic(c) : c)));
     }
+    const mine = ++seq.current;
     patchCounter(id, patch)
-      .then((next) => { setList(next); setErr(''); })
+      .then((next) => { if (mine === seq.current) { setList(next); setErr(''); } })
       .catch((e: unknown) => {
+        if (mine !== seq.current) return;   // 过期请求的失败不该盖住更新的结果
         setErr(e instanceof Error ? e.message : '没存上');
         void load();  // 回滚：以服务端为准
       });
