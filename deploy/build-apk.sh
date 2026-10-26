@@ -33,6 +33,11 @@ APP="$ROOT/app"
 source "$ROOT/deploy/env.sh"
 
 NODE="${NODE:-node}"
+# JDK / SDK / Gradle / API_BASE 全部由 .env + 平台探测决定（deploy/env.sh）。
+# ⚠️ 这里**不再写死** ANDROID_HOME / JAVA_HOME（2026-10-26 合流时统一收口）——
+# 写死会在换机器时静默指向不存在的目录，而 env.sh 会先探测再回落。
+# gradle 的执行入口仍走 deploy/gradle.sh：它优先用 ~/gradle-dist 下已解压的
+# 发行版，**绕开 wrapper 下载 230MB 那个坑**（env.sh 的 GRADLE 默认是 gradlew）。
 
 echo "==> 1/4 构建网页资源（VITE_API_BASE=$API_BASE）"
 cd "$APP"
@@ -50,7 +55,7 @@ echo "==> 3/4 同步到 APK 内置资源（cap copy）"
 
 echo "==> 4/4 编译 APK"
 cd "$APP/android"
-JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" "$GRADLE" assembleDebug
+"$ROOT/deploy/gradle.sh" :app:assembleDebug
 
 APK="$APP/android/app/build/outputs/apk/debug/app-debug.apk"
 echo

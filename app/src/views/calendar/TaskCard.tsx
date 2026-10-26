@@ -571,15 +571,14 @@ export function TimedCard({
  * 不走 `TaskCard` 主体那套 `.ev-body`：那是纵向两行的卡片语言，月格是单行文字行，
  * 硬套会把 `text-overflow: clip`（窄屏多看一个字）与 45px 整字宽量坏。
  */
-export function CompactCard({ t, moreSuffix, jumpDay }: {
+export function CompactCard({ t, moreSuffix, moreJumpDay }: {
   t: Task; moreSuffix?: number;
   /**
-   * 传了它就给这一行挂 `data-jump`：点整条任务 → 跳到那一天的**日视图**
-   * （月视图专用，2026-10-19 用户要求：点格子里的任务 = 去看那一天）。
-   * 委托里 `[data-jump]` 排在 `.task-el` **前面**，所以它会盖住「点行开抽屉」。
-   * 勾选圈走 `[data-act]`（第 1 步），不受影响，宽屏照旧能点圈。
+   * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，去日视图看全"）。
+   * **胶囊本体不挂 `data-jump`** —— 点任务条 = 开这条任务的详情抽屉
+   * （2026-10-26 用户改；之前整条胶囊跳日视图，是 2026-10-19 的旧口径）。
    */
-  jumpDay?: string;
+  moreJumpDay?: string;
 }) {
   /* 月视图格子专用：拖到别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
      落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。 */
@@ -604,9 +603,10 @@ export function CompactCard({ t, moreSuffix, jumpDay }: {
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
           +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。
-          它不用自己挂 data-jump：外面这条胶囊已经有，点哪儿都跳同一天。 */}
+          **只有它自己挂 `data-jump`**（去那天的日视图看全）：胶囊本体点了是
+          开这条任务的详情抽屉（2026-10-26 用户改），两种意图分开放。 */}
       {moreSuffix ? (
-        <span className="pill-more" title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
+        <span className="pill-more" data-jump={moreJumpDay} title={`还有 ${moreSuffix} 条`}>+{moreSuffix}</span>
       ) : null}
     </>
   );
@@ -620,7 +620,6 @@ export function CompactCard({ t, moreSuffix, jumpDay }: {
         {...drag.listeners}
         data-id={t.id}
         data-untimed={t.time ? undefined : '1'}
-        data-jump={jumpDay}
         title={t.time ? t.title + '　' + t.time : t.title}
       >
         {inner}

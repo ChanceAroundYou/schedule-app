@@ -106,17 +106,17 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
    data-untimed`/CheckBtn）一字不动，探针口径不变。周视图已切 `UntimedCard`，
    现在只剩月视图格子在用。 */
 
-export function TaskPill({ task: t, moreSuffix, jumpDay }: {
+export function TaskPill({ task: t, moreSuffix, moreJumpDay }: {
   task: Task; moreSuffix?: number;
   /**
-   * 传了它就给这一行挂 `data-jump`：点整条任务 → 跳到那一天的**日视图**
-   * （月视图专用，2026-10-19 用户要求：点格子里的任务 = 去看那一天）。
-   * 委托里 `[data-jump]` 排在 `.task-el` **前面**，所以它会盖住「点行开抽屉」。
-   * 勾选圈走 `[data-act]`（第 1 步），不受影响，宽屏照旧能点圈。
+   * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，
+   * 去日视图看全"）。**胶囊本体不跳** —— 点任务条 = 开这条任务的详情抽屉
+   * （2026-10-26 用户改；之前是整条胶囊跳日视图，2026-10-19 的旧口径）。
+   * 委托里 `[data-jump]` 排在 `.task-el` 前面，所以它只盖住自己那一小块。
    */
-  jumpDay?: string;
+  moreJumpDay?: string;
 }) {
-  return <CompactCard t={t} moreSuffix={moreSuffix} jumpDay={jumpDay} />;
+  return <CompactCard t={t} moreSuffix={moreSuffix} moreJumpDay={moreJumpDay} />;
 }
 
 /* ============================== 空状态 ============================== */

@@ -13,6 +13,7 @@
 | `deploy/mobile-loop.sh` | 手机端：+版本号自检 → 打包 → 发布 → 装机 → 真机冒烟 |
 | `deploy/publish-web.sh` | 前端发布（构建 → 上传 → 备份 → 切换 → 回读） |
 | `deploy/publish-server.sh` | 后端发布（拷代码 → 备份 → restart → 探活） |
+| `deploy/gradle.sh [任务]` | **Android 编译唯一入口**：自动摆正 gradle / SDK / JDK，默认 `:app:assembleDebug` |
 | `deploy/publish-apk.sh "说明"` | 原生层（小组件/权限/图标）必须换 APK 才生效 |
 | `deploy/install-deps.sh` | 首次安装 / 换机器装 AI 依赖 |
 
@@ -73,6 +74,20 @@ git log @{u}.. --oneline
 ```
 
 日常直接用 `./deploy/web-loop.sh` / `./deploy/mobile-loop.sh`。
+
+## Android 编译工具链（别手动敲 gradle）
+
+**一律用 `./deploy/gradle.sh <任务>`**，不要 `./gradlew`，也不要裸 `gradle`。
+2026-10-25 手动敲 `./gradlew` 卡了 40 分钟，原因是三条互不相干的坑：
+
+| 坑 | 症状 | 真相 |
+|---|---|---|
+| `./gradlew` 先下发行版 | 没有任何输出，看起来卡死，能卡半小时 | wrapper 在下 `gradle-8.14.3-all.zip`（230MB）；本机 `~/gradle-dist/gradle-8.14.3/` 已有解压好的，脚本优先用它 |
+| 没设 `ANDROID_HOME` | `SDK location not found` | `app/android/local.properties` 是**空文件**，指望不上；SDK 在 `~/Android` |
+| 没锁 `JAVA_HOME` | 前面都过，`compileDebugJavaWithJavac` 才炸 | 系统里可能有多套 JDK，要 jdk-21 |
+
+`gradle.sh` 三件事全做（探测顺序：显式环境变量 → 常见路径 → 报错并给提示），
+`build-apk.sh` / `publish-apk.sh` 都已改成调它，换机器不再需要改脚本里的绝对路径。
 
 ## 发布约束（不能破）
 

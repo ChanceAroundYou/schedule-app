@@ -84,6 +84,18 @@ export interface SnapshotHabit {
   done: boolean;
   /** 连续天数 */
   streak: number;
+  /**
+   * 完整打卡记录：`{ "2026-10-13": true }` 这样的**按日稀疏表**。
+   *
+   * ⚠️ **不能省**（2026-10-26 用户报「小组件上打完卡过一会儿又弹回浅色」）：
+   *   1. 原生侧按「组件当前选中那一天」查 `log[day]` 决定那格的颜色 ——
+   *      只给 done 的话，翻到别的日期全是未完成；
+   *   2. 更致命：App 每次数据变化都会整份重写快照，缺这个字段就等于
+   *      **把打卡历史抹掉**。刚在桌面点上的勾，下一次 App 推快照就没了
+   *      （浅色回来）；而且原生写服务器要求手里有整张表，没表就只敢
+   *      把改动堆在本地队列里，表现为「点了也不生效」。
+   */
+  log: Record<string, true>;
 }
 
 export interface WidgetSnapshot {
@@ -161,13 +173,21 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
     });
 
   const habits: SnapshotHabit[] = liveHabits(s)
-    .sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9))
+    /* 排序必须与**服务端 widgetView 的排序完全一致**（2026-10-26）：
+     * 以前这里 `order ?? 1e9`（缺 order 排最后），服务端是 `order || 0`
+     * （缺 order 排最前）—— 同一批习惯换一条数据来源就整体换位置，用户
+     * 看到的是「打完卡格子自己换了位置」。两边都用「order 升序 + id 兜底」
+     * 之后，序列唯一，无论快照由谁写都不会跳。 */
+    .sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || a.id.localeCompare(b.id))
     .map((h) => ({
       id: h.id,
       calId: h.calId,
       title: h.title,
       done: !!(h.log && h.log[todayIso]),
       streak: habitStreak(h, todayIso),
+      // 整张表原样带上（见 SnapshotHabit.log 的说明）—— 少这一个字段，
+      // 小组件上的打卡就会「点完又弹回浅色」
+      log: { ...(h.log ?? {}) },
     }));
 
   return { v: 1, at: Date.now(), today: todayIso, from, to, tasks, habits };

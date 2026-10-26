@@ -30,7 +30,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID="$ROOT/app/android"
 
-# JDK / SDK / Gradle / SSH_HOST / BASE_URL 全部由 .env + 平台探测决定（见 deploy/env.sh）
+# JDK / SDK / Gradle / SSH_HOST / BASE_URL 全部由 .env + 平台探测决定（见 deploy/env.sh）。
+# AAPT 也由它提供（挑 build-tools 里版本最大的那个）—— 这里**不再写死某个用户名下的
+# 绝对路径、也不写死 build-tools 版本**（2026-10-26 合流时统一收口）。
 source "$ROOT/deploy/env.sh"
 env_require
 
@@ -70,7 +72,10 @@ if [ -f "$ROOT/dist/index.html" ] && [ -f "$ANDROID/app/src/main/assets/public/i
   fi
 fi
 cd "$ANDROID"
-JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" "$GRADLE" assembleRelease --quiet
+# 走 deploy/gradle.sh 而不是 env.sh 的 $GRADLE：后者默认是仓库 wrapper（gradlew），
+# 本机没配 .env 时会去下 230MB 发行版，表现为「卡半小时且没有任何输出」。
+# gradle.sh 优先用 ~/gradle-dist 下已解压的那份，顺带锁 JDK 21 与 SDK。
+"$ROOT/deploy/gradle.sh" :app:assembleRelease --quiet
 
 # ⚠️ aapt.exe 是 **Windows 程序**，不认 Git Bash 的 `/c/...` 路径 —— 传绝对路径
 # 进去它当成相对路径找，静默返回空，症状是「读不到 versionCode」。所以下面一律

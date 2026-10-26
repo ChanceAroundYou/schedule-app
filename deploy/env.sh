@@ -61,9 +61,24 @@ fi
 export ANDROID_HOME="${ANDROID_HOME:-}"
 
 # ---- Gradle ----
-# 不填就用仓库自带的 wrapper（会按其 distributionUrl 下载，离线机器请显式指定）。
+# 优先级与 `deploy/gradle.sh` **保持一致**：显式 $GRADLE → 本机已解压的发行版
+# （~/gradle-dist 里版本号最大的那个）→ 仓库 wrapper（最后手段）。
+#
+# ⚠️ 默认走 wrapper 是个坑（2026-10-26 实测踩到）：本机 ~/gradle-dist 明明有
+#    解压好的 8.14.3，wrapper 却去 `services.gradle.org` 下 230MB，在代理环境下
+#    直接 read timeout 失败、构建报「Downloading ... failed」。而 env.sh 设置的
+#    GRADLE 又会**覆盖** gradle.sh 自己的探测（后者看 `${GRADLE:-}` 非空就直接用），
+#    于是两个脚本合流后 APK 打包整整卡了 20 分钟。
+#    修法：这里也先认 ~/gradle-dist，两条路同一个口径。
 if [ -z "${GRADLE:-}" ]; then
-  if [ -x "$_env_root/app/android/gradlew" ]; then
+  _gd=""
+  for d in "$HOME"/gradle-dist/gradle-*/bin/gradle; do
+    [ -x "$d" ] || continue
+    [[ "$d" > "$_gd" ]] && _gd="$d"
+  done
+  if [ -n "$_gd" ]; then
+    GRADLE="$_gd"
+  elif [ -x "$_env_root/app/android/gradlew" ]; then
     GRADLE="$_env_root/app/android/gradlew"
   else
     GRADLE=gradle
