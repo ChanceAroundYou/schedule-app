@@ -160,6 +160,7 @@ class AppUpdate {
      */
     static void onResume(final Activity activity) {
         recoverPending(activity);
+        confirmInstalled(activity.getApplicationContext());
         if (!sWaitingForPermission) return;
         sWaitingForPermission = false;
         Log.i(TAG, "授权回来，补一次更新检查");
@@ -190,6 +191,21 @@ class AppUpdate {
                             toast(c, "已是最新版本（versionCode " + self + "）");
                         }
                         return;
+                    }
+                    // 有 pending 的包还没装（用户上次在安装器点了取消/直接打开）→
+                    // 不重新下载，直接用内部存储那份再唤起一次安装器。
+                    // 之前是无条件走下载，filename 又是 schedule-<vc>.apk 固定名，
+                    // DownloadManager 去重/覆盖行为各家不同，就会出现「下了却装旧包」。
+                    if (force && m.versionCode == sPendingVersionCode) {
+                        File pending = new File(c.getFilesDir(), "update/schedule.apk");
+                        if (pending.exists() && pending.length() > 0) {
+                            Log.i(TAG, "pending 包还在，直接重装 " + pending.length() + " 字节");
+                            sInstallStarted = false;
+                            installApk(c, pending);
+                            return;
+                        }
+                        // 文件不在了（用户清数据/系统清了）→ 落到下面正常下载
+                        Log.i(TAG, "pending 记录在但文件没了，重新下载");
                     }
                     if (!force && !shouldPrompt(c, m.versionCode)) {
                         Log.i(TAG, "有新版 " + m.versionCode + " 但 24h 内提示过了，跳过");
@@ -610,11 +626,37 @@ class AppUpdate {
             sInstallStarted = false;   // 包还在外部目录，下次启动还能接手重试
             return;
         }
-        // 交给系统安装器了：这单结清。用户点「安装」是同签名覆盖安装，
-        // 点「取消」也不影响 —— 再点「检查更新」会重新走一遍（会重新下载）。
-        clearPending(c);
-        sDownloadId = -1L;
+        // 交给系统安装器了：这单结清。用户点「安装」是同签名覆盖安装。
+        // 等安装器真正装上再清下载记录 —— 点「取消 / 直接打开」不算装完，
+        // 保留 pendingId/pendingSha/pendingVc，下次自动提示安装而不是重新下载。
+        // 之前是这里就 clearPending，旧包删了、新包没装，等于白下一次。
+        // 装完的确认靠 selfVersionCode >= sPendingVersionCode（见 onResume）。
         installApk(c, dst);
+    }
+
+    /**
+     * 安装器回来后的确认：pending 的包到底装上没有。
+     *
+     * 调用点：{@link #onResume}（每次回前台）。装上了 → 清记录 + toast 版本号；
+     * 没装上（用户点了取消 / 直接打开）→ 留着记录和文件，toast 提示还有包没装。
+     * 之前没有这一步：verifyAndInstall 里下完就清记录，用户取消一次就得重下。
+     */
+    private static void confirmInstalled(Context c) {
+        if (sPendingVersionCode <= 0) {
+            return;
+        }
+        long self = selfVersionCode(c);
+        if (self >= sPendingVersionCode) {
+            Log.i(TAG, "确认已装上 versionCode=" + self + "，清掉 pending");
+            clearPending(c);
+            sDownloadId = -1L;
+            sInstallStarted = false;
+            toast(c, "已更新到最新版本");
+        } else {
+            sInstallStarted = false;   // 允许下次重新唤起安装器
+            Log.i(TAG, "还没装上（self=" + self + " pending=" + sPendingVersionCode + "）");
+            toast(c, "新版本已下载，点「检查更新」继续安装");
+        }
     }
 
     private static void installApk(Context c, File apk) {
