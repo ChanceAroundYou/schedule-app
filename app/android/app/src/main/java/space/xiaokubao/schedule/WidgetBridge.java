@@ -8,12 +8,16 @@ import android.graphics.Insets;
 import android.os.Build;
 import android.view.View;
 import android.view.WindowInsets;
+import android.webkit.WebView;
 
+import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
+import java.lang.ref.WeakReference;
 
 /**
  * WidgetBridge —— 让网页侧能「通知桌面小组件刷新」
@@ -29,6 +33,58 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  */
 @CapacitorPlugin(name = "WidgetBridge")
 public class WidgetBridge extends Plugin {
+
+  /**
+   * 活着的插件实例。桌面小组件与 WebView **在同一个进程**里，所以那边写完
+   * 可以直接把消息塞回网页 —— 不需要轮询、也不需要推送通道。
+   *
+   * 用 WeakReference 而不是强引用：Activity 销毁后 Bridge 会被回收，
+   * 抓住不放就是经典的内存泄漏。
+   */
+  private static WeakReference<WidgetBridge> sLive;
+
+  /** 网页侧监听的事件名，与 useCounters.ts 的 NATIVE_EVENT 一致 */
+  private static final String JS_COUNTERS_CHANGED =
+      "window.dispatchEvent(new CustomEvent('schedule:counters-changed'))";
+
+  @Override
+  public void load() {
+    sLive = new WeakReference<>(this);
+  }
+
+  /**
+   * 告诉网页「计数器变了」。
+   *
+   * 由 {@link CounterStore} 在写成功之后调用（桌面上点了 + / −、手输数字）。
+   * 网页侧收到后会重新读一次服务端 —— 这是「桌面点完立刻开 App 也是新的」
+   * 的零延迟路径。
+   *
+   * 三重保护：没有活着的插件（App 没开）→ 什么都不做；WebView 已销毁 → 不动；
+   * 一切异常都吞掉 —— 这只是一条通知，失败最多让网页晚 5 秒（有兜底轮询）。
+   */
+  static void notifyCountersChanged() {
+    WidgetBridge p = sLive == null ? null : sLive.get();
+    if (p == null) return;
+    try {
+      Bridge bridge = p.getBridge();
+      if (bridge == null) return;
+      final WebView web = bridge.getWebView();
+      if (web == null) return;
+      // evaluateJavascript 必须在 UI 线程
+      web.post(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            web.evaluateJavascript(JS_COUNTERS_CHANGED, null);
+          } catch (Exception ignored) {
+            // WebView 正在销毁 / 页面还没就绪，兜底轮询会补上
+          }
+        }
+      });
+    } catch (Exception ignored) {
+      // 同上
+    }
+  }
 
   /**
    * 把登录票与接口基址交给原生侧存着。

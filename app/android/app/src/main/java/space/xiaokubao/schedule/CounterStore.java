@@ -267,65 +267,145 @@ class CounterStore {
     /* -------------------------------------------------------------- 同步 */
 
     /**
+     * 同一时刻只允许一轮 flush。
+     *
+     * 以前没有这把锁：点一下（600ms 后触发一轮）和组件刷新（`resync` 里也会
+     * flush）撞在一起时，两轮都拿着同一份队列快照，同一条会被发两次 ——
+     * 服务端多记一次，用户看到「点一下涨了两下」。
+     */
+    private static final Object FLUSH_LOCK = new Object();
+    private static boolean sFlushing = false;
+    /** 等这一轮跑完后要通知的回调。合并调用方（连点、组件刷新都会来排队） */
+    private static final java.util.List<Runnable> sWaiting = new java.util.ArrayList<>();
+
+    /**
      * 把队列发出去。**逐条串行**，某一条失败就停在它那儿，后面的留到下次 ——
      * 乱序发送会让「+5 然后 =3」变成「=3 然后 +5」，数字凭空多出来。
+     *
+     * 已经在跑的时候**排队等这一轮**，不另起一轮：那一轮每发完一条都会重新读
+     * 队列，这期间新点的几下会被它带上。回调也等它跑完再叫 —— 立刻叫的话，
+     * 调用方（`resync` 后面紧跟 `pull`）会拿一份还没包含在飞改动快照去覆盖界面。
      */
     static void flush(final Context c, final Runnable done) {
-        final JSONArray q = queue(c);
-        if (q.length() == 0) {
-            if (done != null) done.run();
-            return;
+        java.util.List<Runnable> run = null;
+        synchronized (FLUSH_LOCK) {
+            if (done != null) sWaiting.add(done);
+            if (sFlushing) return;
+            if (queue(c).length() == 0) {
+                run = drainWaiting();
+            } else {
+                sFlushing = true;
+            }
         }
-        step(c, q, 0, done);
+        if (run != null) runAll(run);
+        else next(c);
     }
 
-    private static void step(final Context c, final JSONArray q, final int i, final Runnable done) {
-        if (i >= q.length()) {
-            clearQueue(c);
-            if (done != null) done.run();
+    private static void finish() {
+        java.util.List<Runnable> run;
+        synchronized (FLUSH_LOCK) {
+            sFlushing = false;
+            run = drainWaiting();
+        }
+        runAll(run);
+    }
+
+    /** 取出并清空待通知的回调。**必须在锁内调用**，返回值在外面跑（别在锁里跑回调） */
+    private static java.util.List<Runnable> drainWaiting() {
+        java.util.List<Runnable> out = new java.util.ArrayList<>(sWaiting);
+        sWaiting.clear();
+        return out;
+    }
+
+    private static void runAll(java.util.List<Runnable> list) {
+        for (Runnable r : list) {
+            try {
+                r.run();
+            } catch (Exception e) {
+                Log.w(TAG, "flush 回调抛错: " + e);
+            }
+        }
+    }
+
+    /**
+     * 处理队首这一条。
+     *
+     * ⚠️ **先把这条从队列里摘掉并落盘，再发请求。** 反过来（发完再按快照回写）
+     * 会把「请求飞行期间新点的那些」一起覆盖掉 —— 本地数字涨了、队列里却没了，
+     * 服务端永远收不到，表现就是「桌面点了几下，App 里少几下」。
+     * 摘掉之后 `applyServer` 拿到的就是「真正还没发出去的那些」。
+     */
+    private static void next(final Context c) {
+        final JSONArray q = queue(c);
+        if (q.length() == 0) {
+            finish();
             return;
         }
-        JSONObject one = q.optJSONObject(i);
+        final JSONObject one = q.optJSONObject(0);
         if (one == null) {
-            step(c, q, i + 1, done);
+            writeQueue(c, tail(q, 1));
+            next(c);
             return;
         }
         final String id = one.optString("id", "");
         if (id.isEmpty()) {
-            step(c, q, i + 1, done);
+            writeQueue(c, tail(q, 1));
+            next(c);
             return;
         }
-        Integer delta = one.has("delta") ? Integer.valueOf(one.optInt("delta", 0)) : null;
-        Integer value = one.has("value") ? Integer.valueOf(one.optInt("value", 0)) : null;
+        final Integer delta = one.has("delta") ? Integer.valueOf(one.optInt("delta", 0)) : null;
+        final Integer value = one.has("value") ? Integer.valueOf(one.optInt("value", 0)) : null;
+
+        writeQueue(c, tail(q, 1));   // 先摘
 
         WidgetApi.counterWrite(c, id, delta, value, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                // 先把这个 id 从队列里划掉，再校准 —— 顺序反了会把「已经发出去的那条」
-                // 当成还没发的，重复加一遍。见 applyServer 的说明。
-                JSONArray rest = new JSONArray();
-                for (int k = i + 1; k < q.length(); k++) {
-                    JSONObject o = q.optJSONObject(k);
-                    if (o != null) rest.put(o);
-                }
-                writeQueue(c, rest);
-                applyServer(c, body.optJSONArray("counters"), rest);
-                step(c, q, i + 1, done);
+                // 队列此刻已经是「剩下的」，直接喂给 applyServer 就是它对
+                // «还有哪些意图没发出去» 的完整视角
+                applyServer(c, body.optJSONArray("counters"), queue(c));
+                WidgetBridge.notifyCountersChanged();   // App 开着就让它立刻对齐
+                next(c);
             }
 
             @Override
             public void onFail(String why) {
-                // 停在失败点：把 [i, end) 原样写回队列，下次继续
-                JSONArray rest = new JSONArray();
-                for (int k = i; k < q.length(); k++) {
-                    JSONObject o = q.optJSONObject(k);
-                    if (o != null) rest.put(o);
-                }
-                writeQueue(c, rest);
-                Log.w(TAG, "补发失败（" + why + "），还有 " + rest.length() + " 条留在队列里");
-                if (done != null) done.run();
+                requeueFront(c, one);
+                Log.w(TAG, "补发失败（" + why + "），还有 " + queue(c).length() + " 条留在队列里");
+                finish();
             }
         });
+    }
+
+    /** 队列里第 from 条之后的副本（用来「摘掉队首」而不用关心原始数组） */
+    private static JSONArray tail(JSONArray q, int from) {
+        JSONArray out = new JSONArray();
+        for (int i = from; i < q.length(); i++) {
+            JSONObject o = q.optJSONObject(i);
+            if (o != null) out.put(o);
+        }
+        return out;
+    }
+
+    /**
+     * 把发送失败的那条塞回队首。
+     *
+     * **必须回队首而不是队尾**：这一条在用户意图里排在前面，「+5」失败留在队列
+     * 而后面的「=3」先发出去的话，最终值会变成 8 而不是 3。
+     *
+     * 已知取舍：如果请求其实到了服务端、只是响应丢了，重发会多记一次。
+     * 计数器的语义下「多点一下」比「点了不算」轻，所以选 at-least-once。
+     */
+    private static void requeueFront(Context c, JSONObject item) {
+        if (item == null) return;
+        JSONArray q = queue(c);
+        JSONArray next = new JSONArray();
+        next.put(item);
+        for (int i = 0; i < q.length(); i++) {
+            JSONObject o = q.optJSONObject(i);
+            if (o != null) next.put(o);
+        }
+        writeQueue(c, next);
     }
 
     /** 只拉不改：用服务端值校准本地显示 */
@@ -334,6 +414,8 @@ class CounterStore {
             @Override
             public void onOk(JSONObject body) {
                 applyServer(c, body.optJSONArray("counters"), queue(c));
+                // 另一台设备（或网页版）改过时，App 那边也该知道
+                WidgetBridge.notifyCountersChanged();
                 if (done != null) done.run();
             }
 

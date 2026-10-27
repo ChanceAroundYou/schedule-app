@@ -88,12 +88,24 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     /** 连点合并窗口。太短等于没合并，太长用户会觉得「攒着不发」 */
     private static final long FLUSH_DELAY_MS = 600;
 
+    /**
+     * 重画的合并窗口。连点五下没必要画五遍 —— 40ms 内的多次请求只画最后一次。
+     *
+     * 不要调大：超过一帧多之后，用户会觉得「按下去数字慢半拍才变」。
+     * 真正让点击变快的是下面的位图缓存，不是这里。
+     */
+    private static final long RENDER_COALESCE_MS = 40;
+
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static Runnable sPendingFlush = null;
+    private static Runnable sRenderTick = null;
 
     @Override
     public void onUpdate(Context c, AppWidgetManager mgr, int[] ids) {
-        for (int id : ids) render(c, mgr, id);
+        // 一次读出来给所有实例用。以前每个实例都重新解析一遍 SharedPreferences，
+        // 桌面上摆两块就是两遍 JSON 解析
+        List<CounterStore.Item> items = CounterStore.load(c);
+        for (int id : ids) render(c, mgr, id, items);
         // 组件被系统重新 inflate（开机 / 换主题 / 从缓存恢复）时顺手对齐一次服务端：
         // 先把离线攒的发出去，再用服务端的值校准显示。
         resync(c);
@@ -110,7 +122,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
                     + " minW=" + (newOptions == null ? -1 : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH))
                     + " minH=" + (newOptions == null ? -1 : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)));
         }
-        render(c, mgr, widgetId);
+        render(c, mgr, widgetId, CounterStore.load(c));
     }
 
     @Override
@@ -165,12 +177,32 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
     /* -------------------------------------------------------------- 渲染 */
 
-    /** 重画所有计数器实例（本进程内所有桌面上的这块，2×2 与 4×1 两个入口一起刷） */
-    static void refreshAll(Context c) {
+    /**
+     * 重画所有计数器实例（本进程内所有桌面上的这块，2×2 与 4×1 两个入口一起刷）。
+     *
+     * **合并**：连点五下会调五次，但 40ms 内只真正画一次。位图虽然缓存了，
+     * RemoteViews 走 IPC 到 launcher 那一下并不便宜，攒着画观感更跟手。
+     */
+    static void refreshAll(final Context c) {
+        final Context app = c.getApplicationContext();
+        if (sRenderTick != null) MAIN.removeCallbacks(sRenderTick);
+        sRenderTick = new Runnable() {
+            @Override
+            public void run() {
+                sRenderTick = null;
+                renderAll(app);
+            }
+        };
+        MAIN.postDelayed(sRenderTick, RENDER_COALESCE_MS);
+    }
+
+    private static void renderAll(Context c) {
         try {
             AppWidgetManager mgr = AppWidgetManager.getInstance(c);
             int[] ids = concatIds(mgr, c, CounterWidgetProvider.class, CounterWidgetWideProvider.class);
-            for (int id : ids) render(c, mgr, id);
+            if (ids.length == 0) return;
+            List<CounterStore.Item> items = CounterStore.load(c);
+            for (int id : ids) render(c, mgr, id, items);
         } catch (Exception e) {
             Log.w(TAG, "refreshAll 失败: " + e);
         }
@@ -195,13 +227,12 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         return out;
     }
 
-    private static void render(Context c, AppWidgetManager mgr, int widgetId) {
+    private static void render(Context c, AppWidgetManager mgr, int widgetId, List<CounterStore.Item> items) {
         int[] dp = optionsDp(mgr, widgetId);
         boolean wide = isWide(dp);
         int layout = wide ? R.layout.widget_counter_h : R.layout.widget_counter_v;
         RemoteViews v = new RemoteViews(c.getPackageName(), layout);
 
-        List<CounterStore.Item> items = CounterStore.load(c);
         CounterStore.Item a = items.size() > 0 ? items.get(0) : null;
         CounterStore.Item b = items.size() > 1 ? items.get(1) : null;
 
@@ -346,6 +377,41 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
     /* -------------------------------------------------------------- 位图 */
 
+    /**
+     * 位图缓存。**这是「点击卡顿」的主要解法。**
+     *
+     * 一次重画原本要现造 8 张位图（名字×2、数字×2、加减号×4），全在广播的
+     * 主线程上做；连点十几下就是上百次 Bitmap 分配 + Canvas 绘制，GC 一抖
+     * 桌面就看着一顿一顿的。而这些位图**绝大多数根本不变**：
+     * 名字、加减号、以及与上一格尺寸相同的数字，点一次只有「被点的那一格
+     * 的数字」是新的。
+     *
+     * 键里带尺寸和颜色，改字号 / 主题色之后自然失效。LRU 上限 16 ——
+     * 在 2×2 下每张约 44KB，封顶不到 1MB，够覆盖键盘连点的那一串数字。
+     *
+     * ⚠️ 只在主线程访问（onUpdate / onAppWidgetOptionsChanged / refreshAll 的
+     * 合并回调都在主线程），这里加锁只是防御。
+     */
+    private static final java.util.Map<String, Bitmap> BMP_CACHE =
+            new java.util.LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Bitmap> eldest) {
+                    return size() > 16;
+                }
+            };
+
+    private static Bitmap cacheGet(String key) {
+        synchronized (BMP_CACHE) {
+            return BMP_CACHE.get(key);
+        }
+    }
+
+    private static void cachePut(String key, Bitmap bmp) {
+        synchronized (BMP_CACHE) {
+            BMP_CACHE.put(key, bmp);
+        }
+    }
+
     private static Paint balooPaint(Context c, int color, float textSizePx) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         try {
@@ -367,6 +433,11 @@ public class CounterWidgetProvider extends AppWidgetProvider {
      */
     private static Bitmap renderName(Context c, String text, int w, int h,
                                      int color, int outlineColor, float strokePx) {
+        String key = "n|" + text + "|" + w + "x" + h + "|" + color + "|" + outlineColor
+                + "|" + Math.round(strokePx);
+        Bitmap hit = cacheGet(key);
+        if (hit != null) return hit;
+
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         float d = c.getResources().getDisplayMetrics().density;
@@ -393,6 +464,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
 
         Paint fill = balooPaint(c, color, px);
         canvas.drawText(text, w / 2f, baseline, fill);
+        cachePut(key, bmp);
         return bmp;
     }
 
@@ -403,6 +475,10 @@ public class CounterWidgetProvider extends AppWidgetProvider {
      * 按 ascent/descent 居中会整体偏上。
      */
     private static Bitmap renderValue(Context c, String text, int w, int h, int color) {
+        String key = "v|" + text + "|" + w + "x" + h + "|" + color;
+        Bitmap hit = cacheGet(key);
+        if (hit != null) return hit;
+
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         float d = c.getResources().getDisplayMetrics().density;
@@ -417,6 +493,7 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         Rect r = new Rect();
         fill.getTextBounds(text, 0, text.length(), r);
         canvas.drawText(text, w / 2f, h / 2f - (r.top + r.bottom) / 2f, fill);
+        cachePut(key, bmp);
         return bmp;
     }
 
@@ -429,6 +506,10 @@ public class CounterWidgetProvider extends AppWidgetProvider {
     private static final float BAR_THICK = 0.118f;
 
     private static Bitmap glyphPlus(Context c, int size, int color) {
+        String key = "p|" + size + "|" + color;
+        Bitmap hit = cacheGet(key);
+        if (hit != null) return hit;
+
         Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Paint p = barPaint(color, size);
@@ -438,16 +519,22 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         float half = size * BAR_LEN / 2f - p.getStrokeWidth() / 2f;
         canvas.drawLine(c0 - half, c0, c0 + half, c0, p);
         canvas.drawLine(c0, c0 - half, c0, c0 + half, p);
+        cachePut(key, bmp);
         return bmp;
     }
 
     private static Bitmap glyphMinus(Context c, int size, int color) {
+        String key = "m|" + size + "|" + color;
+        Bitmap hit = cacheGet(key);
+        if (hit != null) return hit;
+
         Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
         Paint p = barPaint(color, size);
         float c0 = size / 2f;
         float half = size * BAR_LEN / 2f - p.getStrokeWidth() / 2f;
         canvas.drawLine(c0 - half, c0, c0 + half, c0, p);
+        cachePut(key, bmp);
         return bmp;
     }
 

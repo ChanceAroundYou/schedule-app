@@ -17,9 +17,20 @@ import { Preferences } from '@capacitor/preferences';
 import { serializeWidgetSnapshot } from '../domain/widgetSnapshot.ts';
 import { API_BASE } from './api/request.ts';
 import type { LocalState } from '../domain/types.ts';
+import type { Counter } from './api/counters.ts';
 
 /** 原生侧读同一个 key。**两边必须一致**，改这里要同步改 Kotlin */
 export const WIDGET_SNAPSHOT_KEY = 'schedule_widget_snapshot';
+
+/**
+ * 计数器缓存的 key，与 `CounterStore.KEY_LIST` 一致。
+ *
+ * 桌面计数器**不读**上面那份日程快照（形状完全不同，它是按账号归属的、
+ * 不在日程集里）。这里是给「App 里改了数字 → 桌面立刻跟着变」用的：
+ * 把服务端刚返回的值直接塞进原生那份缓存，再发广播重画，
+ * 桌面就不必先等一轮网络往返。
+ */
+export const WIDGET_COUNTERS_KEY = 'schedule_widget_counters';
 
 interface WidgetBridgePlugin {
   /** 通知指定小组件重画。provider 传组件类全名 */
@@ -111,6 +122,46 @@ export async function clearWidgetAuth(): Promise<void> {
   } catch (_) { /* 同上 */ }
 }
 
+
+/* ---------------------------------------------------------------- 计数器 */
+
+/**
+ * 桌面上那两个计数器（2×2 与 4×1 是两个 entry point，各自一个 receiver）。
+ * 类名写在这里而不是让原生写死 —— 见 WidgetBridge.java 的注释。
+ */
+const COUNTER_PROVIDERS = [
+  'space.xiaokubao.schedule.CounterWidgetProvider',
+  'space.xiaokubao.schedule.CounterWidgetWideProvider',
+];
+
+/**
+ * 把最新的计数器值推进原生缓存，并让桌面重画。
+ *
+ * 为什么直接写缓存而不是只发广播：广播会让组件自己去拉一次服务端
+ * （`resync` → flush → pull），那一轮往返里桌面显示的还是旧值。既然调用方
+ * 手里刚拿到服务端返回的真值，直接写进去 + 重画是最短的路径；
+ * 随后组件自己的那次 pull 会再确认一遍，不会跑偏。
+ *
+ * **静默失败**：推不成只是桌面晚一点更新，不影响用户正在做的事。
+ */
+export async function pushCounterCache(list: Counter[]): Promise<void> {
+  if (!Capacitor.isNativePlatform() || !list.length) return;
+  try {
+    // 形状必须与 CounterStore.Item 的解析一致：id / name / value
+    const value = JSON.stringify(list.map((c) => ({ id: c.id, name: c.name, value: c.value })));
+    await Preferences.set({ key: WIDGET_COUNTERS_KEY, value });
+  } catch (_) {
+    return;
+  }
+}
+
+/** 让桌面上的计数器重画（会顺带触发一次 flush + pull 自校准） */
+export async function refreshCounterWidgets(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  for (const p of COUNTER_PROVIDERS) {
+    try { await WidgetBridge.refresh({ provider: p }); } catch (_) { /* 这个没有实例 */ }
+  }
+}
 
 /* ---------------------------------------------------------------- 安全区 */
 
