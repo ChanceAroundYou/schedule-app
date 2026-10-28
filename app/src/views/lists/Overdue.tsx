@@ -6,14 +6,14 @@ import { ListChecks } from 'lucide-react';
 import type { LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { overdueTasks } from '../../domain/model.ts';
-import { Empty } from '../parts.tsx';
+import { Empty, RepeatFlag } from '../parts.tsx';
 import { CheckBtn, SelDot } from '../parts/CheckBtn.tsx';
 import { SelBar } from './SelBar.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
 import { Btn } from '../../ui/kit.tsx';
 
 /** 逾期行：比普通任务行多一组「重新安排」的快捷键，都走事件委托 */
-function OverdueRow({ task: t, days, sel }: { task: Task; days: number; sel: boolean | null }) {
+function OverdueRow({ task: t, days, sel, showRepeatMark }: { task: Task; days: number; sel: boolean | null; showRepeatMark: boolean }) {
   const t0 = D.today();
   return (
     <div
@@ -27,7 +27,12 @@ function OverdueRow({ task: t, days, sel }: { task: Task; days: number; sel: boo
         ? <CheckBtn id={t.id} on={!!t.done} />
         : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
-        <div className="row-title">{t.title}</div>
+        {/* 逾期行原先既没有循环图标、meta 里也没有周期文字 —— 一条「每周三」的任务
+            逾期了却看着像一次性的，而这一页恰恰是要决定「补到今天还是扔掉」的地方。
+            2026-10-28 用户定「可以加重复」：加**图标**，受同一个「重复标记」开关管
+            （必填 prop，同 TaskRow / TaskCard）。周期文字「每周三」没加 —— 这一行
+            meta 本来就排着「逾期 N 天 · 时间 · 时长 · 三个快捷按钮」，窄屏装不下。 */}
+        <div className="row-title">{t.title}{showRepeatMark && <RepeatFlag t={t} />}</div>
         <div className="row-meta">
           <span className="m-time od-late">逾期 {days} 天</span>
           {t.time && <><span className="dot">·</span><span className="m-time">{t.time}</span></>}
@@ -83,7 +88,7 @@ export function OverdueView({ state }: { state: LocalState }) {
               items={items.map((t) => t.id)}
               entity="task"
               renderItem={(id) => (
-                <OverdueRow task={state.tasks[id]} days={days} sel={isSel(id)} />
+                <OverdueRow task={state.tasks[id]} days={days} sel={isSel(id)} showRepeatMark={state.ui.showRepeatMark} />
               )}
               className="mc"
               scope={'day:' + d}

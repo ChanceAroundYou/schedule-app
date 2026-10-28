@@ -20,7 +20,7 @@ export function DisplayTab({ state }: { state: LocalState }) {
             labelOf={(k) => (k === 'on' ? '显示' : '不显示')}
           />
         </Field>
-        <Field label="重复标记" hint="带重复规则的任务挂循环图标：日历卡右上角和列表行标题末尾。关掉后「每天」「每周三」这类文字还在">
+        <Field label="重复标记">
           <Chips<'on' | 'off'>
             value={ui.showRepeatMark ? 'on' : 'off'}
             options={['on', 'off']}
