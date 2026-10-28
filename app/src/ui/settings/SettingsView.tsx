@@ -43,7 +43,7 @@ const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'about', label: '关于' },
 ];
 
-export function SettingsView({ state, user, theme, onExport, onImport, onLogout, onInvites }: {
+export function SettingsView({ state, user, theme, onExport, onImport, onLogout, onInvites, onUserChange }: {
   state: LocalState;
   user: PublicUser | null;
   /** **实际生效**的那一档（auto 已解析）。色点要靠它才画得出暗色档的颜色 */
@@ -52,6 +52,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   onImport: (f: File) => void;
   onLogout: () => void;
   onInvites: () => void;
+  onUserChange?: (u: PublicUser | null) => void;
 }) {
   const [pwOpen, setPwOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>('appearance');
@@ -119,6 +120,7 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
           onImport={onImport}
           onLogout={onLogout}
           onChangePassword={() => setPwOpen(true)}
+          onUserChange={onUserChange}
         />
       )}
 

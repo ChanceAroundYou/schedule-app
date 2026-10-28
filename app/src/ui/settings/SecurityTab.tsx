@@ -17,9 +17,9 @@ import * as engine from '../../sync/engine.ts';
 import { Btn, Card, Field, InlineRename, Row, useConfirm, toast } from '../kit.tsx';
 import { useOnline } from '../hooks.ts';
 import { displayName } from '../../domain/people.ts';
-import { api, ApiError } from '../../data/api.ts';
+import { api, ApiError, getCachedUser } from '../../data/api.ts';
 
-export function SecurityTab({ state, user, onExport, onImport, onLogout, onChangePassword }: {
+export function SecurityTab({ state, user, onExport, onImport, onLogout, onChangePassword, onUserChange }: {
   state: LocalState;
   user: PublicUser | null;
   onExport: () => void;
@@ -27,6 +27,7 @@ export function SecurityTab({ state, user, onExport, onImport, onLogout, onChang
   onLogout: () => void;
   /** 改密码 —— 弹层由 SettingsView 持有（它是全局的，跟哪个 tab 无关） */
   onChangePassword: () => void;
+  onUserChange?: (u: PublicUser | null) => void;
 }) {
   const confirm = useConfirm();
   const online = useOnline();
@@ -54,6 +55,7 @@ export function SecurityTab({ state, user, onExport, onImport, onLogout, onChang
     try {
       await api.setNickname(v || null);
       await engine.refreshMeta();
+      onUserChange?.(getCachedUser());
       toast(v ? '昵称已改成「' + v + '」' : '已取消昵称，改用用户名');
     } catch (e) { toast(e instanceof ApiError ? e.message : '改昵称失败，请重试'); }
     finally { setBusy(false); }

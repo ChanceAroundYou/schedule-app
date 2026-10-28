@@ -52,7 +52,7 @@ import { captureTap } from './tapSnap.ts';
 import { settleDraftAndSet, draftEcho } from '../ui/newCell.ts';
 import { publishWidgetSnapshot } from '../data/widget.ts';
 
-function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () => void }) {
+function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; onLogout: () => void; onUserChange?: (u: PublicUser | null) => void }) {
   /**
    * 两份 state，用途不同，别混：
    *   state  —— 全量。今天 / 逾期 / 待办箱 / 垃圾箱 / 侧栏徽标 / 抽屉都看它，
@@ -226,6 +226,7 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
     onLogout,
     onInvites: () => setInvOpen(true),
     onAiConfirmed: () => void engine.syncNow(),
+    onUserChange,
   });
 
   // 搜索词只有一个写入方（顶栏那个框 / 浮条）。用 useCallback 定住身份，

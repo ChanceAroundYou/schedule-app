@@ -26,9 +26,10 @@ function contentDispatch(state: LocalState, scoped: LocalState, user: PublicUser
   onLogout: () => void;
   onInvites: () => void;
   onAiConfirmed: () => void;
+  onUserChange?: (u: PublicUser | null) => void;
 }): React.ReactNode {
   const {
-    onExport, onImport, onLogout, onInvites, onAiConfirmed,
+    onExport, onImport, onLogout, onInvites, onAiConfirmed, onUserChange,
   } = callbacks;
 
   if (state.ui.nav === 'settings') {
@@ -41,6 +42,7 @@ function contentDispatch(state: LocalState, scoped: LocalState, user: PublicUser
         onImport={onImport}
         onLogout={onLogout}
         onInvites={onInvites}
+        onUserChange={onUserChange}
       />
     );
   }

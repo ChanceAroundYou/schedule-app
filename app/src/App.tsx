@@ -78,6 +78,7 @@ export default function App() {
     <ConfirmProvider>
       <Workbench
         user={user}
+        onUserChange={setUser}
         onLogout={async () => {
           engine.stop();
           try { await api.logout(); } catch (_) { /* 网络不通也要能退出去 */ }
