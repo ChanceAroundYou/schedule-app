@@ -24,7 +24,9 @@ export async function run(ctx) {
        ⑥ 换档不刷新就生效（全程只点导航、不 reload —— 见 pickScale 那段）。
      顺带把同一页那三排开关（来源标记 / 重复标记 / 现在时刻线）各锁两条：
      关掉 → 那个元素归零、开回 → 回来，全程不刷新（三排都是 2026-10-28 新加的，
-     之前一条覆盖都没有）。
+     之前一条覆盖都没有）。「重复标记'那一排锁**两处**：卡片右上角的角标 +
+     列表行标题末尾那枚（同一天里补的口径：原先这开关只管卡片，列表行照画），
+     外加一条「图标关掉后 meta 里的周期文字还在」—— 关掉图标不等于抹掉重复信息。
      两个视口各跑一趟：窄屏那趟 --fs-title 被 responsive.css 切成 11，只有它会逼近
      --check-min(9) 那道地板；桌面那趟是 12.5，往 --check-max(18) 那边去。
      三排开关只在桌面那一趟查 —— 来源标记按规则只在宽屏 3 日档画，窄屏上
@@ -277,19 +279,36 @@ export async function run(ctx) {
        `dayCount === 3 && !isNarrowNow()`），窄屏上「关掉归零」本来就成立 —— 假通过。 */
     if (!vp.mobile) {
       const count = (sel) => evalJs(page, `return document.querySelectorAll(${JSON.stringify(sel)}).length;`);
+      /* 列表行标题末尾那枚（不是卡片右上角的角标档）—— 2026-10-28 起这一排开关**两处一起管**，
+         之前它只捏着卡片那枚，列表行照画。 */
+      const ROW_REP = '.row-title .rep-flag:not(.rep-flag--corner)';
 
       await gotoDay();
       const rep0 = await count('.rep-flag--corner');
       ok(rep0 > 0, at('开关动之前先有东西可关：日视图上有重复角标 ' + rep0 + ' 枚（0 枚等于没测）'));
+      await gotoList();
+      const rowRep0 = await count(ROW_REP);
+      ok(rowRep0 > 0, at('列表行本来也挂着循环图标 ' + rowRep0 + ' 枚（0 枚等于列表那一半没测）'));
       await pickChip('重复标记', 'off');
       await gotoDay();
       await waitFor(page, `document.querySelectorAll('.rep-flag--corner').length === 0`, '关掉「重复标记」后卡上没有角标');
       ok(true, at('关掉「重复标记」→ 卡上角标归零（不刷新，开关前 ' + rep0 + ' 枚）'));
+      await gotoList();
+      await waitFor(page, `document.querySelectorAll(${JSON.stringify(ROW_REP)}).length === 0`, '关掉「重复标记」后列表行那枚也没了');
+      ok(true, at('关掉「重复标记」→ 列表行标题末尾那枚一起归零（同一个开关管两处，开关前 ' + rowRep0 + ' 枚）'));
+      /* 图标没了，但 meta 里「每周」这类周期文字还在 —— 关掉之后它是唯一的线索，别一起关掉 */
+      ok(await count('.row-meta .m-repeat') > 0, at('关掉图标后 meta 里的周期文字还在（关掉图标不等于抹掉重复信息）'));
       await pickChip('重复标记', 'on');
       await gotoDay();
       await waitFor(page, `document.querySelectorAll('.rep-flag--corner').length > 0`, '开回「重复标记」后角标回来');
       ok(true, at('开回「重复标记」→ 角标恢复'));
+      await gotoList();
+      await waitFor(page, `document.querySelectorAll(${JSON.stringify(ROW_REP)}).length > 0`, '开回「重复标记」后列表行那枚回来');
+      ok(true, at('开回「重复标记」→ 列表行那枚恢复'));
 
+      /* 上面那一半量完停在**列表页**（列表行那枚在那儿才看得见），这一排读的是时间轴，
+         得先回日视图 —— 不回去读到的是「线 0 条、球 0 颗」，那是没导航，不是开关坏了。 */
+      await gotoDay();
       const now0 = await evalJs(page, `
         return { line: document.querySelectorAll('.tl-now').length,
                  ball: document.querySelectorAll('.tl-now-ball').length };

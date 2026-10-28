@@ -46,9 +46,15 @@ export interface TaskRowProps {
   sel?: boolean | null;
   /** 这条所属日程集的颜色 → `data-cal-color`；不传 = 不着色 */
   calColor?: CalColorKey;
+  /**
+   * 标题末尾那枚循环图标开不开（设置页「显示」›「重复标记」）。
+   * **必填、不给默认值** —— 和 `TaskCard` 的 `showRepeatMark` 同一条规矩：
+   * 给了默认值就等于允许调用点忘记接线，症状是「设置里关掉了，列表行那枚还在」。
+   */
+  showRepeatMark: boolean;
 }
 
-export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = null, calColor }: TaskRowProps) {
+export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = null, calColor, showRepeatMark }: TaskRowProps) {
   const meta: ReactNode[] = [];
   const today = D.today();
   if (!bare) {
@@ -63,7 +69,8 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
     if (t.repeat && t.repeat.unit !== 'none') {
       /* 只留文字（「每天」/「每周日、五、六」）。**不再在 meta 前也挂一枚循环图标**
          —— 标题末尾已经有 RepeatFlag 当路标，一行里两枚循环图标纯属重复
-         （2026-10-25 截图核对时发现：标题后一个、meta 前一个，看着像两条任务）。 */
+         （2026-10-25 截图核对时发现：标题后一个、meta 前一个，看着像两条任务）。
+         所以「重复标记」开关关掉之后，这一行文字是这条任务**唯一**的重复线索。 */
       meta.push(<span className="m-repeat" key="r">{repeatLabel(t.repeat)}</span>);
     }
     /* 有详细内容就给个标记 —— 它是「这条还有更多，点开看」的路标。
@@ -93,7 +100,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
           进出多选时列表不会跳一下。 */}
       {sel === null ? <CheckBtn id={t.id} on={!!t.done} /> : <SelDot id={t.id} on={sel} />}
       <div className="row-main">
-        <div className="row-title">{t.title}<RepeatFlag t={t} /></div>
+        <div className="row-title">{t.title}{showRepeatMark && <RepeatFlag t={t} />}</div>
         {/* 详细内容的摘要预览。**只有有内容的行才多出这一行** ——
             大多数任务只有标题，不该为「可能有」先占掉一格高度。 */}
         {!bare && !!t.note && <div className="row-note">{t.note}</div>}

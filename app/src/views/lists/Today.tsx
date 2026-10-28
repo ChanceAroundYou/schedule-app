@@ -48,7 +48,7 @@ export function TodayView({ state }: { state: LocalState }) {
       <SortableList
         items={list.map((t) => t.id)}
         entity="task"
-        renderItem={(id) => <TaskRow task={state.tasks[id]} calColor={colorOf(state.cals, state.tasks[id].calId)} />}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} calColor={colorOf(state.cals, state.tasks[id].calId)} showRepeatMark={state.ui.showRepeatMark} />}
         className="mc"
         scope={'day:' + today}
       />
@@ -72,7 +72,7 @@ export function TodayView({ state }: { state: LocalState }) {
           <SortableList
             items={doneToday.map((t) => t.id)}
             entity="task"
-            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt calColor={colorOf(state.cals, state.tasks[id].calId)} />}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt calColor={colorOf(state.cals, state.tasks[id].calId)} showRepeatMark={state.ui.showRepeatMark} />}
             className="td-body mc"
             scope={'done:' + today}
           />

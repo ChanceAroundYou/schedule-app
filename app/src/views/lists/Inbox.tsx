@@ -30,7 +30,7 @@ export function InboxView({ state }: { state: LocalState }) {
         items={ids}
         entity="task"
         renderItem={(id) => (
-          <TaskRow task={state.tasks[id]} bare sel={sel === null ? null : sel.includes(id)} calColor={colorOf(state.cals, state.tasks[id].calId)} />
+          <TaskRow task={state.tasks[id]} bare sel={sel === null ? null : sel.includes(id)} calColor={colorOf(state.cals, state.tasks[id].calId)} showRepeatMark={state.ui.showRepeatMark} />
         )}
         className="mc"
         scope="inbox"
