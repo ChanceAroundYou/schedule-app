@@ -110,6 +110,14 @@ git log @{u}.. --oneline
    属主读不动，解到 `/tmp` 之后连 `ls` 都失败）。归模式只写进归档头，**不去 chmod
    CIFS 上的源码目录** —— 那是另一台设备也在用的共享工作区。
 5. 回读校验以服务器磁盘那份 `index.html` 为准。
+6. **打包前先在本地盘暂存一份产物**（`/tmp/schedule-web-stage` / `/tmp/schedule-server-stage`），
+   tar 只读那一份。`dist/` 在 CIFS 上，刚 `npm run build` 写完的大文件还压在写回缓存里，
+   直接在工程目录里 tar 会报 `file changed as we read it`（tar 退出码 1，`pipefail`
+   让整条管道死在上传这一步：生产没动，远端 `web.new` 留了一份半成品）—— 2026-10-28 实测。
+7. **ssh 那个双引号串内不许出现反引号**：本地 shell 会把它当命令替换执行。
+   2026-10-25 在 publish-web.sh 炸过一次（把远端脚本改坏），2026-10-28 在 publish-server.sh
+   的注释里又冒出一条 `-rollback-: command not found`（这次只少了一行注释）。
+   检查方法：把四个发布脚本逐行扫一遍「处在双引号串内的反引号」，应为零。
 
 回滚：`./deploy/publish-web.sh --rollback --approve`（或 server），或停后端服务。
 
