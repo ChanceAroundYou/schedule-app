@@ -498,7 +498,11 @@ body.sheet-open .tab:active { background: none; }
      窄屏只报「这张卡有多高」。以前这里写死 4px / 1px 0，
      于是月视图和日周视图的圆润程度、打勾左侧间距各走各的（②③）。 */
   .cell-tasks .task-pill {
-    font-size: 10px; gap: 0;
+    /* 10px 是窄屏胶囊的**基准**（小档），不是第二套字号：任务卡字号那一档仍然乘进它，
+       所以写 `calc(10px * var(--card-font-scale))` 而不是裸 10px。
+       ⚠️ 这条特异度比 calendar.css 的 `.task-pill` 高，漏了乘倍率就等于**窄屏的月胶囊
+       不吃这一档**（宽屏吃、窄屏不吃）—— 第九节量的就是这个。 */
+    font-size: calc(10px * var(--card-font-scale)); gap: 0;
     --pill-line: 14px;
     --pill-pad-y: 0px;
     line-height: var(--pill-line);

@@ -15,6 +15,7 @@ import { cx } from '../cx.ts';
 import { checkAppUpdate } from '../../data/widget.ts';
 import { ChangePasswordSheet } from './ChangePasswordSheet.tsx';
 import { AppearanceTab } from './AppearanceTab.tsx';
+import { DisplayTab } from './DisplayTab.tsx';
 import { SecurityTab } from './SecurityTab.tsx';
 import { CalsTab } from './CalsTab.tsx';
 
@@ -32,10 +33,11 @@ const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
 /* ================================ 页面 ================================ */
 
-type SettingsTab = 'appearance' | 'security' | 'cals' | 'about';
+type SettingsTab = 'appearance' | 'display' | 'security' | 'cals' | 'about';
 
 const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'appearance', label: '外观' },
+  { key: 'display', label: '显示' },
   { key: 'security', label: '安全' },
   { key: 'cals', label: '日程集' },
   { key: 'about', label: '关于' },
@@ -106,6 +108,8 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
       </div>
 
       {tab === 'appearance' && <AppearanceTab state={state} theme={theme} />}
+
+      {tab === 'display' && <DisplayTab state={state} />}
 
       {tab === 'security' && (
         <SecurityTab

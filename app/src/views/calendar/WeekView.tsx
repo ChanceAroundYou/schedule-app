@@ -222,14 +222,14 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
           <TimeGutter hours={hours} win={win} />
           {/* 绿球挂刻度列里，半个球本来就在这一列；放进这层之后窄屏 sticky
               再也盖不住它（2026-10-25 用户报的 z-index 5 遮挡） */}
-          <NowBall pct={nowPct} win={win} />
+          {state.ui.showNowLine && <NowBall pct={nowPct} win={win} />}
         </div>
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
           style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
         >
-          <NowLine pct={nowPct} span="week" win={win} />
+          {state.ui.showNowLine && <NowLine pct={nowPct} span="week" win={win} />}
           {days.map((d, i) => (
             <WeekColumn
               key={d} state={state} d={d} today={today} win={win}

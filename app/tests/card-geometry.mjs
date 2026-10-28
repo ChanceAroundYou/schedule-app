@@ -238,6 +238,7 @@ try {
     './sections/geom/06-list-drag-scroll.mjs',
     './sections/geom/07-user-select.mjs',
     './sections/geom/08-corner-tags.mjs',
+    './sections/geom/09-card-font-scale.mjs',
   ];
   for (const f of sectionFiles) {
     const mod = await import(f);

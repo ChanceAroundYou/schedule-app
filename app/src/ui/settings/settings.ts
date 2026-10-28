@@ -4,5 +4,5 @@
 
 export { NavCard } from './NavCard.tsx';
 export { ChangePasswordSheet } from './ChangePasswordSheet.tsx';
-export { DayWindowCard, CalsTab } from './CalsTab.tsx';
+export { DisplayTab } from './DisplayTab.tsx';
 export { SettingsView } from './SettingsView.tsx';

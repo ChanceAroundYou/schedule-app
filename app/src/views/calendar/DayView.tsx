@@ -156,7 +156,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
               <TimeGutter hours={hours} win={win} />
               {/* 绿球在刻度列里（见 timeline.tsx 的 NowBall）——
                   它有一半本来就在这一列，放进这层才不会被窄屏的 sticky 盖住 */}
-              {isToday && <NowBall pct={nowPct} win={win} />}
+              {isToday && state.ui.showNowLine && <NowBall pct={nowPct} win={win} />}
             </div>
             <div
               className="tl-axis" ref={(el) => { tlRef.current = el; timelineZone.ref(el); }}
@@ -190,7 +190,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
                   只剩一根贯穿时间轴的细线，颜色用 --ok（深绿，主题无关）。
                   窗外不画（`NowLine` 收到 null 返回 null）—— 落在窗外的位置，
                   画出来是贴边的一条假线。球在刻度列里（见上面的 NowBall）。 */}
-              {isToday && <NowLine pct={nowPct} win={win} />}
+              {isToday && state.ui.showNowLine && <NowLine pct={nowPct} win={win} />}
 
               <div className="tl-events">
                 {events.map((e) => (

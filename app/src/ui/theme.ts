@@ -78,10 +78,11 @@ export function applyStyle(k: StyleKey): void {
  * 三轴里坏一个，肉眼要翻 6×3×2 种组合才找得到。
  */
 export function applyAppearance(pref: {
-  theme: ThemeMode; accent: AccentKey; style: StyleKey;
+  theme: ThemeMode; accent: AccentKey; style: StyleKey; cardFontSize?: 'sm' | 'md' | 'lg';
 }): 'light' | 'dark' {
   applyAccent(pref.accent);
   applyStyle(pref.style);
+  document.documentElement.dataset.cardFont = pref.cardFontSize || 'md';
   return applyTheme(pref.theme);
 }
 

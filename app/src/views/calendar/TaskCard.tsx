@@ -15,6 +15,7 @@
  * 「两种卡片是同一套」不是口号 —— 真的只有这一段 DOM。
  */
 
+import * as store from '../../data/store.ts';
 import type { CSSProperties } from 'react';
 import { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -345,7 +346,7 @@ export function TaskCard({
       {/* 循环角标挂在**卡片层**（右上角、绝对定位），不进 .ev-body ——
           2026-10-25 用户：不要挤标题的位置。 */}
       {creator && <CreatorTag initial={creator.initial} title={creator.title} />}
-      <RepeatFlag t={t} corner />
+      {store.get().ui.showRepeatMark && <RepeatFlag t={t} corner />}
     </>
   );
   const inner = content(true);
@@ -620,7 +621,7 @@ export function CompactCard({ t, moreSuffix, moreJumpDay, calColor }: {
           月视图永远不显示）：格子里那一行只有勾选圈 + 任务名（窄屏连圈都藏）。
           时间没丢 —— 挂在 `title` 气泡上，点开还是全的。 */}
       <span className="pill-title">{t.title}</span>
-      <RepeatFlag t={t} corner />
+      {store.get().ui.showRepeatMark && <RepeatFlag t={t} corner />}
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
           +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。

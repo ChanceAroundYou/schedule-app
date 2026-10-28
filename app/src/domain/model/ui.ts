@@ -82,6 +82,9 @@ export function defaultUi(): UiPrefs {
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     showCreatorTag: true,
+    cardFontSize: 'md',
+    showRepeatMark: true,
+    showNowLine: true,
     sel: null,
     // 就地新建的草稿格。瞬时状态，同上
     draft: null,
@@ -119,6 +122,9 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // `ui.cals` —— 上面已用默认值把 cals 补成 []，再问 ui.cals 永远是数组，老数据走不到。
   const rawCals = raw?.cals;
   if (ui.showCreatorTag == null) ui.showCreatorTag = true;
+  if (!['sm', 'md', 'lg'].includes(ui.cardFontSize)) ui.cardFontSize = 'md';
+  if (ui.showRepeatMark == null) ui.showRepeatMark = true;
+  if (ui.showNowLine == null) ui.showNowLine = true;
   if (!rawCals || !Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
   else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', '3day', 'week', 'month'].includes(ui.view)) ui.view = 'day';

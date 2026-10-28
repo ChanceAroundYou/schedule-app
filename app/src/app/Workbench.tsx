@@ -86,11 +86,14 @@ function Workbench({ user, onLogout }: { user: PublicUser | null; onLogout: () =
    */
   const [theme, setTheme] = useState<'light' | 'dark'>(() => T.resolveTheme(store.get().ui.theme));
 
-  /* -------- 外观三轴 -------- */
-  // 三轴任一变化都重写一遍：applyAppearance 幂等，写同样的值没副作用，
+  /* -------- 外观三轴 + 卡片字号档 -------- */
+  // 任一变化都重写一遍：applyAppearance 幂等，写同样的值没副作用，
   // 所以不需要在这里挑是哪一轴变了。
+  // ⚠️ `cardFontSize` 必须在依赖里：它是靠 applyAppearance 写
+  // `<html data-card-font>` 生效的，漏在这一列里就是「设置里换了档、屏幕不动」，
+  // 要等下次换配色或刷新页面才看得见。
   useEffect(() => { setTheme(T.applyAppearance(state.ui)); },
-    [state.ui.theme, state.ui.accent, state.ui.style]);
+    [state.ui.theme, state.ui.accent, state.ui.style, state.ui.cardFontSize]);
 
   // 跟随系统：只在 auto 档订阅。切走时 effect 重跑 → 退订
   useEffect(() => {

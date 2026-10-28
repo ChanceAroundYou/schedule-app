@@ -48,12 +48,14 @@ export async function run(ctx) {
   const openSettings = async () => {
     await clickEl(page, `document.querySelector('.sidebar [data-nav="settings"]')`);
     await waitFor(page, `!!document.querySelector('[data-settings-tab]')`, '设置页', 8000);
-    await clickEl(page, `document.querySelector('[data-settings-tab="appearance"]')`);
+    await clickEl(page, `document.querySelector('[data-settings-tab="display"]')`);
     /* 时间窗现在是 `Dropdown`（自己的控件，不是原生 select）—— 所以没有
        `[data-day-win]` 了，抓手换成按钮的 `aria-label`。选项是
        `[role="option"]`，在 `[role="listbox"]` 里；菜单 `max-h-64` 会滚动，
-       但 25 个整点在 DOM 里一个不少，所以按文字点就是。 */
-    await waitFor(page, `!!document.querySelector('[aria-label="时间窗从几点开始"]')`, '设置 › 外观', 8000);
+       但 25 个整点在 DOM 里一个不少，所以按文字点就是。
+       ⚠️ 这一格 2026-10-28 从「外观」搬到「显示」（`DisplayTab` 挂了 `<DayWindowCard>`）：
+       点 appearance 会卡在下一句的「等不到设置 › 显示」。搬家时要连着探针一起搬。 */
+    await waitFor(page, `!!document.querySelector('[aria-label="时间窗从几点开始"]')`, '设置 › 显示', 8000);
   };
 
   /** 点一下某个时间窗下拉的选项。`label` 是按钮的 aria-label，hour 是 0–24 */

@@ -89,6 +89,12 @@ export interface UiPrefs {
   tdoneOpen: boolean;
   /** 是否在任务右上角显示非自己创建者的来源 tag */
   showCreatorTag: boolean;
+  /** 任务卡字号档位 */
+  cardFontSize: 'sm' | 'md' | 'lg';
+  /** 是否显示重复标记 */
+  showRepeatMark: boolean;
+  /** 是否显示现在时刻线 */
+  showNowLine: boolean;
   /**
    * 多选模式的选中集合（2026-10-14）。
    *

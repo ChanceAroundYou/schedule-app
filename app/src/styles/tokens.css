@@ -52,6 +52,14 @@
   --fs-title: 12.5px;
   --fs-meta: 10.5px;
   --fs-head-date: 14px;
+  /* **任务卡字号三档的倍率**（设置页「显示」→ 任务卡字号）。默认 1 = 现状，
+     档位写在 `<html>` 上（`[data-card-font]`，由 ui/theme.ts 写），值靠继承落到
+     卡片自己那条字号算式里。**默认值而不是兜底值**：档位没写上也必须是 1，
+     否则 `calc()` 里引用一个不存在的变量会让整条 font-size 失效（字号掉回继承值）。
+     消费点只有日历上的卡片（日 / 3日 / 周 / 月的任务卡与胶囊，外加就地新建那个草稿格），
+     列表行、抽屉、月视图那个日期数字不吃 ——
+     那些另有自己的令牌，一处一档改 N 处正是这条要防的。 */
+  --card-font-scale: 1;
   /* 列表行标题的字号（窄屏切 14.5）。`.row-title` 和那一行上的勾选圈**读同一个**
      —— 圈跟的是「那一行的文字多大」，不是正文默认字号，两头各写一遍就会漂。 */
   --fs-row: 13.5px;
@@ -160,6 +168,17 @@
      用侧见 ui/shell/shell.css（顶栏）与 responsive.css（底栏 / .main）。 */
   --sat: 0px; --sab: 0px; --sal: 0px; --sar: 0px;
 }
+
+/* 任务卡字号三档：属性挂在 `<html>` 上（ui/theme.ts 的 applyAppearance 写
+   `documentElement.dataset.cardFont`），这里只把档位换算成倍率。
+   ⚠️ 档位**不许**直接给 `.task-el` 写 font-size：卡片自己那两条
+   `.task-el--timed` / `.task-el--untimed` 已经写了 `font-size: var(--fs-title)`，
+   同特异度后写的赢（踩坑 17），在它们后面补一条就把基准从 12.5 / 窄屏 11 顶成
+   别的大小，勾选圈（直径 = 所在行字号 × --check-k）跟着变，card-geometry 立刻红。
+   正确做法是只改倍率，让卡片那条算式自己乘。 */
+[data-card-font="sm"] { --card-font-scale: .875; }
+[data-card-font="md"] { --card-font-scale: 1; }
+[data-card-font="lg"] { --card-font-scale: 1.125; }
 
 [data-theme="dark"] {
   --bg: #14120f;

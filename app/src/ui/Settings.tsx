@@ -4,5 +4,5 @@
 
 export { NavCard } from './settings/settings.ts';
 export { ChangePasswordSheet } from './settings/settings.ts';
-export { DayWindowCard, CalsTab } from './settings/settings.ts';
+export { DisplayTab } from './settings/settings.ts';
 export { SettingsView } from './settings/settings.ts';
