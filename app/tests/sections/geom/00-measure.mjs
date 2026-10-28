@@ -224,5 +224,113 @@ export async function run(ctx) {
     }
   }
 
-  Object.assign(state, { table, detail, VIEWPORTS, VIEWS });
+  /* ── 3 日宽屏档专趟：卡片**右上角那两枚角标**（重复角标 + 来源 tag）只在这一档出现
+     （判据在 `views/calendar/WeekView.tsx`：dayCount === 3 且非窄屏且设置里开着），
+     上面三档（日 / 周 / 月）根本画不出来 —— 上一轮「tag 把卡片改坏了」就是这一档的事，
+     而这套探针当时压根没 visits 这一档，所以全绿也没拦住。
+     量的核心是**面积重叠**：角标是绝对定位、不占文字宽度（用户 2026-10-25 定的），
+     于是标题长到顶到右沿时就会从角标**底下**穿过去 —— 相交面积 > 0 就是撞上了。 */
+  await page.send('Emulation.setDeviceMetricsOverride', {
+    width: 1400, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
+  await waitFor(page, `!!document.querySelector('.main')`, '桌面 1400 / 3日 外壳', 15000);
+  await gotoCalendar();
+  await evalJs(page, `
+    const b = document.querySelector('.view-switch [data-view="3day"]');
+    if (b) b.click();
+    return true;
+  `);
+  await waitFor(page, `!!document.querySelector('.content-day')`, '桌面 1400 / 3日 视图');
+  await sleep(700);
+  const corner = await evalJs(page, `
+    const R = (el) => { const b = el.getBoundingClientRect();
+      return { l: +b.left.toFixed(2), t: +b.top.toFixed(2), r: +b.right.toFixed(2),
+               b: +b.bottom.toFixed(2), w: +b.width.toFixed(2), h: +b.height.toFixed(2) }; };
+    /* 两个矩形相交面积：0 = 各站各的；> 0 = 压在彼此头上（角标是半透明的，压在文字上
+       就是用户看到的那团糊） */
+    const area = (a, b) => (!a || !b) ? null
+      : +(Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l))
+          * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t))).toFixed(2);
+    /* **墨迹右端**在哪：.ev-title 是个 grid item，矩形永远撑满可用宽 ——
+       拿它当「文字到哪」会把「没撞上」误报成「撞上了」。用 Range 量真正的文字端
+       （Range 的 client rect 跟着字形走，不受 grid 拉伸影响）。
+       ⚠️ Range 的 rect **不受祖先 overflow:hidden 裁剪**：标题被裁时它照报全长
+       （实测被裁 74px 的那条报出卡外 58px）—— 所以「看得见的墨迹」取
+       min(Range 右端, 元素自己的右端)：overflow 只可能让墨迹更短，不会更长。 */
+    const inkR = (el) => {
+      if (!el) return null;
+      const rg = document.createRange(); rg.selectNodeContents(el);
+      const rs = rg.getClientRects(); let mx = null;
+      for (let i = 0; i < rs.length; i++) { if (mx === null || rs[i].right > mx) mx = rs[i].right; }
+      if (mx === null) return null;
+      const box = el.getBoundingClientRect();
+      return +Math.min(mx, box.right).toFixed(2);
+    };
+    /* 看得见的墨迹占的那块：右端取上面那个 min，左右之外沿用元素自己的矩形。
+       与角标求**相交面积**才是「压没压」—— 只看水平会漏（角标可能整条在文字行上方），
+       只看矩形会把 grid 拉伸的空档也算成文字。 */
+    const inkBox = (el) => {
+      if (!el) return null;
+      const b = el.getBoundingClientRect(); const r = inkR(el);
+      if (r === null) return null;
+      return { l: +b.left.toFixed(2), t: +b.top.toFixed(2), r, b: +b.bottom.toFixed(2),
+               w: +(r - b.left).toFixed(2), h: +b.height.toFixed(2) };
+    };
+    const cards = [...document.querySelectorAll('.content .task-el')].map((el) => {
+      const tag = el.querySelector('.creator-tag');
+      const rep = el.querySelector('.rep-flag--corner');
+      const title = el.querySelector('.ev-title');
+      const text = el.querySelector('.ev-text');
+      const card = R(el);
+      const tr = tag ? R(tag) : null;
+      const rr = rep ? R(rep) : null;
+      const xr = text ? R(text) : null;
+      const ti = title ? R(title) : null;
+      return {
+        id: el.getAttribute('data-id'), card, tag: tr, rep: rr, text: xr, title: ti,
+        /* 角标离卡片右沿多远：判「贴右沿 / 让到角标左边」两条摆法落没落对 */
+        tagFromRight: tr ? +(card.r - tr.r).toFixed(2) : null,
+        tagFromTop: tr ? +(tr.t - card.t).toFixed(2) : null,
+        repFromRight: rr ? +(card.r - rr.r).toFixed(2) : null,
+        gapTagRep: (tr && rr) ? +(rr.l - tr.r).toFixed(2) : null,
+        tagVsText: area(tr, xr), tagVsTitle: area(tr, ti), tagVsRep: area(tr, rr),
+        repVsText: area(rr, xr), repVsTitle: area(rr, ti),
+        /* 真正的撞没撞：墨迹右端越过角标左沿多少像素（负数 = 还留着缝） */
+        /* 真正的撞没撞：墨迹块与角标的**相交面积**（0 = 各站各的） */
+        inkTagArea: area(inkBox(title), tr), inkRepArea: area(inkBox(title), rr),
+        /* 角标那一横条与标题那一行的竖直重叠：<= 0 说明两者不同行，
+           那时「面积 0」是白判，得说出来 */
+        bandTagY: (tr && ti) ? +(Math.min(ti.b, tr.b) - Math.max(ti.t, tr.t)).toFixed(2) : null,
+        titleInkR: inkR(title),
+        inkIntoTag: (tr && inkR(title) != null) ? +(inkR(title) - tr.l).toFixed(2) : null,
+        inkIntoRep: (rr && inkR(title) != null) ? +(inkR(title) - rr.l).toFixed(2) : null,
+        /* 文字块右沿到 tag 左沿的净空：负数就是文字伸到角标下面了 */
+        clearance: (tr && xr) ? +(tr.l - xr.r).toFixed(2) : null,
+        /* 「让位」有没有真的落在内容层上（CSS 里那条 --corner-inset） */
+        bodyPadR: (function () { const b = el.querySelector('.ev-body');
+          return b ? +parseFloat(getComputedStyle(b).paddingRight).toFixed(2) : null; })(),
+        titleClip: title ? Math.round(title.scrollWidth - title.clientWidth) : null,
+        titleFs: title ? +parseFloat(getComputedStyle(title).fontSize).toFixed(2) : null,
+        tagW: tr ? tr.w : null,
+      };
+    });
+    return {
+      cards,
+      tagEls: document.querySelectorAll('.creator-tag').length,
+      repEls: document.querySelectorAll('.rep-flag--corner').length,
+      narrow: matchMedia('(max-width: 900px)').matches,
+      /* 量不到 tag 时有两种原因、方向相反：数据没到（跨集口径没勾上 / 同步没拉到）
+         还是界面没画（窄屏判定 / 那个开关）。当场把两边读数都留下 */
+      diag: (function () {
+        const st = JSON.parse(localStorage.getItem('schedule-app-v4') || '{}');
+        return { uiCals: (st.ui || {}).cals, calNames: (st.cals || []).map((c) => c.name),
+                 meId: st.meId, foreign: Object.keys(st.tasks || {}).filter((k) => /foreign/.test(k)),
+                 users: Object.keys(st.users || {}).length, switchOn: (st.ui || {}).showCreatorTag,
+                 view: (st.ui || {}).view, taskEls: document.querySelectorAll('.task-el').length };
+      })(),
+    };
+  `);
+
+  Object.assign(state, { table, detail, VIEWPORTS, VIEWS, corner });
 }

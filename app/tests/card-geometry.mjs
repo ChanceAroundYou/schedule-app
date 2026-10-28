@@ -114,7 +114,31 @@ try {
     { id: 't_geom_t45', time: '21:00', duration: 45, title: '定时四十五分' },
     { id: 't_geom_t30', time: '11:00', duration: 30, title: '定时三十分' },
   ];
-  const DUR = Object.fromEntries(SEED_TIMED.map((r) => [r.id, r.duration]));
+  /* 「别人建的」定时卡也进这张表：第三节按它分桶 —— 不在表里的卡被当未定时，
+     会拿「未定时卡没有时间行」去考一张有时间的卡（实测误报 4 条）。
+     ⏰ 特意排在 22:00（21:45 之后）：定时卡**不许互相层叠**是探针自己的前提 ——
+     上一版排在 10:00，正好压住 09:00–11:00 那张，层叠把两张都压窄，
+     于是「时间行没被横向裁」在周视图红了 2px / 窄屏红了 26px，
+     圆角也跟着从应算的 10.78 漂到 12.01（红的是探针造的堆叠，不是卡片）。 */
+  const SEED_FOREIGN_TIMED = [
+    { id: 't_geom_foreign_timed', time: '22:00', duration: 90, title: '别人建的定时任务' },
+  ];
+  const REPEAT_NONE = { unit: 'none', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
+  const REPEAT_WEEK = { unit: 'week', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
+  /* 「别人建的」那批（第八节量的就是它们）：来源 tag 只在**别人建**的任务上出现
+     （createdBy 由服务端在创建时钉死，客户端 op 改不动），所以第四节的种子是
+     「另一个账号建在另一个集里」的任务。标题特意起得长：重叠就发生在
+     「标题长到顶到卡片右沿」的那张卡上。
+     ⚠️ 超长那条是「墨迹不许压在角标上」这条断言的**证人**：短标题根本走不到
+     角标那一段，断言会空过（上一轮量到的越界全是负数 = 其实什么都没测到）。
+     44 个字 × 12.5px ≈ 550 > 331 可用宽 → 一定被裁在右沿上。 */
+  const SEED_FOREIGN = [
+    { id: 't_geom_foreign_long', title: '别人建的长标题任务要顶到卡片右沿看会不会撞上角标', time: null, duration: null, repeat: REPEAT_NONE },
+    { id: 't_geom_foreign_verylong', title: '别人建的超长标题任务要一路顶到右沿好看看是文字让步还是角标让步', time: null, duration: null, repeat: REPEAT_NONE },
+    { id: 't_geom_foreign_rep', title: '别人建的重复任务', time: null, duration: null, repeat: REPEAT_WEEK },
+    ...SEED_FOREIGN_TIMED.map((r) => ({ ...r, repeat: REPEAT_NONE })),
+  ];
+  const DUR = Object.fromEntries([...SEED_TIMED, ...SEED_FOREIGN_TIMED].map((r) => [r.id, r.duration]));
   const seed = await evalJs(page, `
     const tok = localStorage.getItem('schedule-app-token');
     const me = await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + tok } })).json();
@@ -153,15 +177,86 @@ try {
   console.log('  已造任务：定时 ' + SEED_TIMED.map((r) => r.duration).join('/') + ' 分钟各一条'
     + ' + 未定 25 条（' + seed.today + '，日程集「' + seed.calName + '」）');
 
-  await evalJs(page, `
-    const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
-    st.ui.cal = ${JSON.stringify(seed.calId)};
-    st.ui.cals = [${JSON.stringify(seed.calId)}];
-    localStorage.setItem('schedule-app-v4', JSON.stringify(st));
-    return true;
+  /* ── 再造「别人建的」任务：来源 tag 只在**别人建**的任务上出现（createdBy 由服务端
+     在创建时钉死，客户端 op 改不动），所以必须真开第二个账号、真邀请、真接受。
+     第八节（右上角那两枚角标）量的就是这批卡，种子在上面的 SEED_FOREIGN。 */
+  const foreign = await evalJs(page, `
+    const post = (path, body, tok) => fetch('/api' + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+        ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
+      body: JSON.stringify(body),
+    }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+    const me = await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } })).json();
+    const mine = me.cals[0];
+    const other = await post('/auth/register', { name: '来源探针', password: 'foreign-pw-123' });
+    if (other.status !== 200) return { skip: '第二个账号注册失败：' + other.status };
+    const otherTok = other.j.token;
+    const otherCal = (await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + otherTok } })).json()).cals[0];
+    const inv = await post('/cals/' + otherCal.id + '/invites', { name: me.user.name, role: 'editor' }, otherTok);
+    if (inv.status !== 200) return { skip: '邀请失败：' + inv.status };
+    const acc = await post('/invites/' + inv.j.invite.id + '/accept', {}, localStorage.getItem('schedule-app-token'));
+    if (acc.status !== 200) return { skip: '接受邀请失败：' + acc.status };
+    const d = new Date();
+    const p2 = (n) => (n < 10 ? '0' + n : '' + n);
+    const today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+    const rows = ${JSON.stringify(SEED_FOREIGN)};
+    const ts = Date.now();
+    const ops = [];
+    for (const row of rows) {
+      const fields = { title: row.title, date: today, time: row.time, duration: row.duration,
+                       done: false, doneAt: null, repeat: row.repeat,
+                       seriesId: row.repeat.unit === 'none' ? null : row.id, repeatSeq: 0, reminder: null, note: '' };
+      for (const f of Object.keys(fields)) {
+        ops.push({ opId: 'opfx-' + row.id + '-' + f, deviceId: 'foreign-probe', ts,
+                   entity: 'task', entityId: row.id, calId: otherCal.id, fields: { [f]: fields[f] } });
+      }
+    }
+    const pushed = await post('/sync', { cursor: 1, ops }, otherTok);
+    return { calId: otherCal.id, calName: otherCal.name, otherName: other.j.user.name,
+             applied: (pushed.j.applied || []).length, rejected: pushed.j.rejected || [] };
   `);
+  if (foreign.skip) throw new Error('造「别人建的」任务失败：' + JSON.stringify(foreign));
+  console.log('  已造「别人建的」任务：' + foreign.calName + '（' + foreign.otherName + ' 建）里 '
+    + foreign.applied + ' 个字段落库（长标题 / 重复 / 定时各一条）');
+
+  /* 催同步引擎拉一趟（它平时 15 秒一轮，窗口重获焦点时立刻跑）：不催就得干等，
+     而且「本地副本落盘」那条等待会等到超时 */
+  await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
+  /* 本地副本要等一次同步落盘才存在（persist 有 250ms 防抖，而接受邀请后客户端
+     还得多拉一趟快照才知道自己进了新集）—— 立刻读会拿到 null */
+  try {
+    await waitFor(page, `!!localStorage.getItem('schedule-app-v4')`, '本地副本落盘', 20000);
+  } catch (err) {
+    const dbg = await evalJs(page, `
+      return { keys: Object.keys(localStorage),
+               cals: (JSON.parse(localStorage.getItem('schedule-app-v4') || 'null') || {}).cals };
+    `);
+    console.error('  [诊断] ' + JSON.stringify(dbg)); throw err;
+  }
+  /* 勾上「别人的集」不能写 localStorage 再 reload：reload 时 pagehide → flushPersist
+     会拿内存里那份旧的把字写回去（深浅那档踩过同一件事，见 docs/踩坑）。
+     改用 CDP 的「新文档里最早的脚本」—— 它跑在应用读 localStorage 之前，每趟导航都生效。 */
+  await page.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try { const k = 'schedule-app-v4'; const raw = localStorage.getItem(k);
+      if (raw) { const p = JSON.parse(raw);
+        if (p && p.ui && Array.isArray(p.cals)) { p.ui.cals = p.cals.map((c) => c.id); localStorage.setItem(k, JSON.stringify(p)); }
+      } } catch (_) {}`,
+  });
   await page.send('Page.reload');
   await waitFor(page, `!!document.querySelector('.main')`, '重载后外壳', 15000);
+  /* 新集的历史全在游标后面（AGENTS 同步那条）→ 客户端要多拉一次才看得见这个集。
+     等它真进了本地 cals，否则第八节量到的 tag 数会是 0（等于没测）。 */
+  try {
+    await waitFor(page, `(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks || {})
+      ['t_geom_foreign_long'] ? 1 : null`, '别人的任务进了本地副本', 25000);
+  } catch (err) {
+    const dbg = await evalJs(page, `
+      const st = JSON.parse(localStorage.getItem('schedule-app-v4') || '{}');
+      return { cals: (st.cals || []).map((c) => c.name), uiCals: (st.ui || {}).cals,
+               cursor: st.cursor, tasks: Object.keys(st.tasks || {}).length };
+    `);
+    console.error('  [诊断] ' + JSON.stringify(dbg)); throw err;
+  }
 
   const gotoCalendar = async () => {
     await evalJs(page, `
@@ -198,6 +293,7 @@ try {
     './sections/geom/05-longpress-drag.mjs',
     './sections/geom/06-list-drag-scroll.mjs',
     './sections/geom/07-user-select.mjs',
+    './sections/geom/08-corner-tags.mjs',
   ];
   for (const f of sectionFiles) {
     const mod = await import(f);
