@@ -313,6 +313,26 @@ export async function run(ctx) {
         titleClip: title ? Math.round(title.scrollWidth - title.clientWidth) : null,
         titleFs: title ? +parseFloat(getComputedStyle(title).fontSize).toFixed(2) : null,
         tagW: tr ? tr.w : null,
+        /* 圆里的字落在哪：padding-top / 字形那 0.3px / 字形**行盒**中心离圆心的距离。
+           ⚠️ 行盒不是墨迹：creator-tag 里那一层 span 的矩形是行盒，汉字墨迹在这个盒里
+           还自带一个固定偏移（6.25px 这一档实测盒中心比墨迹质心高 1.51px @DSF2 /
+           1.26 @DSF4 / 0.95 @DSF1 —— 差的是栅格，不是布局）。
+           所以这里只能锁「档位没跳」：padding-top 与 transform 一挪，盒中心就挪约 1px，
+           墨迹离圆心的真实距离（DSF2 −0.19 / DSF4 +0.06 / DSF1 +0.37）要靠逐像素扫描量，
+           脚本没入库、方法和数值都写在 calendar.css 那段注释里。
+           ⚠️ 这段注释里不许出现反引号：整段跑在浏览器里，反引号会把外层模板截断（踩坑 29 同款）。 */
+        tagPadTop: (function () { const t = el.querySelector('.creator-tag');
+          return t ? +parseFloat(getComputedStyle(t).paddingTop).toFixed(2) : null; })(),
+        tagGlyphTy: (function () { const g = el.querySelector('.creator-tag > span');
+          if (!g) return null;
+          const m = new DOMMatrixReadOnly(getComputedStyle(g).transform);
+          return +m.f.toFixed(2); })(),
+        tagLineBoxDy: (function () {
+          const t = el.querySelector('.creator-tag'); const g = t && t.querySelector(':scope > span');
+          if (!g) return null;
+          const tb = t.getBoundingClientRect(); const gb = g.getBoundingClientRect();
+          return +(((gb.top + gb.height / 2) - (tb.top + tb.height / 2))).toFixed(2);
+        })(),
       };
     });
     return {
