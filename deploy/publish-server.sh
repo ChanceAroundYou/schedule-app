@@ -204,7 +204,12 @@ else
   ln -sfn ../deps/node_modules $REMOTE_APP/node_modules
   echo '    依赖软链缺失/悬空，已重建'
 fi
-# 保留策略与回滚挑选**同源**（pf_prune_backups_cmd）：按 mtime、`-rollback-` 单独计。
+# 保留策略与回滚挑选**同源**（pf_prune_backups_cmd）：按 mtime、「-rollback-」单独计。
+# ⚠️ 这一行在 ssh 的双引号串里：**串内不许出现反引号**（本地会当命令替换执行）——
+# 原先这里给 -rollback- 加了一对反引号，每次发布都冒一条
+# 「publish-server.sh: line 191: -rollback-: command not found」，
+# 远端只是少了一行注释所以没坏，但同一件事把注释换成多行文本就能改坏远端脚本
+# （2026-10-25 在 publish-web.sh 炸过一次，见那里的注释）。
 $(pf_prune_backups_cmd "$REMOTE_APP" "$KEEP")
 echo '    软链：'; ls -l $REMOTE_APP/node_modules | sed 's/^/    /'"
 
