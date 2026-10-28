@@ -129,6 +129,29 @@ test('健康检查', async () => {
   assert.strictEqual(h.body.ok, true);
 });
 
+/**
+ * `HEAD` 走的是 GET 那条路由（2026-10-28 补）。
+ *
+ * 原先只按 `req.method` 精确匹配，`HEAD /api/health` 掉进 404「接口不存在」。
+ * 而排障用的 `curl -I`（DEPLOY.md 的验证段）、监控探活、以及反代做 HEAD 预取时
+ * 发的全是 HEAD —— 于是「后端好好的」被读成「后端没起」，排查方向整个偏掉。
+ *
+ * 三条规矩一起锁：头与 GET 一致、body 为空、**鉴权不许因为换了方法就绕过**。
+ */
+test('HEAD 走 GET 的路由：头一致、body 为空、鉴权不绕过', async () => {
+  const head = await fetch(base + '/api/health', { method: 'HEAD' });
+  assert.strictEqual(head.status, 200);
+  assert.strictEqual(await head.text(), '', 'HEAD 不该带正文');
+  assert.match(head.headers.get('content-type') || '', /application\/json/);
+  assert.strictEqual(head.headers.get('cache-control'), 'no-store');
+
+  assert.strictEqual((await fetch(base + '/api/nope', { method: 'HEAD' })).status, 404);
+  assert.strictEqual(
+    (await fetch(base + '/api/me', { method: 'HEAD' })).status, 401,
+    'HEAD 不能绕开登录',
+  );
+});
+
 test('未登录访问受保护接口一律 401', async () => {
   for (const [m, p] of [['GET', '/api/me'], ['GET', '/api/cals'], ['POST', '/api/sync']]) {
     const r = await api(m, p, { body: m === 'POST' ? {} : undefined });
@@ -555,6 +578,20 @@ test('请求体不是合法 JSON 时返回 400 而不是崩', async () => {
 test('不存在的接口返回 404', async () => {
   assert.strictEqual((await api('GET', '/api/nope')).status, 404);
   assert.strictEqual((await api('GET', '/api/cals/x/y/z')).status, 404);
+});
+
+/**
+ * 「这个地址有，只是不吃这个方法」必须是 **405**，不是 404（2026-10-28 补）。
+ *
+ * 原先一律 404，于是「路径写对、方法写错」与「路径根本不存在」长得一模一样：
+ * 客户端照着 404 去查路由表，而真正该改的是那个动词。路由表里已经有别的动词
+ * 挂在这个地址上（`GET` / `POST` 都在），判据是现成的，没理由不用。
+ */
+test('地址在、方法不对 → 405 而不是 404', async () => {
+  const r = await api('PUT', '/api/cals');
+  assert.strictEqual(r.status, 405, `PUT /api/cals 应该 405，实得 ${r.status}`);
+  // 真正不存在的那个地址仍然是 404，别把两件事混成一个
+  assert.strictEqual((await api('PUT', '/api/nope')).status, 404);
 });
 
 test('设备时钟偏差超 24 小时的 op 被退回，并标明 code=clock', async () => {

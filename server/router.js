@@ -103,8 +103,29 @@ function createServer() {
     if (preflight(req, res)) return undefined;
     applyCors(req, res);
 
-    const route = matchRoute(req.method, pathname);
-    if (!route) return send(res, 404, { error: '接口不存在' });
+    /* **HEAD 走 GET 的那条路由**（2026-10-28）：原先只按 `req.method` 精确匹配，
+       于是 `HEAD /api/health` 掉进 404「接口不存在」—— 用 `curl -I` 排障时会以为
+       后端没起（DEPLOY.md 验证段那条 `curl -skI $B/api/health | grep cache-control`
+       就是 HEAD，改动前它只会回一个空）。响应体由 Node 自己吞掉
+       （实测：头一模一样、body 为空），所以 `raw: true` 那几条也不用另写特判。
+       HEAD 没有正文，下面读 body 那段照旧不看它。 */
+    const method = req.method === 'HEAD' ? 'GET' : req.method;
+    const route = matchRoute(method, pathname);
+    if (!route) {
+      /* **地址在、方法不对 → 405**（2026-10-28 补）。
+         原先一律 404，于是「路径写对、动词写错」与「路径根本不存在」长得一模一样，
+         排查的人会去翻路由表，而该改的是那个动词。路由表里已经有别的动词挂在这个
+         地址上时判据是现成的。副作用只有一条：真正不存在的地址仍走 404，
+         越权探测拿不到「这条路由存在」这种信息（`GET /api/media/:name` 那条
+         不鉴权，其余全在 401 之后）。 */
+      const methodExists = ROUTES.some((r) => r.rx.test(pathname));
+      if (methodExists) {
+        res.setHeader('Allow', ROUTES.filter((r) => r.rx.test(pathname))
+          .map((r) => r.method).join(', '));
+        return send(res, 405, { error: '这个地址不吃 ' + req.method + ' 方法' });
+      }
+      return send(res, 404, { error: '接口不存在' });
+    }
 
     let me = null;
     if (route.needsAuth) {
