@@ -6,8 +6,10 @@
  * 集颜色只体现在卡片左沿那条色带上 —— 这里不再引 `--cal-color`，
  * 免得同一张卡上出现第三套颜色。
  *
- * 与 `RepeatFlag` 分开两个文件、但同一个定位体系（`.rep-flag--corner` 的左边），
- * 两枚角标互不占位。
+ * 与 `RepeatFlag` 分开两个文件、但共用卡片右上角那一格（`.rep-flag--corner` 那块）：
+ * **有重复角标时这枚圈让到它左边**（`.creator-tag` 的 `right: 15px`），
+ * **没有重复角标时贴右沿**（`.task-el:not(:has(.rep-flag--corner)) > .creator-tag`）——
+ * 判据在样式表里，不给 `views/` 加回调，组件自己不看邻居。
  *
  * 为什么它是纯展示组件（只吃 `initial` / `title` 两个字符串）：`views/` 不许有回调，
  * 「谁创建的、叫什么」由调用方从 `state.users` 里算好传进来（`state` 是 props）。
