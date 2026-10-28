@@ -146,6 +146,16 @@
     "Source Han Sans SC", "Microsoft YaHei", system-ui, -apple-system,
     "Segoe UI", sans-serif;
 
+  /* 等宽档：详细内容里的 `code` / `pre` 用（ui/editor/note.css）。
+     **原先这里没有定义**，note.css 写的是 `var(--font-mono, ui-monospace, monospace)`
+     —— 兜底值把「变量压根不存在」盖掉了，两套主题都拿到同一串浏览器默认等宽字，
+     深浅档切换时它不动，也没人会发现（contrast.mjs 报「未定义」才现形）。
+     ⚠️ 顺序与 --font **相反**：等宽档必须等宽字体排最前，否则英文和数字会被
+     PingFang 按比例画出来，代码就对不齐了。中文字形由浏览器逐字回落，
+     所以中文黑体只列在最后当兜底，不参与拉丁字形。 */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    "Noto Sans Mono CJK SC", "PingFang SC", "Noto Sans CJK SC", monospace;
+
   /* 方向与 --shadow* 相反的三条：底栏 / 抽屉 / 更多浮层往上投，
      周视图未定时行那条只有 2px 的贴边阴影。它们没法用 --shadow* 表达。 */
   --shadow-up: 0 -8px 30px rgba(16, 24, 40, .18);

@@ -58,7 +58,7 @@
 .note-prose pre {
   margin: .5em 0; padding: 9px 11px; border-radius: var(--r-sm);
   background: var(--panel-3); color: var(--text);
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.6;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
   overflow-x: auto;
 }
 .note-prose code {
