@@ -105,6 +105,10 @@ git log @{u}.. --oneline
 2. 指纹命令里 `sed 's/\*//g' | tr -s ' '` 别删。
 3. `app/node_modules` 软链只在 `[ ! -e node_modules ]` 时补。
 4. 打包强制 `--mode='u+rwX,go+rX'`，解包后 chmod 并数文件数。
+   **两条发布路径都要**（web 2026-10-24 补的，server 到 2026-10-28 才补上 —— 漏着的那条
+   不是发布时出事，是 dry-run 就死在「1/7 打包内容」：CIFS 上的目录出来是 `075`，
+   属主读不动，解到 `/tmp` 之后连 `ls` 都失败）。归模式只写进归档头，**不去 chmod
+   CIFS 上的源码目录** —— 那是另一台设备也在用的共享工作区。
 5. 回读校验以服务器磁盘那份 `index.html` 为准。
 
 回滚：`./deploy/publish-web.sh --rollback --approve`（或 server），或停后端服务。

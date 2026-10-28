@@ -113,11 +113,22 @@ fi
 say "1/7 打包 server/（剔除 data / *.bak / .claude / .omc / tests）"
 cd "$ROOT"
 [ -d server ] || die "找不到 server/ —— 在仓库根目录跑这个脚本"
+# 先归一次模式再删：修好之前留下来的那份 stage 是 `075`，属主读不动 —— `rm -rf` 会
+# 报 Permission denied，而 `set -e` 让脚本连「1/7」都到不了。只动 /tmp 里自己的草稿。
+chmod -R u+rwX /tmp/schedule-server-stage 2>/dev/null || true
 rm -rf /tmp/schedule-server-stage
 mkdir -p /tmp/schedule-server-stage
+# ⚠️ **模式在打包时归一次**（2026-10-28）：与 publish-web.sh 2026-10-24 那次是**同一个坑**
+#   —— 工程目录在 CIFS 上，`server/` 里的目录出来就是 `075`，**属主没有读位**。
+#   tar 照原样带过去，本地解到 /tmp 之后连 `ls` 都读不动（dry-run 直接死在
+#   「打包内容」那一步），远端 `cp -r` 同样读不动。
+#   **不在 CIFS 源头 chmod**：`server/` 属于另一台设备也在用的共享工作区，改它的元数据
+#   不是发布该做的事（本机 `core.fileMode=false` 看不见，Windows 那侧未必，脏树会被
+#   前置校验挡下）。归模式只写进归档头。
 tar -czf /tmp/schedule-server.tgz \
   --exclude='server/data' --exclude='server/tests' \
   --exclude='.claude' --exclude='.omc' --exclude='*.bak*' \
+  --mode='u+rwX,go+rX' \
   server
 tar -xzf /tmp/schedule-server.tgz -C /tmp/schedule-server-stage
 printf '  打包内容：\n'
@@ -165,8 +176,14 @@ fi
 # ---------------------------------------------------------------- 上传
 say "4/7 传到远端临时目录"
 "$SSH" "$SSH_HOST" "rm -rf $REMOTE_APP.new && mkdir -p $REMOTE_APP.new"
-tar -czf - -C /tmp/schedule-server-stage server \
-  | "$SSH" "$SSH_HOST" "tar -xzf - -C $REMOTE_APP.new && echo '    解包 ok'"
+LOCAL_N="$(find /tmp/schedule-server-stage -type f | wc -l | tr -d ' ')"
+tar -czf - -C /tmp/schedule-server-stage --mode='u+rwX,go+rX' server \
+  | "$SSH" "$SSH_HOST" "set -e
+tar -xzf - -C $REMOTE_APP.new
+chmod -R u+rwX,go+rX $REMOTE_APP.new
+N=\$(find $REMOTE_APP.new -type f | wc -l)
+[ \"\$N\" = \"$LOCAL_N\" ] || { echo \"    !! 解包后只有 \$N 个文件，本地是 $LOCAL_N 个\" >&2; exit 1; }
+echo '    解包 ok（'\$N' 个文件，模式已归一成 u+rwX,go+rX）'"
 
 # ---------------------------------------------------------------- 备份 + 切换
 say "5/7 备份现有版本 → 切换"
