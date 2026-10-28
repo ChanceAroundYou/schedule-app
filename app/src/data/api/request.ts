@@ -13,8 +13,15 @@ import { ApiError } from './error.ts';
  * `https://{uuid}.androidplatform.net/`，不是 `/schedule/`，相对路径会指到
  * App 自己的域上去（那里没有后端）。打包时注入 `VITE_API_BASE`
  * 指到线上站点即可。
+ *
+ * ⚠️ 写成 `import.meta.env?.…` 而不是 `import.meta.env.VITE_API_BASE`：
+ * `import.meta.env` 是 **Vite 注入的**，纯 Node（`node --test` 直接 import 这条
+ * 模块的单测）上 `import.meta.env` 是 undefined，直取属性会 TypeError ——
+ * 于是「同步引擎想写单测」这一步连模块都进不去。可选链在 Vite 构建里行为不变
+ * （构建时 `import.meta.env` 照样是个对象）。
  */
-export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) || '.';
+export const API_BASE: string =
+  (import.meta.env?.VITE_API_BASE as string | undefined) || '.';
 
 async function req<T>(
   method: string, path: string, body?: unknown,
