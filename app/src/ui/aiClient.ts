@@ -14,7 +14,7 @@ import { sseFeed } from '../domain/ai.ts';
 import type { AiEvent } from '../domain/ai.ts';
 
 /** 与 `data/api/request.ts` 同一套基址规则，默认 `.` 保持网页版行为不变 */
-const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) || '.';
+const API_BASE: string = (import.meta.env?.VITE_API_BASE as string | undefined) || '.';
 
 export interface ChatRequest {
   text: string;

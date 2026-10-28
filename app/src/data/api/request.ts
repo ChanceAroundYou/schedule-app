@@ -47,7 +47,14 @@ async function req<T>(
   let data: unknown = null;
   if (text) {
     try { data = JSON.parse(text); }
-    catch (_) { throw new ApiError(res.status, '服务器返回了非 JSON 内容'); }
+    catch (_) {
+      // 服务器返回了非 JSON（通常是 nginx 的 502/504/404 HTML 页、
+      // Cloudflare 错误页、或者后端崩溃吐出的 HTML）。别把整段 HTML 塞给用户，
+      // 给一个可读、可重试的提示，并把状态码带上，方便排查。
+      const snippet = text.trim().slice(0, 80).replace(/<[^>]*>/g, '').trim();
+      const hint = snippet ? `：${snippet}` : '';
+      throw new ApiError(res.status || 502, `服务器返回了非 JSON 内容（HTTP ${res.status || '?'}）${hint}`);
+    }
   }
 
   if (!res.ok) {
