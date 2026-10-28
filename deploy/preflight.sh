@@ -51,11 +51,14 @@ SSH="$(pick_ssh)"
 # 被调用方的 `|| true` 静默吞成「远端什么都没有」。
 #
 # 调用方的 `die` 不一定已经定义好（publish-apk.sh 是先 source 再定义 say/die），
-# 所以这里自己兜一个。
+# 所以这里自己兜一个：有 `die` 就用它（配色一致），没有就自己打一条再 exit 1。
+_pf_die() {
+  if declare -F die >/dev/null 2>&1; then die "$1"; else printf '\n!! %s\n' "$1" >&2; exit 1; fi
+}
+
 if ! command -v "$SSH" >/dev/null 2>&1 && [ ! -x "$SSH" ]; then
-  _pf_msg="找不到 ssh（试过 \$SSH、Windows 自带的 ssh.exe、PATH 里的 ssh）。
+  _pf_die "找不到 ssh（试过 \$SSH、Windows 自带的 ssh.exe、PATH 里的 ssh）。
     显式指定：SSH=/usr/bin/ssh ./deploy/publish-web.sh …"
-  if declare -F die >/dev/null 2>&1; then die "$_pf_msg"; else printf '\n!! %s\n' "$_pf_msg" >&2; exit 1; fi
 fi
 
 # 取远端的**内容指纹**。
@@ -75,10 +78,9 @@ pf_remote_fp() {
   out="$("$SSH" "$SSH_HOST" "cd $dir 2>/dev/null && { $cmd; } || echo __MISSING__" 2>/dev/null)"
   rc=$?
   if [ "$rc" -ne 0 ]; then
-    local msg="取不到远端指纹：ssh $SSH_HOST 失败（退出码 $rc）。
+    _pf_die "取不到远端指纹：ssh $SSH_HOST 失败（退出码 $rc）。
     ssh 都连不上，就别猜「线上是空的」—— 那会让「无变更 → 跳过」这条逻辑
     静默失效、每次发布都当成有变更。先确认 ssh 能连：ssh $SSH_HOST hostname"
-    if declare -F die >/dev/null 2>&1; then die "$msg"; else printf '\n!! %s\n' "$msg" >&2; exit 1; fi
   fi
   printf '%s' "$out"
 }
@@ -143,12 +145,41 @@ pf_parse_args() {
 }
 
 # 采集来源工作区的状态。调用前需要在仓库根。
+#
+# ⚠️ 2026-10-28 修「静默死」：这一段原先每条 git 都写成 `2>/dev/null || echo '<无>'`
+#   / `|| echo 0`。git 本身跑不动时，这些兜底会**造出一份看着完全正常的摘要**：
+#   分支 `<无>`、提交 `<无>`、未提交改动 **0 项**、未推送 **0 个** —— 那道
+#   「工作区干净 / 已推送」的体检等于没做，值却是 git 报错换来的。
+#   实际下场更糟：publish-*.sh 都是 `set -euo pipefail`，脚本在
+#   `PF_DIRTY_N="$(git status --porcelain | wc -l)"` 这条管道上被 128 顶死，
+#   **整条命令一句话都不打印**（实测 `./deploy/publish-web.sh` 走到 3/6 就没输出了，
+#   看着像「脚本什么都没做」）。
+#   起因：共享盘（NAS / SMB）上仓库顶层目录与 `.git` 属主不同，git 判定 dubious ownership。
+#   规矩：**体检的数据要么是真数据，要么当场报错**，不许拿兜底值填出一个合格的样子。
 pf_gather() {
   cd "$ROOT"
-  PF_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '<无>')"
-  PF_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '<无>')"
+
+  local gitout
+  if ! gitout="$(git rev-parse --show-toplevel 2>&1)"; then
+    _pf_die "git 在这个仓库里跑不动（$ROOT）：
+$(printf '%s\n' "$gitout" | sed '/^[[:space:]]*$/d; s/^/      /')
+    最常见的原因：工作区目录与 .git 属主不同（共享盘 / NAS 挂载常见）→ git 判定 dubious ownership。
+    修一次就好：git config --global --add safe.directory '$ROOT'
+    ⚠️ 别用 --allow-dirty / --allow-unpushed 绕过：那时候摘要里的「干净」「已推送」
+      是 git 报错换来的，不是你工作区的状态。"
+  fi
+
+  PF_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  PF_SHA="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  [ -n "$PF_BRANCH" ] || PF_BRANCH='<无分支>'
+  [ -n "$PF_SHA" ] || _pf_die "拿不到当前提交（分支 $PF_BRANCH）—— 这个仓库还没有提交？先 git commit。"
   PF_UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
-  PF_DIRTY_N="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+
+  local dirty
+  if ! dirty="$(git status --porcelain 2>&1)"; then
+    _pf_die "git status 失败：$(printf '%s\n' "$dirty" | head -3)"
+  fi
+  if [ -z "$dirty" ]; then PF_DIRTY_N=0; else PF_DIRTY_N="$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')"; fi
 
   PF_UNPUSHED=0
   PF_BEHIND=0
@@ -161,8 +192,13 @@ pf_gather() {
     else
       PF_FETCH=fail
     fi
-    PF_UNPUSHED="$(git rev-list --count "$PF_UPSTREAM..HEAD" 2>/dev/null || echo 0)"
-    PF_BEHIND="$(git rev-list --count "HEAD..$PF_UPSTREAM" 2>/dev/null || echo 0)"
+    PF_UNPUSHED="$(git rev-list --count "$PF_UPSTREAM..HEAD" 2>/dev/null || true)"
+    PF_BEHIND="$(git rev-list --count "HEAD..$PF_UPSTREAM" 2>/dev/null || true)"
+    # 这两项是「线上版本能不能追溯回仓库」的全部依据。算不出来就不是「0 个」，
+    # 是「不知道」—— 拿 0 顶上等于自动放行（同上那条规矩）。
+    [ -n "$PF_UNPUSHED" ] && [ -n "$PF_BEHIND" ] \
+      || _pf_die "算不出「未推送 / 落后」：git 读不到 $PF_UPSTREAM 的跟踪引用。
+    先手动跑一次看看：git rev-list --count '$PF_UPSTREAM..HEAD'"
   fi
 
   PF_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
