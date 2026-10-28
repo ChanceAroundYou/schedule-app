@@ -109,7 +109,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
    data-untimed`/CheckBtn）一字不动，探针口径不变。周视图已切 `UntimedCard`，
    现在只剩月视图格子在用。 */
 
-export function TaskPill({ task: t, moreSuffix, moreJumpDay, calColor }: {
+export function TaskPill({ task: t, moreSuffix, moreJumpDay, calColor, showRepeatMark }: {
   task: Task; moreSuffix?: number;
   /**
    * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，
@@ -119,8 +119,11 @@ export function TaskPill({ task: t, moreSuffix, moreJumpDay, calColor }: {
    */
   moreJumpDay?: string;
   calColor?: CalColorKey;
+  /** 循环角标开关：由月视图格子从 `state.ui` 取，往下传给 CompactCard */
+  showRepeatMark: boolean;
 }) {
-  return <CompactCard t={t} moreSuffix={moreSuffix} moreJumpDay={moreJumpDay} calColor={calColor} />;
+  return <CompactCard t={t} moreSuffix={moreSuffix} moreJumpDay={moreJumpDay} calColor={calColor}
+    showRepeatMark={showRepeatMark} />;
 }
 
 /* ============================== 空状态 ============================== */

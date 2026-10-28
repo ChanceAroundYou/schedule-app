@@ -78,6 +78,7 @@ function WeekColumn({
             win={win} boxH={boxH} lockX={false}
             calColor={colorOf(state.cals, e.item.calId)}
             creator={tag ? creatorOf(state.users, e.item.createdBy, state.meId) : null}
+            showRepeatMark={state.ui.showRepeatMark}
           />
         ))}
       </div>
@@ -126,6 +127,7 @@ function WunCell({ state, d, today, rowH, tag }: { state: LocalState; d: string;
           key={t.id} t={t} title={t.title} lockX={false}
           calColor={colorOf(state.cals, t.calId)}
           creator={tag ? creatorOf(state.users, t.createdBy, state.meId) : null}
+          showRepeatMark={state.ui.showRepeatMark}
         />
       ))}
       <NewCellSlot state={state} zoneId={`allday:${d}`} />

@@ -13,9 +13,13 @@
  * 父级负责**数据**（传进来的 `style` / `variant` / `timeText`），这里负责**样子**：
  * 勾选圈 + 标题一行、时间段一行、备注一行、上下沿的拉伸把手。
  * 「两种卡片是同一套」不是口号 —— 真的只有这一段 DOM。
+ *
+ * ⚠️ 这里**不 import store**（2026-10-28 补的那条）：原先 `CompactCard` 里写着
+ * `store.get().ui.showRepeatMark`，views 层号称纯展示、零回调，却藏着一条到
+ * 全局状态的边 —— 卡片会不会跟着设置重渲染就变成了「谁恰好碰了 store」的副产品。
+ * 开关一律由视图层从 `state.ui` 取、当 prop 传下来（`showRepeatMark`，不给默认值）。
  */
 
-import * as store from '../../data/store.ts';
 import type { CSSProperties } from 'react';
 import { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -289,7 +293,7 @@ export function taskCardClass(
  */
 export function TaskCard({
   t, variant, live, style, timeText, noteText, title, resizable, lockX = true, mustShowTime = false, onClick,
-  calColor, creator,
+  calColor, creator, showRepeatMark,
 }: {
   t: Task;
   /** 定时 / 未定时 / 月 pill。类名拼装收进 taskCardClass，调用方不再拼字符串 */
@@ -319,6 +323,16 @@ export function TaskCard({
   calColor?: CalColorKey;
   /** 来源 tag：创建者不是本人时由调用方算好传进来，null / undefined = 不画这一枚 */
   creator?: { initial: string; title: string } | null;
+  /**
+   * 画不画右上角那枚循环角标（设置 › 显示 › 重复标记）。
+   *
+   * **必须显式传**，不给默认值：原先这里写的是 `store.get().ui.showRepeatMark`，
+   * 于是这张卡读的是「调用它的那一刻全局状态里恰好有什么」——
+   * 视图层声称零回调、纯展示，却藏了一条到 store 的边；卡片会不会跟着设置重渲染
+   * 取决于「别的什么东西碰了 store」。换成 prop 之后开关由视图层决定、
+   * 一路传下来，TS 还会逐个调用点检查（给默认值就会把「忘了传」盖成「默认开着」）。
+   */
+  showRepeatMark: boolean;
 }) {
   const drag = useDraggableEvent(t.id);
   /* 未定时卡在限高可滚的区里（.allday-zone / .wun-cell）—— 拖出边界会被容器
@@ -346,7 +360,7 @@ export function TaskCard({
       {/* 循环角标挂在**卡片层**（右上角、绝对定位），不进 .ev-body ——
           2026-10-25 用户：不要挤标题的位置。 */}
       {creator && <CreatorTag initial={creator.initial} title={creator.title} />}
-      {store.get().ui.showRepeatMark && <RepeatFlag t={t} corner />}
+      {showRepeatMark && <RepeatFlag t={t} corner />}
     </>
   );
   const inner = content(true);
@@ -422,7 +436,7 @@ export function TaskCard({
  * （之前 `height: 24` inline vs 日 20 vs 周 22 就是这么来的）。
  */
 export function UntimedCard({
-  t, title, lockX, style, calColor, creator,
+  t, title, lockX, style, calColor, creator, showRepeatMark,
 }: {
   t: Task;
   title: string;
@@ -432,6 +446,8 @@ export function UntimedCard({
   style?: CSSProperties;
   calColor?: CalColorKey;
   creator?: { initial: string; title: string } | null;
+  /** 循环角标开关，原样传给自己的那张卡（见 TaskCard 的字段注释） */
+  showRepeatMark: boolean;
 }) {
   return (
     <TaskCard
@@ -447,6 +463,7 @@ export function UntimedCard({
       lockX={lockX}
       calColor={calColor}
       creator={creator}
+      showRepeatMark={showRepeatMark}
     />
   );
 }
@@ -456,7 +473,7 @@ export function UntimedCard({
  * 再交给共用的 `TaskCard` 渲染。
  */
 export function TimedCard({
-  e, isToday, nowMin, win, boxH, lockX, calColor, creator,
+  e, isToday, nowMin, win, boxH, lockX, calColor, creator, showRepeatMark,
 }: {
   e: LayoutEvent;
   isToday: boolean;
@@ -467,6 +484,8 @@ export function TimedCard({
   lockX?: boolean;
   calColor?: CalColorKey;
   creator?: { initial: string; title: string } | null;
+  /** 循环角标开关，原样传给自己的那张卡（见 TaskCard 的字段注释） */
+  showRepeatMark: boolean;
 }) {
   const t = e.item;
   /* 纵向一律走**百分比**：时间轴高度由容器决定（锁单屏），写死 px 会在
@@ -576,6 +595,7 @@ export function TimedCard({
       lockX={lockX}
       calColor={calColor}
       creator={creator}
+      showRepeatMark={showRepeatMark}
     />
   );
 }
@@ -591,7 +611,7 @@ export function TimedCard({
  * 不走 `TaskCard` 主体那套 `.ev-body`：那是纵向两行的卡片语言，月格是单行文字行，
  * 硬套会把 `text-overflow: clip`（窄屏多看一个字）与 45px 整字宽量坏。
  */
-export function CompactCard({ t, moreSuffix, moreJumpDay, calColor }: {
+export function CompactCard({ t, moreSuffix, moreJumpDay, calColor, showRepeatMark }: {
   t: Task; moreSuffix?: number;
   /**
    * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，去日视图看全"）。
@@ -601,6 +621,8 @@ export function CompactCard({ t, moreSuffix, moreJumpDay, calColor }: {
   moreJumpDay?: string;
   /** 月视图也着色（集颜色不分宽度，用户 2026-10-28）；来源 tag 不在月视图画 */
   calColor?: CalColorKey;
+  /** 循环角标开关（月视图格子那张）。视图层从 `state.ui` 取，别在这里读 store */
+  showRepeatMark: boolean;
 }) {
   /* 月视图格子专用：拖到别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
      落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。 */
@@ -621,7 +643,7 @@ export function CompactCard({ t, moreSuffix, moreJumpDay, calColor }: {
           月视图永远不显示）：格子里那一行只有勾选圈 + 任务名（窄屏连圈都藏）。
           时间没丢 —— 挂在 `title` 气泡上，点开还是全的。 */}
       <span className="pill-title">{t.title}</span>
-      {store.get().ui.showRepeatMark && <RepeatFlag t={t} corner />}
+      {showRepeatMark && <RepeatFlag t={t} corner />}
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。
           +N 挂在行内而不是单独占一行 —— 省下的高度能多显示一行文字。

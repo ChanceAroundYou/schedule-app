@@ -269,8 +269,10 @@ export async function run(ctx) {
 
     /* ── 同一页那三排开关：新加的，之前一条覆盖都没有 ──
        判据统一成「关掉 → 那个元素数量归零；打开 → 回来」，而且**不刷新**。
-       `TaskCard` 读的是 `store.get().ui.showRepeatMark`（不是 prop），所以这一趟
-       同时锁的是「改了 ui 之后日历那一整棵树真的重渲染了」。
+       这一趟锁两件事：① 改了 ui 之后日历那一整棵树真的重渲染了；
+       ② 开关从 `state.ui` 一路传到那张卡（`showRepeatMark` 是必填 prop ——
+       原先 `TaskCard` 自己 `store.get()`，views 号称纯展示却藏着一条到全局状态的边，
+       卡片跟不跟着设置动就成了副产品，2026-10-28 改成 prop）。
        只在宽屏这一趟跑：来源标记按规则只在**宽屏 3 日档**画（WeekView 的
        `dayCount === 3 && !isNarrowNow()`），窄屏上「关掉归零」本来就成立 —— 假通过。 */
     if (!vp.mobile) {

@@ -105,6 +105,7 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
           <TaskPill
             key={t.id} task={t} moreJumpDay={d}
             calColor={colorOf(state.cals, t.calId)}
+            showRepeatMark={state.ui.showRepeatMark}
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}
           />
         ))}
