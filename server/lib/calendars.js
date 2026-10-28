@@ -52,12 +52,13 @@ function canManage(role) {
 /* ------------------------------------------------------------------ 建集 */
 
 /** 建一个集，并把创建者登记成 owner。调用方负责在事务里调。 */
-function createOwned(userId, name, at) {
+function createOwned(userId, name, at, color) {
   const now = at || Date.now();
   const cal = {
     id: crypto.randomUUID(),
     name: String(name || DEFAULT_CAL_NAME).trim() || DEFAULT_CAL_NAME,
     ownerId: userId,
+    color: color || 'jade',
     createdAt: now,
   };
   db.insertCalendar(cal);
@@ -88,7 +89,7 @@ function create(userId, name) {
   const cal = createOwned(userId, clean || DEFAULT_CAL_NAME);
   return {
     status: 200,
-    body: { cal: { id: cal.id, name: cal.name, ownerId: cal.ownerId, createdAt: cal.createdAt, role: 'owner' } },
+    body: { cal: { id: cal.id, name: cal.name, ownerId: cal.ownerId, color: cal.color, createdAt: cal.createdAt, role: 'owner' } },
   };
 }
 
@@ -99,6 +100,7 @@ function shape(row) {
     id: row.id,
     name: row.name,
     ownerId: row.owner_id,
+    color: row.color || 'jade',
     createdAt: Number(row.created_at),
     /** 我（请求者）在这个集里的角色 —— 前端据此决定按钮禁不禁用 */
     role: row.role,
@@ -114,6 +116,7 @@ function members(calId) {
   return db.membersOf(calId).map((m) => ({
     id: m.user_id,
     name: m.name,
+    nickname: m.nickname || null,
     role: m.role,
     joinedAt: Number(m.joined_at),
   }));
@@ -184,7 +187,15 @@ function setRole(calId, actorId, targetId, role) {
   return { status: 200, body: { ok: true } };
 }
 
-/** 踢人。只有 owner 能踢；踢不掉 owner 自己（那是「退出」）。 */
+function setColor(calId, userId, color) {
+  const role = db.roleOf(calId, userId);
+  if (!role) return { status: 404, body: { error: '没有这个日程集' } };
+  if (!canManage(role)) return { status: 403, body: { error: '只有创建者能改日程集' } };
+  const allowed = ['jade','azure','clay','plum','gold','slate','rose','teal'];
+  if (!allowed.includes(color)) return { status: 400, body: { error: '颜色不对' } };
+  db.setColorCalendar(calId, color);
+  return { status: 200, body: { id: calId, color } };
+}
 function kick(calId, actorId, targetId) {
   const actorRole = db.roleOf(calId, actorId);
   if (!actorRole) return { status: 404, body: { error: '没有这个日程集' } };
@@ -224,5 +235,5 @@ module.exports = {
   isRole, nameProblem, canWrite, canManage,
   createOwned, ensureHasCalendar, create,
   listMine, members,
-  rename, remove, setRole, kick, leave,
+  rename, remove, setRole, kick, leave, setColor,
 };

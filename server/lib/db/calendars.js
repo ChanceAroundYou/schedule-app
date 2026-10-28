@@ -7,9 +7,13 @@ const { run, get, all } = require('./connection.js');
 const ROLES = new Set(['owner', 'editor', 'viewer']);
 
 function insertCalendar(c) {
-  run('INSERT INTO calendars (id, name, owner_id, created_at) VALUES (?,?,?,?)',
-    c.id, c.name, c.ownerId, c.createdAt);
+  run('INSERT INTO calendars (id, name, owner_id, color, created_at) VALUES (?,?,?,?,?)',
+    c.id, c.name, c.ownerId, c.color || 'jade', c.createdAt);
   return c;
+}
+
+function setColorCalendar(id, color) {
+  return run('UPDATE calendars SET color = ? WHERE id = ? AND deleted_at IS NULL', String(color), String(id));
 }
 
 function findCalendar(id) {
@@ -27,7 +31,7 @@ function softDeleteCalendar(id) {
 /** 我加入的全部日程集（含角色），按加入时间。一次 JOIN 拿完，别在循环里查。 */
 function calendarsFor(userId) {
   return all(`
-    SELECT c.id, c.name, c.owner_id, c.created_at, m.role, m.joined_at
+    SELECT c.id, c.name, c.owner_id, c.color, c.created_at, m.role, m.joined_at
     FROM calendar_members m
     JOIN calendars c ON c.id = m.cal_id
     WHERE m.user_id = ? AND c.deleted_at IS NULL
@@ -78,7 +82,7 @@ function removeMember(calId, userId) {
 /** 成员名单 —— 带上用户名，前端要显示「谁在这个集里」 */
 function membersOf(calId) {
   return all(`
-    SELECT m.user_id, m.role, m.joined_at, u.name
+    SELECT m.user_id, m.role, m.joined_at, u.name, u.nickname
     FROM calendar_members m
     JOIN users u ON u.id = m.user_id
     WHERE m.cal_id = ?
@@ -99,4 +103,5 @@ module.exports = {
   insertCalendar, findCalendar, renameCalendar, softDeleteCalendar,
   calendarsFor, calendarIdsFor, countCalendarsFor, roleOf,
   upsertMember, removeMember, membersOf, countOwners,
+  setColorCalendar,
 };

@@ -51,5 +51,6 @@ export interface LocalState {
 export interface PublicUser {
   id: string;
   name: string;
+  nickname: string | null;
   createdAt: number;
 }

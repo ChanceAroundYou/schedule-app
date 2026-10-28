@@ -45,6 +45,15 @@ function passwordProblem(password) {
   return null;
 }
 
+function nicknameProblem(nickname) {
+  if (nickname == null || nickname === '') return null;
+  const s = String(nickname).trim();
+  if (s.length < 1) return null;
+  if (s.length > 20) return '昵称最长 20 字';
+  if (/[\u0000-\u001f]/.test(s)) return '昵称含控制字符';
+  return null;
+}
+
 function nameProblem(name) {
   const s = String(name || '').trim();
   if (s.length < 1) return '用户名不能为空';
@@ -95,6 +104,6 @@ function newJti() {
 
 module.exports = {
   TOKEN_TTL_MS,
-  hashPassword, verifyPassword, passwordProblem, nameProblem,
+  hashPassword, verifyPassword, passwordProblem, nameProblem, nicknameProblem,
   signToken, verifyToken, newJti,
 };

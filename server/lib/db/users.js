@@ -17,16 +17,18 @@ function findUserById(id) {
 }
 
 function insertUser(u) {
-  run('INSERT INTO users (id, name, salt, hash, created_at) VALUES (?,?,?,?,?)',
-    u.id, u.name, u.salt, u.hash, u.createdAt);
+  run('INSERT INTO users (id, name, nickname, salt, hash, created_at) VALUES (?,?,?,?,?,?)',
+    u.id, u.name, u.nickname || null, u.salt, u.hash, u.createdAt);
   return u;
 }
 
-/** 改口令。返回是否命中一行（id 是主键，命中就是 1） */
+function updateUserNickname(userId, nickname) {
+  return run('UPDATE users SET nickname = ? WHERE id = ?', nickname == null ? null : String(nickname).trim(), String(userId));
+}
 function updateUserPassword(userId, salt, hash) {
   return run('UPDATE users SET salt = ?, hash = ? WHERE id = ?', salt, hash, String(userId));
 }
 
 module.exports = {
-  countUsers, findUserByName, findUserById, insertUser, updateUserPassword,
+  countUsers, findUserByName, findUserById, insertUser, updateUserPassword, updateUserNickname,
 };

@@ -52,7 +52,10 @@ module.exports = {
   },
 
   'PATCH /api/cals/:calId': (ctx, me) => {
-    const bad = badName(ctx.body.name);
+    if (ctx.body && ctx.body.color != null) {
+      return calendars.setColor(ctx.params.calId, me.user.id, ctx.body.color);
+    }
+    const bad = badName(ctx.body && ctx.body.name);
     if (bad) return { status: 400, body: { error: bad } };
     return calendars.rename(ctx.params.calId, me.user.id, ctx.body.name);
   },

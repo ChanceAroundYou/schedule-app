@@ -8,10 +8,13 @@
  */
 export type Role = 'owner' | 'editor' | 'viewer';
 
+export type CalColorKey = 'jade' | 'azure' | 'clay' | 'plum' | 'gold' | 'slate' | 'rose' | 'teal';
+
 export interface Cal {
   id: string;
   name: string;
   ownerId: string;
+  color?: CalColorKey;
   createdAt: number;
   /** **我**在这个集里的角色 */
   role: Role;
@@ -20,6 +23,7 @@ export interface Cal {
 export interface Member {
   id: string;
   name: string;
+  nickname: string | null;
   role: Role;
   joinedAt: number;
 }

@@ -7,7 +7,7 @@
  */
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /* --------------------------------------------------------------- v5 新增 */
 
@@ -169,12 +169,18 @@ const MIGRATIONS = {
   // v5 → v6：计数器「每天自动加」。见 COUNTER_CREDIT_COLUMNS 上那段注释
   // —— 为什么这两列不是普通 SQL 字符串。
   5: COUNTER_CREDIT_COLUMNS,
+  // v6 → v7：日程集颜色 + 用户昵称。追加列，老数据回退默认值。
+  6: [
+    (handle) => addColumnIfMissing(handle, 'users', 'nickname', 'TEXT'),
+    (handle) => addColumnIfMissing(handle, 'calendars', 'color', "TEXT NOT NULL DEFAULT 'jade'"),
+  ],
 };
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id         TEXT PRIMARY KEY,
   name       TEXT    NOT NULL UNIQUE,
+  nickname   TEXT,
   salt       TEXT    NOT NULL,
   hash       TEXT    NOT NULL,
   created_at INTEGER NOT NULL
@@ -184,6 +190,7 @@ CREATE TABLE IF NOT EXISTS calendars (
   id         TEXT PRIMARY KEY,
   name       TEXT    NOT NULL,
   owner_id   TEXT    NOT NULL,
+  color      TEXT    NOT NULL DEFAULT 'jade',
   created_at INTEGER NOT NULL,
   -- 软删：集被删时置位。成员关系一起清掉，field_state 留着（万一要捞回来）
   deleted_at INTEGER

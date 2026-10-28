@@ -153,7 +153,7 @@ function issueToken(user) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, createdAt: Number(u.created_at) };
+  return { id: u.id, name: u.name, nickname: u.nickname || null, createdAt: Number(u.created_at) };
 }
 
 /** 限流被挡时统一的回包 */

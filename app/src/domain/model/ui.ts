@@ -81,6 +81,7 @@ export function defaultUi(): UiPrefs {
     defaultCal: null,
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
+    showCreatorTag: true,
     sel: null,
     // 就地新建的草稿格。瞬时状态，同上
     draft: null,
@@ -117,7 +118,8 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // 「日程页空了」），所以**从 cal 起步**：把当前那个集勾上。判的是 `raw.cals` 不是
   // `ui.cals` —— 上面已用默认值把 cals 补成 []，再问 ui.cals 永远是数组，老数据走不到。
   const rawCals = raw?.cals;
-  if (!Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
+  if (ui.showCreatorTag == null) ui.showCreatorTag = true;
+  if (!rawCals || !Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
   else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', '3day', 'week', 'month'].includes(ui.view)) ui.view = 'day';
   /* 多选是**瞬时状态**，每次加载都清掉（2026-10-14）。

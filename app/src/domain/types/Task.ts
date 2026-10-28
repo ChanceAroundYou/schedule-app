@@ -48,6 +48,8 @@ export interface Task extends SyncMeta {
   ord?: number | null;
   createdAt: number;
   source: string | null;
+  /** 创建者 userId（或 'ai'）。缺失 = 视为自己，不显示来源 tag。 */
+  createdBy?: string | null;
 
   deleted?: boolean;
   /** 已从垃圾箱彻底移除，不再显示 */

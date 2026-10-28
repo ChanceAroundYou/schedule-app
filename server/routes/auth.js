@@ -40,18 +40,21 @@ module.exports = {
 
     const name = String(ctx.body.name || '').trim();
     const password = String(ctx.body.password || '');
+    const nickname = ctx.body.nickname != null ? String(ctx.body.nickname).trim() : null;
 
     const np = auth.nameProblem(name);
     if (np) return { status: 400, body: { error: np } };
     const pp = auth.passwordProblem(password);
     if (pp) return { status: 400, body: { error: pp } };
+    const nkp = auth.nicknameProblem(nickname);
+    if (nkp) return { status: 400, body: { error: nkp } };
     if (db.countUsers() >= MAX_USERS) {
       return { status: 403, body: { error: `本服务器账户数已达上限（${MAX_USERS}）` } };
     }
 
     const { salt, hash } = auth.hashPassword(password);
     const user = {
-      id: crypto.randomUUID(), name, salt, hash,
+      id: crypto.randomUUID(), name, nickname, salt, hash,
       createdAt: Date.now(),
     };
     try {
@@ -152,16 +155,16 @@ module.exports = {
   },
 
   /** 客户端启动只发这一个请求就能拿到全部所需：我是谁、我有哪些集、谁邀请了我 */
-  'GET /api/me': (ctx, me) => {
-    calendars.ensureHasCalendar(me.user.id);
+  'PATCH /api/me': (ctx, me) => {
+    if (ctx.body && ctx.body.nickname !== undefined) {
+      const nickname = ctx.body.nickname == null ? null : String(ctx.body.nickname).trim();
+      const nkp = auth.nicknameProblem(nickname);
+      if (nkp) return { status: 400, body: { error: nkp } };
+      db.updateUserNickname(me.user.id, nickname);
+    }
     return {
       status: 200,
-      body: {
-        user: publicUser(me.user),
-        cals: calendars.listMine(me.user.id),
-        invites: invites.listFor(me.user.id),
-      },
+      body: { user: publicUser(db.findUserById(me.user.id)) },
     };
   },
-
 };

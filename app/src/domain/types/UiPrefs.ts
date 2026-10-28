@@ -87,6 +87,8 @@ export interface UiPrefs {
    */
   tabs: string[];
   tdoneOpen: boolean;
+  /** 是否在任务右上角显示非自己创建者的来源 tag */
+  showCreatorTag: boolean;
   /**
    * 多选模式的选中集合（2026-10-14）。
    *
