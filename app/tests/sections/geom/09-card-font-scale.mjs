@@ -1,6 +1,6 @@
 export async function run(ctx) {
   const { page } = ctx;
-  const { evalJs, waitFor, gotoCalendar, WEB_PORT } = ctx.helpers || {};
+  const { evalJs, waitFor, gotoCalendar, WEB_PORT, openSettings, openDisplayTab, pickChip } = ctx.helpers || {};
   const { CHECK_MIN, CHECK_MAX } = ctx.state;
   const ok = ctx.ok;
 
@@ -124,35 +124,9 @@ export async function run(ctx) {
     return readRow();
   };
 
-  /* 进设置页：窄屏侧栏整个不渲染（Shell.tsx 的 narrow 分支），而 settings 恒不在
-     ui.tabs 里（CUSTOMIZABLE 排掉了它）→ 窄屏唯一的入口是底栏「更多」抽屉里那格。
-     宽屏反过来在侧栏 footer。两条都试，别按当前屏猜：这一节自己定视口，
-     但入口路径写死成一条的话，换视口跑就红在「等不到设置页」这种跟被测行为
-     毫无关系的地方（上一版就栽在窄屏这一半）。 */
-  const openSettings = async () => {
-    const where = await evalJs(page, `
-      const s = document.querySelector('.sidebar [data-nav="settings"]');
-      if (s) { s.click(); return 'sidebar'; }
-      const inSheet = document.querySelector('.more-sheet [data-nav="settings"]');
-      if (inSheet) { inSheet.click(); return 'more-sheet'; }
-      const more = [...document.querySelectorAll('.tabbar .tab')].find((b) => /更多/.test(b.textContent));
-      if (more) { more.click(); return 'tabbar'; }
-      return null;
-    `);
-    if (where === 'tabbar') {
-      await waitFor(page, `!!document.querySelector('.more-sheet [data-nav="settings"]')`, '「更多」抽屉里的「设置」那格');
-      await evalJs(page, `document.querySelector('.more-sheet [data-nav="settings"]').click(); return true;`);
-    } else if (where === null) {
-      throw new Error('进不去设置页：侧栏、底栏「更多」抽屉里都没有「设置」入口');
-    }
-    return where;
-  };
-
-  const openDisplayTab = async () => {
-    await openSettings();
-    await waitFor(page, `!!document.querySelector('[data-settings-tab="display"]')`, '设置页的「显示」那一排 tab');
-    await evalJs(page, `document.querySelector('[data-settings-tab="display"]').click(); return true;`);
-  };
+  /* 进设置页 / 点「显示」页那一排芯片：走 `tests/lib/display-switch.mjs`（宽屏侧栏、
+     窄屏底栏「更多」抽屉两条入口都在那儿），不在这一节里现写一份 ——
+     同一条路 browser-cards 第四节也要走。 */
 
   /* 走界面换档（不是往 localStorage 里塞）：这条断言要证的就是「用户在设置页点一下，
      屏幕立刻跟着变」，绕过去就等于没测。 */
@@ -165,26 +139,6 @@ export async function run(ctx) {
     await waitFor(page, `document.documentElement.dataset.cardFont === '${k}'`,
       'html 上的 data-card-font 换成 ' + k + '（不刷新就生效）');
     await gotoDay();
-  };
-
-  /**
-   * 「显示」页里那三排开关（来源标记 / 重复标记 / 现在时刻线）都叫 on / off，
-   * 所以 `[data-pick="off"]` 在这一页里有三个 —— 只按属性取会点错排。
-   * 按 Field 的文字认那一排（Field 没有 data-*，外层 div 的文字里有标签）。
-   */
-  const pickChip = async (labelText, key) => {
-    await openDisplayTab();
-    const hit = await evalJs(page, `
-      const g = [...document.querySelectorAll('[role="group"]')].find((el) => {
-        const owner = el.parentElement;
-        return owner && owner.textContent.includes(${JSON.stringify(labelText)});
-      });
-      const btn = g && g.querySelector('[data-pick=${JSON.stringify(key)}]');
-      if (!btn) return false;
-      btn.click();
-      return true;
-    `);
-    if (!hit) throw new Error('「显示」页里找不到「' + labelText + '」那一排的 ' + key);
   };
 
   console.log('\n九、断言：设置页「显示」—— 任务卡字号三档 + 三排开关');

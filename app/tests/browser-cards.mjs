@@ -32,7 +32,8 @@ import { fileURLToPath } from 'node:url';
 import { CHROME, makePorts, makeDataDir, cleanupDataDir, ensureDist } from './lib/probe-env.mjs';
 import { connect, evalJs, waitFor, dumpPage } from './lib/cdp.mjs';
 import { serveDist } from './lib/server.mjs';
-import { registerUser, firstCal, pushTasks, loginInPage, nudgeSync } from './lib/seed.mjs';
+import { registerUser, firstCal, pushTasks, loginInPage, nudgeSync, isoDate, repeatWeek } from './lib/seed.mjs';
+import { makeDisplaySwitch } from './lib/display-switch.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = process.env.DIST ? path.resolve(process.env.DIST) : path.join(ROOT, 'dist');
@@ -139,7 +140,13 @@ try {
   const cal = await firstCal(API_PORT, probeUser.token);
   const seed = await pushTasks(API_PORT, {
     token: probeUser.token, calId: cal.id, deviceId: 'cards-probe',
-    rows: [{ id: 't_cards_probe', title: '卡片版面探针', time: null, duration: null }],
+    /* 第二条是给第四节用的：**逾期**（原定日期在三天前）+ **重复**。
+       逾期页自己有一份 `OverdueRow`（比普通行多一组「重新安排」快捷键），不共用 `TaskRow`
+       —— 「重复标记」那排开关管不管得到它，得单独有一条证人。 */
+    rows: [
+      { id: 't_cards_probe', title: '卡片版面探针', time: null, duration: null },
+      { id: 't_cards_overdue', title: '逾期又重复的任务', date: isoDate(-3), time: null, duration: null, repeat: repeatWeek() },
+    ],
   });
   console.log('  已造任务（' + seed.date + '，日程集「' + cal.name + '」，' + seed.applied + ' 个字段）');
 
@@ -297,6 +304,64 @@ try {
       && calCard.borderLeftColor === calCard.borderRightColor,
       '日历卡片四面是同一条框（不是左侧一根主色强调线）',
       `左 ${calCard.borderLeftWidth} ${calCard.borderLeftColor} / 右 ${calCard.borderRightWidth} ${calCard.borderRightColor}`);
+  }
+
+  /* ============ 断言 4：逾期行也吃「重复标记」这一排开关 ============
+     2026-10-28 用户定「逾期行可以加重复」：一条「每周」的任务逾期了却看着像一次性的，
+     而逾期页恰恰是要决定「补到今天还是扔掉」的地方。
+     这一排开关管到卡片右上角那枚 + 今天 / 待办箱 / 已完成三种列表行；逾期页用的是
+     自己那份 `OverdueRow`（比普通行多一组「重新安排」快捷键），**不共用 `TaskRow`**
+     —— 漏掉的就是它，所以考点单独摆在逾期页。
+     开关怎么从 `state.ui` 传到视图由 card-geometry 第九节锁（走界面点芯片、不刷新）；
+     这一节只锁「逾期页这一半接上了没有」，但**也走界面点芯片** —— 不往 localStorage 里
+     塞偏好再重载：reload 时 pagehide → flushPersist 会拿内存里那份旧的把字写回去
+     （card-geometry 踩过，改用它那套 addScriptToEvaluateOnNewDocument 才成立）。
+     点芯片这条路本来就更短，还顺带把「点一下 → 逾期页跟着变」这一段也测了。 */
+  console.log('\n四、逾期行也挂循环图标，受同一排开关管');
+  const display = makeDisplaySwitch({ page, evalJs, waitFor });
+  const ROW_REP = '.row-title .rep-flag:not(.rep-flag--corner)';
+  const goOverdue = async () => {
+    await evalJs(page, `
+      const n = document.querySelector('[data-nav="overdue"]');
+      if (n) n.click();
+      return !!n;
+    `);
+    await waitFor(page, `!!document.querySelector('.od-view .task-row')`, '逾期页里那条种子任务');
+  };
+
+  await goOverdue();
+  const od = await evalJs(page, `
+    const row = document.querySelector('.od-view .task-row');
+    if (!row) return null;
+    return {
+      late: (row.querySelector('.od-late') || {}).textContent || null,
+      title: (row.querySelector('.row-title') || {}).textContent || null,
+      rep: row.querySelectorAll('.rep-flag').length,
+      metaRepeat: row.querySelectorAll('.row-meta .m-repeat').length,
+    };
+  `);
+  if (!od) {
+    ok(false, '逾期页里没有任务行（第四节找不到证人，种子那条逾期任务没落到这一页）');
+  } else {
+    ok(!!od.late && /逾期/.test(od.late),
+      '这一行确实是逾期的（' + JSON.stringify(od.late) + '，标题 ' + JSON.stringify(od.title) + '）');
+    ok(od.rep > 0, '逾期行标题末尾挂着循环图标（实际 ' + od.rep + ' 枚）');
+    /* 周期文字「每周」这一页没加：meta 本来就排着「逾期 N 天 · 时间 · 时长 · 三个快捷按钮」，
+       窄屏装不下（2026-10-28 定）。锁现状不锁愿望 —— 哪天决定加，这条要跟着改。 */
+    ok(od.metaRepeat === 0,
+      '这一行 meta 里没排周期文字（图标就是这一页唯一的重复线索）');
+
+    await display.pickChip('重复标记', 'off');
+    await goOverdue();
+    await waitFor(page, `document.querySelectorAll('.od-view ${ROW_REP}').length === 0`,
+      '关掉「重复标记」后逾期行那枚也没了');
+    ok(true, '关掉「重复标记」→ 逾期行那枚一起归零（同一个开关管到逾期页）');
+
+    await display.pickChip('重复标记', 'on');
+    await goOverdue();
+    await waitFor(page, `document.querySelectorAll('.od-view ${ROW_REP}').length > 0`,
+      '开回「重复标记」后逾期行那枚回来');
+    ok(true, '开回「重复标记」→ 逾期行那枚恢复');
   }
 } catch (e) {
   failures++;

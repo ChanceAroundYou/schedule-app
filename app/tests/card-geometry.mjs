@@ -10,6 +10,7 @@ import { connect, evalJs, waitFor, dumpPage, touch } from './lib/cdp.mjs';
 import { serveDist } from './lib/server.mjs';
 import { failures, ok } from './lib/probe-assert.mjs';
 import { registerUser, firstCal, inviteAndAccept, pushTasks, loginInPage, nudgeSync, repeatNone, repeatWeek } from './lib/seed.mjs';
+import { makeDisplaySwitch } from './lib/display-switch.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = process.env.DIST ? path.resolve(process.env.DIST) : path.join(ROOT, 'dist');
@@ -213,6 +214,10 @@ try {
   };
   await gotoCalendar();
 
+  /* 设置页「显示」那一排的路径（进设置 → 点 tab → 点某一排芯片）：
+     与 browser-cards 共用 `lib/display-switch.mjs`，第九节和它第四节走的是同一条路。 */
+  const display = makeDisplaySwitch({ page, evalJs, waitFor });
+
   const ctx = {
     page, errors: [],
     ok: ok,
@@ -222,6 +227,7 @@ try {
     },
     helpers: {
       evalJs, waitFor, sleep, num, WEB_PORT, TOUCH_DRAG_DELAY, gotoCalendar, touch: (type, x, y) => touch(page, type, { x, y }),
+      openSettings: display.openSettings, openDisplayTab: display.openDisplayTab, pickChip: display.pickChip,
       openCalMenu: null, waitCalMenu: null, closeCalMenu: null, withCals: (fn) => fn(), shown: null,
       clickCal: null, waitShownCount: null, focusCal: null, inbox: null, a11y: null, collect: null,
       fmt: null, apiPort: API_PORT, api: null,
