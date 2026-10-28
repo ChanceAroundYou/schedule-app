@@ -27,6 +27,7 @@ import {
   type DayWindow,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
+import { colorOf, creatorOf } from '../../domain/people.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
@@ -50,7 +51,7 @@ function dayEvents(state: LocalState, iso: string): LayoutEvent[] {
  * 卡片百分比定位三者不必再区分日和周 —— 都按同一个 rect 走。
  */
 function WeekColumn({
-  state, d, today, win, events, nowMin, range, boxH,
+  state, d, today, win, events, nowMin, range, boxH, tag,
 }: {
   state: LocalState; d: string; today: string;
   win: DayWindow;
@@ -58,6 +59,8 @@ function WeekColumn({
   nowMin: number;
   range: DragRange | null;
   boxH: number;
+  /** 来源 tag 画不画（判据只在 WeekView 那一处，见下面） */
+  tag: boolean;
 }) {
   const zone = useDroppableZone(`week:${d}`);
   const seed = draftOn(state.ui, `week:${d}`);
@@ -73,6 +76,8 @@ function WeekColumn({
           <TimedCard
             key={e.item.id} e={e} isToday={d === today} nowMin={nowMin}
             win={win} boxH={boxH} lockX={false}
+            calColor={colorOf(state.cals, e.item.calId)}
+            creator={tag ? creatorOf(state.users, e.item.createdBy, state.meId) : null}
           />
         ))}
       </div>
@@ -102,7 +107,7 @@ function WeekColumn({
  * 「这一天再加一条未定时的」。有 `flex: 1`，所以某一列任务少、这一行被别的列
  * 撑高时，它会把剩下的空白一起接住 —— 整格都是可点的空位。
  */
-function WunCell({ state, d, today, rowH }: { state: LocalState; d: string; today: string; rowH: number }) {
+function WunCell({ state, d, today, rowH, tag }: { state: LocalState; d: string; today: string; rowH: number; tag: boolean }) {
   const zone = useDroppableZone(`allday:${d}`);
   /* 含已完成的（2026-10-23 用户）：勾完留在原处变灰、排在未完成后面 ——
      以前 untimedOn 把 done 过滤掉，勾完这条就从周视图消失。 */
@@ -117,7 +122,11 @@ function WunCell({ state, d, today, rowH }: { state: LocalState; d: string; toda
       style={rowH > 0 ? ({ '--row-hour': `${rowH}px` } as CSSProperties) : undefined}
     >
       {un.map((t) => (
-        <UntimedCard key={t.id} t={t} title={t.title} lockX={false} />
+        <UntimedCard
+          key={t.id} t={t} title={t.title} lockX={false}
+          calColor={colorOf(state.cals, t.calId)}
+          creator={tag ? creatorOf(state.users, t.createdBy, state.meId) : null}
+        />
       ))}
       <NewCellSlot state={state} zoneId={`allday:${d}`} />
       {/* 草稿开着时少铺一格：输入框自己占了一格，高度不该跟着跳 */}
@@ -143,6 +152,10 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
   const nowMin = D.nowMin();
+  /* 来源 tag 的**唯一**判据（用户 2026-10-28 定）：只在**三日视图**、
+     **标准以上宽度**（窄屏根本不画这个元素）、且设置里那个开关开着时画。
+     周视图（7 列）一列只有 ~78px，一枚 12px 的圆圈加上去就是抢标题的字。 */
+  const tag = dayCount === 3 && !isNarrowNow() && state.ui.showCreatorTag;
 
   /* 七天的事件先算出来 —— 时间窗要按它们自动往外让（coverWindow） */
   const perDay = days.map((d) => dayEvents(state, d));
@@ -197,7 +210,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         <div className="week-un-gutter" />
         <div className="week-un-cols">
           {days.map((d) => (
-            <WunCell key={d} state={state} d={d} today={today} rowH={rowH} />
+            <WunCell key={d} state={state} d={d} today={today} rowH={rowH} tag={tag} />
           ))}
         </div>
       </div>
@@ -222,6 +235,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
               key={d} state={state} d={d} today={today} win={win}
               events={perDay[i]} nowMin={nowMin} boxH={colsH}
               range={drag.range && drag.range.date === d ? drag.range : null}
+              tag={tag}
             />
           ))}
           {/* 「现在」线已恢复（2026-10-25 用户：日/3日/周都复用 .tl-now）。 */}

@@ -47,6 +47,8 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
     deniedCals: [],
     conflicts: [],
     syncing: false,
+    users: {},
+    meId: null,
     ...over,
   };
 }

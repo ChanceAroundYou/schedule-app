@@ -65,6 +65,18 @@ export function AppearanceTab({ state, theme }: {
             labelOf={(k) => T.THEMES[k].label}
           />
         </Field>
+
+        {/* 来源标记（别人建的任务在右上角给一枚首字圆圈）。
+            只影响**画不画**这一枚，不影响数据 —— 关掉之后卡片颜色、
+            抽屉里的创建者信息都还在。 */}
+        <Field label="来源标记" hint="别人建的任务，右上角显示创建者昵称的首字（只在三日视图的宽屏档出现）">
+          <Chips<'on' | 'off'>
+            value={ui.showCreatorTag ? 'on' : 'off'}
+            options={['on', 'off']}
+            onPick={(k) => store.setUi({ showCreatorTag: k === 'on' })}
+            labelOf={(k) => (k === 'on' ? '显示' : '不显示')}
+          />
+        </Field>
       </Card>
 
       <DayWindowCard ui={ui} />

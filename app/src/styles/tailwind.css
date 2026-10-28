@@ -565,6 +565,24 @@
 .calrow-row {
   border-radius: var(--r-md);
 }
+/* 集颜色小圆点。颜色由元素自己的 `data-cal-color` 决定（见 tokens.css 那一轴），
+   所以这一条规则对八个集**完全相同** —— 加新颜色只改令牌块，不改这里。 */
+.calrow-dot {
+  width: 9px; height: 9px; flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  background: var(--cal-color);
+}
+/* 管理页里挑颜色的那八格。描边只在「当前选中」那一格上，
+   用的是文字色而不是集颜色 —— 否则「选中」看不出来（金色压在金底上）。 */
+.cal-swatch {
+  width: 22px; height: 22px;
+  border-radius: var(--r-pill);
+  border: var(--border-w) solid transparent;
+  background: var(--cal-color);
+  cursor: pointer;
+}
+.cal-swatch[aria-pressed='true'] { border-color: var(--text-2); }
+.cal-swatch:disabled { opacity: .5; cursor: default; }
 .calrow-row-on {
   background: var(--primary-soft);
   color: var(--primary);

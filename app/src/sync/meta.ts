@@ -17,8 +17,10 @@ import { syncNow } from './syncNow.ts';
 export async function refreshMeta(): Promise<void> {
   const me = await api.me();
   setCachedUser(me.user);
+  store.setMeId(me.user.id);
   store.setCals(me.cals);
   store.setInvites(me.invites);
+  store.setUsers(me.users);
 }
 
 /**

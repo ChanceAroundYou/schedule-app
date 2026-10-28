@@ -90,6 +90,27 @@ function membersOf(calId) {
   `, String(calId));
 }
 
+/**
+ * 「我可能遇到的所有人」—— 我那些集的全部成员去重。任务来源 tag 要查名字。
+ *
+ * 注意 join 的方向：**先按「我属于哪些集」挑集，再取这些集的全部成员**。
+ * 写成 `WHERE m.user_id = ?` 会得到「只有我自己」—— 别人一个都不在目录里，
+ * 于是所有来源 tag 都显示「?」，测试里那条「目录里有 mom」的断言就是钉这个的。
+ *
+ * 不含已删除的集；也不含没和我共享任何集的人 —— 目录不是全站用户名表，
+ * 只暴露「和我同一个集的人」。
+ */
+function directoryFor(userId) {
+  return all(`
+    SELECT DISTINCT u.id, u.name, u.nickname
+    FROM calendar_members mine
+    JOIN calendar_members m ON m.cal_id = mine.cal_id
+    JOIN calendars c ON c.id = m.cal_id
+    JOIN users u ON u.id = m.user_id
+    WHERE mine.user_id = ? AND c.deleted_at IS NULL
+  `, String(userId));
+}
+
 /** 有没有别的 owner —— 「最后一个所有者不能降级 / 不能退出」要用 */
 function countOwners(calId) {
   return Number(get(
@@ -103,5 +124,5 @@ module.exports = {
   insertCalendar, findCalendar, renameCalendar, softDeleteCalendar,
   calendarsFor, calendarIdsFor, countCalendarsFor, roleOf,
   upsertMember, removeMember, membersOf, countOwners,
-  setColorCalendar,
+  setColorCalendar, directoryFor,
 };

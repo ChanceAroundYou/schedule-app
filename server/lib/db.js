@@ -75,6 +75,7 @@ module.exports = {
   findUserById: users.findUserById,
   insertUser: users.insertUser,
   updateUserPassword: users.updateUserPassword,
+  updateUserNickname: users.updateUserNickname,
   // calendars / members
   insertCalendar: calendars.insertCalendar,
   findCalendar: calendars.findCalendar,
@@ -88,6 +89,8 @@ module.exports = {
   removeMember: calendars.removeMember,
   membersOf: calendars.membersOf,
   countOwners: calendars.countOwners,
+  setColorCalendar: calendars.setColorCalendar,
+  directoryFor: calendars.directoryFor,
   // invites
   insertInvite: invites.insertInvite,
   findInvite: invites.findInvite,
@@ -98,6 +101,7 @@ module.exports = {
   cancelPendingInvites: invites.cancelPendingInvites,
   // sync state
   putField: syncState.putField,
+  getField: syncState.getField,
   maxSeq: syncState.maxSeq,
   appendChange: syncState.appendChange,
   changesSince: syncState.changesSince,

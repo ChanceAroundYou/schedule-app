@@ -25,6 +25,21 @@ function putField(calId, entity, entityId, field, value, ts, deviceId) {
 }
 
 /**
+ * 读回一个字段的当前值（JSON 已解）。不存在返回 undefined。
+ *
+ * 只给「服务端要按已有事实补一个字段」用（来源标记 `createdBy`），
+ * 不参与 LWW 裁决。
+ */
+function getField(calId, entity, entityId, field) {
+  const row = get(
+    'SELECT value FROM field_state WHERE cal_id = ? AND entity = ? AND entity_id = ? AND field = ?',
+    calId, entity, entityId, field,
+  );
+  if (!row || row.value == null) return undefined;
+  try { return JSON.parse(row.value); } catch (_) { return undefined; }
+}
+
+/**
  * 全局最大 seq —— 用作「已经拉到哪了」的游标。
  *
  * 注意它**不限于**某个用户可见的集：客户端要跳过的是全世界的进度，
@@ -71,4 +86,4 @@ function allFields(calIds) {
   `, ...calIds);
 }
 
-module.exports = { putField, maxSeq, appendChange, changesSince, allFields };
+module.exports = { putField, getField, maxSeq, appendChange, changesSince, allFields };

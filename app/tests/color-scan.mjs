@@ -41,8 +41,15 @@ export function readStyles() {
   return { files: parts.map((p) => p.file), src: parts.map((p) => p.src).join('\n') };
 }
 
-/** 令牌块的选择器长这样。这些块里的写死值是**本分**，要跳过 */
-const TOKEN_BLOCK = /(^|,)\s*(:root|\[data-(theme|accent|style)[^\]]*\])\s*$/;
+/**
+ * 令牌块的选择器长这样。这些块里的写死值是**本分**，要跳过。
+ *
+ * 允许**一串**复合选择器：`[data-theme="dark"] [data-cal-color="plum"]` 是「暗色档里的
+ * 某个集颜色」—— `data-theme` 在 `<html>` 上、`data-cal-color` 在卡片自己身上，
+ * 只能写成后代。只认单个复合选择器的话，这八条会被划进**规则区**，
+ * 里面的色值就从「令牌」变成「写死的颜色」，这道守卫会看漏一整轴。
+ */
+const TOKEN_BLOCK = /(^|,)\s*(:root|(?:\[data-(?:theme|accent|style|cal-color)[^\]]*\]\s*)+)\s*$/;
 
 /**
  * 把源码拆成「令牌块」与「规则区」两半。

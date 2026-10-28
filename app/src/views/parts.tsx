@@ -15,3 +15,4 @@
 export { CheckBtn } from './parts/CheckBtn.tsx';
 export { TaskRow, TaskPill, RepeatFlag, Empty, type TaskRowProps } from './parts/TaskRow.tsx';
 export { CheckinStrip, HabitHeat, Caret, loadLevel } from './parts/Checkin.tsx';
+export { CreatorTag } from './parts/CreatorTag.tsx';

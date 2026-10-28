@@ -6,7 +6,7 @@
  * 勾着 —— 否则新建的东西会落在看不见的集里，用户看到的是「凭空消失」。
  * 所以**至少永远有一个集是勾着的**，想只看某一个就取消勾掉别的。
  */
-import type { Cal, Invite } from '../../domain/types.ts';
+import type { Cal, Invite, LocalState } from '../../domain/types.ts';
 import { state, getCals, getInvites, activeCal, differs, resolveCal, emit } from './core.ts';
 import { persist } from './persist.ts';
 
@@ -38,6 +38,38 @@ export function setCals(cals: Cal[] | undefined): void {
   state.cals = cals;
   resolveCal();
   pruneCals();
+  persist();
+  emit();
+}
+
+/**
+ * 目录有没有变。
+ *
+ * `differs` 只吃数组（它是给「列表」写的），而目录按 id 索引；这里自己判一次，
+ * 而且**不依赖键的顺序** —— 服务器两次响应的键顺序不保证一致，用
+ * `JSON.stringify` 比会把它当成变化、白 persist 一轮。
+ */
+function sameUsers(cur: LocalState['users'], next: LocalState['users']): boolean {
+  const ck = Object.keys(cur), nk = Object.keys(next);
+  if (ck.length !== nk.length) return false;
+  for (const id of ck) {
+    const a = cur[id], b = next[id];
+    if (!b || a.name !== b.name || (a.nickname ?? null) !== (b.nickname ?? null)) return false;
+  }
+  return true;
+}
+
+export function setUsers(users: LocalState['users'] | undefined): void {
+  if (!users || typeof users !== 'object' || sameUsers(state.users, users)) return;
+  state.users = users;
+  persist();
+  emit();
+}
+
+export function setMeId(id: string | null | undefined): void {
+  const next = typeof id === 'string' && id ? id : null;
+  if (state.meId === next) return;
+  state.meId = next;
   persist();
   emit();
 }

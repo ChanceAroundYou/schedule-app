@@ -6,6 +6,7 @@ import { CheckCircle2 } from 'lucide-react';
 import type { LocalState, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { doneTasks } from '../../domain/model.ts';
+import { colorOf } from '../../domain/people.ts';
 import { Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
 import { SelBar } from './SelBar.tsx';
@@ -39,7 +40,7 @@ export function DoneView({ state }: { state: LocalState }) {
             items={groups.get(d)!.map((t) => t.id)}
             entity="task"
             renderItem={(id) => (
-              <TaskRow task={state.tasks[id]} showDoneAt sel={sel === null ? null : sel.includes(id)} />
+              <TaskRow task={state.tasks[id]} showDoneAt sel={sel === null ? null : sel.includes(id)} calColor={colorOf(state.cals, state.tasks[id].calId)} />
             )}
             className="mc"
             scope={'done:' + d}

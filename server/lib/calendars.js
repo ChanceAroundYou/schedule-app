@@ -27,6 +27,17 @@ const ROLES = ['owner', 'editor', 'viewer'];
 const DEFAULT_CAL_NAME = '我的日程';
 const NAME_MAX = 40;
 
+/**
+ * 日程集颜色轴。与客户端 `app/src/domain/types/Cal.ts` 的 `CAL_COLORS` 是
+ * **同一份名单**（服务端不 import 前端代码，所以两边各留一份字面量）——
+ * 改一边必须改另一边，`tests/calendars.test.js` 里有一条断言盯这个。
+ *
+ * 键名只是标签，真正的色值在 `app/src/styles/tokens.css` 的日程集颜色轴那一节；
+ * 这里**不存十六进制**，否则线上库里的颜色和界面上画出来的迟早会分家。
+ */
+const CAL_COLORS = ['jade', 'azure', 'clay', 'plum', 'gold', 'slate', 'rose', 'teal'];
+const DEFAULT_CAL_COLOR = 'jade';
+
 function isRole(r) {
   return ROLES.includes(r);
 }
@@ -58,7 +69,7 @@ function createOwned(userId, name, at, color) {
     id: crypto.randomUUID(),
     name: String(name || DEFAULT_CAL_NAME).trim() || DEFAULT_CAL_NAME,
     ownerId: userId,
-    color: color || 'jade',
+    color: color || DEFAULT_CAL_COLOR,
     createdAt: now,
   };
   db.insertCalendar(cal);
@@ -100,7 +111,7 @@ function shape(row) {
     id: row.id,
     name: row.name,
     ownerId: row.owner_id,
-    color: row.color || 'jade',
+    color: row.color || DEFAULT_CAL_COLOR,
     createdAt: Number(row.created_at),
     /** 我（请求者）在这个集里的角色 —— 前端据此决定按钮禁不禁用 */
     role: row.role,
@@ -120,6 +131,18 @@ function members(calId) {
     role: m.role,
     joinedAt: Number(m.joined_at),
   }));
+}
+
+/**
+ * 用户目录：`{ userId: { name, nickname } }`。
+ *
+ * 任务上的来源 tag 要显示「谁创建的」，而 `/api/sync` 从不回用户表 ——
+ * 只回这个用户**可能遇到的人**（他那些集的全部成员）。够用，且不多泄一个名字。
+ */
+function directory(userId) {
+  const out = {};
+  for (const u of db.directoryFor(userId)) out[u.id] = { name: u.name, nickname: u.nickname || null };
+  return out;
 }
 
 /* ---------------------------------------------------------------- 写 */
@@ -191,8 +214,7 @@ function setColor(calId, userId, color) {
   const role = db.roleOf(calId, userId);
   if (!role) return { status: 404, body: { error: '没有这个日程集' } };
   if (!canManage(role)) return { status: 403, body: { error: '只有创建者能改日程集' } };
-  const allowed = ['jade','azure','clay','plum','gold','slate','rose','teal'];
-  if (!allowed.includes(color)) return { status: 400, body: { error: '颜色不对' } };
+  if (!CAL_COLORS.includes(color)) return { status: 400, body: { error: '颜色不对' } };
   db.setColorCalendar(calId, color);
   return { status: 200, body: { id: calId, color } };
 }
@@ -231,9 +253,9 @@ function leave(calId, userId) {
 }
 
 module.exports = {
-  ROLES, DEFAULT_CAL_NAME, NAME_MAX,
+  ROLES, DEFAULT_CAL_NAME, NAME_MAX, CAL_COLORS, DEFAULT_CAL_COLOR,
   isRole, nameProblem, canWrite, canManage,
   createOwned, ensureHasCalendar, create,
-  listMine, members,
+  listMine, members, directory,
   rename, remove, setRole, kick, leave, setColor,
 };

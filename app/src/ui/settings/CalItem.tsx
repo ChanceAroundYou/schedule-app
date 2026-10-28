@@ -13,8 +13,8 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, LogOut, Star, Trash2 } from 'lucide-react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
-import type { Cal, Invite, Member } from '../../domain/types.ts';
-import { ROLE_LABEL, canManage } from '../../domain/types.ts';
+import type { Cal, CalColorKey, Invite, Member } from '../../domain/types.ts';
+import { ROLE_LABEL, canManage, CAL_COLORS, CAL_COLOR_LABEL, DEFAULT_CAL_COLOR } from '../../domain/types.ts';
 import { Btn, Field, InlineRename, MiniIconBtn, Row, useConfirm, toast } from '../kit.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../../data/api.ts';
@@ -75,6 +75,11 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
     if (!n) { toast('日程集名字不能为空'); return; }
     await api.renameCal(calId, n);
     toast('已改名');
+  });
+
+  const saveColor = (next: CalColorKey) => run(async () => {
+    await api.setColorCal(calId, next);
+    toast('已改颜色');
   });
 
   const leave = async () => {
@@ -152,6 +157,7 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
                换掉，星标和角色徽标自动隐藏，不用在外面再判一次 `editing`，
                也就不会出现「名字已经是输入框了，星标还杵在旁边」的错位。 */
             <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
+              <span className="calrow-dot" data-cal-color={cal.color ?? DEFAULT_CAL_COLOR} aria-hidden="true" />
               <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium ci-name-active' : 'ci-name-idle')}>
                 {cal.name}
               </span>
@@ -206,6 +212,26 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
         // （456.48 → 473.98），纸飞机右缘与折叠箭头右缘重合。
         // 注意是**齐平**，不是超出 —— 上一轮那条「不许超过 header」仍然成立。
         <div data-cal-body="1" className="flex flex-col gap-3.5 pt-3.5">
+          {/* 颜色：只有创建者能改（与改名同一条 `canManage`）。八支色板，
+              点了立刻落库并刷新集列表 —— 颜色是集的属性，不是任务的，
+              所以不走 LWW 那套 op 通道，走 `PATCH /api/cals/:id`。 */}
+          {manage && (
+            <Field label="颜色">
+              <Row>
+                {CAL_COLORS.map((k) => (
+                  <button
+                    key={k} type="button" className="cal-swatch"
+                    data-cal-color={k}
+                    aria-pressed={(cal.color ?? DEFAULT_CAL_COLOR) === k}
+                    aria-label={CAL_COLOR_LABEL[k]} title={CAL_COLOR_LABEL[k]}
+                    disabled={busy}
+                    onClick={() => void saveColor(k)}
+                  />
+                ))}
+              </Row>
+            </Field>
+          )}
+
           {/* 成员 / 邀请：走和「管理日程集」浮层**同一份** MembersSection。
               这里原先自己抄了一遍成员行、角色选择器、邀请行、撤回按钮，
               两份只有缩进不同 —— 角色一处用 Chips 一处用 Dropdown，

@@ -19,9 +19,10 @@ function noteAuthed(r: AuthResult): void {
 export const auth = {
   health: () => req<{ ok: boolean; time: number }>('GET', 'health'),
 
-  /** 自助注册，开放。注册成功服务器会顺手建一个「我的日程」 */
-  register: async (name: string, password: string) => {
-    const r = await req<AuthResult>('POST', 'auth/register', { name, password });
+  /** 自助注册，开放。注册成功服务器会顺手建一个「我的日程」。昵称可空 */
+  register: async (name: string, password: string, nickname?: string | null) => {
+    const nk = nickname?.trim() || null;
+    const r = await req<AuthResult>('POST', 'auth/register', { name, password, ...(nk ? { nickname: nk } : {}) });
     noteAuthed(r);
     return r;
   },
@@ -51,5 +52,9 @@ export const auth = {
   },
 
   /** 启动只发这一个请求：我是谁、我有哪些集、谁邀请了我 */
-  me: () => req<{ user: PublicUser; cals: import('../../domain/types.ts').Cal[]; invites: import('../../domain/types.ts').Invite[] }>('GET', 'me'),
+  me: () => req<{ user: PublicUser; cals: import('../../domain/types.ts').Cal[]; invites: import('../../domain/types.ts').Invite[]; users?: Record<string, { name: string; nickname: string | null }> }>('GET', 'me'),
+
+  /** 改昵称。传 null / 空串 = 取消昵称，回到用户名 */
+  setNickname: (nickname: string | null) =>
+    req<{ user: PublicUser }>('PATCH', 'me', { nickname }),
 };

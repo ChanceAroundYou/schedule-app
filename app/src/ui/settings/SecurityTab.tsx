@@ -14,8 +14,10 @@ import {
 import type { LocalState, PublicUser } from '../../domain/types.ts';
 import * as store from '../../data/store.ts';
 import * as engine from '../../sync/engine.ts';
-import { Btn, Card, Field, Row, useConfirm, toast } from '../kit.tsx';
+import { Btn, Card, Field, InlineRename, Row, useConfirm, toast } from '../kit.tsx';
 import { useOnline } from '../hooks.ts';
+import { displayName } from '../../domain/people.ts';
+import { api, ApiError } from '../../data/api.ts';
 
 export function SecurityTab({ state, user, onExport, onImport, onLogout, onChangePassword }: {
   state: LocalState;
@@ -45,12 +47,25 @@ export function SecurityTab({ state, user, onExport, onImport, onLogout, onChang
     try { await engine.syncNow(); } catch (_) { /* 断网时顶栏会说话 */ }
   };
 
+  const saveNickname = async (next: string) => {
+    const v = next.trim();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.setNickname(v || null);
+      await engine.refreshMeta();
+      toast(v ? '昵称已改成「' + v + '」' : '已取消昵称，改用用户名');
+    } catch (e) { toast(e instanceof ApiError ? e.message : '改昵称失败，请重试'); }
+    finally { setBusy(false); }
+  };
+
   return (
     <>
       <Card icon={<UserRound size={14} />} title="账号">
         <Field label="当前账号">
           <Row>
-            <span className="min-w-0 flex-1 truncate text-[13px]">{user ? user.name : '未登录'}</span>
+            {/* 优先显示昵称（用户 2026-10-28）；没昵称就是用户名。判据只此一处 */}
+            <span className="min-w-0 flex-1 truncate text-[13px]">{user ? displayName(user) : '未登录'}</span>
             <Btn variant="chip" size="sm" onClick={onChangePassword}>
               <KeyRound size={13} /> 修改密码
             </Btn>
@@ -58,6 +73,22 @@ export function SecurityTab({ state, user, onExport, onImport, onLogout, onChang
               <LogOut size={13} /> 退出登录
             </Btn>
           </Row>
+        </Field>
+
+        {/* 昵称：可空。空着 = 用用户名。别人看到的「谁建的这条」用的就是它，
+            用户名是登录名、常常是没法公开的那一个。 */}
+        <Field label="昵称" hint="留空就用用户名">
+          <InlineRename
+            value={user?.nickname ?? ''}
+            label="昵称"
+            /* 没设昵称时显示格是空的 —— 空着会被读成「这一行没内容」。
+               填 displayName 的结果（也就是用户名），和 placeholder 说的是
+               同一件事：留空就用它。 */
+            display={user ? <span className="truncate text-[13px]">{displayName(user)}</span> : undefined}
+            placeholder={user ? user.name : ''}
+            disabled={!user || busy}
+            onSave={(v) => void saveNickname(v)}
+          />
         </Field>
       </Card>
 

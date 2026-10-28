@@ -31,6 +31,7 @@ import {
   coverWindow, dayTimeline, minToPct, pctRange, spanOf, untimedBlanks, untimedRowPx, windowOf,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
+import { colorOf } from '../../domain/people.ts';
 import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
@@ -126,7 +127,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         >
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
             {shown.map((t) => (
-              <UntimedCard key={t.id} t={t} title={t.title} />
+              <UntimedCard key={t.id} t={t} title={t.title} calColor={colorOf(state.cals, t.calId)} />
             ))}
             {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
             <NewCellSlot state={state} zoneId={`allday:${iso}`} />
@@ -193,7 +194,8 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
 
               <div className="tl-events">
                 {events.map((e) => (
-                  <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH} />
+                  <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH}
+                    calColor={colorOf(state.cals, e.item.calId)} />
                 ))}
               </div>
 

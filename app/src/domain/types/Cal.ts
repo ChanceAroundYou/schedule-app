@@ -70,3 +70,23 @@ export const ROLE_HINT: Record<Role, string> = {
   editor: '能增删改任务和打卡，管不了成员',
   viewer: '只能看',
 };
+
+/**
+ * 日程集颜色轴。八个，够把一个人手头的所有集一眼分开。
+ *
+ * 与色板轴（`AccentKey`）是**两回事**：色板是「这个界面什么颜色」，这一轴是
+ * 「这一条集什么颜色」。名字有四支与色板重名是为了让用户在管理页里认得出，
+ * 值各定各的（见 `styles/tokens.css` 的日程集颜色轴）。
+ */
+export const CAL_COLORS: CalColorKey[] = ['jade', 'azure', 'clay', 'plum', 'gold', 'slate', 'rose', 'teal'];
+
+export const CAL_COLOR_LABEL: Record<CalColorKey, string> = {
+  jade: '青', azure: '蓝', clay: '赭', plum: '紫',
+  gold: '金', slate: '灰蓝', rose: '玫红', teal: '青绿',
+};
+
+/** 老数据 / 缺字段时的回落值。**服务端默认也是它**（schema 里 DEFAULT 'jade'） */
+export const DEFAULT_CAL_COLOR: CalColorKey = 'jade';
+
+export const isCalColor = (v: unknown): v is CalColorKey =>
+  typeof v === 'string' && (CAL_COLORS as string[]).includes(v);

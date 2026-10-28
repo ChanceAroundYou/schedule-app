@@ -9,6 +9,7 @@ import {
   liveHabits, overdueCount, todayDoneTasks, todayTasks,
 } from '../../domain/model.ts';
 import { Caret, CheckinStrip, Empty, TaskRow } from '../parts.tsx';
+import { colorOf } from '../../domain/people.ts';
 import { SortableList } from '../../ui/dndkit.tsx';
 
 export function TodayView({ state }: { state: LocalState }) {
@@ -47,7 +48,7 @@ export function TodayView({ state }: { state: LocalState }) {
       <SortableList
         items={list.map((t) => t.id)}
         entity="task"
-        renderItem={(id) => <TaskRow task={state.tasks[id]} />}
+        renderItem={(id) => <TaskRow task={state.tasks[id]} calColor={colorOf(state.cals, state.tasks[id].calId)} />}
         className="mc"
         scope={'day:' + today}
       />
@@ -71,7 +72,7 @@ export function TodayView({ state }: { state: LocalState }) {
           <SortableList
             items={doneToday.map((t) => t.id)}
             entity="task"
-            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt />}
+            renderItem={(id) => <TaskRow task={state.tasks[id]} showDoneAt calColor={colorOf(state.cals, state.tasks[id].calId)} />}
             className="td-body mc"
             scope={'done:' + today}
           />

@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { Task } from '../../domain/types.ts';
+import type { CalColorKey, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { repeatLabel } from '../../domain/repeat.ts';
 import { CheckBtn, SelDot } from './CheckBtn.tsx';
@@ -44,9 +44,11 @@ export interface TaskRowProps {
    * 传了它就在行首画一个圈（选中画勾），点击行为也由 dispatch 改成切换选中。
    */
   sel?: boolean | null;
+  /** 这条所属日程集的颜色 → `data-cal-color`；不传 = 不着色 */
+  calColor?: CalColorKey;
 }
 
-export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = null }: TaskRowProps) {
+export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = null, calColor }: TaskRowProps) {
   const meta: ReactNode[] = [];
   const today = D.today();
   if (!bare) {
@@ -82,6 +84,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
         + (className ? ' ' + className : '')
         + (sel === null ? '' : ' sel-mode' + (sel ? ' sel-on' : ''))}
       data-id={t.id}
+      data-cal-color={calColor}
       data-untimed={t.time ? undefined : '1'}
       data-sel={sel === null ? undefined : sel ? '1' : '0'}
     >
@@ -106,7 +109,7 @@ export function TaskRow({ task: t, bare, showDoneAt, extra, className, sel = nul
    data-untimed`/CheckBtn）一字不动，探针口径不变。周视图已切 `UntimedCard`，
    现在只剩月视图格子在用。 */
 
-export function TaskPill({ task: t, moreSuffix, moreJumpDay }: {
+export function TaskPill({ task: t, moreSuffix, moreJumpDay, calColor }: {
   task: Task; moreSuffix?: number;
   /**
    * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，
@@ -115,8 +118,9 @@ export function TaskPill({ task: t, moreSuffix, moreJumpDay }: {
    * 委托里 `[data-jump]` 排在 `.task-el` 前面，所以它只盖住自己那一小块。
    */
   moreJumpDay?: string;
+  calColor?: CalColorKey;
 }) {
-  return <CompactCard t={t} moreSuffix={moreSuffix} moreJumpDay={moreJumpDay} />;
+  return <CompactCard t={t} moreSuffix={moreSuffix} moreJumpDay={moreJumpDay} calColor={calColor} />;
 }
 
 /* ============================== 空状态 ============================== */

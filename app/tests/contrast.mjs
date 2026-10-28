@@ -66,8 +66,50 @@ function vars(src, sel) {
   return out;
 }
 
-/** 正文三档要落在每一种底色上 */
-const SURFACES = ['--bg', '--panel', '--panel-2', '--panel-3', '--sidebar'];
+/**
+ * 日程集颜色轴的八支（`[data-cal-color="…"]`），每支两个值：
+ *   · `--cal-color` 实色 —— 色板按钮、侧栏圆点
+ *   · `--cal-band` 淡档 —— 卡片左沿那条 3px 竖线（jade 那一档是 `transparent`）
+ *
+ * 它们不在 `:root` 里，`vars()` 抠不到，所以要单独一路。值有四种写法：
+ * 6 位 hex、8 位 hex（自带 alpha）、`var(--primary)`、`transparent`。
+ * 后两种必须解析/判定成当前主题的实际值 —— 否则这八条会**静默不测**，
+ * 守卫看起来全绿、其实少测了一整组。
+ *
+ * 暗色档是**后代**选择器（`[data-theme="dark"] [data-cal-color="…"]`，中间有空格 ——
+ * 两个属性不在同一个元素上，连写的复合选择器谁都不匹配），用后顾排除法把亮色那八条摘出来。
+ */
+function calVars(src, dark) {
+  const re = dark
+    ? /\[data-theme="dark"\]\s*\[data-cal-color="(\w+)"\]\s*\{([^}]*)\}/g
+    : /(?<!\[data-theme="dark"\]\s*)\[data-cal-color="(\w+)"\]\s*\{([^}]*)\}/g;
+  const out = {};
+  for (const m of src.matchAll(re)) {
+    const one = {};
+    for (const p of m[2].matchAll(/(--cal-(?:color|band)):\s*(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?|var\(--[\w-]+\)|transparent)/g)) {
+      one[p[1]] = p[2];
+    }
+    out[m[1]] = one;
+  }
+  return out;
+}
+
+/**
+ * 带 alpha 的前景要**先按它落上去的底色合成**再算比值。
+ *
+ * 直接把 8 位 hex 当前景等于把 alpha 那层当成不透明 —— 算出来的比值虚高，
+ * 「淡到看不见」的那种改法就抓不住了。合成后才是眼睛真正看到的颜色。
+ */
+function overBg(fg, bg) {
+  if (fg.length !== 9) return fg;
+  const a = parseInt(fg.slice(7, 9), 16) / 255;
+  const f = [1, 3, 5].map((i) => parseInt(fg.slice(i, i + 2), 16));
+  const b = hex(bg).map((c) => c * 255);
+  const to2 = (c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, '0');
+  return '#' + f.map((c, i) => to2(a * c + (1 - a) * b[i])).join('');
+}
+
+/** 正文三档要落在每一种底色上 */const SURFACES = ['--bg', '--panel', '--panel-2', '--panel-3', '--sidebar'];
 const TIERS = ['--text', '--text-2', '--text-3'];
 
 /**
@@ -120,6 +162,15 @@ export const ON_ACCENT = '--on-primary';
 const NONTEXT = [
   { fg: '--input', bgs: ['--panel', '--panel-2', '--panel-3', '--bg'] },
 ];
+
+/**
+ * 日程集色带（卡片左沿那条淡带）的**区间**，两端都要锁。
+ *
+ * 下限 1.15：再淡就等于这条带不存在 —— 「任务按来源集上色」这件事白做。
+ * 上限 2.5：再浓就是「贴了块胶带」（用户 2026-10-28 原话否掉的方向）。
+ * 两头都有人会在改的时候顺手越过，所以不写「够淡就行」。
+ */
+const BAND_LO = 1.15, BAND_HI = 2.5;
 
 const walkTree = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkTree(join(d, e.name)) : [join(d, e.name)]));
 
@@ -248,6 +299,43 @@ export function audit(src) {
       // 压在它身上的文字色（按钮底 / 计数气泡 / 选中态）
       if (onIt && v[ON_ACCENT]) rows.push({ theme, group: '语义色', label: ON_ACCENT + ' on ' + fg, fg: v[ON_ACCENT], bg: v[fg], r: ratio(v[ON_ACCENT], v[fg]) });
     }
+    /* 日程集颜色轴八支的**实色**：今天它只当图形用（色板按钮、侧栏圆点），
+       但这一组故意留在 4.5 不放宽 —— 以后谁把它当文字色用（抽屉里写「来自某集」
+       那种），这条线要立刻拦住，而不是放过去再回头查。 */
+    const cal = calVars(src, theme === '暗色');
+    for (const [key, one] of Object.entries(cal)) {
+      for (const b of CARD_SURFACES) {
+        if (!v[b] || !one['--cal-color']) continue;
+        rows.push({ theme, group: '日程集颜色', label: `--cal-color(${key}) on ${b}`, fg: one['--cal-color'], bg: v[b], r: ratio(one['--cal-color'], v[b]) });
+      }
+      /* 淡档那条 3px 竖线。2026-10-28 用户两次裁决：「小竖线不要给明显的颜色，
+         通通用浅色」「和主题色一致的时候能实现完全消失」—— 所以这一组锁的是
+         **区间**，不是 3:1 下限：
+           · jade 必须正好是 `transparent`：默认集那条带要**完全消失**，
+             画成「很淡的一条」也算失败（用户要的是没有，不是浅）。
+           · 其余七支：合成后对卡底 1.15 ≤ 比值 ≤ 2.5。低于下限等于这条带不存在
+             （集颜色那件事就没做了），高于上限就是「贴胶带」。
+         为什么这里**故意不套** WCAG 1.4.11 的 3:1：那条针对「识别内容所必需的
+         视觉内容」，而这条带是次要的冗余着色 —— 同一件事在侧栏圆点（实色
+         `--cal-color`）和卡上的来源 tag 上各说一遍。做淡是设计意图。 */
+      const raw = one['--cal-band'];
+      if (key === 'jade') {
+        const gone = raw === 'transparent';
+        rows.push({ theme, group: '日程集色带', label: '--cal-band(jade) 要完全消失', fg: raw ?? '(没写)', bg: '—', r: gone ? 1 : 0, min: 1 });
+        continue;
+      }
+      for (const b of CARD_SURFACES) {
+        if (!v[b] || !raw) continue;
+        const fg = raw.startsWith('var(') ? v[raw.slice(4, -1)] : raw;
+        if (!fg) {
+          rows.push({ theme, group: '日程集色带', label: `--cal-band(${key}) = ${raw} 解析不到`, fg: raw, bg: v[b], r: 0, min: BAND_LO, max: BAND_HI });
+          continue;
+        }
+        const over = overBg(fg, v[b]);
+        rows.push({ theme, group: '日程集色带', label: `--cal-band(${key}) on ${b}`, fg: over, bg: v[b], r: ratio(over, v[b]), min: BAND_LO, max: BAND_HI });
+      }
+    }
+
     // 非文本：控件描边。**min 是 3**，见 NONTEXT 上面那段
     for (const { fg, bgs } of NONTEXT) {
       if (!v[fg]) continue;
@@ -263,18 +351,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { files, src } = readStyles();
   console.log('读到的语义样式模块：' + files.join(' → '));
   const rows = audit(src);
-  /** 每行自带下限：正文 4.5（1.4.3），控件描边 3（1.4.11）。见 NONTEXT 上面那段。 */
+  /** 每行自带下限：正文 4.5（1.4.3），控件描边 3（1.4.11），色带是一个**区间**。见 NONTEXT / BAND_LO 上面那段。 */
   const floor = (r) => r.min ?? 4.5;
-  const mark = (r) => { const m = floor(r); return r.r >= m ? '✓' : r.r >= m - 1.5 ? '✗ 差一点' : '✗✗ 不足'; };
+  const ceil = (r) => r.max ?? Infinity;
+  const mark = (r) => { const m = floor(r); return r.r > ceil(r) ? '✗ 太浓' : r.r >= m ? '✓' : r.r >= m - 1.5 ? '✗ 差一点' : '✗✗ 不足'; };
   let failed = 0;
 
   for (const theme of ['亮色', '暗色']) {
-    for (const g of ['正文三档', '卡片时间行', '语义色', '控件描边']) {
+    for (const g of ['正文三档', '卡片时间行', '语义色', '日程集颜色', '日程集色带', '控件描边']) {
       const list = rows.filter((x) => x.theme === theme && x.group === g);
       if (!list.length) continue;
-      console.log('\n' + theme + '　' + g + (g === '控件描边' ? '（下限 3:1，WCAG 1.4.11）' : ''));
+      const note = g === '控件描边' ? '（下限 3:1，WCAG 1.4.11）'
+        : g === '日程集色带' ? `（淡档：比值 ${BAND_LO}–${BAND_HI}，jade 须 transparent）` : '';
+      console.log('\n' + theme + '　' + g + note);
       for (const r of list) {
-        const ok = r.r >= floor(r);
+        const ok = r.r >= floor(r) && r.r <= ceil(r);
         if (!ok) failed++;
         console.log('  ' + (ok ? 'ok  ' : 'FAIL') + ' ' + r.label.padEnd(30)
           + r.fg + ' / ' + r.bg + '  ' + r.r.toFixed(2).padStart(6) + '  ' + mark(r));

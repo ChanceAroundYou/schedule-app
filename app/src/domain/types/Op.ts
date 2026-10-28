@@ -81,4 +81,11 @@ export interface SyncResponse {  cursor: number;
   /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
   cals?: import('./Cal.ts').Cal[];
   invites?: import('./Cal.ts').Invite[];
+  /**
+   * 我那些集的全部成员（`userId → { name, nickname }`）。
+   *
+   * 可选，理由与 `projects` 一样：老响应落在新客户端上不该炸 ——
+   * 缺这一桶就是「叫不出别人的名字」，来源 tag 显示「?」，别的都不受影响。
+   */
+  users?: Record<string, { name: string; nickname: string | null }>;
 }

@@ -96,6 +96,11 @@
      `border: 1px solid transparent`（占位边框）不引用它：那种不参与视觉，
      只是撑住尺寸防抖动，加粗反而会挤动布局。 */
   --border-w: 1px;
+  /* 11px 那一档徽章（来源 tag 的圆圈）的描边宽度：**故意不跟风格轴**。
+     它的直径由「和重复角标一样大」钉死（`.rep-flag--corner svg` 是 11px，那个同样不跟轴走）；
+     直径不动而描边跟着 flat 变 2px，内孔只剩 7px —— 里面那个汉字放不进去
+     （实测 11px 圈 + 1px 描边最多装 6.5px 的字）。所以另立一个令牌，三档风格都是 1px。 */
+  --tag-ring: 1px;
   --primary: #27795a;
   --primary-soft: #e6f3ec;
   --primary-pale: #f1f9f5;
@@ -247,6 +252,67 @@
   --primary: #9aabc2; --primary-soft: #1e2530; --primary-pale: #191f28;
   --on-primary: #14120f; --purple: #8fa0b8;
 }
+
+/* ================= 日程集颜色轴 =================
+   第四个轴，与色板轴**互不干涉**：色板轴（--primary）是「这个界面什么颜色」，
+   这一轴是「这一条日程集是什么颜色」。切色板时集颜色不动 —— 用户给「工作」
+   选的金色，换成 jade 色板它还得是金色，否则「集颜色」就没有意义了。
+
+   值写在令牌块里（这是它们的职责），TS 侧只放 CalColorKey 标签
+   （`domain/types/Cal.ts`），与 accent 完全同一个套路：
+   `ui/theme.ts` 写 `dataset.accent`，这里写 `data-cal-color`。
+   `rose` / `teal` 是这一轴**独有**的两支 —— 六套色板里没有它们，
+   为的是八个集能一眼分开，不必和色板共用那六个名字。
+
+   每支给两个值：
+     · `--cal-color` —— **实色**。色板按钮、侧栏那个圆点用它：用户挑颜色时
+       要看到真颜色，给浅档等于骗他。
+     · `--cal-band` —— **淡档**（同一支色叠 alpha）。卡片左沿那条 3px 竖线用它。
+       实色压在 `--primary-pale` 的卡底上是「另一套颜色压在主题色上」，
+       看着像贴了块胶带（用户 2026-10-28 两次说：要浅、不要明显的颜色）。叠 alpha 而不是
+       另写一支浅 hex：卡片底色随色板轴变（六套六个底色），叠上去才会自己调好。
+     · **`jade` 档的色带 = `transparent`：默认集那条带完全消失**（用户 2026-10-28：
+       「和主题色一致的时候能实现完全消失」）。jade 就是默认集的颜色（`DEFAULT_CAL_COLOR`），
+       它和主题同色，就不该再画一条线说明自己。代价说清楚：换了色板（比如 azure）
+       又给某个集选了 jade 时，那条带也消失 —— 这一档的定义就是「跟主题一致的那一支」。
+       集身份还剩侧栏圆点（`--cal-color` 实色）和卡上的来源 tag 两条线索。
+
+   alpha 是算出来的，不是感觉：亮色 `59`（0.35）、暗色 `40`（0.25）。
+   按「合成后对卡底的比值」扫出来的（8 支 × 6 套色板的 `--primary-pale` × 已完成卡的
+   `--panel-3`，`/tmp` 那轮扫描留了表）：亮 0.35 → 比值 1.58–1.67，暗 0.25 → 1.46–1.68，
+   两档强度接近。再淡（0.20 → 1.29–1.33）在浅卡底上基本看不出来，那条带就没作用了；
+   再浓（0.5 → 2.0–2.15）就回到「胶带」。注意这一档**故意不满足** WCAG 1.4.11 的 3:1：
+   它不是「识别内容的唯一线索」（集名在侧栏、卡上还有来源 tag），是次要的冗余着色。
+   `tests/contrast.mjs` 的「日程集色带」那组因此改成锁**区间**：淡到 1.15 以下或浓到
+   2.5 以上都算失败，jade 必须正好是 `transparent`。 */
+
+[data-cal-color="jade"]  { --cal-color: #27795a; --cal-band: transparent; }
+[data-cal-color="azure"] { --cal-color: #4260dc; --cal-band: #4260dc59; }
+[data-cal-color="clay"]  { --cal-color: #a5543a; --cal-band: #a5543a59; }
+[data-cal-color="plum"]  { --cal-color: #8a4a86; --cal-band: #8a4a8659; }
+[data-cal-color="gold"]  { --cal-color: #8d6414; --cal-band: #8d641459; }
+[data-cal-color="slate"] { --cal-color: #4b5b70; --cal-band: #4b5b7059; }
+[data-cal-color="rose"]  { --cal-color: #b0486b; --cal-band: #b0486b59; }
+[data-cal-color="teal"]  { --cal-color: #2a717a; --cal-band: #2a717a59; }
+
+/* ⚠️ 暗色档的选择器**中间那个空格不能省**（2026-10-28 实测踩到）：
+   `data-theme` 只写在 `<html>` 上（`ui/theme.ts` 的 applyTheme），
+   `data-cal-color` 只写在卡片 / 圆点 / 色板按钮自己身上。写成
+   `[data-theme="dark"][data-cal-color="plum"]` 是「**同一个元素**同时带这两个属性」，
+   全页面没有任何元素满足 → 整组暗色档静默不生效，暗色界面拿的还是亮色那八支
+   （实测：常暗档下 plum 的色带算出 `rgb(138,74,134)` = 亮色梅紫，不是 `#c98cc4`）。
+   写成后代选择器才对，特异度 (0,2,0) 也照样压得住上面那八条 (0,1,0)。
+   `tests/contrast.mjs` 与 `tests/color-scan.mjs` 都按这个形状认这些块，
+   改回连写会让两道守卫同时看不见这一轴（色值被当规则区、暗色档八条不测）。 */
+
+[data-theme="dark"] [data-cal-color="jade"]  { --cal-color: #6fc0a0; --cal-band: transparent; }
+[data-theme="dark"] [data-cal-color="azure"] { --cal-color: #6d8bff; --cal-band: #6d8bff40; }
+[data-theme="dark"] [data-cal-color="clay"]  { --cal-color: #e08a68; --cal-band: #e08a6840; }
+[data-theme="dark"] [data-cal-color="plum"]  { --cal-color: #c98cc4; --cal-band: #c98cc440; }
+[data-theme="dark"] [data-cal-color="gold"]  { --cal-color: #d9b055; --cal-band: #d9b05540; }
+[data-theme="dark"] [data-cal-color="slate"] { --cal-color: #9aabc2; --cal-band: #9aabc240; }
+[data-theme="dark"] [data-cal-color="rose"]  { --cal-color: #e2899f; --cal-band: #e2899f40; }
+[data-theme="dark"] [data-cal-color="teal"]  { --cal-color: #6fbcc4; --cal-band: #6fbcc440; }
 
 /* ================= 风格轴 =================
    改**几何**：6 个圆角刻度 + 6 个阴影令牌 + 一个边框宽度。颜色一个字不动 ——

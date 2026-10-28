@@ -5,6 +5,7 @@
 import { Boxes } from 'lucide-react';
 import type { LocalState } from '../../domain/types.ts';
 import { inboxTasks } from '../../domain/model.ts';
+import { colorOf } from '../../domain/people.ts';
 import { Empty, TaskRow } from '../parts.tsx';
 import { SortableList } from '../../ui/dndkit.tsx';
 import { SelBar } from './SelBar.tsx';
@@ -29,7 +30,7 @@ export function InboxView({ state }: { state: LocalState }) {
         items={ids}
         entity="task"
         renderItem={(id) => (
-          <TaskRow task={state.tasks[id]} bare sel={sel === null ? null : sel.includes(id)} />
+          <TaskRow task={state.tasks[id]} bare sel={sel === null ? null : sel.includes(id)} calColor={colorOf(state.cals, state.tasks[id].calId)} />
         )}
         className="mc"
         scope="inbox"

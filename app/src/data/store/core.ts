@@ -17,7 +17,7 @@ export const KEY = 'schedule-app-v4';
 
 export function blank(): LocalState {
   return {
-    tasks: {}, habits: {}, projects: {}, cals: [], invites: [], cursor: 0, outbox: [],
+    tasks: {}, habits: {}, projects: {}, cals: [], invites: [], users: {}, meId: null, cursor: 0, outbox: [],
     ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
     denied: 0, deniedCals: [], conflicts: [],
   };

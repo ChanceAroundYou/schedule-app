@@ -155,6 +155,19 @@ module.exports = {
   },
 
   /** 客户端启动只发这一个请求就能拿到全部所需：我是谁、我有哪些集、谁邀请了我 */
+  'GET /api/me': (ctx, me) => {
+    calendars.ensureHasCalendar(me.user.id);
+    return {
+      status: 200,
+      body: {
+        user: publicUser(me.user),
+        cals: calendars.listMine(me.user.id),
+        invites: invites.listFor(me.user.id),
+        users: calendars.directory(me.user.id),
+      },
+    };
+  },
+
   'PATCH /api/me': (ctx, me) => {
     if (ctx.body && ctx.body.nickname !== undefined) {
       const nickname = ctx.body.nickname == null ? null : String(ctx.body.nickname).trim();

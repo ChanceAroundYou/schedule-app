@@ -474,6 +474,64 @@
   color: var(--text-3); opacity: .35;
 }
 .rep-flag--corner svg { width: 11px; height: 11px; }
+
+/* ================= 日程集颜色（第四轴）=================
+   卡片属于哪个集，就用那个集的颜色在**左沿**画一条 3px 淡带。
+   色值来自 `[data-cal-color="…"]` 令牌块（`tokens.css`），这里只引用。
+
+   引用的是**淡档** `--cal-band` 不是实色 `--cal-color`（2026-10-28 用户两次说：
+   「小竖线的颜色和本体更一致一点」「不要给明显的颜色，通通用浅色」）：卡片本体是
+   `--primary-pale` 的底，实色压上去像贴了块胶带。jade（默认集）那一档在令牌里是
+   `transparent` → 默认集的这条带**完全消失**，它的颜色就是主题色本身，画出来只是多一条线。
+
+   ⚠️ 用 `background-image` 画，**不动 `border`、不塞 `box-shadow`**：
+     · border 是全项目那一条 `var(--border-w) solid var(--border)`，改它就等于
+       给卡片换边框语言，风格轴（flat 的 2px 硬边框）会跟着乱；
+     · box-shadow 被 hover / live / dragging 三态各自整值覆盖（上面那几条），
+       塞进去的 inset 一 hover 就没了。
+   渐变画在 padding box 上、被 border-radius 裁掉多余的部分，圆角不用额外处理。 */
+.task-el[data-cal-color], .task-row[data-cal-color], .task-pill[data-cal-color],
+.pj-card[data-cal-color] {
+  background-image: linear-gradient(to right,
+    var(--cal-band) 0, var(--cal-band) 3px, transparent 3px);
+}
+
+/* ================= 来源 tag =================
+   「这条不是我建的」—— 右上角一个小圆圈，里面是创建者昵称的首字。
+   位置紧贴在重复角标的**左边**（用户 2026-10-28 指定）：
+   角标本体 11px + 右沿 2px，所以这里 right 让出 15px。
+
+   颜色跟**主题色**（用户 2026-10-28）：切色板它跟着变。它不再跟集颜色 ——
+   卡片左沿那条带已经说明「来自哪个集」了，圆圈再换一套颜色就是第三套色在打架。
+
+   只在**够宽**的屏幕上出现，判据在 `TaskCard.tsx`（三日视图 + 非窄屏 +
+   设置里那个开关）；窄屏根本不给这个元素，不是用 CSS 藏 ——
+   理由同 `.task-el--timed` 那条「不要再加窄屏 display: none」。 */
+.creator-tag {
+  position: absolute; top: 0; right: 15px; margin: 0;
+  /* 直径写死 **11px**，和同一个角上的重复角标一样大（2026-10-28 用户：「圈的大小和
+     重复符号大小一致」）—— `.rep-flag--corner svg` 是 11px，两者并排必须一般大。
+     描边走 `--tag-ring`（1px）而不是 `--border-w`：直径由角标钉死后，flat 那档的 2px
+     描边会把内孔吃到 7px，里面的汉字根本放不进去。
+
+     **判据是「墨迹最远像素离圆心多远」，不是「字形装得进方孔」**：中文字几乎填满 em 框，
+     但四角通常是空的，所以量像素才有意义。实测（把描边透明后在真 DOM 里扫墨迹）
+     内半径 4.5 这一档：6.5px 字 → 4.35（留 0.15）✓；7px → 4.7（越 0.2）✗；
+     8px → 5.3（越 0.8）✗。所以字号 6.5px —— 这也是全站最小的字号（原先最小 8.5px），
+     代价说清楚：笔画密的姓（戴 / 鑫 那一类）在这个尺寸上会糊。
+     想要字再大一点只能把圈再放大：12px 圈装 7px 字、13px 装 7.5px。 */
+  width: 11px; height: 11px;
+  display: grid; place-items: center;
+  /* 圆写死 50% 而不是引用 `--r-pill`：flat 那档 `--r-pill` 是 0，圆圈会变成方块，
+     而这枚符号的意思就是「圆圈里装一个首字」。与勾选圈同一个豁免
+     （`tokens.css` 风格轴那段：正圆不是圆角刻度）。 */
+  border: var(--tag-ring) solid var(--primary);
+  border-radius: 50%;
+  color: var(--primary);
+  font-size: 6.5px; font-weight: 600; line-height: 1;
+  background: none;
+  opacity: .85;
+}
 .ev-time {
   /* **出现了就一定显示**（时长 > 60 分钟才有这一行，判据在 TaskCard）。
      横向也要完整：卡片文案走紧凑写法（`timeRangeCompact`）先省掉两个空格和那根长破折号，

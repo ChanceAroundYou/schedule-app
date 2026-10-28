@@ -26,7 +26,7 @@ export {
 } from './core.ts';
 export { persist, flushPersist, load, resetLocal } from './persist.ts';
 export { commitMany, commit, type Change } from './commit.ts';
-export { setCals, setInvites, setActiveCal, toggleCal, shownCals } from './cals.ts';
+export { setCals, setUsers, setMeId, setInvites, setActiveCal, toggleCal, shownCals } from './cals.ts';
 export { addConflicts, dismissConflict } from './conflicts.ts';
 export { setUi, setSyncing, setError, setClockBlocked,
   selStart, selCancel, selToggle, selAll } from './ui.ts';

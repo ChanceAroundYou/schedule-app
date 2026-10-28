@@ -35,6 +35,8 @@ let base = '';
 let dad = null;   // { name, token, userId, calId, cals }
 let mom = null;
 let CAL = '';     // dad 的默认集，op() 默认往这里写
+/** 后面「成员目录」那几条用例要复用一个**带昵称**的账户，见昵称那条 */
+let nick = null;
 
 test.before(async () => {
   server = createServer();
@@ -729,6 +731,183 @@ test('认不出的实体仍然被拒 —— 加了 project 不等于放开了口
   const r = await push([bad]);
   assert.strictEqual(r.body.rejected[0].code, 'bad_request');
   assert.strictEqual(r.body.applied.length, 0);
+});
+
+/* ============ 日程集颜色 · 昵称 · 成员目录 · 任务来源（2026-10-28） ============
+ *
+ * 这四件其实是一件事的四半：**这条是谁建的、在哪个颜色的集里、那个人叫什么**。
+ * 前后端各占一半，所以这里一半用例在打接口、一半在核对两边的名单。
+ *
+ * 放在「改口令」之前是有原因的：那几条用例会把 dad / mom 注册时签的票全部作废
+ * （那正是它要证的事），而这一段要用票；登录又有按 IP 的限流，前面那些用例已经
+ * 把配额用得差不多了。所以这一段一律用 `dad.token` / `mom.token`，不再登录。
+ */
+
+/** 颜色标签名单。**前端那份在 `app/src/domain/types/Cal.ts`**，两边必须同一批 */
+const COLOR_KEYS = ['jade', 'azure', 'clay', 'plum', 'gold', 'slate', 'rose', 'teal'];
+
+/** 建一个 dad 的集、把 mom 拉成可编辑成员，返回 calId（来源那几条都要两个人同一个集） */
+async function sharedCal(name) {
+  const made = await api('POST', '/api/cals', { token: dad.token, body: { name } });
+  assert.strictEqual(made.status, 200, JSON.stringify(made.body));
+  const calId = made.body.cal.id;
+
+  const inv = await api('POST', `/api/cals/${calId}/invites`, {
+    token: dad.token, body: { name: mom.name, role: 'editor' },
+  });
+  assert.strictEqual(inv.status, 200, JSON.stringify(inv.body));
+  const mine = await api('GET', '/api/invites', { token: mom.token });
+  assert.strictEqual(mine.status, 200, JSON.stringify(mine.body));
+  const invite = mine.body.invites.find((i) => i.calId === calId);
+  assert.ok(invite, `mom 没收到「${name}」的邀请：` + JSON.stringify(mine.body));
+  const acc = await api('POST', `/api/invites/${invite.id}/accept`, { token: mom.token });
+  assert.strictEqual(acc.status, 200, JSON.stringify(acc.body));
+  return calId;
+}
+
+test('日程集颜色：新建就有默认色，owner 改得动，列表与同步都带回', async () => {
+  const made = await api('POST', '/api/cals', { token: dad.token, body: { name: '颜色试验集' } });
+  assert.strictEqual(made.status, 200, JSON.stringify(made.body));
+  assert.strictEqual(made.body.cal.color, 'jade', '新建的集必须有色可画，不能是个空字段');
+
+  const put = await api('PATCH', `/api/cals/${made.body.cal.id}`, {
+    token: dad.token, body: { color: 'plum' },
+  });
+  assert.strictEqual(put.status, 200, JSON.stringify(put.body));
+
+  const list = await api('GET', '/api/cals', { token: dad.token });
+  assert.strictEqual(list.body.cals.find((c) => c.id === made.body.cal.id).color, 'plum');
+
+  const sync = await api('POST', '/api/sync', { token: dad.token, body: { cursor: 1, ops: [] } });
+  assert.strictEqual(sync.body.cals.find((c) => c.id === made.body.cal.id).color, 'plum',
+    '轮询也要带回颜色 —— 否则别的设备改了颜色，这边要等刷新才看得到');
+});
+
+test('日程集颜色：可编辑成员改不动；名单外的值 400 并且不改库', async () => {
+  const calId = await sharedCal('颜色权限集');
+
+  const editor = await api('PATCH', `/api/cals/${calId}`, { token: mom.token, body: { color: 'gold' } });
+  assert.strictEqual(editor.status, 403, '颜色属于「改集」，可编辑成员管不了集本身');
+
+  /* 名单外的一律挡：颜色是**标签**不是自由文本，它最终会被写进 `data-*` 属性 */
+  for (const bad of ['不存在的颜色', '', 'jade" onmouseover="x', 12, null]) {
+    const r = await api('PATCH', `/api/cals/${calId}`, { token: dad.token, body: { color: bad } });
+    assert.strictEqual(r.status, 400, `color=${JSON.stringify(bad)} 必须被挡住`);
+  }
+  const after = await api('GET', '/api/cals', { token: dad.token });
+  assert.strictEqual(after.body.cals.find((c) => c.id === calId).color, 'jade', '被拒的请求不能改库');
+});
+
+test('日程集颜色：服务端那份名单和前端那份是同一批', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../app/src/domain/types/Cal.ts'), 'utf8');
+  const m = src.match(/CAL_COLORS[^=\n]*=\s*\[([^\]]*)\]/);
+  assert.ok(m, '前端那份 CAL_COLORS 找不到了（改名了？那这条断言要跟着改）');
+  const client = m[1].split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean);
+  assert.deepStrictEqual(client, COLOR_KEYS);
+  assert.deepStrictEqual(require('../lib/calendars').CAL_COLORS, COLOR_KEYS);
+});
+
+test('昵称：设置、上限、取消都回落到用户名', async () => {
+  const set = await api('PATCH', '/api/me', { token: mom.token, body: { nickname: '阿包' } });
+  assert.strictEqual(set.status, 200, JSON.stringify(set.body));
+  assert.strictEqual(set.body.user.nickname, '阿包');
+  assert.strictEqual(set.body.user.name, mom.name, '用户名还在 —— 昵称是**优先显示**，不是替换登录名');
+
+  const me = await api('GET', '/api/me', { token: mom.token });
+  assert.strictEqual(me.body.user.nickname, '阿包', '启动那一次请求就要带回昵称');
+
+  const over = await api('PATCH', '/api/me', { token: mom.token, body: { nickname: '字'.repeat(21) } });
+  assert.strictEqual(over.status, 400, '昵称要有上限：一行长文本会把列表撑破');
+  assert.strictEqual((await api('GET', '/api/me', { token: mom.token })).body.user.nickname, '阿包',
+    '被拒的请求不能改库');
+
+  const blank = await api('PATCH', '/api/me', { token: dad.token, body: { nickname: '   ' } });
+  assert.strictEqual(blank.status, 200);
+  assert.strictEqual(blank.body.user.nickname, null, '全空白等于没有，不是存一串空格');
+
+  const cleared = await api('PATCH', '/api/me', { token: dad.token, body: { nickname: null } });
+  assert.strictEqual(cleared.status, 200);
+  assert.strictEqual(cleared.body.user.nickname, null, '取消昵称 = 回到用户名，不是报错');
+});
+
+test('成员目录：/api/sync 与 /api/me 都带「我这些集里都有谁」，不含没共享集的人', async () => {
+  await sharedCal('目录试验集');
+
+  const sync = await api('POST', '/api/sync', { token: dad.token, body: { cursor: 1, ops: [] } });
+  const dir = sync.body.users;
+  assert.ok(dir, '/api/sync 必须带成员目录 —— 没有它，来源标记只能显示「?」');
+  assert.deepStrictEqual(dir[mom.userId], { name: mom.name, nickname: '阿包' });
+  assert.ok(dir[dad.userId], '自己也要在目录里（判「是不是我建的」要用它）');
+
+  const meDir = await api('GET', '/api/me', { token: dad.token });
+  assert.ok(meDir.body.users[mom.userId], '/api/me 也带一份 —— 启动那次请求就该能认出别人');
+
+  /* 小雪（前面注册的那只）没和 dad 共享任何集 → 不进目录。
+     目录不是全站用户名表，只暴露「和我同一个集的人」。直接查库拿 id，
+     不绕登录（登录有按 IP 的限流，这段用例不该去挤它）。 */
+  const snow = db.findUserByName('小雪');
+  assert.ok(snow, '前面那条用例注册的小雪应该在库里');
+  assert.strictEqual(dir[snow.id], undefined, '没共享集的人不进目录');
+});
+
+/* -------------------------------------------------------- 任务来源 createdBy */
+
+/**
+ * 「非自己添加」只能由服务器判定：op 里的 `deviceId` 只到设备、不到用户，
+ * 客户端自报的 id 更不能信。所以 `createdBy` 由路由层验过票的那个 userId 写。
+ */
+test('来源：谁建的任务落谁的 id；客户端自报的 createdBy 不算数', async () => {
+  const calId = await sharedCal('来源试验集');
+
+  const byMom = await push([
+    op('t-src-mom', { title: 'mom 建的', date: localDay() }, 900001, 'dev-mom', 'task', calId),
+  ], 1, mom.token);
+  assert.strictEqual(byMom.status, 200, JSON.stringify(byMom.body));
+
+  const byDad = await push([
+    op('t-src-dad', { title: 'dad 建的', date: localDay() }, 900002, 'dev-dad', 'task', calId),
+    op('t-src-fake', { title: '冒充的', date: localDay(), createdBy: mom.userId }, 900003, 'dev-dad', 'task', calId),
+  ], 1, dad.token);
+  assert.strictEqual(byDad.status, 200, JSON.stringify(byDad.body));
+
+  const snap = await snapshot(dad.token);
+  assert.strictEqual(snap.tasks['t-src-mom'].createdBy, mom.userId, '别人建的必须认得出是别人');
+  assert.strictEqual(snap.tasks['t-src-dad'].createdBy, dad.userId);
+  assert.strictEqual(snap.tasks['t-src-fake'].createdBy, dad.userId,
+    'op 里自报的 createdBy 不能盖掉服务器判出来的那个 —— 否则任何人都能冒充别人');
+
+  const hers = await snapshot(mom.token);
+  assert.strictEqual(hers.tasks['t-src-dad'].createdBy, dad.userId, '两边看到的是同一件事');
+});
+
+test('来源：改标题 / 改期都不会把创建者改成动手的那个人', async () => {
+  const calId = await sharedCal('来源改名集');
+  const t = 't-src-rename';
+  await push([op(t, { title: 'dad 建的', date: localDay() }, 900010, 'dev-dad', 'task', calId)], 1, dad.token);
+  await push([op(t, { title: 'mom 改的名' }, 900011, 'dev-mom', 'task', calId)], 1, mom.token);
+  await push([op(t, { date: localDay(1) }, 900012, 'dev-mom', 'task', calId)], 1, mom.token);
+
+  const snap = await snapshot(dad.token);
+  assert.strictEqual(snap.tasks[t].title, 'mom 改的名', '改名本身要生效');
+  assert.strictEqual(snap.tasks[t].createdBy, dad.userId,
+    '只有「第一次被建出来」那条算创建；否则改一次名就把创建者改成自己了');
+});
+
+test('来源：AI 落库记成 ai，不是某个人的 id（它不该被标成「别人」）', async () => {
+  const calId = await sharedCal('来源 AI 集');
+  const r = await push([op('t-src-ai', { title: 'AI 建的', date: localDay() }, 900020, 'ai', 'task', calId)], 1, dad.token);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual((await snapshot(dad.token)).tasks['t-src-ai'].createdBy, 'ai');
+});
+
+test('来源：只改日期不补来源 —— 上线前建的老任务缺这个字段，前端因此不画而不是猜', async () => {
+  const calId = await sharedCal('来源老任务集');
+  const t = 't-src-old';
+  await push([op(t, { date: localDay() }, 900030, 'dev-dad', 'task', calId)], 1, dad.token);
+  const snap = await snapshot(dad.token);
+  assert.ok(snap.tasks[t], '任务本身要在');
+  assert.strictEqual(snap.tasks[t].createdBy, undefined,
+    '判不出是谁建的就别写猜测值：缺字段是诚实的，猜值是错的');
 });
 
 /* ============================================================ 改口令 */

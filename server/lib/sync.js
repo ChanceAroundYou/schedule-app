@@ -228,6 +228,27 @@ function applyOps(userId, ops) {
         continue;
       }
 
+      /* 来源标记。**createdBy 是服务端字段：客户端传什么都不认。**
+         op 里的 `deviceId` 只到设备、不到用户，自报的 userId 更不能信 ——
+         认了它等于任何人都能把自己的任务标成别人建的、或把别人建的标成自己的。
+         （测试里那条「自报 createdBy」的断言就是钉这一点的。）
+
+         真正的创建者只由服务端定一次：带 title 的 task op **且库里这条任务还没有
+         createdBy** = 这条任务第一次被建出来。已有 createdBy 的（改名 / 完成 / 改期）
+         一律不动 —— 否则改一次标题就把创建者改成动手的人了。
+         认的是路由层验过票的 userId；AI 落库认成 'ai'（它不该被标成「别人」）。
+
+         代价，说清楚：导入一份备份时，原来没记 createdBy 的老任务会把创建者算成
+         导入它的那个人。宁可这样，也不给「冒充别人建」留口子。 */
+      if (raw.entity === 'task' && Object.prototype.hasOwnProperty.call(raw.fields, 'createdBy')) {
+        delete raw.fields.createdBy;
+      }
+      if (raw.entity === 'task'
+          && Object.prototype.hasOwnProperty.call(raw.fields, 'title')
+          && db.getField(raw.calId, 'task', raw.entityId, 'createdBy') === undefined) {
+        raw.fields.createdBy = raw.deviceId === 'ai' ? 'ai' : userId;
+      }
+
       const ts = raw.ts;
       for (const field of Object.keys(raw.fields)) {
         const value = raw.fields[field];

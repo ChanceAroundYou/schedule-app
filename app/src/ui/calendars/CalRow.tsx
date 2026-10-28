@@ -3,7 +3,7 @@
  */
 
 import type { Cal } from '../../domain/types.ts';
-import { ROLE_LABEL } from '../../domain/types.ts';
+import { ROLE_LABEL, DEFAULT_CAL_COLOR } from '../../domain/types.ts';
 import * as store from '../../data/store.ts';
 
 /**
@@ -35,6 +35,8 @@ export function CalRow({ c, on }: { c: Cal; on: boolean }) {
           这里用 span 而不是 input[type=checkbox]：整个按钮就是控件，
           再塞一个真 checkbox 会让 Tab 多停一格、读屏念两遍。 */}
       <span className={'check-btn' + (on ? ' on' : '')} aria-hidden="true" />
+      {/* 集颜色圆点。颜色走 `data-cal-color` → 令牌块，界面上不出现任何色值 */}
+      <span className="calrow-dot" data-cal-color={c.color ?? DEFAULT_CAL_COLOR} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
       {c.role !== 'owner' && (
         <span className="shrink-0 px-1.5 py-px text-[10.5px] calrow-chip">

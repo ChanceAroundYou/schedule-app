@@ -15,6 +15,23 @@ export interface LocalState {
   projects: Record<string, Project>;
   /** 我加入的日程集。服务器每次同步都会刷新 */
   cals: Cal[];
+  /**
+   * 我可能遇到的人：`userId → { name, nickname }`。
+   *
+   * 服务端每次同步都回带（`/api/sync` 与 `/api/me` 的 `users` 字段），来源只有一条：
+   * **我那些集的全部成员**。任务右上角那个来源 tag 要按 `createdBy` 查名字，
+   * 没有这张表就只能显示「?」。跟 `cals` 一样落盘：离线时叫得出名字比显示「?」有用的多，
+   * 代价是名字可能已经被人改过 —— 所以它只用于**显示**，任何判断都不许建立在它上面。
+   */
+  users: Record<string, { name: string; nickname: string | null }>;
+  /**
+   * **我是谁**（userId）。来源只有一个：登录 / `/api/me` 拿到的那份。
+   *
+   * 来源 tag 要判「这条是不是我建的」，而 `views/` 不许碰网络层 ——
+   * 所以把 id 放进 state，由 store 在加载与刷新元数据时写好。
+   * `null` = 还不知道（离线且从没登录过），这时**不画 tag**，而不是画个「?」。
+   */
+  meId: string | null;
   /** 待我处理的邀请 */
   invites: Invite[];
   cursor: number;

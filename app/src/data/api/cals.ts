@@ -2,7 +2,7 @@
  * cals.ts —— 日程集相关 API
  */
 
-import type { Cal, Invite, Member, Role } from '../../domain/types.ts';
+import type { Cal, CalColorKey, Invite, Member, Role } from '../../domain/types.ts';
 import { req } from './request.ts';
 
 export const cals = {
@@ -11,6 +11,9 @@ export const cals = {
 
   renameCal: (id: string, name: string) =>
     req<{ id: string; name: string }>('PATCH', `cals/${encodeURIComponent(id)}`, { name }),
+
+  setColorCal: (id: string, color: CalColorKey) =>
+    req<{ id: string; color: CalColorKey }>('PATCH', `cals/${encodeURIComponent(id)}`, { color }),
 
   removeCal: (id: string) => req<{ ok: boolean }>('DELETE', `cals/${encodeURIComponent(id)}`),
 

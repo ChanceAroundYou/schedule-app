@@ -3,6 +3,7 @@
  */
 import type { LocalState } from '../../domain/types.ts';
 import { hydrateHabit, hydrateTask, hydrateProject, normalizeUi } from '../../domain/model.ts';
+import { getCachedUser } from '../api/token.ts';
 import { state, setState, blank, KEY, resolveCal, emit } from './core.ts';
 
 /**
@@ -34,6 +35,10 @@ export function load(): LocalState {
         projects: p.projects || {},
         cals: Array.isArray(p.cals) ? p.cals : [],
         invites: Array.isArray(p.invites) ? p.invites : [],
+        users: p.users && typeof p.users === 'object' ? p.users : {},
+        /* 「我是谁」优先信本地缓存的那份（离线启动也要能认出「这条是我建的」），
+           缓存没有就用落盘的那份兜一下 */
+        meId: getCachedUser()?.id ?? (typeof p.meId === 'string' ? p.meId : null),
         cursor: Number(p.cursor) || 0,
         outbox: Array.isArray(p.outbox) ? p.outbox : [],
         ui: normalizeUi(p.ui),

@@ -18,13 +18,13 @@
 import type { CSSProperties } from 'react';
 import { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { DraftSeed, Task } from '../../domain/types.ts';
+import type { CalColorKey, DraftSeed, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
   minToPct, pctRange, spanOf, timeRange, timeRangeCompact, CARD_SEAM,
   type DayWindow,
 } from '../../domain/layout.ts';
-import { CheckBtn, RepeatFlag } from '../parts.tsx';
+import { CheckBtn, CreatorTag, RepeatFlag } from '../parts.tsx';
 import { useDraggableEvent } from '../../ui/dndkit.tsx';
 import { useDragGhost } from '../../ui/dnd/lift.ts';
 import { isNarrowNow } from '../../ui/hooks.ts';
@@ -288,6 +288,7 @@ export function taskCardClass(
  */
 export function TaskCard({
   t, variant, live, style, timeText, noteText, title, resizable, lockX = true, mustShowTime = false, onClick,
+  calColor, creator,
 }: {
   t: Task;
   /** 定时 / 未定时 / 月 pill。类名拼装收进 taskCardClass，调用方不再拼字符串 */
@@ -310,6 +311,13 @@ export function TaskCard({
   /** 层叠（三件以上重叠）里「压在下面」的卡用它翻层：stopPropagation 拦下
      #content 的点击分派，不让它顺手开详情。最上面的卡不传 = 点了照常开详情 */
   onClick?: React.MouseEventHandler<HTMLDivElement>;
+  /**
+   * 这条任务所属日程集的颜色 → 写成 `data-cal-color`，色值由令牌块给。
+   * 不传 = 这张卡不着色（调用方手上没有集信息时的诚实结果）。
+   */
+  calColor?: CalColorKey;
+  /** 来源 tag：创建者不是本人时由调用方算好传进来，null / undefined = 不画这一枚 */
+  creator?: { initial: string; title: string } | null;
 }) {
   const drag = useDraggableEvent(t.id);
   /* 未定时卡在限高可滚的区里（.allday-zone / .wun-cell）—— 拖出边界会被容器
@@ -336,6 +344,7 @@ export function TaskCard({
       </div>
       {/* 循环角标挂在**卡片层**（右上角、绝对定位），不进 .ev-body ——
           2026-10-25 用户：不要挤标题的位置。 */}
+      {creator && <CreatorTag initial={creator.initial} title={creator.title} />}
       <RepeatFlag t={t} corner />
     </>
   );
@@ -360,6 +369,7 @@ export function TaskCard({
         {...drag.listeners}
         onClick={onClick}
         data-id={t.id}
+        data-cal-color={calColor}
         title={title}
       >
         {inner}
@@ -391,6 +401,7 @@ export function TaskCard({
               : `translate3d(${drag.x}px, ${drag.y}px, 0px)`,
           }}
           data-id={t.id}
+          data-cal-color={calColor}
           aria-hidden="true"
         >
           {ghostInner}
@@ -410,7 +421,7 @@ export function TaskCard({
  * （之前 `height: 24` inline vs 日 20 vs 周 22 就是这么来的）。
  */
 export function UntimedCard({
-  t, title, lockX, style,
+  t, title, lockX, style, calColor, creator,
 }: {
   t: Task;
   title: string;
@@ -418,6 +429,8 @@ export function UntimedCard({
   lockX?: boolean;
   /** 预留：联动 C 落地（P1-3）后由 JS 写高度；现在不传 */
   style?: CSSProperties;
+  calColor?: CalColorKey;
+  creator?: { initial: string; title: string } | null;
 }) {
   return (
     <TaskCard
@@ -431,6 +444,8 @@ export function UntimedCard({
       title={title}
       resizable={false}
       lockX={lockX}
+      calColor={calColor}
+      creator={creator}
     />
   );
 }
@@ -440,7 +455,7 @@ export function UntimedCard({
  * 再交给共用的 `TaskCard` 渲染。
  */
 export function TimedCard({
-  e, isToday, nowMin, win, boxH, lockX,
+  e, isToday, nowMin, win, boxH, lockX, calColor, creator,
 }: {
   e: LayoutEvent;
   isToday: boolean;
@@ -449,6 +464,8 @@ export function TimedCard({
   /** 时间轴实测高（useTimelineMetrics/useElementHeight）。0 = 还没量到，退回旧百分比判据 */
   boxH?: number;
   lockX?: boolean;
+  calColor?: CalColorKey;
+  creator?: { initial: string; title: string } | null;
 }) {
   const t = e.item;
   /* 纵向一律走**百分比**：时间轴高度由容器决定（锁单屏），写死 px 会在
@@ -556,6 +573,8 @@ export function TimedCard({
          但**比把手还窄的卡不给**（2026-10-20 用户要求）—— 见上面的 canResize。 */
       resizable={canResize}
       lockX={lockX}
+      calColor={calColor}
+      creator={creator}
     />
   );
 }
@@ -571,7 +590,7 @@ export function TimedCard({
  * 不走 `TaskCard` 主体那套 `.ev-body`：那是纵向两行的卡片语言，月格是单行文字行，
  * 硬套会把 `text-overflow: clip`（窄屏多看一个字）与 45px 整字宽量坏。
  */
-export function CompactCard({ t, moreSuffix, moreJumpDay }: {
+export function CompactCard({ t, moreSuffix, moreJumpDay, calColor }: {
   t: Task; moreSuffix?: number;
   /**
    * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，去日视图看全"）。
@@ -579,6 +598,8 @@ export function CompactCard({ t, moreSuffix, moreJumpDay }: {
    * （2026-10-26 用户改；之前整条胶囊跳日视图，是 2026-10-19 的旧口径）。
    */
   moreJumpDay?: string;
+  /** 月视图也着色（集颜色不分宽度，用户 2026-10-28）；来源 tag 不在月视图画 */
+  calColor?: CalColorKey;
 }) {
   /* 月视图格子专用：拖到别的格子 → 改期（定时任务保时间，见 ui/dnd/timeline.ts）。
      落点计算全在那边，这里只把 dnd-kit 的拖拽柄接上。 */
@@ -619,6 +640,7 @@ export function CompactCard({ t, moreSuffix, moreJumpDay }: {
         {...drag.attributes}
         {...drag.listeners}
         data-id={t.id}
+        data-cal-color={calColor}
         data-untimed={t.time ? undefined : '1'}
         title={t.time ? t.title + '　' + t.time : t.title}
       >
@@ -636,6 +658,7 @@ export function CompactCard({ t, moreSuffix, moreJumpDay }: {
             zIndex: 90, pointerEvents: 'none', transform: drag.style.transform,
           }}
           data-id={t.id}
+          data-cal-color={calColor}
           aria-hidden="true"
         >
           {inner}

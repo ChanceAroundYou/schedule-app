@@ -31,6 +31,7 @@ function stateWith(projects: Project[] = [], tasks: Task[] = []): LocalState {
     ui: normalizeUi(undefined),
     lastError: null, clockBlocked: [], denied: 0, deniedCals: [],
     conflicts: [], syncing: false,
+    users: {}, meId: null,
   };
 }
 

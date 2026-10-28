@@ -20,6 +20,7 @@ type Mode = 'login' | 'register';
 export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -38,13 +39,16 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
     if (busy) return;
     const n = name.trim();
     if (n.length < 2) { setErr('用户名至少 2 个字'); return; }
+    const nk = nickname.trim();
+    // 和服务器 `auth.nicknameProblem` 同一句话：超过就别多发一趟请求
+    if (register && nk.length > 20) { setErr('昵称最长 20 字'); return; }
     if (register && password.length < 6) { setErr('密码至少 6 位'); return; }
     if (!password) { setErr('请输入密码'); return; }
 
     setBusy(true);
     setErr(null);
     try {
-      const r = register ? await api.register(n, password) : await api.login(n, password);
+      const r = register ? await api.register(n, password, nk) : await api.login(n, password);
       setToken(r.token);
       onAuthed(r.user);
     } catch (e2) {
@@ -88,6 +92,22 @@ export function Auth({ onAuthed }: { onAuthed: (u: PublicUser) => void }) {
           autoCapitalize="none"
           spellCheck={false}
         />
+
+        {/* 昵称只在注册时出现：它是可选的，登录那一屏不该多一行问这个。
+            注册完还能在「设置 → 安全」里改，所以这里不问第二遍。 */}
+        {register && (
+          <>
+            <label htmlFor={fid + '-nick'} className="auth-label mb-1 block text-[12.5px]">昵称（可不填）</label>
+            <Input
+              id={fid + '-nick'}
+              className="auth-input mb-3 bg-transparent"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder={name || '显示给别人看的名字'}
+              autoComplete="nickname"
+            />
+          </>
+        )}
 
         <label htmlFor={fid + '-pwd'} className="auth-label mb-1 block text-[12.5px]">密码</label>
         <Input

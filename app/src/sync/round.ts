@@ -32,6 +32,7 @@ async function round(forceSnapshot: boolean): Promise<boolean> {
   // 集与邀请每次都带回来，轮询顺带发现「有人邀请我」「我被移出了某个集」
   store.setCals(res.cals);
   store.setInvites(res.invites);
+  store.setUsers(res.users);
 
   // 快照与增量走同一条合并路径，见 store.applyRemote 的注释
   if (res.snapshot) store.applyRemote(store.flattenSnapshot(res.snapshot));

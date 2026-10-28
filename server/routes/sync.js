@@ -45,6 +45,7 @@ module.exports = {
         ...state, applied, rejected,
         cals: calendars.listMine(userId),
         invites: invites.listFor(userId),
+        users: calendars.directory(userId),
       },
     };
   },
