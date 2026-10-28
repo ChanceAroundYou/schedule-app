@@ -159,16 +159,28 @@ say "4/6 传到远端临时目录"
 #   · 本地尽力 chmod（CIFS 上可能是空操作，所以只当 best effort）
 #   · 打包时强制写进归档头（`--mode`，解包端照这个建）
 #   · 解包后再 chmod 一次 + 数一遍文件数（少文件 = 解包被截断，当场报）
+#
+# ⚠️ **先在本地盘暂存一份再打包**（2026-10-28）：刚 `npm run build` 写完的那几个大文件
+# 还压在 CIFS 的写回缓存里，tar 直接在工程目录里读它会报
+# `tar: ./assets/index-xxxx.js: file changed as we read it`（tar 退出码 1），
+# `pipefail` 让整条管道死在打包这一步 —— 生产没动，远端 `web.new` 却留了一份半成品。
+# 与 `publish-server.sh` 同一套办法：cp 到 /tmp 再打包，只读本地那一份。
+STAGE=/tmp/schedule-web-stage
 chmod -R u+rwX dist 2>/dev/null || true
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+cp -a dist/. "$STAGE/"
+chmod -R u+rwX "$STAGE" 2>/dev/null || true
 "$SSH" "$SSH_HOST" "rm -rf $REMOTE_WEB.new && mkdir -p $REMOTE_WEB.new"
-LOCAL_N="$(find dist -type f | wc -l | tr -d ' ')"
-tar -czf - -C dist --mode='u+rwX,go+rX' . \
+LOCAL_N="$(find "$STAGE" -type f | wc -l | tr -d ' ')"
+tar -czf - -C "$STAGE" --mode='u+rwX,go+rX' . \
   | "$SSH" "$SSH_HOST" "set -e
 tar -xzf - -C $REMOTE_WEB.new
 chmod -R u+rwX,go+rX $REMOTE_WEB.new
 N=\$(find $REMOTE_WEB.new -type f | wc -l)
 [ \"\$N\" = \"$LOCAL_N\" ] || { echo \"    !! 解包后只有 \$N 个文件，本地是 $LOCAL_N 个\" >&2; exit 1; }
 echo '    解包 ok（'\$N' 个文件，模式已归一成 u+rwX,go+rX）'"
+rm -rf "$STAGE"
 
 # ---------------------------------------------------------------- 备份 + 切换
 say "5/6 备份现有版本 → 切换"
