@@ -9,6 +9,7 @@ import { CHROME, makePorts, ensureDist } from './lib/probe-env.mjs';
 import { connect, evalJs, waitFor, dumpPage, touch } from './lib/cdp.mjs';
 import { serveDist } from './lib/server.mjs';
 import { failures, ok } from './lib/probe-assert.mjs';
+import { registerUser, firstCal, inviteAndAccept, pushTasks, loginInPage, nudgeSync, repeatNone, repeatWeek } from './lib/seed.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = process.env.DIST ? path.resolve(process.env.DIST) : path.join(ROOT, 'dist');
@@ -90,17 +91,11 @@ try {
   try { await waitFor(page, `!!document.querySelector('#root')`, '应用外壳挂上'); }
   catch (e) { await dumpPage(page); throw e; }
 
-  const reg = await evalJs(page, `
-    const r = await fetch('/api/auth/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: '几何探针', password: 'geom-pw-123' }),
-    });
-    const j = await r.json();
-    localStorage.setItem('schedule-app-token', j.token);
-    localStorage.setItem('schedule-app-user', JSON.stringify(j.user));
-    return { ok: r.ok, cal: j.user && j.user.name };
-  `);
-  if (!reg || !reg.ok) throw new Error('注册失败：' + JSON.stringify(reg));
+  /* 账户从 Node 侧开（`lib/seed`），再把登录态塞进 localStorage ——
+     为什么不在浏览器里造数据，见 seed.mjs 顶上那段。塞完必须再导航一次，
+     应用才会在启动时读到它。 */
+  const probeUser = await registerUser(API_PORT, { name: '几何探针', password: 'geom-pw-123' });
+  await loginInPage(page, probeUser);
 
   await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
   await waitFor(page, `!!document.querySelector('[data-nav="calendar"]')`, '登录后的外壳（有导航）', 15000);
@@ -123,105 +118,54 @@ try {
   const SEED_FOREIGN_TIMED = [
     { id: 't_geom_foreign_timed', time: '22:00', duration: 90, title: '别人建的定时任务' },
   ];
-  const REPEAT_NONE = { unit: 'none', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
-  const REPEAT_WEEK = { unit: 'week', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
   /* 「别人建的」那批（第八节量的就是它们）：来源 tag 只在**别人建**的任务上出现
-     （createdBy 由服务端在创建时钉死，客户端 op 改不动），所以第四节的种子是
+     （createdBy 由服务端在创建时钉死，客户端 op 改不动），所以种子是
      「另一个账号建在另一个集里」的任务。标题特意起得长：重叠就发生在
      「标题长到顶到卡片右沿」的那张卡上。
-     ⚠️ 超长那条是「墨迹不许压在角标上」这条断言的**证人**：短标题根本走不到
+     ⚠️ 超长那条是「长标题真的从角标底下穿过去」这条断言的**证人**：短标题根本走不到
      角标那一段，断言会空过（上一轮量到的越界全是负数 = 其实什么都没测到）。
      44 个字 × 12.5px ≈ 550 > 331 可用宽 → 一定被裁在右沿上。 */
   const SEED_FOREIGN = [
-    { id: 't_geom_foreign_long', title: '别人建的长标题任务要顶到卡片右沿看会不会撞上角标', time: null, duration: null, repeat: REPEAT_NONE },
-    { id: 't_geom_foreign_verylong', title: '别人建的超长标题任务要一路顶到右沿好看看是文字让步还是角标让步', time: null, duration: null, repeat: REPEAT_NONE },
-    { id: 't_geom_foreign_rep', title: '别人建的重复任务', time: null, duration: null, repeat: REPEAT_WEEK },
-    ...SEED_FOREIGN_TIMED.map((r) => ({ ...r, repeat: REPEAT_NONE })),
+    { id: 't_geom_foreign_long', title: '别人建的长标题任务要顶到卡片右沿看会不会撞上角标', time: null, duration: null, repeat: repeatNone() },
+    { id: 't_geom_foreign_verylong', title: '别人建的超长标题任务要一路顶到右沿好看看是文字让步还是角标让步', time: null, duration: null, repeat: repeatNone() },
+    { id: 't_geom_foreign_rep', title: '别人建的重复任务', time: null, duration: null, repeat: repeatWeek() },
+    ...SEED_FOREIGN_TIMED.map((r) => ({ ...r, repeat: repeatNone() })),
   ];
   const DUR = Object.fromEntries([...SEED_TIMED, ...SEED_FOREIGN_TIMED].map((r) => [r.id, r.duration]));
-  const seed = await evalJs(page, `
-    const tok = localStorage.getItem('schedule-app-token');
-    const me = await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + tok } })).json();
-    const cal = me.cals[0];
-    const d = new Date();
-    const p2 = (n) => (n < 10 ? '0' + n : '' + n);
-    const today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-    const none = { unit: 'none', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null };
-    const rows = [
-      ...${JSON.stringify(SEED_TIMED)},
-      ...Array.from({ length: 25 }, (_, i) => (
-        { id: 't_geom_untimed_' + i, time: null, duration: null, title: '未定时刻' + (i + 1) }
-      )),
-    ];
-    const ts = Date.now();
-    const ops = [];
-    for (const row of rows) {
-      const fields = {
-        title: row.title, date: today, time: row.time, duration: row.duration,
-        done: false, doneAt: null, repeat: none, seriesId: null, reminder: null, note: '',
-      };
-      for (const f of Object.keys(fields)) {
-        ops.push({ opId: 'op-' + row.id + '-' + f, deviceId: 'geom-probe', ts,
-                   entity: 'task', entityId: row.id, calId: cal.id, fields: { [f]: fields[f] } });
-      }
-    }
-    const r = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-      body: JSON.stringify({ cursor: 1, ops }),
-    });
-    const j = await r.json();
-    return { calId: cal.id, calName: cal.name, today, accepted: (j.applied || []).length, rejected: j.rejected || [] };
-  `);
-  if (!seed || seed.accepted < 22) throw new Error('造任务失败：' + JSON.stringify(seed));
+  /* 造自己的那批：开账户、拿默认集、拆字段 op、推 /api/sync 全走 `lib/seed` ——
+     字段表和「今天」的算法只在那儿有一份（原先这段写在注入浏览器的模板里，
+     与 browser-cards 那份是两份拷贝，改一边不会同步另一边）。 */
+  const cal = await firstCal(API_PORT, probeUser.token);
+  const UNTIMED = Array.from({ length: 25 }, (_, i) => (
+    { id: 't_geom_untimed_' + i, time: null, duration: null, title: '未定时刻' + (i + 1) }
+  ));
+  const seed = await pushTasks(API_PORT, {
+    token: probeUser.token, calId: cal.id, deviceId: 'geom-probe',
+    rows: [...SEED_TIMED, ...UNTIMED],
+  });
+  if (seed.applied !== seed.ops) throw new Error('造任务没全落库：' + JSON.stringify(seed));
   console.log('  已造任务：定时 ' + SEED_TIMED.map((r) => r.duration).join('/') + ' 分钟各一条'
-    + ' + 未定 25 条（' + seed.today + '，日程集「' + seed.calName + '」）');
+    + ' + 未定 25 条（' + seed.date + '，日程集「' + cal.name + '」，' + seed.applied + ' 个字段）');
 
   /* ── 再造「别人建的」任务：来源 tag 只在**别人建**的任务上出现（createdBy 由服务端
      在创建时钉死，客户端 op 改不动），所以必须真开第二个账号、真邀请、真接受。
      第八节（右上角那两枚角标）量的就是这批卡，种子在上面的 SEED_FOREIGN。 */
-  const foreign = await evalJs(page, `
-    const post = (path, body, tok) => fetch('/api' + path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json',
-        ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
-      body: JSON.stringify(body),
-    }).then((r) => r.json().then((j) => ({ status: r.status, j })));
-    const me = await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') } })).json();
-    const mine = me.cals[0];
-    const other = await post('/auth/register', { name: '来源探针', password: 'foreign-pw-123' });
-    if (other.status !== 200) return { skip: '第二个账号注册失败：' + other.status };
-    const otherTok = other.j.token;
-    const otherCal = (await (await fetch('/api/me', { headers: { Authorization: 'Bearer ' + otherTok } })).json()).cals[0];
-    const inv = await post('/cals/' + otherCal.id + '/invites', { name: me.user.name, role: 'editor' }, otherTok);
-    if (inv.status !== 200) return { skip: '邀请失败：' + inv.status };
-    const acc = await post('/invites/' + inv.j.invite.id + '/accept', {}, localStorage.getItem('schedule-app-token'));
-    if (acc.status !== 200) return { skip: '接受邀请失败：' + acc.status };
-    const d = new Date();
-    const p2 = (n) => (n < 10 ? '0' + n : '' + n);
-    const today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-    const rows = ${JSON.stringify(SEED_FOREIGN)};
-    const ts = Date.now();
-    const ops = [];
-    for (const row of rows) {
-      const fields = { title: row.title, date: today, time: row.time, duration: row.duration,
-                       done: false, doneAt: null, repeat: row.repeat,
-                       seriesId: row.repeat.unit === 'none' ? null : row.id, repeatSeq: 0, reminder: null, note: '' };
-      for (const f of Object.keys(fields)) {
-        ops.push({ opId: 'opfx-' + row.id + '-' + f, deviceId: 'foreign-probe', ts,
-                   entity: 'task', entityId: row.id, calId: otherCal.id, fields: { [f]: fields[f] } });
-      }
-    }
-    const pushed = await post('/sync', { cursor: 1, ops }, otherTok);
-    return { calId: otherCal.id, calName: otherCal.name, otherName: other.j.user.name,
-             applied: (pushed.j.applied || []).length, rejected: pushed.j.rejected || [] };
-  `);
-  if (foreign.skip) throw new Error('造「别人建的」任务失败：' + JSON.stringify(foreign));
-  console.log('  已造「别人建的」任务：' + foreign.calName + '（' + foreign.otherName + ' 建）里 '
+  const other = await registerUser(API_PORT, { name: '来源探针', password: 'foreign-pw-123' });
+  const otherCal = await firstCal(API_PORT, other.token);
+  await inviteAndAccept(API_PORT, {
+    calId: otherCal.id, name: probeUser.user.name, role: 'editor',
+    ownerToken: other.token, joinerToken: probeUser.token,
+  });
+  const foreign = await pushTasks(API_PORT, {
+    token: other.token, calId: otherCal.id, deviceId: 'foreign-probe',
+    rows: SEED_FOREIGN, opPrefix: 'opfx',
+  });
+  console.log('  已造「别人建的」任务：' + otherCal.name + '（' + other.user.name + ' 建）里 '
     + foreign.applied + ' 个字段落库（长标题 / 重复 / 定时各一条）');
 
   /* 催同步引擎拉一趟（它平时 15 秒一轮，窗口重获焦点时立刻跑）：不催就得干等，
      而且「本地副本落盘」那条等待会等到超时 */
-  await evalJs(page, `window.dispatchEvent(new Event('focus')); return true;`);
+  await nudgeSync(page);
   /* 本地副本要等一次同步落盘才存在（persist 有 250ms 防抖，而接受邀请后客户端
      还得多拉一趟快照才知道自己进了新集）—— 立刻读会拿到 null */
   try {

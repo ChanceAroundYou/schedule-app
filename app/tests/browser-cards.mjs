@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHROME } from './lib/probe-env.mjs';
+import { registerUser, firstCal, pushTasks, loginInPage, nudgeSync } from './lib/seed.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = path.join(ROOT, 'dist');
@@ -226,20 +227,13 @@ try {
     throw e;
   }
 
-  /* 注册一个账户并直接写进 localStorage（等价于登录成功后的状态）。
+  /* 注册一个账户、把登录态写进 localStorage（等价于登录成功后的状态）。
      走接口而不是点界面：这个探针要盯的是**版面**，不是注册流程
-     —— 注册流程由 browser-smoke 覆盖，这里少一步就少一处会坏的地方。 */
-  const reg = await evalJs(page, `
-    const r = await fetch('/api/auth/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: '版面探针', password: 'cards-pw-123' }),
-    });
-    const j = await r.json();
-    localStorage.setItem('schedule-app-token', j.token);
-    localStorage.setItem('schedule-app-user', JSON.stringify(j.user));
-    return { ok: r.ok, name: j.user && j.user.name };
-  `);
-  if (!reg || !reg.ok) throw new Error('注册失败：' + JSON.stringify(reg));
+     —— 注册流程由 browser-smoke 覆盖，这里少一步就少一处会坏的地方。
+     账户在 Node 侧开（`lib/seed`）：造数据不需要浏览器，写在浏览器里只是让同一段
+     逻辑以字符串形态存在一份、在 card-geometry 里再存在一份。 */
+  const probeUser = await registerUser(API_PORT, { name: '版面探针', password: 'cards-pw-123' });
+  await loginInPage(page, probeUser);
 
   await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
   await waitFor(page, `!!document.querySelector('[data-nav="inbox"]')`,
@@ -250,52 +244,27 @@ try {
      账户刚注册时默认日程集还在同步路上，落在那个窗口里建任务是会丢的
      （实测「输入框被清空、列表里没有、服务端也没有」）。这里要盯的是**版面**，
      造数据这一步越确定越好 —— 快速添加的行为由 browser-smoke 覆盖。 */
-  const seed = await evalJs(page, `
-    const me = await (await fetch('/api/me', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token') },
-    })).json();
-    const cal = me.cals[0];
-    const d = new Date();
-    const p2 = (n) => (n < 10 ? '0' + n : '' + n);
-    const today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-    const id = 't_cards_probe';
-    const ts = Date.now();
-    const fields = {
-      title: '卡片版面探针', date: today, time: null, duration: null,
-      done: false, doneAt: null,
-      repeat: { unit: 'none', n: 1, weekdays: [], monthday: 1, yearMonth: 1, end: null },
-      seriesId: null, reminder: null, note: '',
-    };
-    const ops = Object.keys(fields).map((f) => ({
-      opId: 'op-' + f, deviceId: 'cards-probe', ts, entity: 'task',
-      entityId: id, calId: cal.id, fields: { [f]: fields[f] },
-    }));
-    const r = await fetch('/api/sync', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + localStorage.getItem('schedule-app-token'),
-      },
-      body: JSON.stringify({ cursor: 1, ops }),
-    });
-    const j = await r.json();
-    return {
-      calName: cal.name, calId: cal.id, today,
-      accepted: (j.applied || []).length, rejected: j.rejected || [],
-    };
-  `);
-  if (!seed || !seed.accepted) {
-    throw new Error('造任务失败：' + JSON.stringify(seed));
-  }
-  console.log('  已造任务（' + seed.today + '，日程集「' + seed.calName + '」）');
+  const cal = await firstCal(API_PORT, probeUser.token);
+  const seed = await pushTasks(API_PORT, {
+    token: probeUser.token, calId: cal.id, deviceId: 'cards-probe',
+    rows: [{ id: 't_cards_probe', title: '卡片版面探针', time: null, duration: null }],
+  });
+  console.log('  已造任务（' + seed.date + '，日程集「' + cal.name + '」，' + seed.applied + ' 个字段）');
+
+  /* 等本地副本落盘之后再动它 —— 下面那段是往这份副本上写，它还不存在就是 null。
+     造数据挪到 Node 侧（lib/seed）之前不会撞这一条：那会儿造数据在浏览器里跑，
+     耗的那一会儿应用已经把副本存下来了；现在快了一个来回，必须显式等。
+     催一下同步引擎（它平时 15 秒一轮，窗口重获焦点时立刻跑），别干等。 */
+  await nudgeSync(page);
+  await waitFor(page, `!!localStorage.getItem('schedule-app-v4')`, '本地副本落盘', 20000);
 
   /* 新账户的 ui.cal / ui.cals 是空的（App 不会自动勾上一个集），
      于是列表全是空的。探针自己把它指到刚建任务的那个集上 —— 这一步是
      **环境准备**，不是被测行为。 */
   await evalJs(page, `
     const st = JSON.parse(localStorage.getItem('schedule-app-v4'));
-    st.ui.cal = ${JSON.stringify(seed.calId)};
-    st.ui.cals = [${JSON.stringify(seed.calId)}];
+    st.ui.cal = ${JSON.stringify(cal.id)};
+    st.ui.cals = [${JSON.stringify(cal.id)}];
     st.ui.nav = 'today';
     localStorage.setItem('schedule-app-v4', JSON.stringify(st));
     return true;

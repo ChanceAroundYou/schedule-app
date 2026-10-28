@@ -102,6 +102,7 @@ import { serveDist as _serveDist } from './lib/server.mjs';
 const serveDist = (wp) => _serveDist({ webPort: wp, apiPort: API_PORT, dist: DIST, mime: MIME, listenFree });
 
 import * as CDP from './lib/cdp.mjs';
+import { apiCall } from './lib/seed.mjs';
 const { cdpTargets, connect, evalJs, waitFor, dumpPage, clickEl, touch, key, quickAdd, waitGone, TOUCH_DRAG_DELAY } = CDP;
 
 /* ------------------------------------------------------------ 主流程 */
@@ -323,15 +324,9 @@ try {
        静态服务的句柄（第十三节要关掉再重开）、以及可变端口。
        `web` 用 getter/setter 包一层 —— 第十三节重开静态服务后换的是**主文件里
        那个变量**，直接传值只会改到 section 自己的副本，主文件的清理就漏了。 */
-    api: async (method, p, body, token) => {
-      const headers = {};
-      if (token) headers.Authorization = 'Bearer ' + token;
-      if (body !== undefined) headers['Content-Type'] = 'application/json';
-      const r = await fetch(`http://127.0.0.1:${API_PORT}/api${p}`, {
-        method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      return { status: r.status, body: await r.json().catch(() => null) };
-    },
+    /* 后端 API 小工具（几节都在用）：本体在 lib/seed.mjs（探针造数据的公共层），
+       这里只把端口填进去。原来这份是就地写的，与两个卡片探针里的 fetch 是三份拷贝。 */
+    api: (method, p, body, token) => apiCall(API_PORT, method, p, { body, token }),
     serveDist, procs,
     /* 两节（导航拖拽 / 设置页调序）共用的小包装：8 秒超时的 waitFor。
        原先定义在同一个函数体里，拆开后 23 节读不到 22 节里的那个局部 const。 */

@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf ../dist",
-    "test": "node --disable-warning=ExperimentalWarning --test src/domain/*.test.ts src/data/*.test.ts src/sync/*.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test src/domain/*.test.ts src/data/*.test.ts src/sync/*.test.ts tests/lib/*.test.mjs",
     "e2e": "node tests/live-check.mjs"
   },
   "dependencies": {
