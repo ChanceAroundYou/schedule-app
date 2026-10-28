@@ -35,11 +35,11 @@ function seed(n: number): string[] {
 async function oneRound(
   respond: (index: number) => Record<string, unknown> | undefined,
   forceSnapshot = false,
-): Promise<{ progressed: boolean; calls: ReturnType<typeof fakeFetch>['calls'] }> {
+): Promise<{ progressed: boolean; truncated: boolean; calls: ReturnType<typeof fakeFetch>['calls'] }> {
   const f = fakeFetch((_c, i) => respond(i));
   try {
-    const progressed = await round(forceSnapshot);
-    return { progressed, calls: f.calls };
+    const r = await round(forceSnapshot);
+    return { ...r, calls: f.calls };
   } finally { f.restore(); }
 }
 
@@ -193,4 +193,20 @@ test('「这一轮有没有推进」三件事都算：发件箱变短、收到�
   freshStore();
   r = await oneRound(() => idleSync(1), false);
   assert.equal(r.progressed, false, '既没推走什么也没拉到 → 别空转（syncNow 就此收工）');
+});
+
+/**
+ * `truncated` 要**照原样递出去**：服务端一次最多回吐 MAX_PULL 条（`server/lib/sync.js`），
+ * 回满就标 truncated、并把游标停在最后一批的最后一条。
+ * 这一路一旦在 `round` 这里被丢掉，`syncNow` 就看不出「还有下文」——
+ * 剩下的变更要等到下一次触发，而界面上看不出少了东西。
+ */
+test('服务端标了 truncated 就递出去（没标就是 false）', async () => {
+  freshStore();
+  const r1 = await oneRound(() => ({ ...idleSync(1), changes: [], truncated: true }), false);
+  assert.equal(r1.truncated, true, '「这批没给完」是服务端说的，客户端不许把它抹掉');
+
+  freshStore();
+  const r2 = await oneRound(() => idleSync(1), false);
+  assert.equal(r2.truncated, false, '没标就是「拉完了」（不许凭空挂着下文）');
 });

@@ -8,7 +8,7 @@ const OPS_PER_CALL = 500;
 const MAX_ROUNDS = 8;
 /** 本地改动后攒一会儿再推，连续操作只发一次 */
 const PUSH_DEBOUNCE_MS = 1200;
-/** 兜底轮询：只在 outbox 非空时才真的发请求 */
+/** 兜底轮询：outbox 非空、或上一趟被服务端截断（还有下文没拉完）时才真的发请求 */
 const POLL_MS = 15000;
 
 export { OPS_PER_CALL, MAX_ROUNDS, PUSH_DEBOUNCE_MS, POLL_MS };

@@ -3,7 +3,8 @@
  *
  * 这文件测的不是 `syncNow`（那是 syncNow.test.ts），是**触发它的那些东西**：
  *   本地改动 → 攒 1.2 秒再推（连续勾几条任务只发一次请求）
- *   15 秒的兜底轮询 → 只在发件箱非空时才真的发请求（开着 App 空转不该刷服务器）
+ *   15 秒的兜底轮询 → 只在发件箱非空、或上一趟被服务端截断（还有下文没拉完）时才真的发请求
+ *     （开着 App 空转不该刷服务器，但「远端还挂着下文」本身就该接着拉）
  *   断网重连 / 窗口聚焦 / 切回前台 → 各补一次
  *   页面藏起来时不补拉
  *   关页面前 flushPersist（攒着还没落盘的写入不能跟着页面一起没了）
@@ -21,6 +22,7 @@ import { fakeFetch, freshStore, signIn, CAL } from './testenv.ts';
 
 const store = await import('../data/store.ts');
 const { start, stop } = await import('./lifecycle.ts');
+const { syncNow, hasPullBacklog } = await import('./syncNow.ts');
 const { PUSH_DEBOUNCE_MS, POLL_MS } = await import('./constants.ts');
 const { KEY } = await import('../data/store/core.ts');
 
@@ -165,6 +167,38 @@ test('兜底轮询只在发件箱非空时才真的发请求（开着 App 空转
     pushTimers().forEach((t) => { t.cleared = true; });
     await fireTimers('interval');
     assert.equal(f.calls.length, 1, '有攒着的改动才去推（推完就清，下一趟又跳过）');
+  } finally { f.restore(); }
+});
+
+/**
+ * 上一趟被服务端截断（一次最多回吐 `MAX_PULL` 条变更）而本机压根没有待推的改动。
+ * 那种情况下这条轮询是**唯一还会接着拉的通道**：本地没改动 → 攒批定时器不会响；
+ * 界面无操作 → focus / online 事件也不会来。少这一句就等于远端压着的下文永远拉不到，
+ * 而界面上看不出少了东西。
+ */
+test('上一趟没拉完时，兜底轮询即使发件箱空着也照发（拉完就落回不发）', async () => {
+  freshStore(); signIn();
+
+  /* 先造出「还有下文」：让服务端每轮都回 truncated，syncNow 跑满轮数也拉不完。
+     走一趟真的把状态造出来，而不是去拨那个模块级标志 —— 后者私有，而且拨开就等于
+     默认「syncNow 会把它设对」这一条没测。 */
+  const trap = fakeFetch((_c, i) => ({ cursor: (i + 1) * 5000, applied: [], rejected: [], truncated: true }));
+  try { await syncNow(); } finally { trap.restore(); }
+  assert.equal(hasPullBacklog(), true, '前提：这一趟确实没拉完');
+  assert.equal(store.get().outbox.length, 0, '前提：本机也没有待推的改动（上一条测的就是这一种）');
+  const watermark = store.get().cursor;
+
+  const f = fakeFetch(() => ({ cursor: watermark + 1, applied: [], rejected: [] }));
+  try {
+    start();
+    await fireTimers('interval');
+    assert.equal(f.calls.length, 1, '发件箱空着也发 —— 有下文没拉完本身就值得发一次');
+    assert.equal((f.calls[0].body as { cursor: number }).cursor, watermark, '接着上一趟的水位往下拉，不是从头再来');
+    assert.equal(store.get().cursor, watermark + 1, '这一趟真拉到了（不是只发了个请求）');
+    assert.equal(hasPullBacklog(), false, '服务端没再标 truncated → 熄灭');
+
+    await fireTimers('interval');
+    assert.equal(f.calls.length, 1, '落回之后又回到「空着就不发」，不许从此每 15 秒空转');
   } finally { f.restore(); }
 });
 

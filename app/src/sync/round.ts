@@ -10,11 +10,20 @@ import { handleRejected } from './rejected.ts';
 import { OPS_PER_CALL } from './constants.ts';
 
 /**
- * 推 + 拉一轮。
+ * 推 + 拉一轮的结果。
  *
- * @returns 这一轮有没有推进（outbox 变短了，或者游标前进了）
+ * `truncated` 是**拉那一侧**的信号：服务端单次最多回吐 `MAX_PULL` 条变更
+ * （`server/lib/sync.js`），回满就说「还有下文」。它把游标停在**这一批的最后一条**
+ * （这是对的，不然中间那段永远拉不到），但得有人接着拉 —— 见 `syncNow.ts`。
  */
-async function round(forceSnapshot: boolean): Promise<boolean> {
+interface RoundResult {
+  /** 这一轮有没有推进（outbox 变短了，或者拉到了东西） */
+  progressed: boolean;
+  /** 服务端明说了「这批没给完」，下文还挂着 */
+  truncated: boolean;
+}
+
+async function round(forceSnapshot: boolean): Promise<RoundResult> {
   const s = store.get();
   const ops = s.outbox.slice(0, OPS_PER_CALL);
   const before = s.outbox.length;
@@ -49,7 +58,11 @@ async function round(forceSnapshot: boolean): Promise<boolean> {
   store.setCursor(Number(res.cursor) || 0);
   if (!store.get().clockBlocked.length) store.setError(null);
 
-  return store.get().outbox.length < before || (res.changes || []).length > 0;
+  return {
+    progressed: store.get().outbox.length < before || (res.changes || []).length > 0,
+    truncated: res.truncated === true,
+  };
 }
 
 export { round };
+export type { RoundResult };

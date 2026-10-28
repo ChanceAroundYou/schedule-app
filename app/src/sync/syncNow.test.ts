@@ -7,7 +7,10 @@
  *   并发调用 → 单飞（别打出两条请求）
  *   发现不认识的集 → 下一轮改成要全量快照
  *   推不动了（被时钟挡住）→ 就此收工，别把 MAX_ROUNDS 跑满
+ *   服务端标了 truncated（还有下文没拉完）→ 同一趟接着拉；用完 MAX_ROUNDS 还没拉完
+ *     就记进 `hasPullBacklog()`，让兜底轮询接着拉（见 lifecycle.test.ts）
  *   出错了 → 给用户一句话，并且把「正在同步」那个转圈停下（finally）
+ *   真断网 → 说「当前离线，改动先存在本机」，不是「连不上服务器」
  *
  *   cd app && npm test
  */
@@ -15,12 +18,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fakeFetch, freshStore, idleSync, signIn, signOut, CAL } from './testenv.ts';
+import { fakeFetch, freshStore, idleSync, signIn, signOut, setOnline, CAL } from './testenv.ts';
 
 const store = await import('../data/store.ts');
 const { getToken } = await import('../data/api.ts');
 const { setDragging } = await import('../ui/dragState.ts');
-const { syncNow } = await import('./syncNow.ts');
+const { syncNow, hasPullBacklog } = await import('./syncNow.ts');
 const { MAX_ROUNDS, OPS_PER_CALL } = await import('./constants.ts');
 
 const NEW_CAL = 'cal-2';
@@ -160,6 +163,53 @@ test('每轮都有新变更、op 又推不动时最多跑 ' + MAX_ROUNDS + ' 轮
   assert.equal(store.get().cursor, MAX_ROUNDS, '每一轮游标都在往前走（拉到了东西，只是推不出去）');
 });
 
+/**
+ * 服务端一次最多回吐 `MAX_PULL` 条变更（`server/lib/sync.js`），回满就标 `truncated`
+ * 并把游标停在最后一批的最后一条。下面三条测的是同一件事：
+ * **「拉那一侧还没完」不许被「推那一侧没事」掩盖掉** —— 本机没有待推的改动时，
+ * 老的收工判据（outbox 空了）第一轮就成立，剩下的下文要等下一次触发，
+ * 而界面上看不出少了那批任务。
+ */
+test('服务端说「这批没给完」就接着拉：本机一条要推的都没有也照样转满 ' + MAX_ROUNDS + ' 轮', async () => {
+  freshStore();
+  signIn();
+  const calls = await runOnce((i) => ({
+    cursor: (i + 1) * 5000,
+    applied: [],
+    rejected: [],
+    truncated: true,
+    changes: [{ entity: 'task', entityId: 'x' + i, calId: CAL, field: 'title', value: '别人一直在改', ts: i + 1, deviceId: 'other-dev' }],
+  }));
+
+  assert.equal(calls.length, MAX_ROUNDS, '发件箱本来就是空的 —— 只有 truncated 能让循环接着转');
+  assert.deepEqual(
+    calls.map((c) => (c.body as { cursor: number }).cursor),
+    Array.from({ length: MAX_ROUNDS }, (_, i) => i * 5000),
+    '每一轮都从上一批的最后一条接着往下要，不许从头再扫同一批',
+  );
+  assert.equal(hasPullBacklog(), true, '跑满轮数还挂着 truncated = 真没拉完，得有人记得这件事');
+});
+
+test('拉到「给完了」那一轮就收工，backlog 落回 false（不许凭空挂着下文）', async () => {
+  freshStore();
+  signIn();
+  const calls = await runOnce((i) => i === 0
+    ? { cursor: 5000, applied: [], rejected: [], truncated: true, changes: [{ entity: 'task', entityId: 'x0', calId: CAL, field: 'title', value: '别人的改动', ts: 1, deviceId: 'other-dev' }] }
+    : idleSync(5001));
+  assert.equal(calls.length, 2, '下文拉完就停，不必把 ' + MAX_ROUNDS + ' 轮跑满');
+  assert.equal(hasPullBacklog(), false, '服务端没再标 truncated → 这条得熄灭，否则轮询永远白拉');
+});
+
+test('中途出错（401）时不许挂着「还有下文」：那种情况该停，不该每 15 秒撞一次 401', async () => {
+  freshStore();
+  signIn();
+  seed(1);
+  await runOnce((i) => i === 0
+    ? { cursor: 5000, applied: [], rejected: [], truncated: true, changes: [{ entity: 'task', entityId: 'x0', calId: CAL, field: 'title', value: '别人的改动', ts: 1, deviceId: 'other-dev' }] }
+    : { __status: 401, error: 'Unauthorized' });
+  assert.equal(hasPullBacklog(), false, '出错那一趟留下的 truncated 不能算数（重新登录自然会拉）');
+});
+
 test('401：说「登录已过期」，并且把 token 清掉（免得后面每个请求都白跑一趟）', async () => {
   freshStore();
   signIn();
@@ -178,6 +228,36 @@ test('请求根本没发出去（真断网）：给用户一句话，转圈照�
   assert.equal(store.get().lastError, '连不上服务器');
   assert.equal(store.get().syncing, false);
   assert.equal(store.get().outbox.length, 1, '断网期间改动不丢');
+});
+
+/**
+ * 同一句失败，两种说法。上面那条用的是 Node 的默认情形（`navigator.onLine` 读不到，
+ * 也就是「不知道」）—— 这里补的是浏览器明确报告离线的那两种布尔。
+ * 用户要知道的区别是「东西安全地攒在本机、联网自动同步」还是「得去查服务器」。
+ */
+test('浏览器说「离线」时说「当前离线，改动先存在本机」；说「在线」时不许这么说', async () => {
+  freshStore();
+  signIn();
+  seed(1);
+  let restore = setOnline(false);
+  try {
+    await runOnce(() => ({ __throw: 'Failed to fetch' }));
+  } finally {
+    restore();   // 恢复得排在 await 之后：syncNow 里判离线的是那次 fetch，不是这句断言
+  }
+  assert.equal(store.get().lastError, '当前离线，改动先存在本机，联网后会自动同步');
+  assert.equal(store.get().outbox.length, 1, '这句话承诺的就是「改动还在」，所以改动真得还在');
+
+  freshStore();
+  signIn();
+  seed(1);
+  restore = setOnline(true);
+  try {
+    await runOnce(() => ({ __throw: 'Failed to fetch' }));
+  } finally {
+    restore();
+  }
+  assert.equal(store.get().lastError, '连不上服务器', '有网却够不着服务器 ≠ 离线，别让人去等联网');
 });
 
 test('跑成功也要把「正在同步」落回 false（顶栏那个转圈只认 state.syncing）', async () => {

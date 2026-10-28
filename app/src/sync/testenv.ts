@@ -34,6 +34,30 @@ export function installLocalStorage(): Map<string, string> {
 export const CAL = 'cal-1';
 export const ME = 'u1';
 
+/**
+ * 装上 `navigator.onLine`，返回「恢复原样」的函数。
+ *
+ * ⚠️ 必须显式装：Node 的全局 `navigator` 只有 `userAgent`，`onLine` 是 undefined。
+ * `helpers.ts` 判的是 `onLine === false`（「浏览器明确说离线」），所以
+ * **「断网时该说什么」这一档在 Node 里默认永远走不到** —— 不装就等于没测。
+ */
+export function setOnline(onLine: boolean): () => void {
+  const prev = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { onLine }, configurable: true, writable: true,
+  });
+  return () => {
+    if (prev) Object.defineProperty(globalThis, 'navigator', prev);
+    else delete (globalThis as Record<string, unknown>).navigator;
+  };
+}
+
+/** 同步版：装一段、跑完自动恢复（用例之间不许互相影响） */
+export function withOnline(onLine: boolean, fn: () => void): void {
+  const restore = setOnline(onLine);
+  try { fn(); } finally { restore(); }
+}
+
 /* 顺序要紧：`installLocalStorage()` 必须早于 store / token 的 import —— 用顶层 await 保证。
    （这两个模块在 import 时都不读 localStorage，但这条规矩一旦破就没人看得出来。） */
 installLocalStorage();
