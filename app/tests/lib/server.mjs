@@ -22,8 +22,15 @@ export async function serveDist({ webPort, apiPort, dist, mime, listenFree }) {
       }).catch(() => { res.writeHead(502); res.end('proxy failed'); });
       return;
     }
-    let p = path.join(dist, decodeURIComponent(req.url.split('?')[0]));
-    if (process.platform === 'win32' ? p.endsWith('\\') : p.endsWith('/')) p += 'index.html';
+    /* ⚠️ 先给 URL 补 index.html，**再** path.join（browser-cards.mjs 原先自己写着一条
+       注释强调的顺序）。反过来不行：Windows 上 path.join 会把结尾的 '/' 规范化成
+       '\\'，于是 `p.endsWith('/')` 判不出来，根路径直接 404 —— 探针在 Windows 上
+       表现为「页面空白」，在 Linux 上却好好的。
+       （顺带：上一轮改 browser-cards 时对比两份 serveDist 才发现这里顺序是反的，
+       已按那份的口径改正。） */
+    let rel = decodeURIComponent(req.url.split('?')[0]);
+    if (rel.endsWith('/')) rel += 'index.html';
+    const p = path.join(dist, rel);
     if (!p.startsWith(dist) || !existsSync(p) || statSync(p).isDirectory()) {
       res.writeHead(404); res.end('not found'); return;
     }

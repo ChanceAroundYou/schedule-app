@@ -25,19 +25,22 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync, mkdtempSync, rmSync } from 'node:fs';
-import net from 'node:net';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHROME } from './lib/probe-env.mjs';
+
+import { CHROME, makePorts, makeDataDir, cleanupDataDir, ensureDist } from './lib/probe-env.mjs';
+import { connect, evalJs, waitFor, dumpPage } from './lib/cdp.mjs';
+import { serveDist } from './lib/server.mjs';
 import { registerUser, firstCal, pushTasks, loginInPage, nudgeSync } from './lib/seed.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const DIST = path.join(ROOT, 'dist');
-/* Chrome 只从 lib/probe-env.mjs 拿 —— 那里已经做了「CHROME 环境变量 →
-   各平台常见位置」的探测。这里原来写死 Windows 路径，Linux / mac 上必然起不来。 */
+const DIST = process.env.DIST ? path.resolve(process.env.DIST) : path.join(ROOT, 'dist');
+/* 端口 / Chrome / 临时目录 / dist 是否要重建，全在 lib/probe-env.mjs；
+   CDP 连接与求值在 lib/cdp.mjs；静态服务 + /api 反代在 lib/server.mjs。
+   这三样原先在本文件里各有一份拷贝，与 browser-smoke / card-geometry 同尺寸 ——
+   改一处要记得改三处，正是最容易漏的那类（踩坑 29 那条「evalJs 要自己 return」
+   当年就是靠三份拷贝各自踩出来的）。 */
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -50,152 +53,41 @@ const ok = (cond, what) => {
   if (cond) console.log('  ok   ' + what);
   else { failures++; console.log('  FAIL ' + what); }
 };
-
-/* ------------------------------------------------------------------ 端口 */
-
-/** 让内核挑一个空闲端口（避免和同时跑的另一趟撞号） */
-function freePort() {
-  return new Promise((res) => {
-    const s = net.createServer();
-    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
-  });
-}
-
-/* ------------------------------------------------------ 静态服务 + 代理 */
-
-function serveDist(apiPort, webPort) {
-  const srv = createServer((req, res) => {
-    if (req.url.startsWith('/api/')) {
-      fetch(`http://127.0.0.1:${apiPort}${req.url}`, {
-        method: req.method,
-        headers: { ...req.headers, host: `127.0.0.1:${apiPort}` },
-        body: ['GET', 'HEAD'].includes(req.method) ? undefined : req,
-        duplex: 'half',
-      }).then(async (r) => {
-        res.writeHead(r.status, { 'content-type': r.headers.get('content-type') || 'application/json' });
-        res.end(Buffer.from(await r.arrayBuffer()));
-      }).catch(() => { res.writeHead(502); res.end('proxy failed'); });
-      return;
-    }
-    /* ⚠️ 先给 URL 补 index.html，再 path.join。反过来不行：
-       Windows 上 path.join 会把结尾的 '/' 规范化成 '\\'，
-       于是 `p.endsWith('/')` 判不出来，根路径直接 404。 */
-    let rel = decodeURIComponent(req.url.split('?')[0]);
-    if (rel.endsWith('/')) rel += 'index.html';
-    const p = path.join(DIST, rel);
-    if (!p.startsWith(DIST) || !existsSync(p) || statSync(p).isDirectory()) {
-      res.writeHead(404); res.end('not found'); return;
-    }
-    res.writeHead(200, { 'content-type': MIME[path.extname(p)] || 'application/octet-stream' });
-    createReadStream(p).pipe(res);
-  });
-  return new Promise((res) => srv.listen(webPort, '127.0.0.1', () => res(srv)));
-}
-
-/* ------------------------------------------------------------------ CDP */
-
-async function connect(url) {
-  const ws = new WebSocket(url);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-  let id = 0;
-  const waiting = new Map();
-  ws.onmessage = (m) => {
-    const msg = JSON.parse(m.data);
-    if (msg.id && waiting.has(msg.id)) {
-      const { res, rej } = waiting.get(msg.id);
-      waiting.delete(msg.id);
-      if (msg.error) rej(new Error(msg.error.message)); else res(msg.result);
-    }
-  };
-  const send = (method, params = {}) => new Promise((res, rej) => {
-    const n = ++id;
-    waiting.set(n, { res, rej });
-    ws.send(JSON.stringify({ id: n, method, params }));
-  });
-  return { send, close: () => ws.close() };
-}
-
-/** 在页面里求值（表达式要自己写 return） */
-async function evalJs(page, expr) {
-  const r = await page.send('Runtime.evaluate', {
-    expression: `(async () => { ${expr} })()`,
-    awaitPromise: true, returnByValue: true,
-  });
-  if (r.exceptionDetails) {
-    const d = r.exceptionDetails;
-    throw new Error((d.exception?.description || d.text) + ' :: ' + JSON.stringify(r.result?.value));
-  }
-  return r.result.value;
-}
-
-/** 页面没起来时把关键信息打出来 —— 不然只知道「等不到外壳」，不知道为啥 */
-async function dumpPage(page) {
-  try {
-    const info = await evalJs(page, `
-      return {
-        href: location.href,
-        readyState: document.readyState,
-        rootExists: !!document.querySelector('#root'),
-        rootChildren: (document.querySelector('#root') || {}).childElementCount || 0,
-        bodyLen: document.body ? document.body.innerHTML.length : -1,
-        head: document.body ? document.body.innerHTML.slice(0, 200) : '',
-        scripts: [...document.querySelectorAll('script')].map((s) => s.src),
-      };
-    `);
-    console.error('  [诊断] ' + JSON.stringify(info, null, 1));
-  } catch (e) {
-    console.error('  [诊断] 连求值都失败：' + e.message);
-  }
-}
-
-/** 等到表达式为真。**别让表达式以换行开头**（会被包成 `return\n…` 而断句） */
-async function waitFor(page, expr, what, ms = 8000) {
-  const src = expr.trim();
-  const t0 = Date.now();
-  let last;
-  while (Date.now() - t0 < ms) {
-    last = await evalJs(page, `return ${src};`);
-    if (last) return last;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`等不到「${what}」，最后一次求值 = ${JSON.stringify(last)}`);
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ------------------------------------------------------------ 主流程 */
 
-const dataDir = mkdtempSync(path.join(tmpdir(), 'sched-cards-'));
+const dataDir = makeDataDir();
 const procs = [];
 function track(p) { procs.push(p); return p; }
 function cleanup() {
   for (const p of procs) { try { p.kill('SIGKILL'); } catch (_) { /* 已经没了 */ } }
-  try { rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
-  catch (_) { /* /tmp 里留个目录无所谓 */ }
+  cleanupDataDir(dataDir);
 }
 process.on('exit', cleanup);
 
 let page = null;
 try {
-  if (!existsSync(path.join(DIST, 'index.html'))) {
-    throw new Error('dist/ 还没构建 —— 先 `npm run build`');
-  }
+  ensureDist(ROOT, DIST, path.join(ROOT, 'app'));
   if (!existsSync(CHROME)) {
     throw new Error('找不到 Chrome：' + CHROME + '（可用 CHROME 环境变量指定）');
   }
 
-  const API_PORT = await freePort();
-  const WEB_PORT = await freePort();
-  const CDP_PORT = await freePort();
+  const { api: API_PORT, web: WEB_PORT, cdp: CDP_PORT } = await makePorts();
 
   track(spawn(process.execPath, [path.join(ROOT, 'server/server.js')], {
     env: { ...process.env, PORT: String(API_PORT), SCHEDULE_DATA_DIR: dataDir },
     stdio: 'ignore',
   }));
-  const web = await serveDist(API_PORT, WEB_PORT);
+  const { srv: web } = await serveDist({
+    webPort: WEB_PORT, apiPort: API_PORT, dist: DIST, mime: MIME,
+    listenFree: (srv, port) => new Promise((res) => srv.listen(port, '127.0.0.1', () => res(port))),
+  });
   procs.push({ kill: () => { try { web.close(); } catch (_) { /* 已关 */ } } });
 
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${API_PORT}/api/health`)).ok) break; } catch (_) { /* 等 */ }
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
   }
 
   track(spawn(CHROME, [
@@ -223,7 +115,7 @@ try {
   try {
     await waitFor(page, `!!document.querySelector('#root')`, '应用外壳挂上');
   } catch (e) {
-    await dumpPage(page);
+    await dumpPage(page, '外壳');
     throw e;
   }
 

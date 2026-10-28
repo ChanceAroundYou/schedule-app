@@ -89,7 +89,7 @@ try {
   await page.send('Page.enable');
   await page.send('Page.navigate', { url: `http://127.0.0.1:${WEB_PORT}/` });
   try { await waitFor(page, `!!document.querySelector('#root')`, '应用外壳挂上'); }
-  catch (e) { await dumpPage(page); throw e; }
+  catch (e) { await dumpPage(page, '外壳'); throw e; }
 
   /* 账户从 Node 侧开（`lib/seed`），再把登录态塞进 localStorage ——
      为什么不在浏览器里造数据，见 seed.mjs 顶上那段。塞完必须再导航一次，

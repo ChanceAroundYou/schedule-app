@@ -63,23 +63,35 @@ export async function waitFor(page, expr, what, ms = 8000) {
 
 /* 探针中断时把**页面现状**打进日志。只报「等不到 .sidebar」的话，分不清是
    注册失败、页面空白还是后端挂了 —— 2026-10-24 为这类超时白查了好几轮，
-   就差这一眼。 */
-export async function dumpPage(page, label) {
+   就差这一眼。
+
+   字段是两趟探针合并出来的（browser-smoke 要「页面文字」，browser-cards 要
+   「#root 有没有子元素 / script 加载了哪几个」）—— 原先两边各写一份，
+   读的是同一个页面，报的却是两件事。 */
+export async function dumpPage(page, label = '现场') {
   try {
     const s = await evalJs(page, `
       return {
         url: location.href,
+        readyState: document.readyState,
         login: !!document.querySelector('form input'),
+        rootChildren: (document.querySelector('#root') || {}).childElementCount || 0,
+        bodyLen: document.body ? document.body.innerHTML.length : -1,
+        head: document.body ? document.body.innerHTML.slice(0, 200) : '',
+        scripts: [...document.querySelectorAll('script')].map((x) => x.src),
         text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300),
       };
     `);
-    console.error(`  [页面现状·${label}] url=${s.url} 还在登录页=${s.login}`);
+    console.error(`  [页面现状·${label}] url=${s.url} readyState=${s.readyState}`
+      + ` #root 子元素=${s.rootChildren} body 长度=${s.bodyLen} 还在登录页=${s.login}`);
+    console.error(`  [脚本] ${s.scripts.join(' , ') || '（一个都没加载）'}`);
     console.error(`  [页面文字] ${s.text}`);
+    if (s.head) console.error(`  [body 前 200 字] ${s.head}`);
     if (s.login) {
       console.error('  [提示] 注册没成功、页面留在登录页 —— 错在哪看上面的「页面文字」；'
         + 'dist 若是旧构建，ensureDist 会自动重建（也可手动 cd app && npm run build）');
     }
-  } catch (_) { /* 页面已经没了就算了，别盖掉原始错误 */ }
+  } catch (e) { console.error('  [诊断] 连求值都失败：' + e.message); /* 页面已经没了就算了，别盖掉原始错误 */ }
 }
 
 /**
