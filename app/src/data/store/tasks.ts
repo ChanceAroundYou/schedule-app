@@ -531,6 +531,14 @@ export function patchTask(id: string, fields: Partial<Task>): void {
   if ('date' in fields && !cur.time && !('order' in fields)) {
     next.order = nextOrder(state, (fields.date ?? null) as string | null);
   }
+  // 无日期 ⇒ 不允许重复：把 date 清成 null 时同步清空 repeat；patch 带 repeat 但当前无日期也丢弃
+  const nextDate = ('date' in fields ? (fields.date ?? null) : (cur.date ?? null)) as string | null;
+  if (nextDate === null) {
+    delete next.repeat;
+    next.repeat = toRepeat(null, null);
+  } else if ('repeat' in fields && !cur.date) {
+    delete next.repeat;
+  }
   commit('task', id, next);
   // 改了重复规则 → 先作废旧的「到此为止」，再重新补齐未来实例（幂等）
   if ('repeat' in fields) {

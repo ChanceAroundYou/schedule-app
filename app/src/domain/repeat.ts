@@ -44,6 +44,8 @@ export function emptyRepeat(date: string | null): RepeatRule {
 
 /** 把旧的字符串型 repeat 升级成对象（v3 之前的 'weekly' 之类） */
 export function toRepeat(old: unknown, date: string | null): RepeatRule {
+  // 无日期的任务不能重复：重复语义要求锚点日期。直接返回 none，忽略 old。
+  if (!date) return emptyRepeat(null);
   const r = emptyRepeat(date);
   if (!old) return r;
 

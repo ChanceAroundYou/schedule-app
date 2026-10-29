@@ -142,9 +142,10 @@ export function Drawer({ state, id, onClose, onPatch, onMoveToCal, onToggle, onD
               type="button"
               className={'rep-open' + (rep.unit !== 'none' ? ' on' : '')}
               aria-labelledby={fid + '-rep-l'}
-              onClick={() => setRepOpen(true)}
+              disabled={!task.date}
+              onClick={() => { if (task.date) setRepOpen(true); }}
             >
-              <span className={"rep-label"}>{repLabel}</span>
+              <span className={"rep-label"}>{task.date ? repLabel : '请先设置日期'}</span>
               {rep.unit !== 'none' && (
                 <span
                   className={"rep-x"}
