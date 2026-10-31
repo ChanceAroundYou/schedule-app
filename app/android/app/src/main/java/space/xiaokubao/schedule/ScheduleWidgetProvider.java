@@ -1,5 +1,7 @@
 package space.xiaokubao.schedule;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.Context;
@@ -62,6 +64,8 @@ import java.util.Locale;
  */
 public class ScheduleWidgetProvider extends AppWidgetProvider {
 
+    private static final String TAG = "ScheduleWidget";
+
     static final String ACTION_PICK_DAY = "space.xiaokubao.schedule.PICK_DAY";
     /** 左右箭头：按**周**翻（delta 单位是周，不是月） */
     static final String ACTION_WEEK = "space.xiaokubao.schedule.WEEK";
@@ -71,6 +75,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     static final String ACTION_SETTINGS = "space.xiaokubao.schedule.SETTINGS";
     /** 点左上角标识 = 回到今天 */
     static final String ACTION_TODAY = "space.xiaokubao.schedule.TODAY";
+
+    /**
+     * 每天 0:05 自动重画一次（2026-10-31 加）。
+     *
+     * 跨天时日期必须自己翻页 —— 不能指望 updatePeriodMillis（Android 12+ 是
+     * 不精确闹钟，ColorOS 还会更懒，可能推迟几小时）。这里用 setAndAllowWhileIdle
+     * 排一条一次性闹钟，触发时 refresh + 自己续明天。晚到几分钟无所谓：重画的
+     * 「今天」是实时算的（见 render），只要触发那一刻日期已经翻过去就对。
+     *
+     * 只重画、不联网 —— 任务/打卡内容仍以 App 推来的快照为准（本次只修日期显示）。
+     */
+    static final String ACTION_DAILY = "space.xiaokubao.schedule.WDG_DAILY";
+    private static final int DAILY_HOUR = 0;
+    private static final int DAILY_MINUTE = 5;
 
     static final String EXTRA_DAY = "day";
     static final String EXTRA_DELTA = "delta";
@@ -97,8 +115,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     @Override
+    public void onDisabled(Context c) {
+        super.onDisabled(c);
+        // 桌面上最后一个实例被移除 → 没东西可画了，撤掉换日闹钟
+        cancelDaily(c);
+    }
+
+    @Override
     public void onReceive(Context c, Intent intent) {
         final String a = intent.getAction();
+        if (ACTION_DAILY.equals(a)) {
+            // 每天换日：重画一次（doRefresh 里会顺手把明天的闹钟续上），然后收工
+            refresh(c);
+            return;
+        }
         if (ACTION_PICK_DAY.equals(a)) {
             WidgetPrefs.setSelectedDay(c, intent.getStringExtra(EXTRA_DAY));
         } else if (ACTION_TODAY.equals(a)) {
@@ -194,6 +224,50 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         WidgetSnapshot snap = WidgetPrefs.snapshot(c);
         String day = WidgetPrefs.selectedDay(c);
         for (int id : ids) render(c, mgr, id, snap, day);
+        // 每次刷新都（幂等）续一条明天的换日闹钟。开机/重启后由 ReminderReceiver 补排。
+        scheduleDaily(c);
+    }
+
+    /* ======================= 每日换日闹钟 ======================= */
+
+    /** 排下一条「过 0 点重画」闹钟。一次性 + 每次触发自己续，避免 setRepeating 在 Doze 下漂移。 */
+    static void scheduleDaily(Context c) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextDailyAt(), dailyIntent(c));
+        } catch (Exception e) {
+            Log.w(TAG, "排换日闹钟失败: " + e);
+        }
+    }
+
+    static void cancelDaily(Context c) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.cancel(dailyIntent(c));
+        } catch (Exception e) {
+            Log.w(TAG, "取消换日闹钟失败: " + e);
+        }
+    }
+
+    private static long nextDailyAt() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, DAILY_HOUR);
+        cal.set(Calendar.MINUTE, DAILY_MINUTE);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long t = cal.getTimeInMillis();
+        if (t <= System.currentTimeMillis()) {
+            cal.add(Calendar.DAY_OF_YEAR, 1);
+            t = cal.getTimeInMillis();
+        }
+        return t;
+    }
+
+    private static PendingIntent dailyIntent(Context c) {
+        Intent i = new Intent(c, ScheduleWidgetProvider.class).setAction(ACTION_DAILY);
+        return PendingIntent.getBroadcast(c, ACTION_DAILY.hashCode(), i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     /* ============================ 渲染 ============================ */
@@ -201,10 +275,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static void render(Context c, AppWidgetManager mgr, int widgetId,
                                WidgetSnapshot snap, String day) {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_schedule);
-        // 「今天」优先用快照里那个（来自服务端）—— 手机时钟/时区不准时，
-        // 自己算出来的今天会跟服务端差一天，打卡就写到隔壁去了。
-        String today = (snap.today != null && !snap.today.isEmpty())
-                ? snap.today : WidgetPrefs.today(c);
+        // 「今天」一律按手机实时日期算（2026-10-31 修）。
+        // 以前优先用快照里的 today —— 但快照只在 App 推送时更新，App 几天没开
+        // 就会停在旧日期：左上角徽标和日期条的绿色「今天」标记会一直停在几天前
+        // （用户报：31 号了，徽标还写 29、29 那格还是绿的）。而圆圈走的是实时的
+        // selectedDay，于是「圆圈对、绿字和徽标错」，两者自相矛盾。
+        // 打卡写入的日期不受影响：toggleHabit 自己按实时今天算。
+        String today = WidgetPrefs.today(c);
 
         // 底板透明度：连续档位里挑一张（每 2% 一张，见 drawable/widget_bg_a*.xml）
         final int alpha = WidgetPrefs.alpha(c);
@@ -765,8 +842,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         WHabit target = snap.habitById(habitId);
         if (target == null) return;
 
-        final String today = (snap.today != null && !snap.today.isEmpty())
-                ? snap.today : WidgetPrefs.today(c);
+        // 按实时今天判断，不用可能过期的快照 today（2026-10-31，与 render 对齐）。
+        final String today = WidgetPrefs.today(c);
         /* 打的是**组件当前选中那一天**的卡，不是「今天」的（2026-10-14 修）。
          * 原来恒写 today，于是翻到别的日期点一下会改到今天 —— 用户看到的
          * 是「今天打了卡，日后几天全成了已完成，而且点不掉」。 */

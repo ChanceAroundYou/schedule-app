@@ -35,6 +35,8 @@ public class ReminderReceiver extends BroadcastReceiver {
                 || Intent.ACTION_TIME_CHANGED.equals(action)
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
             ReminderScheduler.reschedule(c);
+            // 小组件的「过 0 点重画」闹钟同样不会跨开机保留，一并补排（幂等）。
+            ScheduleWidgetProvider.scheduleDaily(c);
             return;
         }
 
