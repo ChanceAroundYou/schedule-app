@@ -595,6 +595,38 @@ export async function run(ctx) {
 
   /* 重复设置收在一个 Sheet 里（2026-10-09）。外面那一行只留一个按钮，
      点开是一个 Sheet，里面有频率 / 间隔 / 周几 / 结束方式。 */
+  /* **无日期的任务不许重复**（2026-10-29 用户定的规矩，commit 5c53f60）：
+     「抽屉转盘」是在待办箱里建的、没有日期 —— 按钮应当是 disabled 且写
+     「请先设置日期」。先守这条，再给它填上今天，接着验重复面板本身。 */
+  const repLocked = await evalJs(page, `return (() => {
+    const b = document.querySelector('.drawer .rep-open');
+    if (!b) return 'missing';
+    const lab = b.querySelector('.rep-label');
+    return { disabled: !!b.disabled, label: lab ? lab.textContent.trim() : null };
+  })()`);
+  ok(repLocked && repLocked.disabled === true && repLocked.label === '请先设置日期',
+    '没日期的任务：重复按钮禁用并写「请先设置日期」，实际 ' + JSON.stringify(repLocked));
+
+  // 填上今天（日期按钮 → 月历里点今天那格），重复按钮才会解禁
+  await clickEl(page, `document.querySelector('.drawer.open .dp-btn')`);
+  await waitFor(page, `document.querySelector('.drawer.open .dp-pop') ? 1 : null`, '月历面板打开了', 8000);
+  const repDayPicked = await evalJs(page, `
+    const cells = [...document.querySelectorAll('.drawer.open .dp-pop .jp-cell:not(.out)')];
+    const cell = cells.find((c) => c.classList.contains('today')) || cells[0];
+    if (!cell) return 'missing';
+    cell.click();
+    return cell.classList.contains('today') ? 'ok' : 'picked-other';
+  `);
+  ok(repDayPicked === 'ok', '给「抽屉转盘」填上今天，实际 ' + repDayPicked);
+  // 等 localStorage：persist 有 250ms 去抖，按钮解禁也可能晚一帧
+  await waitFor(page, `
+    (() => {
+      const t = Object.values(JSON.parse(localStorage.getItem('schedule-app-v4')).tasks)
+        .find((x) => x.id === ${JSON.stringify(rowId)});
+      return t && t.date ? t.date : null;
+    })()
+  `, '日期落盘（重复按钮才能解禁）', 8000);
+
   await clickEl(page, `document.querySelector('.drawer .rep-open')`);
   await waitFor(page, `document.querySelector('.repeat-pop') ? 1 : null`, '重复下拉弹窗打开了', 8000);
   ok(true, '重复弹窗打开');

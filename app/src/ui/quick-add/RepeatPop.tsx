@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { RepeatRule } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { REPEAT_UNITS, toRepeat } from '../../domain/repeat.ts';
+import { REPEAT_UNITS } from '../../domain/repeat.ts';
 import { DatePicker } from '../overlays/DatePicker.tsx';
 import { DayGrid } from './DayGrid.tsx';
 import { Chips, Dropdown } from '../kit.tsx';
@@ -86,7 +86,14 @@ export function RepeatPop({ rep, patch, next, last }: {
                      没有必然关系，预选哪个都是猜）；
                月/年 → 沿用规则里已有的值（浮层打开时就按**任务日期**推好了），
                        不再拿今天覆盖。 */
-            const next = toRepeat({ ...rep, unit: u, n: 1, end: null }, null);
+            /* ⚠️ 切单位**不能借道 toRepeat**（2026-11-01 修）：那是「把旧值
+               升级成规则」的解析器，而 2026-10-29 给它加了「无日期 → 直接返回
+               none」的早退。这里原本传 `null` 当日期（本意是「别拿今天覆盖
+               monthday / yearMonth」），于是**任何一次切单位都被重置成「不重复」**，
+               星期几 / 几号那一排永远出不来。切单位是编辑动作，直接在
+               上一条规则上合并即可 —— `rep` 里的 monthday / yearMonth 就是
+               打开浮层时按任务日期推好的值。 */
+            const next: RepeatRule = { ...rep, unit: u, n: 1, end: null };
             if (u === 'week') next.weekdays = [];
             patch(next);
           }}
