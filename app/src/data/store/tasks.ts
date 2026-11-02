@@ -174,38 +174,55 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?:
    * 2026-10-17 起 seriesRootOf 改成**形状优先**（id 带 # 就以 # 前的为真根），
    * 所以被小组件改Instance repeat 改乱了血脉（seriesId 指向中间层 / 整个缺失）
    * 的旧数据也会归到同一条家族下 —— 删除和补齐都不会再漏掉旁支。 */
-  const groups = new Map<string, typeof state.tasks[string][]>();
+  const groups = new Map<string, { live: typeof state.tasks[string][]; all: typeof state.tasks[string][] }>();
   for (const o of Object.values(state.tasks)) {
-    if (!o || o.deleted) continue;
+    if (!o) continue;
     const root = seriesRootOf(o);
     if (!root) continue;
     let g = groups.get(root);
-    if (!g) { g = []; groups.set(root, g); }
-    g.push(o);
+    if (!g) { g = { live: [], all: [] }; groups.set(root, g); }
+    g.all.push(o);
+    if (!o.deleted) g.live.push(o);
   }
 
-  for (const [root, members] of groups) {
+  for (const [root, { live: liveMembers, all }] of groups) {
+    /* 一条活的都没有 → 这族不用管（补也补不出来，删也没得删）。
+       ⚠️ 注意 `all` 里**含墓碑**：判断「系列是不是已经结束」必须看得到墓碑，
+       只看活的等于把「根早被彻底删掉」这种情况判成「系列还很健康」。 */
+    if (!liveMembers.length) continue;
+    const members = liveMembers;
+
     // 定义来源：优先系列根本身（它的标题/时间是「原始定义」），
     // 根被删就退而取组里任何一条。
     const rootTask = state.tasks[root];
 
-    /* 系列根是墓碑 → 这个系列已经结束，**一条都不许再铺**。
+    /* 系列**起点**是不是墓碑？根不在本机（垃圾箱里彻底删过）时，退而取族内
+       日期最早的那条（含墓碑）—— 它是这个系列还留在数据里的「最早一截」。 */
+    let anchorTask = rootTask ?? null;
+    if (!anchorTask) {
+      for (const o of all) {
+        if (!o.date) continue;
+        if (!anchorTask || (o.date as string) < (anchorTask.date as string)) anchorTask = o;
+      }
+    }
+
+    /* 系列起点是墓碑 → 这个系列已经结束，**一条都不许再铺**。
      *
      * 为什么非得挡这一道（2026-11-02，用户报「删掉的 B 每周三自己长回来」）：
-     * 分组只看「组里还有没有活着的成员」。用户把整个系列删掉之后，只要漏下
-     * 一条活实例 —— 另一台设备晚推上来的、或者「到此为止」标记没同步到本机 ——
-     * 这一组就还是活的，于是按规则把未来一路铺回来。删多少次长多少次，
-     * 而且**服务端早就删干净了、只有这台设备还在长**，看起来像幽灵。
+     * 分组原来只看「组里还有没有活着的成员」。用户把整个系列删掉之后，只要漏下
+     * 一条活实例 —— 另一台设备晚推上来的、或者「到此为止」标记没同步到本机、
+     * 或者根在垃圾箱里被彻底删过 —— 这一组就还是活的，于是按规则把未来一路
+     * 铺回来。删多少次长多少次，而且服务端早就删干净了、只有这台设备还在长。
      *
      * 唯一的例外是「只删这一次」：那种会给被删的那条打 `skipped = true`，
      * 而它往往就是系列根 —— 那种情况系列必须继续派生（否则「只删这次」
      * 等于「删掉整个系列」，2026-10-14 用户明确否掉过）。
      *
-     * 顺手把已经铺出来的未来残留也收进垃圾桶：它们正是用户看得见的那几张卡。
-     * 只动「今天及以后」的 —— 过去的发生是历史，不是残留。 */
-    if (rootTask && rootTask.deleted && !rootTask.skipped) {
+     * 顺手把还活着的残留全收进垃圾桶 —— 系列起点都删了，这条线上不会有
+        「该保留的历史」（起点就是最早的那一条）。用户 2026-11-02 看到的就是
+        10-28 那类漏网实例：留着它，下次它又会当「活成员」把未来铺回来。 */
+    if (anchorTask && anchorTask.deleted && !anchorTask.skipped) {
       for (const o of members) {
-        if (!o.date || o.date < today) continue;
         items.push({
           entity: 'task', id: o.id, calId: o.calId,
           fields: { deleted: true, deletedAt: now, trashFrom: '重复任务结束' },

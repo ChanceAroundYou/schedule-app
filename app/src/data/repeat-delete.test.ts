@@ -256,3 +256,39 @@ test('「只删这一次」删掉根那天（有 skipped）→ 系列必须继�
   console.log('  「只删这一次」之后仍有:', aliveDates.length, '条');
   assert.ok(aliveDates.length > 0, '只删这一次不能把整个系列弄死');
 });
+
+/**
+ * 用户 2026-11-02 真机实测的第二种形态：**根在垃圾箱里被彻底删过**，
+ * 本机只剩一条中间实例还活着（B 的 10-28）。这时 `state.tasks[root]` 根本
+ * 不存在，只看根的墓碑判不出来 —— 必须退而认「族内日期最早的那条」。
+ */
+test('根被彻底删掉了（本机没有根）→ 族里最早那条是墓碑，整族停止派生', () => {
+  fresh();
+  const rpt = { unit: 'week' as const, n: 1, weekdays: [3], monthday: 1, yearMonth: 1, end: null };
+  /* ⚠️ 这里**不能走 addTask**：它会顺手调 ensureRepeatOccurrences 把未来铺满，
+     而且会丢掉我们指定的派生 id。直接塞进 state 才能精确复现真机那副样子。 */
+  const s = store.get();
+  const rootT = makeTask({ calId: CAL, title: 'B', date: '2026-10-14', time: null, repeat: rpt });
+  const root = rootT.id;
+  const mid = makeTask({
+    id: root + '#2026-10-21', calId: CAL, title: 'B', date: '2026-10-21',
+    time: null, repeat: rpt, seriesId: root, repeatSeq: 1,
+  });
+  mid.deleted = true; mid.deletedAt = Date.now(); mid.trashFrom = '重复任务结束';
+  const aliveOne = makeTask({
+    id: root + '#2026-10-28', calId: CAL, title: 'B', date: '2026-10-28',
+    time: null, repeat: rpt, seriesId: root, repeatSeq: 2,
+  });
+  s.tasks[mid.id] = mid;
+  s.tasks[aliveOne.id] = aliveOne;
+  // 根：垃圾箱里彻底删掉（本机不再有这条）
+
+  ensureRepeatOccurrences();
+
+  const left = Object.values(store.get().tasks)
+    .filter((t) => !t.deleted && t.id.startsWith(root + '#'))
+    .map((t) => t.date as string).sort();
+  console.log('  根被彻底删掉之后还活着的:', left.join(', ') || '(无)');
+  assert.deepEqual(left, [], '系列起点是墓碑 → 一条都不许再留（含那条漏网的活实例）');
+  assert.ok(store.get().tasks[aliveOne.id].deleted === true, '那条活实例要被收进垃圾桶');
+});
