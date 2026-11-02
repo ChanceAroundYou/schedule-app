@@ -2,13 +2,23 @@
 <!--
   日程小组件的元信息。
 
-  **下限锁死 4×4**（用户 2026-10-13 明确）：minResizeWidth/Height 从 180dp
-  抬到 250dp，与 minWidth/minHeight 齐平 —— 用户不能再把它拖得比 4×4 更小。
-  因为时间轴现在是「按组件高度把 8–22 全塞进去」，太小了行高会压到没法看，
-  与其让它显示成一条糊掉的线，不如直接不许拖到那么小。
+  **尺寸：下限 4×4，往上不封顶**（用户 2026-11-02 明确：
+  「目前你给的大小是 4×4……我想拖拉想多长就多长，4 到满屏幕」）。
 
-  顶部（月份行 / 日期条）尺寸固定、不随组件缩放，所以组件越高，
-  多出来的高度**全部给时间轴**。
+  下限仍是 4×4（minResizeWidth/Height = 250dp，与 minWidth/minHeight 齐平）：
+  2026-10-13 的结论没变 —— 时间轴是按组件高度把 8–22 全塞进去，太小了行高
+  会压到没法看，与其显示成一条糊掉的线，不如不许拖到那么小。
+
+  上限**显式放开**（maxResizeWidth/Height）：这两个属性 API 31 起才有，
+  不写时「理论上」默认就是 launcher 能给的最大，但 ColorOS 这类 ROM 上
+  实测拖动上限会被吃掉；写死一个大值（比任何手机桌面都大）让 launcher
+  自己按网格边界收，用户就能一路拖到满屏。
+
+  顶部（月份行 / 日期条）尺寸固定、不随组件缩放，所以组件越高，多出来的
+  高度**全部给时间轴**（见 ScheduleWidgetProvider.render 里的 fixedDp）。
+
+  ⚠️ 光改这里不够：拖完尺寸 launcher 只发 onAppWidgetOptionsChanged，
+  不重写它组件内容不会重排。见 ScheduleWidgetProvider 里的同名方法。
 
   updatePeriodMillis 给 30 分钟（Android 允许的最小值）。**别指望它**：
   Android 12+ 起它是不精确闹钟，实际可能 ±1 小时，ColorOS 还会更懒。
@@ -20,6 +30,8 @@
     android:minHeight="250dp"
     android:minResizeWidth="250dp"
     android:minResizeHeight="250dp"
+    android:maxResizeWidth="640dp"
+    android:maxResizeHeight="1000dp"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen"

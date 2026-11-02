@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -112,6 +113,27 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         WidgetSnapshot snap = WidgetPrefs.snapshot(c);
         String day = WidgetPrefs.selectedDay(c);
         for (int id : ids) render(c, mgr, id, snap, day);
+    }
+
+    /**
+     * 用户拖动把手把组件改大 / 改小了。
+     *
+     * **必须重写**（2026-11-02 加）：launcher 改尺寸时**只发这个回调**，
+     * 不会再发 APPWIDGET_UPDATE —— 不在这里重画，外壳变大了、内容还是按旧
+     * 高度算的那一份（时间轴挤在上半截、下面空一大块），用户看到的就是
+     * 「大小根本改不了」。计数器组件早就重写了这个方法，日程组件一直漏着。
+     */
+    @Override
+    public void onAppWidgetOptionsChanged(Context c, AppWidgetManager mgr,
+                                          int widgetId, Bundle newOptions) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onAppWidgetOptionsChanged id=" + widgetId
+                    + " minH=" + (newOptions == null ? -1
+                        : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT))
+                    + " maxH=" + (newOptions == null ? -1
+                        : newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)));
+        }
+        render(c, mgr, widgetId, WidgetPrefs.snapshot(c), WidgetPrefs.selectedDay(c));
     }
 
     @Override
@@ -272,6 +294,31 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     /* ============================ 渲染 ============================ */
 
+    /**
+     * 组件**当前**有多高（dp）。
+     *
+     * ⚠️ 必须按屏幕方向取：`OPTION_APPWIDGET_MIN_HEIGHT` 是**竖屏**下的当前高度，
+     * `MAX_HEIGHT` 是**横屏**下的（手机上更矮）。2026-11-02 之前这里读的一直是
+     * MAX_HEIGHT —— 竖屏把组件拖高，读到的还是横屏那个矮值，于是内容一点都不
+     * 跟着长，看起来就是「大小改不了」。CounterWidgetProvider 一直用的是
+     * MIN_*，这里对齐。
+     */
+    private static int widgetHeightDp(Context c, AppWidgetManager mgr, int widgetId) {
+        int h = 0;
+        try {
+            Bundle o = mgr.getAppWidgetOptions(widgetId);
+            boolean land = c.getResources().getConfiguration().orientation
+                    == Configuration.ORIENTATION_LANDSCAPE;
+            h = o.getInt(land
+                    ? AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT
+                    : AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+            if (h <= 0) h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
+        } catch (Exception e) {
+            Log.w(TAG, "读组件高度失败: " + e);
+        }
+        return h > 0 ? h : 300;
+    }
+
     private static void render(Context c, AppWidgetManager mgr, int widgetId,
                                WidgetSnapshot snap, String day) {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_schedule);
@@ -399,8 +446,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         // 时间轴能分到多少高度。**顶部和面板的固定件全是定值**（用户要求顶部
         // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
-        int totalDp = mgr.getAppWidgetOptions(widgetId)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300);
+        int totalDp = widgetHeightDp(c, mgr, widgetId);
         int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
                 + 30 + 2                        // head 行（FrameLayout 30dp）+ margin
                 + DATE_STRIP_DP + 2             // 日期条 + margin
