@@ -179,7 +179,9 @@ body.sheet-open .tab:active { background: none; }
 
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，
      改成靠右对齐并让出一点边距 */
-  .jump-pop { left: auto; right: 0; width: min(300px, calc(100vw - 20px)); }
+  /* 位置交给 JS（见 JumpPop.tsx）；这里只管宽度，别再加 left/right —— 那正是
+     「面板被推出屏幕外」的老病根。 */
+  .jump-pop { width: min(300px, calc(100vw - 20px)); }
   /* 「日期 + 时间」面板与找日期同一套格子，宽度口径一致 */
   .when-pop { width: min(300px, calc(100vw - 20px)); }
   .jp-cell { height: 34px; line-height: 28px; font-size: 13.5px; }

@@ -9,8 +9,11 @@ import { state, dataOf } from './core.ts';
 import { commit, commitMany } from './commit.ts';
 
 export function addHabit(title: string): string {
-  const calId = state.ui.cal || '';
-  const h = makeHabit(title, liveHabits(state).filter((x) => x.calId === calId).length, calId);
+  /* 打卡**按人私有**（2026-11-02）：落在自己的私有打卡集里，不是"当前选中的
+     日程集"。取不到（离线首启、还没同步过）才退回 ui.cal —— 服务端收到后
+     还会把它改写到私有集，不会漏进共享集。 */
+  const calId = state.habitsCal || state.ui.cal || '';
+  const h = makeHabit(title, liveHabits(state).length, calId);
   commitMany([{ entity: 'habit', id: h.id, calId, fields: dataOf(h) }]);
   return h.id;
 }

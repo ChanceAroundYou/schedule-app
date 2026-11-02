@@ -80,6 +80,11 @@ export interface SyncResponse {  cursor: number;
   };
   /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
   cals?: import('./Cal.ts').Cal[];
+  /**
+   * 我的私有打卡集 id（打卡按人私有，见 LocalState.habitsCal）。
+   * 可选：老服务端的响应里没有这一项，那就不改本地已有的值。
+   */
+  habitsCal?: string;
   invites?: import('./Cal.ts').Invite[];
   /**
    * 我那些集的全部成员（`userId → { name, nickname }`）。

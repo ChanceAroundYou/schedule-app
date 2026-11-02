@@ -169,7 +169,7 @@ function makeV2Dir(tag, { withUser = true } = {}) {
 
 /* ------------------------------------------------------------------ 用例 */
 
-test('空目录：直接建到 v6，十三张表齐全', (t) => {
+test('空目录：直接建到当前版本，各张表齐全', (t) => {
   const dir = tmpDataDir('fresh');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -178,7 +178,7 @@ test('空目录：直接建到 v6，十三张表齐全', (t) => {
 
   const got = inspect(dir);
   assert.strictEqual(got.userVersion, db.SCHEMA_VERSION, '新库的版本号就是当前版本');
-  assert.strictEqual(db.SCHEMA_VERSION, 7, 'v7 是这次改动引入的版本');
+  assert.strictEqual(db.SCHEMA_VERSION, 8, 'v8 是这次改动引入的版本');
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `新库里应该有 ${name}`);
   }
@@ -197,7 +197,7 @@ test('v2 库带真实数据：升级后一个用户、一条字段都不少', (t
   db.close();
 
   const after = inspect(dir);
-  assert.strictEqual(after.userVersion, 7, '版本号要升上去');
+  assert.strictEqual(after.userVersion, 8, '版本号要升上去');
   assert.deepStrictEqual(after.users, before.users, '账户必须原样还在');
   assert.deepStrictEqual(after.fields, before.fields, '逐字段状态必须原样还在');
   assert.deepStrictEqual(after.changes, before.changes, '变更流水必须原样还在');
@@ -246,7 +246,7 @@ test('升级后新表真的能用（不是建了个空壳）', (t) => {
 
   assert.strictEqual(handle, 1);
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 7);
+  assert.strictEqual(got.userVersion, 8);
   assert.deepStrictEqual(got.users, [{ id: 'u-dad', name: '爸爸' }], '老数据仍要完好');
 });
 
@@ -258,7 +258,7 @@ test('v2 空库（还没人注册）：推倒重建，不报错', (t) => {
   db.close();
 
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 7);
+  assert.strictEqual(got.userVersion, 8);
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `重建后应该有 ${name}`);
   }
@@ -291,7 +291,7 @@ test('库比代码新：拒绝启动并说清是代码旧了', (t) => {
   d.exec(`PRAGMA user_version = ${db.SCHEMA_VERSION + 1}`);
   d.close();
 
-  assert.throws(() => db.open(dir), /比当前代码的 v7 还新/);
+  assert.throws(() => db.open(dir), new RegExp(`比当前代码的 v${db.SCHEMA_VERSION} 还新`));
 
   const got = inspect(dir);
   assert.strictEqual(got.userVersion, db.SCHEMA_VERSION + 1, '库不该被降级改写');
@@ -316,4 +316,94 @@ test('启动失败后单例被放掉，下一次 open 不会拿到半死的连�
   db.open(good);
   assert.strictEqual(db.countUsers(), 0);
   db.close();
+});
+
+/* --------------------------------------------------- v8：打卡改成按人私有 */
+
+/**
+ * 用户 2026-11-02：**日程可以共享，打卡只属于每个人自己**。
+ *
+ * v8 的做法是给每人一个不出现在列表里的 `kind='habits'` 集，把打卡搬进去。
+ * 这条用例钉三件事：
+ *   ① 共享集里一条 habit 行都不剩（否则别人照样拉得到 → 等于没改）；
+ *   ② 每个成员都拿到一份（谁的历史都不许凭空消失）；
+ *   ③ 非 habit 的字段（任务）一行都不能动 —— 这是数据迁移最容易误伤的地方。
+ */
+test('v8：打卡从共享集搬到每个人的私有打卡集', (t) => {
+  const dir = makeV2Dir('habits');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const d = new DatabaseSync(path.join(dir, 'schedule.db'));
+  // 第二个成员：共享集才有"别人的打卡"这回事
+  d.prepare('INSERT INTO users (id, name, salt, hash, created_at) VALUES (?,?,?,?,?)')
+    .run('u-mom', '妈妈', 'salt', 'hash', 1000);
+  d.prepare('INSERT INTO calendar_members (cal_id, user_id, role, joined_at) VALUES (?,?,?,?)')
+    .run('cal-1', 'u-mom', 'editor', 1200);
+  const ins = d.prepare(`INSERT INTO field_state (cal_id, entity, entity_id, field, value, ts, device_id)
+                         VALUES (?,?,?,?,?,?,?)`);
+  ins.run('cal-1', 'habit', 'h-1', 'title', '"学英语"', 2000, 'devA');
+  ins.run('cal-1', 'habit', 'h-1', 'log', '{"2026-11-01":true}', 2100, 'devA');
+  ins.run('cal-1', 'habit', 'h-2', 'title', '"训练小狗"', 2000, 'devA');
+  d.close();
+
+  db.open(dir);
+  db.close();
+
+  const out = new DatabaseSync(path.join(dir, 'schedule.db'));
+  const rows = (sql, ...a) => out.prepare(sql).all(...a).map((r) => ({ ...r }));
+  const habitsCals = rows("SELECT id, owner_id FROM calendars WHERE kind = 'habits' ORDER BY owner_id");
+  const leftInShared = rows("SELECT * FROM field_state WHERE entity = 'habit' AND cal_id = 'cal-1'");
+  const tasks = rows("SELECT entity_id, field, value FROM field_state WHERE cal_id = 'cal-1' AND entity = 'task' ORDER BY field");
+  const perCal = habitsCals.map((c) => ({
+    owner: c.owner_id,
+    fields: rows('SELECT entity_id, field, value FROM field_state WHERE cal_id = ? ORDER BY entity_id, field', c.id),
+  }));
+  const calsOfUser = rows("SELECT COUNT(*) AS n FROM calendars WHERE owner_id = 'u-dad' AND COALESCE(kind,'normal') = 'normal'");
+  out.close();
+
+  assert.strictEqual(habitsCals.length, 2, '两个成员各得一个私有打卡集');
+  assert.deepStrictEqual(leftInShared, [], '共享集里的打卡必须清空 —— 否则别人照样看得到');
+  assert.deepStrictEqual(tasks, [
+    { entity_id: 't-1', field: 'date', value: '"2026-10-07"' },
+    { entity_id: 't-1', field: 'title', value: '"开家长会"' },
+  ], '任务字段一行都不许动');
+
+  for (const p of perCal) {
+    assert.strictEqual(p.fields.length, 3, `${p.owner} 应该拿到完整的一份（两条打卡 + 一条 log）`);
+    assert.deepStrictEqual(
+      p.fields.filter((f) => f.entity_id === 'h-1'),
+      [
+        { entity_id: 'h-1', field: 'log', value: '{"2026-11-01":true}' },
+        { entity_id: 'h-1', field: 'title', value: '"学英语"' },
+      ],
+      `${p.owner} 的打卡内容要和原样一致（log 也一起带过去）`,
+    );
+  }
+
+  assert.strictEqual(calsOfUser[0].n, 1, '私有打卡集不算进"我的日程集"里（不变量 1 的口径）');
+});
+
+test('v8：再跑一次迁移什么都不做（可重入）', (t) => {
+  const dir = makeV2Dir('habits-again');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const d = new DatabaseSync(path.join(dir, 'schedule.db'));
+  d.prepare(`INSERT INTO field_state (cal_id, entity, entity_id, field, value, ts, device_id)
+             VALUES (?,?,?,?,?,?,?)`).run('cal-1', 'habit', 'h-1', 'title', '"学英语"', 2000, 'devA');
+  d.close();
+
+  db.open(dir);
+  db.close();
+  const first = inspect(dir);
+
+  // 把版本号退回去再升一次 —— 相当于「迁移函数被重放」
+  const d2 = new DatabaseSync(path.join(dir, 'schedule.db'));
+  d2.exec('PRAGMA user_version = 7');
+  d2.close();
+  db.open(dir);
+  db.close();
+  const second = inspect(dir);
+
+  assert.deepStrictEqual(second.fields, first.fields, '重放不得再搬一份出来');
+  assert.deepStrictEqual(second.changes, first.changes, '重放不得再记一遍流水');
 });

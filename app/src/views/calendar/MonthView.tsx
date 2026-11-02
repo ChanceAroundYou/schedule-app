@@ -27,6 +27,11 @@
  *     误触新建更烦）；邻月格子本来也不挂 `data-jump`。
  * ⚠️ 窄屏那一行的勾选圈是 CSS 省掉的（45px 宽放不下圈 + 字），想勾完成要点开
  *   抽屉；时间也放不下 —— 这两个都是窄屏取舍，不是漏了。
+ *
+ * 上下滑翻月（2026-11-01 用户）：整页包在 `.month-swipe > .month-track` 里，
+ * 手指纵向拖时由 app/monthSwipe.ts 直接写 `--mdrag` 让 track 跟手位移，
+ * 上下各挂一页**静态预览**（MonthGhost，见下）—— 视图这边只订阅「是否在滑」
+ * 一个布尔量，中间态一次 React 更新都没有。
  */
 
 import { useRef } from 'react';
@@ -39,6 +44,7 @@ import { TaskPill, loadLevel } from '../parts.tsx';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useIsNarrow, useElementHeight } from '../../ui/hooks.ts';
+import { useMonthSwipeActive } from '../../app/monthSwipe.ts';
 
 /**
  * 这一格显示几条、还剩几条没显示（挂在最后一条尾巴上成 "+N"）。
@@ -114,10 +120,61 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
   );
 }
 
+/**
+ * 邻月预览 —— 上下滑翻月时从上下边缘露出来的那一页（见 app/monthSwipe.ts）。
+ *
+ * 刻意**不复用 MonthView**：那是真视图，每格都注册 `day:<日期>` 放置区、
+ * 每条胶囊都注册拖拽 id；同一个 DOM 里挂三份就是三套同名 —— dnd-kit 的落点
+ * 会错位（一拖之后任务飞到别的日子）。所以这里只画"样子"：日期 + 几条标题，
+ * 不带 data-zone-id / data-jump / 任何监听，外层 `pointer-events: none`。
+ * 它只在手指按住的那一两百毫秒里存在，样式沿用 `.month-cell / .cell-head /
+ * .cell-date / .task-pill`，观感与真视图一致。
+ */
+function MonthGhost({ state, iso }: { state: LocalState; iso: string }) {
+  const weeks = D.monthWeeks(iso);
+  const curMonth = D.parseISO(iso).getMonth();
+  const today = D.today();
+  return (
+    <div className="month-view month-ghost" aria-hidden="true">
+      <div className="month-head">
+        {['一', '二', '三', '四', '五', '六', '日'].map((w) => (
+          <div className="month-head-cell" key={w}>周{w}</div>
+        ))}
+      </div>
+      <div className="month-grid">
+        {weeks.map((row) => row.map((d) => {
+          const dt = D.parseISO(d);
+          const out = dt.getMonth() !== curMonth;
+          /* 预览不截断也不滚：格子 overflow:hidden，多出来的自己就没了。
+             取前 5 条够占满一格（窄屏一格也就 2~4 条）。 */
+          const ts = openFirst(tasksOn(state, d)).slice(0, 5);
+          return (
+            <div className={'month-cell' + (out ? ' out' : '') + (d === today ? ' today' : '')} key={d}>
+              <div className="cell-head">
+                <span className="cell-date">{dt.getDate()}</span>
+              </div>
+              <div className="cell-tasks">
+                {ts.map((t) => (
+                  <div className="task-pill" key={t.id} data-cal-color={colorOf(state.cals, t.calId)}>
+                    <span className="pill-title">{t.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }))}
+      </div>
+    </div>
+  );
+}
+
 export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
   const narrow = useIsNarrow();
   const gridRef = useRef<HTMLDivElement>(null);
   const h = useElementHeight(gridRef);
+  /* 上下滑翻月：手势进行中才挂邻月预览（用户 2026-11-01）。
+     位移由 app/monthSwipe.ts 直接写 `.month-track` 的 `--mdrag`，不经过 React。 */
+  const swiping = useMonthSwipeActive();
   /* 只画含当月某天的那些周（10 月是 5 行）。2026-10-22 起宽屏也走这条 ——
      以前宽屏死画 6 周，10 月末尾多一整行纯下月（11/2–11/8）的空白行。 */
   const weeks = D.monthWeeks(iso);
@@ -128,33 +185,47 @@ export function MonthView({ state, iso }: { state: LocalState; iso: string }) {
   const cellH = narrow ? (h > 0 ? (h - (weeks.length - 1) * 1) / weeks.length : 62) : 0;
 
   return (
-    <div className="month-view">
-      <div className="month-head">
-        {['一', '二', '三', '四', '五', '六', '日'].map((w) => (
-          <div className="month-head-cell" key={w}>周{w}</div>
-        ))}
-      </div>
-      <div className="month-grid" ref={gridRef}>
-        {weeks.map((row) => row.map((d) => {
-          /* 未完成在前、已完成在后（openFirst，2026-10-23 起三处视图共用同一口径） */
-          const ts = openFirst(tasksOn(state, d));
-          /* 这一格正开着草稿箱时，任务少显示一条给它让位（`reserveDraft`）。
-             不预留的话草稿框会把格子撑高、整屏行高跟着重排，点一下跳一下。
-             邻月格子永远没有草稿（data-no-draft），hasDraft 恒为 false。 */
-          const hasDraft = !!draftOn(state.ui, `day:${d}`);
-          /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
-             尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
-             看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */
-          const { shown, more } = narrow
-            ? cellCounts(ts, monthCellCapacity(cellH, hasDraft))
-            : { shown: ts, more: 0 };
-          return (
-            <MonthCell
-              key={d} state={state} d={d} curMonth={curMonth} today={today}
-              anchorIso={iso} narrow={narrow} shown={shown} more={more}
-            />
-          );
-        }))}
+    <div className="month-swipe">
+      <div className="month-track">
+        {swiping && (
+          <div className="month-ghost-layer above">
+            <MonthGhost state={state} iso={D.addMonths(iso, -1)} />
+          </div>
+        )}
+        <div className="month-view">
+          <div className="month-head">
+            {['一', '二', '三', '四', '五', '六', '日'].map((w) => (
+              <div className="month-head-cell" key={w}>周{w}</div>
+            ))}
+          </div>
+          <div className="month-grid" ref={gridRef}>
+            {weeks.map((row) => row.map((d) => {
+              /* 未完成在前、已完成在后（openFirst，2026-10-23 起三处视图共用同一口径） */
+              const ts = openFirst(tasksOn(state, d));
+              /* 这一格正开着草稿箱时，任务少显示一条给它让位（`reserveDraft`）。
+                 不预留的话草稿框会把格子撑高、整屏行高跟着重排，点一下跳一下。
+                 邻月格子永远没有草稿（data-no-draft），hasDraft 恒为 false。 */
+              const hasDraft = !!draftOn(state.ui, `day:${d}`);
+              /* 窄屏格子限高：算得出能塞几条（monthCellCapacity），超出的在最后一条
+                 尾巴上挂 "+N"。宽屏**不截断**（2026-10-22 用户：显示不完就格内滚动
+                 看全部）—— 全部渲染，溢出交给 `.cell-tasks` 自己滚（calendar.css）。 */
+              const { shown, more } = narrow
+                ? cellCounts(ts, monthCellCapacity(cellH, hasDraft))
+                : { shown: ts, more: 0 };
+              return (
+                <MonthCell
+                  key={d} state={state} d={d} curMonth={curMonth} today={today}
+                  anchorIso={iso} narrow={narrow} shown={shown} more={more}
+                />
+              );
+            }))}
+          </div>
+        </div>
+        {swiping && (
+          <div className="month-ghost-layer below">
+            <MonthGhost state={state} iso={D.addMonths(iso, 1)} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -84,6 +84,7 @@ module.exports = {
   calendarsFor: calendars.calendarsFor,
   calendarIdsFor: calendars.calendarIdsFor,
   countCalendarsFor: calendars.countCalendarsFor,
+  habitsCalFor: calendars.habitsCalFor,
   roleOf: calendars.roleOf,
   upsertMember: calendars.upsertMember,
   removeMember: calendars.removeMember,

@@ -4,10 +4,16 @@
  * 建库语句 = v2 那七张 + v3 追加的三张。两处拼同一个真源，见 AI_TABLES。
  * **只允许追加式迁移**：CREATE TABLE / CREATE INDEX / ALTER TABLE ADD COLUMN。
  * 绝不 DROP、绝不 UPDATE 已有数据 —— 库里是用户的真实日程。
+ *
+ * **唯一的例外是 v8 的打卡搬家**（migrateHabitsToPersonal）：它是用户明确
+ * 要求的语义变更（打卡从"随集共享"改成"按人私有"），不带任何"顺手清理"。
+ * 写这类迁移的规矩还是那两条：可重入（跑第二遍什么都不做）、不删 changes
+ * 流水（那是别人游标的落脚点）。
  */
+const crypto = require('node:crypto');
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /* --------------------------------------------------------------- v5 新增 */
 
@@ -45,6 +51,106 @@ const COUNTER_TABLES = [
 function addColumnIfMissing(handle, table, column, decl) {
   const cols = handle.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(column)) handle.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+/**
+ * 每个用户那个私有「打卡集」的名字。**只在库里看得见** —— 它不出现在任何
+ * 集列表里，所以这个名字用户永远读不到，取一个能自查的就行。
+ */
+const HABITS_CAL_NAME = '打卡（仅自己）';
+
+/**
+ * v7 → v8：打卡改成「按用户私有」。
+ *
+ * 打卡原本和任务一样挂在日程集上（`field_state.cal_id`），于是一旦共享一个
+ * 集，打卡也跟着共享了。用户 2026-11-02 明确要求：**日程可以共享，打卡只属于
+ * 每个用户自己**。
+ *
+ * 做法不是另起一张表（那要重做一套同步：outbox、游标、LWW、小组件快照全都
+ * 绕不开），而是给**每个用户一个不出现在列表里的私有「打卡集」**
+ * （`calendars.kind = 'habits'`），打卡一律落在那里。共享集的成员自然看不到
+ * 别人的打卡，而上面那套机制一行都不用改。
+ *
+ * 历史数据（用户确认的口径：原记录保留、别人界面里不再显示）：老打卡没有
+ * 「创建者」字段（服务端只给任务补 createdBy），所以按**每个成员各留一份**
+ * 来迁 —— 共享集里的每条打卡复制到该集每个成员的私有打卡集（沿用同一个
+ * entity_id，客户端上那条打卡项不会变成「新的」），再把行从共享集删掉。
+ * 好处是谁的打卡记录都不会凭空消失；代价是同一份历史在库里存了 N 份
+ * （两三个人的家庭场景，量可以忽略）。
+ *
+ * 幂等：干完活之后普通集里一条 habit 行都不剩，再跑一次直接返回。
+ * 只删 field_state 的**行**，changes 里那些流水保留 —— 它们是客户端游标
+ * 走过的路，删掉会让落后的一端静默跳过一段。新写的 change 负责把客户端
+ * 手里那条打卡的「所属集」改过来。
+ */
+function migrateHabitsToPersonal(handle) {
+  const strays = handle.prepare(`
+    SELECT f.cal_id AS calId, f.entity_id AS entityId, f.field, f.value, f.ts, f.device_id AS deviceId
+    FROM field_state f
+    JOIN calendars c ON c.id = f.cal_id
+    WHERE f.entity = 'habit' AND COALESCE(c.kind, 'normal') <> 'habits'
+  `).all();
+  if (!strays.length) return;
+
+  const now = Date.now();
+  const membersOf = handle.prepare('SELECT user_id AS userId FROM calendar_members WHERE cal_id = ?');
+  const findHabitCal = handle.prepare(
+    "SELECT id FROM calendars WHERE owner_id = ? AND kind = 'habits' AND deleted_at IS NULL LIMIT 1",
+  );
+  const insCal = handle.prepare(
+    "INSERT INTO calendars (id, name, owner_id, color, created_at, kind) VALUES (?,?,?,?,?,'habits')",
+  );
+  const insMember = handle.prepare(
+    'INSERT OR IGNORE INTO calendar_members (cal_id, user_id, role, joined_at) VALUES (?,?,?,?)',
+  );
+  const insField = handle.prepare(`
+    INSERT INTO field_state (cal_id, entity, entity_id, field, value, ts, device_id)
+    VALUES (?, 'habit', ?, ?, ?, ?, ?)
+    ON CONFLICT(cal_id, entity, entity_id, field) DO NOTHING
+  `);
+  const insChange = handle.prepare(`
+    INSERT INTO changes (cal_id, entity, entity_id, field, value, ts, device_id)
+    VALUES (?, 'habit', ?, ?, ?, ?, ?)
+  `);
+
+  const calCache = new Map();
+  const habitCalOf = (userId) => {
+    if (calCache.has(userId)) return calCache.get(userId);
+    const row = findHabitCal.get(userId);
+    let id = row && row.id;
+    if (!id) {
+      id = crypto.randomUUID();
+      insCal.run(id, HABITS_CAL_NAME, userId, 'jade', now);
+      insMember.run(id, userId, 'owner', now);
+    }
+    calCache.set(userId, id);
+    return id;
+  };
+
+  // 先按集分组：成员数是「每个集查一次」，不是「每一行查一次」
+  const byCal = new Map();
+  for (const r of strays) {
+    if (!byCal.has(r.calId)) byCal.set(r.calId, []);
+    byCal.get(r.calId).push(r);
+  }
+
+  for (const [calId, rows] of byCal) {
+    const members = membersOf.all(calId).map((m) => m.userId);
+    if (!members.length) continue;
+    for (const userId of members) {
+      const target = habitCalOf(userId);
+      for (const r of rows) {
+        insField.run(target, r.entityId, r.field, r.value, r.ts, r.deviceId);
+        insChange.run(target, r.entityId, r.field, r.value, r.ts, r.deviceId);
+      }
+    }
+  }
+
+  handle.exec(`
+    DELETE FROM field_state
+    WHERE entity = 'habit'
+      AND cal_id IN (SELECT id FROM calendars WHERE COALESCE(kind, 'normal') <> 'habits')
+  `);
 }
 
 /**
@@ -174,6 +280,13 @@ const MIGRATIONS = {
     (handle) => addColumnIfMissing(handle, 'users', 'nickname', 'TEXT'),
     (handle) => addColumnIfMissing(handle, 'calendars', 'color', "TEXT NOT NULL DEFAULT 'jade'"),
   ],
+  // v7 → v8：打卡改成按用户私有（每人一个不出现在列表里的 `kind='habits'` 集）。
+  // 这一步**会动已有数据**（把共享集里的打卡搬到各人的私有集），见
+  // migrateHabitsToPersonal 上面那整段理由。除此之外只加一列。
+  7: [
+    (handle) => addColumnIfMissing(handle, 'calendars', 'kind', "TEXT NOT NULL DEFAULT 'normal'"),
+    (handle) => migrateHabitsToPersonal(handle),
+  ],
 };
 
 const SCHEMA = `
@@ -191,6 +304,9 @@ CREATE TABLE IF NOT EXISTS calendars (
   name       TEXT    NOT NULL,
   owner_id   TEXT    NOT NULL,
   color      TEXT    NOT NULL DEFAULT 'jade',
+  -- 'normal' = 用户看得见的日程集；'habits' = 每个人的私有「打卡集」，
+  -- 只装自己的打卡、不出现在任何集列表里（见 v8 迁移那段）。
+  kind       TEXT    NOT NULL DEFAULT 'normal',
   created_at INTEGER NOT NULL,
   -- 软删：集被删时置位。成员关系一起清掉，field_state 留着（万一要捞回来）
   deleted_at INTEGER
@@ -268,5 +384,5 @@ const ALL_TABLES = [
 ];
 
 module.exports = {
-  SCHEMA_VERSION, AI_TABLES, MIGRATIONS, SCHEMA, FULL_SCHEMA, ALL_TABLES,
+  SCHEMA_VERSION, AI_TABLES, MIGRATIONS, SCHEMA, FULL_SCHEMA, ALL_TABLES, HABITS_CAL_NAME,
 };

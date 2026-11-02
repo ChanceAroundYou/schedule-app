@@ -128,7 +128,9 @@ export function useBackup() {
 
     // 过滤 + 重写
     const newTasks = tasks.filter((t) => !skipped.has(t.calId || state.ui.cal || ''));
-    const newHabits = habits.filter((h) => !skipped.has((h as { calId?: string }).calId || state.ui.cal || ''));
+    /* 打卡一律归"我"（私有打卡集，2026-11-02）：既不按来源集过滤、也不做集
+       重映射 —— 映射到某个共享集里去，等于又把打卡变成"共享的"。 */
+    const newHabits = habits;
     const newProjects = projects.filter((p) => !skipped.has(p.calId || state.ui.cal || ''));
 
     const target = state.ui.cal || '';
@@ -137,9 +139,7 @@ export function useBackup() {
       t.calId = remap.get(cid) || cid;
     }
     for (const h of newHabits) {
-      const hh = h as { calId?: string };
-      const cid = hh.calId || target;
-      hh.calId = remap.get(cid) || cid;
+      (h as { calId?: string }).calId = state.habitsCal || target;
     }
     for (const p of newProjects) {
       const cid = p.calId || target;

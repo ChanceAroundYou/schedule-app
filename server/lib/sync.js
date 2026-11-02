@@ -223,11 +223,18 @@ function applyOps(userId, ops) {
         });
         continue;
       }
+      /* 打卡**按人私有**（v8 起，见 schema.js 的 migrateHabitsToPersonal）：
+         不管客户端把 calId 写成哪个集 —— 老版本 App 仍在往"当前选中的集"里
+         写 —— 一律落到这个用户自己的私有打卡集。**重写而不是拒绝**：不该
+         因为一次升级让人打不了卡。写入落位后，共享集的成员永远拿不到它。 */
+      if (raw.entity === 'habit') {
+        raw.calId = calendars.ensureHabitsCal(userId);
+      }
+
       if (!calendars.canWrite(roleIn(raw.calId))) {
         rejected.push({ opId: raw.opId, code: 'forbidden', reason: '这个日程集你没有修改权限' });
         continue;
       }
-
       /* 来源标记。**createdBy 是服务端字段：客户端传什么都不认。**
          op 里的 `deviceId` 只到设备、不到用户，自报的 userId 更不能信 ——
          认了它等于任何人都能把自己的任务标成别人建的、或把别人建的标成自己的。

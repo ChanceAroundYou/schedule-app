@@ -25,5 +25,9 @@ export const sectionFiles = [
   './sections/smoke/23.mjs',
   './sections/smoke/24.mjs',
   './sections/smoke/25.mjs',
+  /* ⚠️ 27 排在 26 **前面**：26 是收尾节 —— 它把视口换成真窄屏、跑完就
+     `page.close()`。排在它后面的节拿到的是已经关掉的页面（evalJs 会一直等
+     一个永远不来的回包，整趟探针就那么挂住）。新加的节一律插在这行之上。 */
+  './sections/smoke/27.mjs',
   './sections/smoke/26.mjs',
 ];

@@ -147,6 +147,37 @@ export async function run(ctx) {
     [...document.querySelectorAll('.tabbar .tab')].find((b) => b.textContent.includes('日程'))
   `);
   await waitFor(page, `!!document.querySelector('.cal-subhead')`, '真窄屏：切到日程页', 8000);
+
+  /* ---- 真窄屏 · 顶栏「找日期」浮层必须整块留在屏幕里（2026-11-02 用户报
+     「弹出来的日历只显示了一半」）----
+     当时病根是 CSS 里那条 `right: 0`：面板宽 300，被顶栏右边的图标一顶就往
+     左伸出屏幕，量出来 `left: -155`。现在改为 fixed + placePanel 收到视口内，
+     所以这里量的不是"看起来还行"，而是**四条边都在视口里**。 */
+  await clickEl(page, `document.querySelector('.jump-wrap .btn, .jump-wrap button')`);
+  await waitFor(page, `(() => {
+    const p = document.querySelector('.jump-pop');
+    return p && getComputedStyle(p).visibility === 'visible' ? 1 : null;
+  })()`, '真窄屏：找日期浮层打开且已量到位置', 8000);
+  const jp = await evalJs(page, `return (() => {
+    const p = document.querySelector('.jump-pop');
+    const r = p.getBoundingClientRect();
+    return { left: Math.round(r.left), right: Math.round(r.right),
+             top: Math.round(r.top), bottom: Math.round(r.bottom),
+             w: Math.round(r.width), h: Math.round(r.height),
+             vw: window.innerWidth, vh: window.innerHeight,
+             calCells: document.querySelectorAll('.jump-pop .jp-cell').length };
+  })()`);
+  ok(jp.left >= 0 && jp.right <= jp.vw,
+    '真窄屏：找日期浮层横向整块在屏幕内（不再被推出左边）',
+    'left ' + jp.left + ' / right ' + jp.right + ' / 视口 ' + jp.vw);
+  ok(jp.top >= 0 && jp.bottom <= jp.vh,
+    '真窄屏：找日期浮层纵向也在屏幕内', 'top ' + jp.top + ' / bottom ' + jp.bottom + ' / 视口 ' + jp.vh);
+  ok(jp.w <= jp.vw - 12, '浮层宽度没顶满屏幕（两侧都留了余量）', jp.w + ' / ' + jp.vw);
+  ok(jp.calCells >= 28, '浮层里那本小月历渲染全了', String(jp.calCells));
+  /* 关掉：再点一次触发按钮（浮层不在原来的挂载点里，Esc 也认，点自己最省事） */
+  await clickEl(page, `document.querySelector('.jump-wrap .btn, .jump-wrap button')`);
+  await waitFor(page, `!document.querySelector('.jump-pop') ? 1 : null`, '真窄屏：浮层收起来', 8000);
+
   await clickEl(page, `
     [...document.querySelectorAll('.view-switch button')].find((b) => b.dataset.view === 'week')
   `);

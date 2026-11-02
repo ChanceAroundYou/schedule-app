@@ -585,3 +585,50 @@ test('setActiveCal 会把那个集勾上 —— 设成归属却不显示等于�
   assert.deepEqual(store.shownCals(), [other, CAL], '新归属自己被勾上了');
   assert.equal(store.get().ui.cal, CAL);
 });
+
+/* ------------------------------------------------ 打卡按人私有（2026-11-02） */
+
+/**
+ * 用户要求：日程可以共享，但打卡只属于每个人自己。
+ *
+ * 实现是「每人一个不出现在集列表里的私有打卡集」。这里守三条客户端侧的口径：
+ *   ① 新建打卡落在私有集，不是当前选中的（可能是共享的）日程集；
+ *   ② 集列表刷新（pruneCals）不许把私有集里的打卡清掉 —— 这是最容易写漏的一条；
+ *   ③ 服务端发来的打卡变更，本地 calId 一律归到私有集。
+ */
+test('新建打卡落在私有打卡集，而不是当前选中的日程集', () => {
+  fresh();
+  const HC = 'cal-habits';
+  store.setHabitsCal(HC);
+  store.setActiveCal(CAL);          // 当前选中的是普通日程集（可能是共享的）
+
+  const id = store.addHabit('学英语');
+  assert.equal(store.get().habits[id].calId, HC, '打卡要落在私有打卡集里');
+  assert.equal(store.get().outbox.at(-1)?.calId, HC, 'op 也要带私有集的 calId');
+});
+
+test('刷集列表不会把私有集里的打卡清掉', () => {
+  fresh();
+  const HC = 'cal-habits';
+  store.setHabitsCal(HC);
+  const id = store.addHabit('学英语');
+
+  // 假装同步回来一份全新的集列表（里面当然没有隐藏的私有集）
+  store.setCals([
+    { id: CAL, name: '我的日程', ownerId: 'u1', createdAt: 0, role: 'owner' },
+    { id: 'cal-2', name: '家里的', ownerId: 'u1', createdAt: 1, role: 'editor' },
+  ]);
+
+  assert.ok(store.get().habits[id], '打卡不该因为「集列表里没有它的集」被删掉');
+});
+
+test('服务端发来的打卡变更，本地 calId 归到私有集', () => {
+  fresh();
+  store.setHabitsCal('cal-habits');
+  store.applyRemote([{
+    entity: 'habit', entityId: 'h1', field: 'title', value: '练琴',
+    ts: 5, deviceId: 'devA', calId: CAL,      // 老服务端/老数据：写的是共享集
+  }]);
+  assert.equal(store.get().habits.h1.calId, 'cal-habits', '本地要归到私有集，写入才不会落错');
+  assert.equal(store.get().habits.h1.title, '练琴');
+});

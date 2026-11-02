@@ -47,6 +47,7 @@ import { useKeyboard } from './keyboard.ts';
 import { useBackup } from './backup.tsx';
 import { contentDispatch } from './contentDispatch.tsx';
 import { installTouchDamp, attachScrollThumb } from './touchDamp.ts';
+import { installMonthSwipe } from './monthSwipe.ts';
 import { initKeyboard } from './kb.ts';
 import { captureTap } from './tapSnap.ts';
 import { settleDraftAndSet, draftEcho } from '../ui/newCell.ts';
@@ -127,6 +128,9 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
     const content = contentRef.current;
     const offDamp = content ? installTouchDamp(content) : null;
     const offThumb = content ? attachScrollThumb(content) : null;
+    /* 月视图上下滑翻月（用户 2026-11-01）。同样委托在 #content 上；只有
+       `ui.view === 'month'` 才认这条手势，日/周的纵向滑动照旧是滚时间轴。 */
+    const offSwipe = content ? installMonthSwipe(content) : null;
     document.addEventListener('pointerdown', captureTap, true);
     const onDocClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
@@ -148,6 +152,7 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
       offKb();
       if (offDamp) offDamp();
       if (offThumb) offThumb();
+      if (offSwipe) offSwipe();
       document.removeEventListener('pointerdown', captureTap, true);
       document.removeEventListener('click', onDocClick);
     };

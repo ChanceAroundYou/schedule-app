@@ -22,6 +22,7 @@
 
 const crypto = require('node:crypto');
 const db = require('./db');
+const { HABITS_CAL_NAME } = require('./db/schema');
 
 const ROLES = ['owner', 'editor', 'viewer'];
 const DEFAULT_CAL_NAME = '我的日程';
@@ -85,6 +86,35 @@ function createOwned(userId, name, at, color) {
 function ensureHasCalendar(userId) {
   if (db.countCalendarsFor(userId) > 0) return null;
   return createOwned(userId, DEFAULT_CAL_NAME);
+}
+
+/**
+ * 这个用户的私有「打卡集」（没有就建一个）。返回 calId。
+ *
+ * 打卡从 v8 起**按人私有**（用户 2026-11-02：日程可以共享，打卡只属于自己）。
+ * 实现上不另起一套表 —— 打卡仍走原来的逐字段 LWW 通道，只是永远落在这个
+ * 用户自己的、**不出现在任何集列表里**的集上（`kind='habits'`）。共享集的
+ * 成员也就再也拿不到别人的打卡了。
+ *
+ * 调用点：同步响应里回给客户端（`habitsCal`）、以及 applyOps 里把客户端
+ * 发来的 habit op 一律改写到这个集（老版本 App 还在往当前集写，重写而不是
+ * 拒绝 —— 不该因为一次升级让人打不了卡）。
+ */
+function ensureHabitsCal(userId) {
+  const have = db.habitsCalFor(userId);
+  if (have) return have;
+  const now = Date.now();
+  const cal = {
+    id: crypto.randomUUID(),
+    name: HABITS_CAL_NAME,
+    ownerId: userId,
+    color: DEFAULT_CAL_COLOR,
+    createdAt: now,
+    kind: 'habits',
+  };
+  db.insertCalendar(cal);
+  db.upsertMember(cal.id, userId, 'owner', now);
+  return cal.id;
 }
 
 /**
@@ -255,7 +285,7 @@ function leave(calId, userId) {
 module.exports = {
   ROLES, DEFAULT_CAL_NAME, NAME_MAX, CAL_COLORS, DEFAULT_CAL_COLOR,
   isRole, nameProblem, canWrite, canManage,
-  createOwned, ensureHasCalendar, create,
+  createOwned, ensureHasCalendar, ensureHabitsCal, create,
   listMine, members, directory,
   rename, remove, setRole, kick, leave, setColor,
 };

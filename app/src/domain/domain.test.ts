@@ -37,6 +37,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
     habits: {},
     projects: {},
     cals: [],
+    habitsCal: null,
     invites: [],
     cursor: 0,
     outbox: [],

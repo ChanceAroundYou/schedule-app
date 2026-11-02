@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { useOutsideClose } from '../hooks.ts';
+import { useAnchoredPosition, useOutsideClose } from '../hooks.ts';
 import { Input } from '../kit.tsx';
 import { MiniCalendar } from '../overlays/MiniCalendar.tsx';
 
@@ -22,12 +22,21 @@ function jumpLoad(state: LocalState, isoDay: string): number {
 function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
   open: boolean; cursor: string; state: LocalState;
   onPick: (iso: string) => void; onClose: () => void;
-  triggerRef?: React.RefObject<HTMLElement | null>;
+  /** 触发按钮（顶栏那颗日历图标）。**必填** —— 浮层按它定位；给 null 的话
+   *  浮层会一直是 `visibility: hidden`（量不到位置就不许露头，见 useAnchoredPosition）。 */
+  triggerRef: React.RefObject<HTMLElement | null>;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  /* 浮层**按视口定位**（fixed + 量出来再摆），不再靠 CSS 的 `left/right` 贴边。
+     手机端原来那条 `right: 0` 让面板往左伸到屏幕外 —— 390 宽的屏上量出来
+     `left:-155`，一半被裁掉（用户 2026-11-02 报「只显示了一半」）。
+     算式在 `domain/layout.ts` 的 placePanel（会被翻到上方、并往回收进视口），
+     与 DatePicker / TimePicker / 抽屉同一处，不再各写一套。 */
   const [month, setMonth] = useState(() => D.monthStart(cursor));
   const [text, setText] = useState('');
   const [bad, setBad] = useState(false);
+  /* 依赖里带 `month`：翻月后面板高度会变（6 周 vs 5 周），得重新量一次 */
+  const pos = useAnchoredPosition(triggerRef, box, open, [month]);
 
   useOutsideClose(box, open, onClose, triggerRef);
   useEffect(() => { if (open) { setMonth(D.monthStart(cursor)); setText(''); setBad(false); } }, [open, cursor]);
@@ -42,7 +51,16 @@ function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
   };
 
   return (
-    <div className="jump-pop" ref={box}>
+    <div
+      className="jump-pop"
+      ref={box}
+      style={{
+        top: pos ? pos.top : 0,
+        left: pos ? pos.left : 0,
+        /* 量之前先藏着 —— 否则会在左上角闪一帧再跳到正确位置 */
+        visibility: pos ? 'visible' : 'hidden',
+      }}
+    >
       <div className={"jp-row"}>
         <Input
           type="text"

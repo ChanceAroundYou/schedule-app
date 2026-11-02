@@ -26,11 +26,31 @@ function pruneCals(): void {
     if (t.calId && !ids.has(t.calId)) delete state.tasks[id];
   }
   for (const [id, h] of Object.entries(state.habits)) {
-    if (h.calId && !ids.has(h.calId)) delete state.habits[id];
+    /* 打卡的归属是**私有打卡集**，它本来就不在 `cals` 里（那个列表是给侧栏
+       用的）。漏掉这个例外，一次集列表刷新就能把用户的打卡全清光。 */
+    if (h.calId && h.calId !== state.habitsCal && !ids.has(h.calId)) delete state.habits[id];
   }
   for (const [id, j] of Object.entries(state.projects)) {
     if (j.calId && !ids.has(j.calId)) delete state.projects[id];
   }
+}
+
+/**
+ * 记下「我的私有打卡集是哪个」。返回**是否变了** —— 变了说明客户端头一次
+ * 拿到这个 id（换账号 / 老版本升上来），调用方要补一次全量快照：游标是全局
+ * 单调的，这个集里已有的打卡都在游标后面，光靠增量永远拉不到。
+ */
+export function setHabitsCal(id: string | null | undefined): boolean {
+  const next = typeof id === 'string' && id ? id : null;
+  if (state.habitsCal === next) return false;
+  state.habitsCal = next;
+  /* 手里那些打卡的"所属集"跟着改：服务端已经把它们搬进私有集了，本地留着
+     旧值只会让下一次写入落回共享集（再被服务端改写一遍，白跑一趟）；
+     而且老版本会把 calId 当成 pruneCals 的判据，留着旧值等于自找清空。 */
+  if (next) for (const h of Object.values(state.habits)) h.calId = next;
+  persist();
+  emit();
+  return true;
 }
 
 export function setCals(cals: Cal[] | undefined): void {

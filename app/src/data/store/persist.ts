@@ -34,6 +34,7 @@ export function load(): LocalState {
         habits: p.habits || {},
         projects: p.projects || {},
         cals: Array.isArray(p.cals) ? p.cals : [],
+        habitsCal: typeof p.habitsCal === 'string' && p.habitsCal ? p.habitsCal : null,
         invites: Array.isArray(p.invites) ? p.invites : [],
         users: p.users && typeof p.users === 'object' ? p.users : {},
         /* 「我是谁」优先信本地缓存的那份（离线启动也要能认出「这条是我建的」），

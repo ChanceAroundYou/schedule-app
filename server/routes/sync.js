@@ -44,6 +44,12 @@ module.exports = {
       body: {
         ...state, applied, rejected,
         cals: calendars.listMine(userId),
+        /**
+         * 我的私有打卡集 id。**不在 cals 里**（那个列表是给侧栏用的，打卡页
+         * 不按集分），但客户端要拿它当「新建打卡落在哪」的落点 —— 见
+         * lib/calendars.js 的 ensureHabitsCal 与 schema.js 的 v8 迁移。
+         */
+        habitsCal: calendars.ensureHabitsCal(userId),
         invites: invites.listFor(userId),
         users: calendars.directory(userId),
       },

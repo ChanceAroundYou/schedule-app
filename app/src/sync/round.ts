@@ -21,6 +21,12 @@ interface RoundResult {
   progressed: boolean;
   /** 服务端明说了「这批没给完」，下文还挂着 */
   truncated: boolean;
+  /**
+   * 这一轮**头一次**拿到私有打卡集 id（换账号 / 老版本升上来）。
+   * 调用方要因此补一次全量快照：游标是全局单调的，那个集里已有的打卡都在
+   * 游标后面，光靠增量永远拉不到。
+   */
+  habitsCalChanged: boolean;
 }
 
 async function round(forceSnapshot: boolean): Promise<RoundResult> {
@@ -42,6 +48,9 @@ async function round(forceSnapshot: boolean): Promise<RoundResult> {
   store.setCals(res.cals);
   store.setInvites(res.invites);
   store.setUsers(res.users);
+  /* 打卡落点在私有打卡集里（按人私有）。**必须在 applyRemote 之前设**：
+     合并那一步靠它把每条打卡的 calId 归到私有集。 */
+  const habitsCalChanged = store.setHabitsCal(res.habitsCal);
 
   // 快照与增量走同一条合并路径，见 store.applyRemote 的注释
   if (res.snapshot) store.applyRemote(store.flattenSnapshot(res.snapshot));
@@ -61,6 +70,7 @@ async function round(forceSnapshot: boolean): Promise<RoundResult> {
   return {
     progressed: store.get().outbox.length < before || (res.changes || []).length > 0,
     truncated: res.truncated === true,
+    habitsCalChanged,
   };
 }
 

@@ -890,9 +890,39 @@ body.is-drag-range { user-select: none; }
    随 views/calendar/layout.ts 的 fit() 一起删了。min-height 480px 只是非
    content-month 时的兜底。 */
 .month-view { display: flex; flex-direction: column; min-height: 480px; }
+
+/* ---------- 上下滑翻月（2026-11-01）----------
+   `.month-swipe` 是裁剪窗（一页高），`.month-track` 是跟着手指走的整条，
+   位移由 app/monthSwipe.ts 写进 `--mdrag`（不走 React，所以这里必须是 CSS 变量）。
+   邻月预览层绝对定位在 track 的上下各一页高，所以「把 track 挪一页」正好
+   等于「把邻月挪到眼前」—— 翻月动画不需要再算任何几何。
+   预览层 `pointer-events: none`：它只是画面，不能抢走放置区/点击。 */
+.month-swipe { position: relative; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.month-track {
+  position: relative; display: flex; flex-direction: column;
+  flex: 1 1 auto; min-height: 0;
+  transform: translate3d(0, var(--mdrag, 0px), 0);
+  will-change: transform;
+}
+.month-track .month-view { flex: 1 1 auto; min-height: 0; }
+/* 跟手那段**必须没有过渡**（加了就变成手指走一半、画面慢半拍）；只有抬手
+   翻月/弹回才挂 `data-md-anim`，过渡时长与 app/monthSwipe.ts 的 ANIM_MS 同源。 */
+.month-track[data-md-anim] { transition: transform 200ms cubic-bezier(.22, .61, .36, 1); }
+.month-ghost-layer {
+  position: absolute; left: 0; right: 0; height: 100%;
+  display: flex; flex-direction: column;
+  pointer-events: none;
+}
+.month-ghost-layer.above { top: -100%; }
+.month-ghost-layer.below { top: 100%; }
+/* 预览格子：不滚、不截断到一半难看 —— 直接裁掉溢出（它只在一两百毫秒里露面） */
+.month-ghost .month-cell { overflow: hidden; }
+.month-ghost .cell-tasks { overflow: hidden; }
 /* 窄屏（Shell 挂 content-month）锁单屏不滚：行高由 flex 均分，所以这里把
    min-height 收回 0、网格吃掉剩余高度。 */
 .content-month { overflow: hidden; display: flex; flex-direction: column; }
+/* 翻月的一页 = 这个裁剪窗：`content-month` 的剩余高度全给它，track 再吃满它 */
+.content-month .month-swipe { flex: 1 1 auto; }
 .content-month .month-view { min-height: 0; flex: 1 1 auto; min-height: 0; }
 .content-month .month-grid { flex: 1 1 auto; min-height: 0; grid-auto-rows: 1fr; }
 /* 格子的 min-height 也收回 0（宽窄通用）：行高由 1fr 均分说了算，104px 的下限

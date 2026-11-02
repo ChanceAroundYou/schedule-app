@@ -37,6 +37,10 @@ export function applyRemote(changes: RemoteChange[]): boolean {
     let e = bucket[c.entityId];
     if (!e) e = bucket[c.entityId] = { id: c.entityId, calId: c.calId || '', _ts: {}, _dev: {} };
     if (c.calId) e.calId = c.calId;
+    /* 打卡一律归到私有打卡集（见 LocalState.habitsCal）。老版本客户端把
+       calId 写成共享集、老数据里也是共享集 —— 本地统一过来，写入才不会
+       每次都指望服务端改写。 */
+    if (c.entity === 'habit' && state.habitsCal) e.calId = state.habitsCal;
 
     const curTs = (e._ts as Record<string, number>)[c.field] ?? -Infinity;
     const curDev = (e._dev as Record<string, string>)[c.field] ?? '';

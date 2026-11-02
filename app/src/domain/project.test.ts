@@ -27,7 +27,7 @@ function stateWith(projects: Project[] = [], tasks: Task[] = []): LocalState {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
     habits: {},
     projects: Object.fromEntries(projects.map((p) => [p.id, p])),
-    cals: [], invites: [], cursor: 0, outbox: [],
+    cals: [], habitsCal: null, invites: [], cursor: 0, outbox: [],
     ui: normalizeUi(undefined),
     lastError: null, clockBlocked: [], denied: 0, deniedCals: [],
     conflicts: [], syncing: false,

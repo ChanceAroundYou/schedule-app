@@ -41,6 +41,10 @@ export async function syncNow(): Promise<void> {
         forceSnapshot = true;
         for (const c of now) known.add(c.id);
       }
+      /* 私有打卡集**不在 cals 里**（它是隐藏的），所以上面那条例行找不到它。
+         头一次拿到这个 id 时同样得补一次全量：这个集里已有的打卡全在游标
+          后面（见 round.ts 的 habitsCalChanged）。 */
+      if (r.habitsCalChanged) forceSnapshot = true;
 
       /* 两条「收工」都要让位于 `truncated`：服务端明说了这批没给完，
          这时候「outbox 空了」「推不动了」都只说明**推**那头没事，

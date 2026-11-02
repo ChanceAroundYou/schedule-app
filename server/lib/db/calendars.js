@@ -7,8 +7,8 @@ const { run, get, all } = require('./connection.js');
 const ROLES = new Set(['owner', 'editor', 'viewer']);
 
 function insertCalendar(c) {
-  run('INSERT INTO calendars (id, name, owner_id, color, created_at) VALUES (?,?,?,?,?)',
-    c.id, c.name, c.ownerId, c.color || 'jade', c.createdAt);
+  run('INSERT INTO calendars (id, name, owner_id, color, created_at, kind) VALUES (?,?,?,?,?,?)',
+    c.id, c.name, c.ownerId, c.color || 'jade', c.createdAt, c.kind || 'normal');
   return c;
 }
 
@@ -28,15 +28,32 @@ function softDeleteCalendar(id) {
   return run('UPDATE calendars SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', Date.now(), String(id));
 }
 
-/** 我加入的全部日程集（含角色），按加入时间。一次 JOIN 拿完，别在循环里查。 */
+/**
+ * 我加入的全部日程集（含角色），按加入时间。一次 JOIN 拿完，别在循环里查。
+ *
+ * **不含 `kind='habits'` 的私有打卡集** —— 那个集不对用户展示（打卡页看的是
+ * "所有打卡"，不按集分），列出来只会在侧栏多一个删不掉、也进不去的条目。
+ * 注意 `calendarIdsFor` 是**故意反过来**的：同步拉取要包含它，否则打卡拉不下来。
+ */
 function calendarsFor(userId) {
   return all(`
     SELECT c.id, c.name, c.owner_id, c.color, c.created_at, m.role, m.joined_at
     FROM calendar_members m
     JOIN calendars c ON c.id = m.cal_id
     WHERE m.user_id = ? AND c.deleted_at IS NULL
+      AND COALESCE(c.kind, 'normal') <> 'habits'
     ORDER BY m.joined_at, c.created_at
   `, String(userId));
+}
+
+/** 我的私有打卡集 id（老库可能还没有，返回 null）。一个用户最多一个。 */
+function habitsCalFor(userId) {
+  const row = get(`
+    SELECT id FROM calendars
+    WHERE owner_id = ? AND kind = 'habits' AND deleted_at IS NULL
+    ORDER BY created_at LIMIT 1
+  `, String(userId));
+  return row ? row.id : null;
 }
 
 /** 我加入的日程集 id 列表 —— 拉同步时用它过滤 */
@@ -54,6 +71,7 @@ function countCalendarsFor(userId) {
     SELECT COUNT(*) AS n FROM calendar_members m
     JOIN calendars c ON c.id = m.cal_id
     WHERE m.user_id = ? AND c.deleted_at IS NULL
+      AND COALESCE(c.kind, 'normal') <> 'habits'
   `, String(userId)).n);
 }
 
@@ -122,7 +140,7 @@ function countOwners(calId) {
 module.exports = {
   ROLES,
   insertCalendar, findCalendar, renameCalendar, softDeleteCalendar,
-  calendarsFor, calendarIdsFor, countCalendarsFor, roleOf,
+  calendarsFor, calendarIdsFor, countCalendarsFor, habitsCalFor, roleOf,
   upsertMember, removeMember, membersOf, countOwners,
   setColorCalendar, directoryFor,
 };

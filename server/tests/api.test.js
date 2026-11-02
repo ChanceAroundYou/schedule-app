@@ -245,6 +245,51 @@ test('中途加入一个集，快照里能看到它已有的内容', async () =>
   assert.strictEqual(snap.tasks['shared-1'].calId, dad.calId, '快照要标明每条属于哪个集');
 });
 
+/* ---------------------------------------------------- 打卡按人私有（v8） */
+
+/**
+ * 用户 2026-11-02：**日程可以共享，打卡只属于每个人自己**。
+ *
+ * 放在这里是因为 dad / mom 此刻都在 dad.calId 这个共享集里、票也都有效
+ * （后面的发版流程、改口令用例会把票作废，注册又有每 IP 10 次/小时的限流，
+ * 所以不要在这个文件里再造新账户）。断言四件事：
+ *   ① 打进来的卡落在**自己的私有集**里，不是共享集（否则别人照样拉得到）；
+ *   ② 老版本客户端还把 calId 写成当前集 → 服务端要**改写**而不是拒绝；
+ *   ③ 同一个共享集里，B 拉不到 A 的打卡、A 也拉不到 B 的；
+ *   ④ 私有打卡集不出现在集列表里，而且共享集的任务照常互通。
+ */
+test('打卡跟着人走：共享集里也看不到别人的打卡', async () => {
+  // ① 老客户端口径：calId 写的是**共享集**
+  const wa = await push([op('h-priv-dad', { title: '学英语', log: {} }, 2400, 'devA', 'habit')], 1, dad.token);
+  assert.strictEqual(wa.status, 200);
+  assert.deepStrictEqual(wa.body.rejected, [], '不该被拒 —— 老版本还在往当前集写');
+  assert.ok(wa.body.habitsCal, '同步响应要告诉客户端"你的打卡集是哪个"');
+  assert.notStrictEqual(wa.body.habitsCal, dad.calId, '私有打卡集不能就是那个共享集');
+
+  const snapA = await snapshot(dad.token);
+  assert.strictEqual(snapA.habits['h-priv-dad'].calId, wa.body.habitsCal,
+    '打卡必须落在私有集里，不是共享集');
+  assert.ok(!(await api('GET', '/api/cals', { token: dad.token })).body.cals.some((c) => c.id === wa.body.habitsCal),
+    '私有打卡集不该出现在集列表里（否则侧栏会多一个删不掉的集）');
+
+  // ③ 妈妈也在同一个共享集里，但拉不到爸爸的打卡
+  const wb = await push([op('h-priv-mom', { title: '练琴', log: {} }, 2500, 'devM', 'habit')], 1, mom.token);
+  assert.deepStrictEqual(wb.body.rejected, []);
+  assert.notStrictEqual(wb.body.habitsCal, wa.body.habitsCal, '两个人的打卡集不是同一个');
+
+  const snapA2 = await snapshot(dad.token);
+  const snapB2 = await snapshot(mom.token);
+  assert.ok(snapA2.habits['h-priv-dad'], '自己那条还在');
+  assert.ok(!snapA2.habits['h-priv-mom'], '别人的打卡一条都不该看到');
+  assert.ok(snapB2.habits['h-priv-mom'], '自己那条还在');
+  assert.ok(!snapB2.habits['h-priv-dad'], '别人的打卡一条都不该看到');
+
+  // ④ 共享集本身照旧：任务还是互相看得见（打卡私有没把共享搞坏）
+  await push([op('t-priv-shared', { title: '一起做饭', date: null }, 2600, 'devA')]);
+  const snapB3 = await snapshot(mom.token);
+  assert.ok(snapB3.tasks['t-priv-shared'], '共享集里的任务还是要能互相看到');
+});
+
 test('可编辑成员能往里写，写进去的内容创建者也看得到', async () => {
   const mine = op('mom-1', { title: '妈妈加的' }, 3000, 'devM');
   const w = await push([mine], 1, mom.token);

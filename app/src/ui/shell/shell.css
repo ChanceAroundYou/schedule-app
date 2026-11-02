@@ -213,9 +213,13 @@
 .jump-wrap { position: relative; display: flex; }
 .jb-ico { font-size: 12px; line-height: 1; }
 
+/* 位置由 JS 量出来写内联（fixed + placePanel，见 JumpPop.tsx 的注释）——
+   CSS 里那套「贴左边/贴右边」在窄屏上会把面板推到屏幕外（390 宽的屏上量出
+   left:-155，一半被裁掉，2026-11-02 用户报「只显示了一半」）。这里只留尺寸
+   和外观；`max-width` 是兜底，屏幕比面板还窄时不许横向溢出。 */
 .jump-pop {
-  position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
-  width: 268px; padding: 12px;
+  position: fixed; z-index: 70;
+  width: 268px; max-width: calc(100vw - 16px); padding: 12px;
   background: var(--panel); border: var(--border-w) solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   animation: fadeUp .14s ease;

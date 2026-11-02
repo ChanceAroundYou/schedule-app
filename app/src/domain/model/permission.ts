@@ -10,6 +10,9 @@ import type { LocalState, Role } from '../types/types.ts';
  */
 export function roleOf(s: LocalState, calId: string | null | undefined): Role | null {
   if (!calId) return null;
+  /* 私有打卡集不在 `cals` 里（它不对用户展示），但它是**我自己**的集 ——
+     不认这一条，打卡的每一次写入都会被权限门挡下来（表现是点了没反应）。 */
+  if (calId === s.habitsCal) return 'owner';
   const c = s.cals.find((x) => x.id === calId);
   return c ? c.role : null;
 }
