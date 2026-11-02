@@ -1,10 +1,12 @@
 /**
- * 27.mjs —— 月视图上下滑翻月（2026-11-01 用户要求）
+ * 27.mjs —— 月视图上下滑翻月（2026-11-01 用户要求，2026-11-02 改口径）
  *
  * 要证明的四件事：
  *   1. 跟手：手指走多少，`.month-track` 的位移就是多少（不是"滑一下就整页跳"）；
  *   2. 邻月预览只在手势进行中挂两层，抬手就摘干净；
- *   3. 门是「过一大半」：拖 30% 弹回、不翻月；拖 80% 才翻；
+ *   3. **翻到哪儿是哪儿**：拖 30%（远不到一半）松手就翻到上个月，**不回弹、
+ *      不退回当月** —— 用户 2026-11-02：「我不希望它要跳回去，我只希望我翻到
+ *      哪儿是哪儿」。只有几乎没动（点击）才不翻；
  *   4. 横向手势不抢（dx 明显大于 dy 时什么都不该发生）。
  *
  * 走 CDP 的真实触摸（`Input.dispatchTouchEvent`），不是页面内合成事件 ——
@@ -18,7 +20,7 @@
 export async function run(ctx) {
   const { page } = ctx;
   const helpers = ctx.helpers || {};
-  const { evalJs, waitFor, clickEl, touch } = helpers;
+  const { evalJs, waitFor, clickEl, touch, key } = helpers;
   const ok = ctx.ok;
 
   console.log('\n二十七、月视图上下滑翻月');
@@ -62,7 +64,7 @@ export async function run(ctx) {
   const startY = g.top + Math.round(g.h * 0.1);
   const at = (p) => ({ x, y: startY + Math.round(g.h * p) });
 
-  /* ---------------- 一小段：跟手 + 松手弹回 ---------------- */
+  /* ---------------- 跟手 + 拖一点就翻（不回弹） ---------------- */
   await touch(page, 'touchStart', at(0));
   await touch(page, 'touchMove', at(0.14));
   await touch(page, 'touchMove', at(0.3));
@@ -78,40 +80,25 @@ export async function run(ctx) {
   ok(Math.abs(await ty() - want) <= 3, 'transform 真的落到了 track 上', String(await ty()));
   ok((await ghosts()) === 2, '拖起来时上下各挂一页邻月预览', String(await ghosts()));
 
+  /* 关键口径（2026-11-02 用户）：拖 30%（远不到一半）松手**必须翻月**，
+     不许退回当月 —— 「我翻到哪儿是哪儿」。 */
   await touch(page, 'touchEnd', at(0.3));
-  await waitFor(page, `(() => {
-    const t = document.querySelector('.month-track');
-    return (t.style.getPropertyValue('--mdrag') || '').trim() === '0px' ? 1 : null;
-  })()`, '松手后位移归零', 3000);
-  ok((await ghosts()) === 0, '松手后邻月预览摘干净', String(await ghosts()));
-  ok((await title()) === title0, '只拖 30%（没过一大半）不翻月', await title());
-
-  /* ---------------- 一大段：翻到上个月 ---------------- */
-  await touch(page, 'touchStart', at(0));
-  await touch(page, 'touchMove', at(0.3));
-  await touch(page, 'touchMove', at(0.6));
-  await touch(page, 'touchMove', at(0.78));
-  await waitFor(page, `
-    Math.abs(parseFloat(document.querySelector('.month-track').style.getPropertyValue('--mdrag') || '0')) > ${Math.round(g.h * 0.6)} ? 1 : null
-  `, '拖过 60% 时跟手位移已越过一半', 3000);
-  await touch(page, 'touchEnd', at(0.78));
   await waitFor(page, `
     document.querySelector('.topbar .view-title').textContent !== ${JSON.stringify(title0)} ? 1 : null
-  `, '下滑翻到上个月', 4000);
+  `, '拖 30% 松手就翻到上个月（不弹回）', 4000);
   const titlePrev = await title();
-  ok(titlePrev !== title0, '拖 78%（过一大半）翻到上个月', title0 + ' → ' + titlePrev);
-  ok((await ghosts()) === 0, '翻月完成后预览层已摘掉', String(await ghosts()));
+  ok(titlePrev !== title0, '只拖 30%（不到一半）也翻月，不回弹', title0 + ' → ' + titlePrev);
+  ok((await ghosts()) === 0, '松手后邻月预览摘干净', String(await ghosts()));
   ok((await mdrag()) === '0px', '翻月完成后位移回到 0（新月份从正位开始）', String(await mdrag()));
 
-  /* ---------------- 反方向：翻到下个月 ---------------- */
+  /* ---------------- 反向：上滑一点点也翻（回下个月） ---------------- */
   await touch(page, 'touchStart', at(0));
-  await touch(page, 'touchMove', at(-0.3));
-  await touch(page, 'touchMove', at(-0.75));
-  await touch(page, 'touchEnd', at(-0.75));
+  await touch(page, 'touchMove', at(-0.2));
+  await touch(page, 'touchEnd', at(-0.2));
   await waitFor(page, `
     document.querySelector('.topbar .view-title').textContent === ${JSON.stringify(title0)} ? 1 : null
-  `, '上滑翻回原来的月份', 4000);
-  ok((await title()) === title0, '上滑翻到下个月（回到 ' + title0 + '）', await title());
+  `, '上滑 20% 也翻回下个月（回到 ' + title0 + '）', 4000);
+  ok((await title()) === title0, '上滑 20% 翻到下个月', titlePrev + ' → ' + await title());
 
   /* ---------------- 横向手势不抢 ---------------- */
   const before = await title();
@@ -122,6 +109,17 @@ export async function run(ctx) {
   await touch(page, 'touchEnd', { x: x + 160, y: startY + 20 });
   await new Promise((r) => setTimeout(r, 300));
   ok((await title()) === before, '横向手势不翻月', before + ' → ' + await title());
+
+  /* ---------------- 几乎没动（等于点一下）→ 不翻月 ---------------- */
+  /* 阈值 COMMIT_PX = 12px：只挪 4px 不能算翻月，否则点一格就跳月。 */
+  await touch(page, 'touchStart', { x, y: startY });
+  await touch(page, 'touchMove', { x, y: startY + 4 });
+  await touch(page, 'touchEnd', { x, y: startY + 4 });
+  await new Promise((r) => setTimeout(r, 400));
+  ok((await title()) === before, '只挪 4px（等于点一下）不翻月', before + ' → ' + await title());
+  /* 这一下有可能被当成点格子（开了草稿/抽屉）—— 收拾干净再交给下一节 */
+  await key(page, 'Escape', 'Escape', 27);
+  await new Promise((r) => setTimeout(r, 200));
 
   /* 收尾：把视图交还给周视图 —— 下一节（26，窄屏收尾节）假定页面停在周视图
      上直接种任务、断言 `.week-col.today`。留在月视图，它会等一个永远不会

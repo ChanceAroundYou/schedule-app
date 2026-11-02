@@ -7,6 +7,13 @@
  *   「灵活翻月，比如手指下拉一点点，那就对应显示上个月的一点点，而不是一整个月」
  *   「过一大半才翻」「只在月视图」
  *
+ * ⚠️ 2026-11-02 用户推翻了「过一大半」这条：
+ *   「当我往下滑一点点……松开手，它依然会跳回当月。我不希望它要跳回去，
+ *     我只希望我翻到哪儿是哪儿。」
+ * 现在改成 **朝向优先**：只要手指往某个方向真的拉出去了（超过 COMMIT_PX），
+ * 松手就落到那个方向的相邻月，**绝不回弹**。只有几乎没动（点击、手抖）才
+ * 什么都不做。「过一半」那种「滑了却被退回」的观感用户明确不要。
+ *
  * 三条实现要点：
  *
  * 1. **跟手，不跟"页"**：手指走多少，`--mdrag` 就写多少（位移写在一个 CSS 变量上，
@@ -16,8 +23,8 @@
  *    挂上（`MonthGhost`，见 views/calendar/MonthView.tsx）。整月真视图挂三份会
  *    让 dnd-kit 的 `day:<日期>` 放置区、`useDraggable` 的任务 id 全部重名 ——
  *    拖拽落点会错位。预览层带 `pointer-events: none`，不参与任何交互。
- * 3. **门是"过一大半"**：`|dy| > 55% 视口高` 才算翻月，否则弹回。用户明确
- *    否掉了「一点点就翻」—— 那会让人不敢滑。
+ * 3. **落位看方向，不看比例**：只要位移超过 `COMMIT_PX`，就朝手指方向翻一格；
+ *    否则（几乎没动，等于一次点击）原样回正。**不存在「拖了但被退回当月」**。
  *
  * 落位：翻月复用 `store.setUi({ cursor: addMonths(±1) })`，和 `useNav().shift`
  * 同一个口径（月视图里 shift 就是 addMonths）。**视图层依旧零回调**：
@@ -39,8 +46,12 @@ const SLOP = 6;
 /** 纵向位移必须**明显**大于横向才算翻月，否则横向手势（画动、选文字）会被吃掉 */
 const DIR_RATIO = 1.2;
 
-/** 「过一大半才翻」—— 视口高的 55%。 */
-const COMMIT_RATIO = 0.55;
+/**
+ * 「翻到哪儿是哪儿」（2026-11-02）：位移超过这个数就朝该方向翻一格。
+ * 取 12px —— 比 SLOP（6，判方向用）大一点，手抖和「点一下格子」不会误翻；
+ * 又远小于视口高，**轻轻一划就翻**，不会出现「滑了却被退回当月」。
+ */
+const COMMIT_PX = 12;
 
 /** 翻月/弹回的动画时长（ms）。比系统 sheet 短一点，手感利落 */
 const ANIM_MS = 200;
@@ -162,13 +173,13 @@ export function installMonthSwipe(root: HTMLElement): () => void {
     });
   };
 
-  /** 松手：过一大半 → 动画走到邻月再换 cursor；否则弹回 */
+  /** 松手：朝手指方向落位（不按比例、绝不回弹）；几乎没动就当一次点击，回正 */
   const onEnd = () => {
     if (!pager || !track) { reset(); return; }
     const node = track;
     const h = height;
     const dy = last;
-    const flip = Math.abs(dy) > h * COMMIT_RATIO ? (dy > 0 ? -1 : 1) : 0;
+    const flip = Math.abs(dy) > COMMIT_PX ? (dy > 0 ? -1 : 1) : 0;
 
     cancelAnimationFrame(raf);
 
@@ -187,8 +198,15 @@ export function installMonthSwipe(root: HTMLElement): () => void {
       }
     };
 
+    const target = flip ? (flip < 0 ? h : -h) : 0;
+    /* 收尾那段的时长按**剩余距离**算（速度恒定，约 h/ANIM_MS）。拖得少的时候
+       要走大半页，用固定 200ms 会「唰」地一下闪过去；匀速走完更像手指甩出去的
+       惯性。给个下限，别短到看不出是动画。 */
+    const dur = Math.round(Math.min(ANIM_MS, Math.max(ANIM_MS * 0.55, (ANIM_MS * Math.abs(target - dy)) / h)));
+
     node.setAttribute('data-md-anim', '');
-    node.style.setProperty('--mdrag', (flip ? (flip < 0 ? h : -h) : 0).toFixed(1) + 'px');
+    node.style.setProperty('--mdur', dur + 'ms');
+    node.style.setProperty('--mdrag', target.toFixed(1) + 'px');
 
     /* transitionend 不一定来（后台标签、动画被合并）—— 兜个底，
        否则一次手势没走完，`pager` 一直占着，后续手势全被忽略。 */
@@ -202,7 +220,7 @@ export function installMonthSwipe(root: HTMLElement): () => void {
     timer = window.setTimeout(() => {
       node.removeEventListener('transitionend', done);
       finish();
-    }, ANIM_MS + 120);
+    }, dur + 120);
   };
 
   root.addEventListener('touchstart', onStart, { passive: true });

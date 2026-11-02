@@ -906,8 +906,9 @@ body.is-drag-range { user-select: none; }
 }
 .month-track .month-view { flex: 1 1 auto; min-height: 0; }
 /* 跟手那段**必须没有过渡**（加了就变成手指走一半、画面慢半拍）；只有抬手
-   翻月/弹回才挂 `data-md-anim`，过渡时长与 app/monthSwipe.ts 的 ANIM_MS 同源。 */
-.month-track[data-md-anim] { transition: transform 200ms cubic-bezier(.22, .61, .36, 1); }
+   翻月/回正才挂 `data-md-anim`。时长走 `--mdur`：由 app/monthSwipe.ts 按剩余
+   距离算（速度恒定，拖一点点也像被甩出去，而不是"唰"一下闪），默认 200ms。 */
+.month-track[data-md-anim] { transition: transform var(--mdur, 200ms) cubic-bezier(.22, .61, .36, 1); }
 .month-ghost-layer {
   position: absolute; left: 0; right: 0; height: 100%;
   display: flex; flex-direction: column;
