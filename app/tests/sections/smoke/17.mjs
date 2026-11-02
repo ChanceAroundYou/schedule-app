@@ -775,5 +775,71 @@ export async function run(ctx) {
   `);
   await key(page, 'ArrowDown', 'ArrowDown', 40);
 
+  /* ---- 十四之三：**鼠标真拖**下沿 ----
+     2026-11-02 用户报：「往下拉把 6 点结束的任务拉到 10 点，点进详情时间还是 6 点；
+     松手后卡片一直是绿框，结束时间上还挂着一条绿虚线。」
+
+     根因在 `app/resizeTimeline.ts` 的 `up()`：它先调 `cancelPending()`（那里面会把
+     `active` 清成 false），紧接着又判 `if (!active) return;` —— **每一次正常松手**
+     都命中这条分支，于是写库 + 去 `.resizing` + 清绿线 + 清浮标四件事全被跳过。
+     键盘那条路不走 `up()`，所以上一节的断言一直是绿的，这个 bug 活得很滋润。
+
+     这里按住下沿往下拖 60 分钟后验三样：
+     ① 时长真的落库（详情里的结束时间由它派生，这才是用户看到的那件事）；
+     ② 卡片身上不再有 `.resizing`（绿框的来源）；
+     ③ 页面上不残留 `.tl-guide` / `.tl-cursor` / `.tl-dur-tag`。
+
+     事件用页面内合成（`mousedown` 在把手上、`mousemove` / `mouseup` 在 document
+     上）而不是 CDP 真鼠标：这条链路监听的就是这几个**原生 DOM 事件**，并没有
+     pointer 那一层；走 CDP 的话 `mousePressed` 还会另外派生 pointerdown，先被
+     dnd 的 PointerSensor 接走，测的就不只是拉伸这一件事了。 */
+  const dur0 = (await evalJs(page, `return (${taskOf} || {}).duration;`)) || 0;
+  const dragInfo = await evalJs(page, `
+    return (() => {
+      const h = ${sel('resize')};
+      /* 量的是**轴体**（.tl-axis[data-timeline]）而不是外层 .timeline：
+         resizeTimeline.ts 里 px↔分钟 用的就是把手最近的这个祖先
+         （h.closest('.timeline, [data-timeline]') 命中的是它）。量错一层，
+         拖 60 分钟会实打实变成 75 分钟 —— 第一版探针正是这么红的。
+         而且**必须同样从把手往上找**：日/周两套轴可能同时挂在 DOM 里，
+         document.querySelector 命中的第一个未必是手里这张卡的轴。
+         （⚠️ 这段是模板字符串里的 JS 注释，**不能写反引号**，会把外层提前截断） */
+      const tl = h && h.closest('.tl-axis[data-timeline]');
+      if (!h || !tl) return 'missing';
+      const r = h.getBoundingClientRect();
+      const b = tl.getBoundingClientRect();
+      const span = Number(tl.dataset.to) - Number(tl.dataset.from);
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const shift = Math.max(8, Math.round(60 * b.height / span));
+      h.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y, button: 0 }));
+      for (const k of [0.34, 0.67, 1]) {
+        document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y + Math.round(shift * k) }));
+      }
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y + shift }));
+      return { shift, y: Math.round(y), x: Math.round(x), axisH: Math.round(b.height), span, from: tl.dataset.from, to: tl.dataset.to };
+    })();
+  `);
+  ok(!!dragInfo && typeof dragInfo === 'object', '按住下沿并往下拖 60 分钟（合成原生鼠标事件）', JSON.stringify(dragInfo));
+  const dragged = await waitFor(page, `
+    (() => { const t = ${taskOf}; return t && t.duration !== ${dur0} ? { d: t.duration, time: t.time } : null; })()
+  `, '鼠标拖下沿后时长写进了库', 8000);
+  /* ⚠️ 不锁「正好 +60」：像素→分钟这条路本机合成事件里是有零点的（同一段 22px
+     拉到 60/75 都出现过），钉死绝对值只会让它变成一条看天吃饭的用例。这里守的是
+     **用户真正看到的那件事**：松手之后时长必须以 15 分钟档**真的变长**（详情里的
+     结束时间就是 duration 算出来的），以及下面那条「不残留」。档位换算的精确性
+     由 domain 单测的 nudgeEdge 用例管。 */
+  ok(dragged.d > dur0 && (dragged.d - dur0) % 15 === 0,
+    '鼠标拖下沿：时长 ' + dur0 + ' → ' + dragged.d + '（按 15 分钟档真的长上去了）');
+  ok(dragged.time === top.time, '拖下沿不动开始时间（仍 ' + dragged.time + '）');
+  const leftovers = await evalJs(page, `return {
+    resizing: document.querySelectorAll('.task-el.resizing').length,
+    guide: document.querySelectorAll('.tl-guide').length,
+    cursor: document.querySelectorAll('.tl-cursor').length,
+    tag: document.querySelectorAll('.tl-dur-tag').length,
+  };`);
+  ok(leftovers.resizing === 0 && leftovers.guide === 0 && leftovers.cursor === 0 && leftovers.tag === 0,
+    '松手后不残留任何拉伸痕迹（绿框 ' + leftovers.resizing + ' / 绿线 ' + leftovers.guide
+    + ' / 绿时间 ' + leftovers.cursor + ' / 时长浮标 ' + leftovers.tag + '）');
 
 }
