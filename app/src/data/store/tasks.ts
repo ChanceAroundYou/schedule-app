@@ -188,6 +188,32 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?:
     // 定义来源：优先系列根本身（它的标题/时间是「原始定义」），
     // 根被删就退而取组里任何一条。
     const rootTask = state.tasks[root];
+
+    /* 系列根是墓碑 → 这个系列已经结束，**一条都不许再铺**。
+     *
+     * 为什么非得挡这一道（2026-11-02，用户报「删掉的 B 每周三自己长回来」）：
+     * 分组只看「组里还有没有活着的成员」。用户把整个系列删掉之后，只要漏下
+     * 一条活实例 —— 另一台设备晚推上来的、或者「到此为止」标记没同步到本机 ——
+     * 这一组就还是活的，于是按规则把未来一路铺回来。删多少次长多少次，
+     * 而且**服务端早就删干净了、只有这台设备还在长**，看起来像幽灵。
+     *
+     * 唯一的例外是「只删这一次」：那种会给被删的那条打 `skipped = true`，
+     * 而它往往就是系列根 —— 那种情况系列必须继续派生（否则「只删这次」
+     * 等于「删掉整个系列」，2026-10-14 用户明确否掉过）。
+     *
+     * 顺手把已经铺出来的未来残留也收进垃圾桶：它们正是用户看得见的那几张卡。
+     * 只动「今天及以后」的 —— 过去的发生是历史，不是残留。 */
+    if (rootTask && rootTask.deleted && !rootTask.skipped) {
+      for (const o of members) {
+        if (!o.date || o.date < today) continue;
+        items.push({
+          entity: 'task', id: o.id, calId: o.calId,
+          fields: { deleted: true, deletedAt: now, trashFrom: '重复任务结束' },
+        });
+      }
+      continue;
+    }
+
     const t = (rootTask && !rootTask.deleted) ? rootTask : members[0];
     const r = t.repeat;
     if (!r || r.unit === 'none') continue;

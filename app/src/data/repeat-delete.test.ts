@@ -200,3 +200,59 @@ test('【自愈】之后 window 补齐不能再把已结束的系列补回来', 
   console.log(`  标记=${cut} 清理后 ${afterSweep.length} 条，补齐后 ${afterRefill.length} 条`);
   assert.deepEqual(afterRefill, afterSweep, '补齐不该改动已结束系列的任何东西');
 });
+
+/**
+ * 用户 2026-11-02：删掉的系列「B」（每周三）在手机上一直自己长回来。
+ *
+ * 服务端早就删干净了，只有那台设备还在长 —— 因为分组只看「组里还有没有
+ * 活着的成员」：根是墓碑、只要漏下一条活实例（另一台设备晚推的，或
+ * repeatUntil 没同步到本机），这一组就还是活的，于是按规则把未来一路铺回来。
+ *
+ * 护栏：根是墓碑且不是「只删这一次」（没有 skipped）→ 整族停止派生，
+ * 并把今天及以后的残留一并收进垃圾桶。
+ */
+test('系列根已删（不是「只删这一次」）→ 不再铺未来，残留也清掉', () => {
+  fresh();
+  const rpt = { unit: 'week' as const, n: 1, weekdays: [3], monthday: 1, yearMonth: 1, end: null };
+  const root = store.addTask(makeTask({
+    calId: CAL, title: 'B', date: '2026-10-14', time: null, repeat: rpt,
+  }));
+  const inst = store.addTask(makeTask({
+    id: root + '#2026-11-11', calId: CAL, title: 'B', date: '2026-11-11',
+    time: null, repeat: rpt, seriesId: root, repeatSeq: 4,
+  }));
+
+  // 根被「从今天起全部删除」（没有 skipped），只剩一条活实例
+  const s = store.get();
+  s.tasks[root].deleted = true;
+  s.tasks[root].deletedAt = Date.now();
+  s.tasks[root].trashFrom = '今天';
+
+  ensureRepeatOccurrences();
+
+  const left = Object.values(store.get().tasks)
+    .filter((t) => !t.deleted && t.id.startsWith(root + '#') && t.date! >= D.today())
+    .map((t) => t.date as string).sort();
+  console.log('  修完还活着的未来实例:', left.join(', ') || '(无)');
+  assert.deepEqual(left, [], '根已删 → 未来一条都不该留');
+  assert.ok(!('#' + '2026-11-18' in store.get().tasks) || store.get().tasks[inst].deleted === true,
+    '那条活实例本身也该被收掉');
+});
+
+test('「只删这一次」删掉根那天（有 skipped）→ 系列必须继续派生', () => {
+  fresh();
+  const rpt = { unit: 'week' as const, n: 1, weekdays: [3], monthday: 1, yearMonth: 1, end: null };
+  const root = store.addTask(makeTask({
+    calId: CAL, title: '组会', date: D.today(), time: null, repeat: rpt,
+  }));
+  // 删的正好是根那一天，且是「只删这一次」
+  store.deleteOne(root, D.today());
+
+  ensureRepeatOccurrences();
+
+  const aliveDates = Object.values(store.get().tasks)
+    .filter((t) => !t.deleted && t.id !== root && t.seriesId === root)
+    .map((t) => t.date as string).sort();
+  console.log('  「只删这一次」之后仍有:', aliveDates.length, '条');
+  assert.ok(aliveDates.length > 0, '只删这一次不能把整个系列弄死');
+});
