@@ -28,6 +28,8 @@ export {
   useSortableItem,
   SortableZone,
   SortableList,
+  SortableGroups,
+  type SortableGroupData,
   useDraggableEvent,
   useClampedDraggableEvent,
   useDroppableZone,

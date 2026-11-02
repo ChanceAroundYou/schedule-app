@@ -20,6 +20,7 @@ export type { RepeatUnit, RepeatRule } from './RepeatRule.ts';
 export type { SyncMeta } from './SyncMeta.ts';
 export type { Task } from './Task.ts';
 export type { Habit } from './Habit.ts';
+export type { HabitGroup } from './HabitGroup.ts';
 export type { ProjectStatus, Project } from './Project.ts';
 export type { Role, Cal, CalColorKey, Member, Invite } from './Cal.ts';
 export { canWrite, canManage, ROLE_LABEL, ROLES, ASSIGNABLE_ROLES, ROLE_HINT } from './Cal.ts';

@@ -2,7 +2,7 @@
  * hydrate.ts —— 实体补全
  */
 
-import type { Task, Habit, Project } from '../types/types.ts';
+import type { Task, Habit, HabitGroup, Project } from '../types/types.ts';
 import { toRepeat } from '../repeat.ts';
 
 /**
@@ -58,9 +58,20 @@ export function hydrateHabit<T extends Partial<Habit> & MetaLike>(e: T): T & Hab
   if (h.calId === undefined) h.calId = '';
   if (h.title === undefined) h.title = '未命名习惯';
   if (h.order === undefined) h.order = 0;
+  // 分类是 2026-11-02 才有的字段，老数据 / 老服务端都没有 → 落进「未分类」
+  if (h.groupId === undefined) h.groupId = null;
   if (!h.log || typeof h.log !== 'object') h.log = {};
   if (h.createdAt === undefined) h.createdAt = 0;
   return h;
+}
+
+export function hydrateHabitGroup<T extends Partial<HabitGroup> & MetaLike>(e: T): T & HabitGroup {
+  const g = e as T & HabitGroup;
+  if (g.calId === undefined) g.calId = '';
+  if (g.name === undefined) g.name = '未命名分类';
+  if (g.order === undefined) g.order = 0;
+  if (g.createdAt === undefined) g.createdAt = 0;
+  return g;
 }
 
 export function hydrateProject<T extends Partial<Project> & MetaLike>(e: T): T & Project {

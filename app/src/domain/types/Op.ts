@@ -2,7 +2,7 @@
  * Op —— 同步操作
  */
 
-export type Entity = 'task' | 'habit' | 'project';
+export type Entity = 'task' | 'habit' | 'habitGroup' | 'project';
 
 /** 一条同步操作。字段是「本次改动的那几个」，不是整条实体。 */
 export interface Op {
@@ -77,6 +77,8 @@ export interface SyncResponse {  cursor: number;
     tasks: Record<string, import('./Task.ts').Task>;
     habits: Record<string, import('./Habit.ts').Habit>;
     projects?: Record<string, import('./Project.ts').Project>;
+    /** 打卡分类。同样可选：老服务端不带这一桶时当「还没有任何分类」 */
+    habitGroups?: Record<string, import('./HabitGroup.ts').HabitGroup>;
   };
   /** 每次同步都带回来：轮询顺带发现「有人邀请我」「我被拉进新集」 */
   cals?: import('./Cal.ts').Cal[];

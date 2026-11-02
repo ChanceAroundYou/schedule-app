@@ -4,45 +4,64 @@
 
 import type { ReactNode } from 'react';
 import { Flame, ChevronRight } from 'lucide-react';
-import type { Habit } from '../../domain/types.ts';
+import type { Habit, LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { habitStreak } from '../../domain/model.ts';
+import { bucketsOf, habitStreak } from '../../domain/model.ts';
 import { CheckBtn } from './CheckBtn.tsx';
 
 /* ============================== 打卡条 ============================== */
 
-export function CheckinStrip({ habits }: { habits: Habit[] }) {
-  if (!habits.length) return null;
+/**
+ * 今天顶部那条横排打卡条。
+ *
+ * 2026-11-02 起按**打卡分类**分段：每段一个小标题 + 那一类的项。空分类不显示
+ * （一屏全是空标题没意义）。**只有一个「未分类」组时不分段**，保持原来的样子
+ * —— 没建过分类的用户不该看到多余的标题。
+ */
+export function CheckinStrip({ state }: { state: LocalState }) {
+  const buckets = bucketsOf(state).filter((b) => b.habits.length);
+  if (!buckets.length) return null;
   const t = D.today();
-  const done = habits.filter((h) => h.log && h.log[t]).length;
+  const flat = buckets.length === 1 && !buckets[0].group;
+  const total = buckets.reduce((n, b) => n + b.habits.length, 0);
+  const done = buckets.reduce((n, b) => n + b.habits.filter((h) => h.log && h.log[t]).length, 0);
+
+  const row = (h: Habit) => {
+    const hd = !!(h.log && h.log[t]);
+    const st = habitStreak(h);
+    return (
+      <div className={'ci-item' + (hd ? ' done' : '')} key={h.id} data-habit={h.id}>
+        <CheckBtn id={h.id} on={hd} act="habit" />
+        <span className="ci-title">{h.title}</span>
+        {st > 1 && (
+          <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>
+            <Flame size={11} style={{ verticalAlign: '-1px' }} />
+            {st}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="checkin-strip">
       <div className="ci-head">
-         <span className="ci-sub">今天 {done}/{habits.length}</span>
+        <span className="ci-sub">今天 {done}/{total}</span>
         {/* 「管理」跳去打卡页 —— **只靠 data-jump-habits**，不另给 onClick。
             委托那条（clickDispatch.ts 第 2 步）会先命中它，再跑 React 合成事件
             就是做两遍同一件事。 */}
         <button className="ci-manage" data-jump-habits="1">管理</button>
       </div>
-      <div className="ci-list">
-        {habits.map((h) => {
-          const hd = !!(h.log && h.log[t]);
-          const st = habitStreak(h);
-          return (
-            <div className={'ci-item' + (hd ? ' done' : '')} key={h.id} data-habit={h.id}>
-              <CheckBtn id={h.id} on={hd} act="habit" />
-              <span className="ci-title">{h.title}</span>
-              {st > 1 && (
-                <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>
-                  <Flame size={11} style={{ verticalAlign: '-1px' }} />
-                  {st}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {flat ? (
+        <div className="ci-list">{buckets[0].habits.map(row)}</div>
+      ) : (
+        buckets.map((b) => (
+          <div className="ci-group" key={b.id || '__none'}>
+            <div className="ci-group-name">{b.group ? b.group.name : '未分类'}</div>
+            <div className="ci-list">{b.habits.map(row)}</div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

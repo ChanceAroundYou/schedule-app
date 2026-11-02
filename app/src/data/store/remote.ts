@@ -1,8 +1,8 @@
 /**
  * remote.ts —— 应用服务器来的变更（增量与快照走同一条路）
  */
-import type { Entity, Habit, Project, Task } from '../../domain/types.ts';
-import { hydrateTask, hydrateHabit, hydrateProject } from '../../domain/model.ts';
+import type { Entity, Habit, HabitGroup, Project, Task } from '../../domain/types.ts';
+import { hydrateTask, hydrateHabit, hydrateHabitGroup, hydrateProject } from '../../domain/model.ts';
 import { state, rawBucket, emit } from './core.ts';
 import { persist } from './persist.ts';
 import { ensureRepeatOccurrences } from './tasks.ts';
@@ -40,7 +40,7 @@ export function applyRemote(changes: RemoteChange[]): boolean {
     /* 打卡一律归到私有打卡集（见 LocalState.habitsCal）。老版本客户端把
        calId 写成共享集、老数据里也是共享集 —— 本地统一过来，写入才不会
        每次都指望服务端改写。 */
-    if (c.entity === 'habit' && state.habitsCal) e.calId = state.habitsCal;
+    if ((c.entity === 'habit' || c.entity === 'habitGroup') && state.habitsCal) e.calId = state.habitsCal;
 
     const curTs = (e._ts as Record<string, number>)[c.field] ?? -Infinity;
     const curDev = (e._dev as Record<string, string>)[c.field] ?? '';
@@ -55,6 +55,7 @@ export function applyRemote(changes: RemoteChange[]): boolean {
   if (touched) {
     for (const t of Object.values(state.tasks)) hydrateTask(t);
     for (const h of Object.values(state.habits)) hydrateHabit(h);
+    for (const g of Object.values(state.habitGroups)) hydrateHabitGroup(g);
     for (const j of Object.values(state.projects)) hydrateProject(j);
     persist();
     emit();
@@ -81,12 +82,15 @@ export function flattenSnapshot(
     tasks: Record<string, Task>;
     habits: Record<string, Habit>;
     projects?: Record<string, Project>;
+    habitGroups?: Record<string, HabitGroup>;
   },
 ): RemoteChange[] {
   const out: RemoteChange[] = [];
   // projects 缺省给空桶：老服务的响应落在新客户端上不该炸（见 types.ts 那段）
+  /* 缺省一律给空桶：老服务的响应落在新客户端上不该炸（见 types.ts 那段） */
   const buckets = [
     ['task', snap.tasks], ['habit', snap.habits], ['project', snap.projects || {}],
+    ['habitGroup', snap.habitGroups || {}],
   ] as const;
   for (const [entity, bucket] of buckets) {
     for (const e of Object.values(bucket)) {

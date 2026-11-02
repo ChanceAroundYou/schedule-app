@@ -2,7 +2,7 @@
  * persist.ts —— localStorage 落盘与读回
  */
 import type { LocalState } from '../../domain/types.ts';
-import { hydrateHabit, hydrateTask, hydrateProject, normalizeUi } from '../../domain/model.ts';
+import { hydrateHabit, hydrateHabitGroup, hydrateTask, hydrateProject, normalizeUi } from '../../domain/model.ts';
 import { getCachedUser } from '../api/token.ts';
 import { state, setState, blank, KEY, resolveCal, emit } from './core.ts';
 
@@ -32,6 +32,7 @@ export function load(): LocalState {
       setState({
         tasks: p.tasks || {},
         habits: p.habits || {},
+        habitGroups: p.habitGroups || {},
         projects: p.projects || {},
         cals: Array.isArray(p.cals) ? p.cals : [],
         habitsCal: typeof p.habitsCal === 'string' && p.habitsCal ? p.habitsCal : null,
@@ -55,6 +56,7 @@ export function load(): LocalState {
       // 磁盘上那份可能是旧版本写的、或者上一轮同步只写了一半的稀疏实体
       for (const t of Object.values(state.tasks)) hydrateTask(t);
       for (const h of Object.values(state.habits)) hydrateHabit(h);
+      for (const g of Object.values(state.habitGroups)) hydrateHabitGroup(g);
       for (const j of Object.values(state.projects)) hydrateProject(j);
       resolveCal();
     } catch (_) {

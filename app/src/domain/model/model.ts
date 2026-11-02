@@ -19,9 +19,13 @@ export {
 export {
   liveHabits, trashedHabits, habitById, habitsTodayRemaining, habitStreak,
 } from './habits.ts';
+export {
+  UNGROUPED, DEFAULT_GROUPS, liveGroups, groupById, habitsOfGroup, groupOfHabit,
+  bucketsOf, groupTodayCount, type HabitBucket,
+} from './habitGroups.ts';
 export { counts } from './counts.ts';
-export { makeTask, makeHabit, makeProject } from './make.ts';
-export { hydrateTask, hydrateHabit, hydrateProject } from './hydrate.ts';
+export { makeTask, makeHabit, makeHabitGroup, makeProject } from './make.ts';
+export { hydrateTask, hydrateHabit, hydrateHabitGroup, hydrateProject } from './hydrate.ts';
 export { CUSTOMIZABLE, TAB_MAX, orderTabs, defaultUi, setDefaultCal, normalizeUi, quickDefaults } from './ui.ts';
 export type { QuickDefaults } from './ui.ts';
 export { resolveDefaultCal } from './cal.ts';

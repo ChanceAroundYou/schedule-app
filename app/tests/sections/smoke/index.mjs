@@ -29,5 +29,6 @@ export const sectionFiles = [
      `page.close()`。排在它后面的节拿到的是已经关掉的页面（evalJs 会一直等
      一个永远不来的回包，整趟探针就那么挂住）。新加的节一律插在这行之上。 */
   './sections/smoke/27.mjs',
+  './sections/smoke/28.mjs',
   './sections/smoke/26.mjs',
 ];

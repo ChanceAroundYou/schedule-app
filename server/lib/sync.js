@@ -29,7 +29,7 @@
 const db = require('./db');
 const calendars = require('./calendars');
 
-const ENTITIES = new Set(['task', 'habit', 'project']);
+const ENTITIES = new Set(['task', 'habit', 'habitGroup', 'project']);
 
 /** 派生 id 形如 `a3f2…#2026-10-07`，uuid 是 hex + 短横，都在这个字符集里 */
 const ID_RE = /^[A-Za-z0-9_.:#@-]{1,200}$/;
@@ -227,7 +227,7 @@ function applyOps(userId, ops) {
          不管客户端把 calId 写成哪个集 —— 老版本 App 仍在往"当前选中的集"里
          写 —— 一律落到这个用户自己的私有打卡集。**重写而不是拒绝**：不该
          因为一次升级让人打不了卡。写入落位后，共享集的成员永远拿不到它。 */
-      if (raw.entity === 'habit') {
+      if (raw.entity === 'habit' || raw.entity === 'habitGroup') {
         raw.calId = calendars.ensureHabitsCal(userId);
       }
 
@@ -291,19 +291,20 @@ function applyOps(userId, ops) {
  * 墓碑不进快照 —— 客户端要的是「现在还活着的东西」，不是删除史。
  */
 function snapshot(userId) {
-  const out = { tasks: {}, habits: {}, projects: {} };
+  const out = { tasks: {}, habits: {}, habitGroups: {}, projects: {} };
   // 每条状态都带上它属于哪个集，客户端据此归位（也是上面那个「新集」判断的依据）
   for (const r of db.allFields(db.calendarIdsFor(userId))) {
     const bucket = r.entity === 'habit' ? out.habits
-      : r.entity === 'project' ? out.projects
-        : out.tasks;
+      : r.entity === 'habitGroup' ? out.habitGroups
+        : r.entity === 'project' ? out.projects
+          : out.tasks;
     let e = bucket[r.entity_id];
     if (!e) e = bucket[r.entity_id] = { id: r.entity_id, calId: r.cal_id, _ts: {}, _dev: {} };
     e[r.field] = safeParse(r.value);
     e._ts[r.field] = Number(r.ts);
     e._dev[r.field] = r.device_id;
   }
-  for (const bucket of [out.tasks, out.habits, out.projects]) {
+  for (const bucket of [out.tasks, out.habits, out.habitGroups, out.projects]) {
     for (const id of Object.keys(bucket)) {
       if (bucket[id].deleted === true) delete bucket[id];
     }

@@ -30,6 +30,11 @@ function pruneCals(): void {
        用的）。漏掉这个例外，一次集列表刷新就能把用户的打卡全清光。 */
     if (h.calId && h.calId !== state.habitsCal && !ids.has(h.calId)) delete state.habits[id];
   }
+  /* 分类与打卡同一个归属（私有打卡集），同样要放过那个例外 —— 否则
+     「刷一次集列表，打卡分类全没了」。 */
+  for (const [id, g] of Object.entries(state.habitGroups)) {
+    if (g.calId && g.calId !== state.habitsCal && !ids.has(g.calId)) delete state.habitGroups[id];
+  }
   for (const [id, j] of Object.entries(state.projects)) {
     if (j.calId && !ids.has(j.calId)) delete state.projects[id];
   }
@@ -48,6 +53,7 @@ export function setHabitsCal(id: string | null | undefined): boolean {
      旧值只会让下一次写入落回共享集（再被服务端改写一遍，白跑一趟）；
      而且老版本会把 calId 当成 pruneCals 的判据，留着旧值等于自找清空。 */
   if (next) for (const h of Object.values(state.habits)) h.calId = next;
+  if (next) for (const g of Object.values(state.habitGroups)) g.calId = next;
   persist();
   emit();
   return true;

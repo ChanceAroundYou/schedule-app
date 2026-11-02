@@ -152,12 +152,45 @@ async function runAct(
       return;
     case 'add-habit': {
       // 词在同一个 .habit-add 表单里的那个框上（views/Habits.tsx 放的标记）
-      const box = act.closest<HTMLElement>('.habit-add')
-        ?.querySelector<HTMLInputElement>('[data-add-habit]');
+      const form = act.closest<HTMLElement>('.habit-add');
+      const box = form?.querySelector<HTMLInputElement>('[data-add-habit]');
       const v = box?.value.trim();
       if (!v) return;   // 空着不建：别造一个没有名字的打卡项
-      store.addHabit(v);
+      /* 加到哪个分类由同一行的选择器决定（值是分类 id，空串 = 未分类）。
+         没那个选择器（一条分类都还没建）时就是未分类。 */
+      const gid = form?.querySelector<HTMLSelectElement>('[data-add-habit-group]')?.value || '';
+      store.addHabit(v, gid || null);
       toast('已添加打卡项：' + v);
+      return;
+    }
+    case 'add-group': {
+      /* 新建打卡分类。词在同一个表单里（details 里那个框）—— 回车那条路
+         和这里读的是同一个 input（见 views/Habits.tsx）。 */
+      const form = act.closest<HTMLElement>('.hgroup-new') || act.closest<HTMLElement>('.habit-add');
+      const box = form?.querySelector<HTMLInputElement>('[data-add-group]');
+      const v = box?.value.trim();
+      if (!v) return;
+      if (!store.addHabitGroup(v)) { toast('已经有同名分类了'); return; }
+      if (box) box.value = '';
+      toast('已新建分类：' + v);
+      return;
+    }
+    case 'del-group': {
+      /* 删分类**不删里面的打卡项** —— 它们落回「未分类」（store 里做这件事） */
+      const ok = await confirm({
+        title: '删除这个分类？',
+        body: `「${act.dataset.title}」里的打卡项不会被删，会移到「未分类」。`,
+        confirmText: '删除', danger: true,
+      });
+      if (ok) { store.deleteHabitGroup(act.dataset.group || ''); toast('已删除分类'); }
+      return;
+    }
+    case 'toggle-group': {
+      // 折叠状态是本地偏好（ui.closedGroups），跟窗口宽度一样属于这台设备
+      const gid = act.dataset.group || '';
+      const cur = store.get().ui.closedGroups || [];
+      const next = cur.includes(gid) ? cur.filter((x) => x !== gid) : [...cur, gid];
+      store.setUi({ closedGroups: next });
       return;
     }
     case 'restore': {

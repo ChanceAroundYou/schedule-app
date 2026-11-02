@@ -51,7 +51,10 @@ export async function run(ctx) {
   await waitFor(page, `!!document.querySelector('.habit-add')`, '打卡页渲染出来', 8000);
   const hab = await evalJs(page, `return { bad: ${a11y('.habit-add')},
     cands: document.querySelectorAll('.habit-add input').length };`);
-  ok(hab.cands === 1, '打卡页有 ' + hab.cands + ' 个输入框可查');
+  /* 不锁死条数（2026-11-02 加了「新建分类」表单后从 1 变 2 ——
+     跟「冒烟别写死条数」是同一课）。这里守的是「这一页至少有能查的控件」，
+     真正要看的是下面那条 a11y：`.habit-add` 里出现的每一个控件都要有名字。 */
+  ok(hab.cands >= 1, '打卡页有 ' + hab.cands + ' 个输入框可查');
   ok(hab.bad.length === 0, '打卡页每个控件都有名字'
     + (hab.bad.length ? '：\n      ' + hab.bad.join('\n      ') : ''));
 

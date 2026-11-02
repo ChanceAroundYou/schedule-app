@@ -2,7 +2,7 @@
  * make.ts —— 实体构造
  */
 
-import type { Task, Habit, Project } from '../types/types.ts';
+import type { Task, Habit, HabitGroup, Project } from '../types/types.ts';
 import { toRepeat } from '../repeat.ts';
 import { newId } from './id.ts';
 
@@ -42,13 +42,26 @@ export function makeTask(partial: Partial<Task> & { title: string }): Task {
   return t;
 }
 
-export function makeHabit(title: string, order: number, calId: string, id?: string): Habit {
+export function makeHabit(title: string, order: number, calId: string, id?: string, groupId: string | null = null): Habit {
   return {
     id: id || newId(),
     calId,
     title,
     order,
+    groupId,
     log: {},
+    createdAt: Date.now(),
+    _ts: {},
+    _dev: {},
+  };
+}
+
+export function makeHabitGroup(name: string, order: number, calId: string, id?: string): HabitGroup {
+  return {
+    id: id || newId(),
+    calId,
+    name,
+    order,
     createdAt: Date.now(),
     _ts: {},
     _dev: {},

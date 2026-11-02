@@ -85,6 +85,7 @@ export function defaultUi(): UiPrefs {
     cardFontSize: 'md',
     showRepeatMark: true,
     showNowLine: true,
+    closedGroups: [],
     sel: null,
     // 就地新建的草稿格。瞬时状态，同上
     draft: null,
@@ -125,6 +126,10 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   if (!['sm', 'md', 'lg'].includes(ui.cardFontSize)) ui.cardFontSize = 'md';
   if (ui.showRepeatMark == null) ui.showRepeatMark = true;
   if (ui.showNowLine == null) ui.showNowLine = true;
+  /* 收起来的打卡分类：老数据没有这一项 → 全展开。只留字符串（手改过的
+     localStorage 里可能是别的东西，界面上拿它当 id 比，非字符串只会永远不命中）。 */
+  if (!Array.isArray(ui.closedGroups)) ui.closedGroups = [];
+  else ui.closedGroups = ui.closedGroups.filter((x): x is string => typeof x === 'string');
   if (!rawCals || !Array.isArray(rawCals)) ui.cals = ui.cal ? [ui.cal] : [];
   else ui.cals = rawCals.filter((x): x is string => typeof x === 'string');
   if (!['day', '3day', 'week', 'month'].includes(ui.view)) ui.view = 'day';

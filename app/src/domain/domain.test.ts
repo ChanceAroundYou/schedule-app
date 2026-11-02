@@ -35,6 +35,7 @@ function stateWith(tasks: Task[] = [], over: Partial<LocalState> = {}): LocalSta
   return {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
     habits: {},
+    habitGroups: {},
     projects: {},
     cals: [],
     habitsCal: null,
@@ -473,7 +474,7 @@ test('排序：用户拖过的（ord 有值）优先，没拖过的按默认口�
 
 test('打卡连续天数：今天没打则从昨天起算', () => {
   const t = D.today();
-  const h = { id: 'h', calId: '', title: 'x', order: 0, createdAt: 0, _ts: {}, _dev: {},
+  const h = { id: 'h', calId: '', title: 'x', order: 0, groupId: null, createdAt: 0, _ts: {}, _dev: {},
     log: { [t]: true as const, [D.addDays(t, -1)]: true as const, [D.addDays(t, -2)]: true as const } };
   assert.equal(habitStreak(h), 3);
 

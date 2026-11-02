@@ -4,10 +4,10 @@
  * **写权限在写入通道这层把关**，不是靠界面藏按钮 —— 界面那边也会把按钮禁掉，
  * 但这里才是真正的关卡（`moveToCal` 另有一道，因为它不走这条路径）。
  */
-import type { Entity, Habit, Op, Project, Task } from '../../domain/types.ts';
+import type { Entity, Habit, HabitGroup, Op, Project, Task } from '../../domain/types.ts';
 import { canWrite } from '../../domain/types.ts';
 import { writeFields } from '../../domain/merge.ts';
-import { hydrateTask, hydrateHabit, hydrateProject, roleOf, newOpId } from '../../domain/model.ts';
+import { hydrateTask, hydrateHabit, hydrateHabitGroup, hydrateProject, roleOf, newOpId } from '../../domain/model.ts';
 import { deviceId } from '../device.ts';
 import { state, calOf, rawBucket, emit } from './core.ts';
 import { persist } from './persist.ts';
@@ -53,6 +53,7 @@ export function commitMany(items: Change[]): void {
     writeFields(e as never, it.fields, ts, dev);
     if (it.entity === 'task') hydrateTask(e as never);
     else if (it.entity === 'project') hydrateProject(e as never);
+    else if (it.entity === 'habitGroup') hydrateHabitGroup(e as never);
     else hydrateHabit(e as never);
 
     const op: Op = {
@@ -72,4 +73,4 @@ export function commit(entity: Entity, id: string, fields: Record<string, unknow
 }
 
 // re-export 类型，方便调用方一个 import 拿全
-export type { Entity, Task, Habit, Project };
+export type { Entity, Task, Habit, HabitGroup, Project };

@@ -3,17 +3,22 @@
  *
  * 任务与打卡是**两个独立模块**，`habit.log` 是按日期的稀疏映射。
  */
-import { makeHabit, liveHabits } from '../../domain/model.ts';
+import { makeHabit, isGone } from '../../domain/model.ts';
 import * as D from '../../domain/date.ts';
 import { state, dataOf } from './core.ts';
 import { commit, commitMany } from './commit.ts';
 
-export function addHabit(title: string): string {
+export function addHabit(title: string, groupId: string | null = null): string {
   /* 打卡**按人私有**（2026-11-02）：落在自己的私有打卡集里，不是"当前选中的
      日程集"。取不到（离线首启、还没同步过）才退回 ui.cal —— 服务端收到后
      还会把它改写到私有集，不会漏进共享集。 */
   const calId = state.habitsCal || state.ui.cal || '';
-  const h = makeHabit(title, liveHabits(state).length, calId);
+  /* 位次取**目标分组内**的末位，不是全表的条数 —— 分组之后是全表条数的话，
+     新加的第一条会排到 100、看起来像插在最前面（跨组比较没有意义，但数值
+     本身会被导出和小组件用到）。 */
+  const inGroup = Object.values(state.habits).filter((x) => !isGone(x) && (x.groupId || null) === groupId);
+  const order = inGroup.length ? Math.max(...inGroup.map((x) => x.order || 0)) + 10 : 0;
+  const h = makeHabit(title, order, calId, undefined, groupId);
   commitMany([{ entity: 'habit', id: h.id, calId, fields: dataOf(h) }]);
   return h.id;
 }

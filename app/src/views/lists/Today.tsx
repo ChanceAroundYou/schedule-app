@@ -34,7 +34,7 @@ export function TodayView({ state }: { state: LocalState }) {
 
   return (
     <div className="list-view">
-      <CheckinStrip habits={habits} />
+      <CheckinStrip state={state} />
 
       {/* 顶部只给一条很轻的逾期提示，点进去就是「逾期」标签 */}
       {!!over && (

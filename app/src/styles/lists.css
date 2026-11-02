@@ -51,6 +51,9 @@
 }
 .ci-manage:hover { background: var(--primary-soft); }
 .ci-list { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 分类小标题（今天页的打卡条，2026-11-02） */
+.ci-group + .ci-group { margin-top: 10px; }
+.ci-group-name { font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 6px; letter-spacing: .2px; }
 .ci-item {
   display: flex; align-items: center; gap: 7px;
   padding: 6px 11px 6px 9px; border-radius: var(--r-pill);
@@ -90,6 +93,66 @@
 .heat-dot.on { background: var(--primary); border-color: var(--primary); }
 /* 删除按钮以前是这一行右侧的固定一列（`.habit-del`），现在搬进 `.habit-title`
    里的 InlineRename 操作槽 —— 跟改名用的铅笔同一套位子，也不再单独占一列。 */
+
+/* ===== 打卡分组（2026-11-02） ===== */
+.hgroup { display: block; margin-bottom: 18px; }
+.hgroup-head {
+  display: flex; align-items: center; gap: 6px; height: 34px;
+  padding: 0 2px; margin-bottom: 4px;
+}
+.hgroup-caret {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex: none; padding: 0;
+  border: none; background: none; color: var(--text-3); cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.hgroup-caret:hover { background: var(--panel-3); color: var(--text-2); }
+.hgroup-name { font-size: 13px; font-weight: 650; color: var(--text-2); letter-spacing: .2px; }
+.hgroup-name--none { color: var(--text-3); font-weight: 500; }
+.hgroup-count { font-size: 11px; font-weight: 400; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 组内容区。单列时与原来那条列表同一套间距；宽屏交给 `.mc` 分两列 */
+.hgroup-body { display: flex; flex-direction: column; gap: 9px; }
+/* 空组也要有一块**量得出矩形**的地方，否则拖不进去（0×0 的落点永远命中不了） */
+.hgroup-body--empty { min-height: 44px; }
+.hgroup--over .hgroup-body {
+  outline: 1px dashed var(--primary); outline-offset: 4px; border-radius: var(--r-lg);
+  background: var(--primary-soft);
+}
+.hgroup-drop {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 44px; font-size: 12px; color: var(--primary);
+}
+.hgroup-empty { font-size: 12px; color: var(--text-3); padding: 12px 2px; }
+
+/* 折叠：`hgroup-head[data-closed="1"]` 与 body 是兄弟（SortableContext 不产 DOM） */
+.hgroup-head[data-closed="1"] + .hgroup-body { display: none; }
+
+/* 「新建分类」—— `<details>` 自带开合，不占 JS 状态 */
+.hgroup-new { margin-top: 4px; }
+.hgroup-new > summary {
+  display: inline-flex; align-items: center; gap: 5px; list-style: none;
+  padding: 7px 10px; border-radius: var(--r-md); cursor: pointer;
+  font-size: 12.5px; color: var(--text-3);
+}
+.hgroup-new > summary::-webkit-details-marker { display: none; }
+.hgroup-new > summary:hover { background: var(--panel-2); color: var(--text-2); }
+.hgroup-new .habit-add { margin: 10px 0 0; }
+
+/* 新增打卡项时的「加到哪组」。做成无边框的轻量下拉，不抢输入框的视线 */
+.habit-group-pick {
+  flex: none; max-width: 108px; padding: 0 6px;
+  border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
+  background: var(--panel); color: var(--text-2); font-size: 12.5px;
+  cursor: pointer;
+}
+.habit-group-pick:focus { outline: none; border-color: var(--primary); }
+
+@media (min-width: 1120px) {
+  /* 宽屏每组两列（`.mc` 的规则在上面，这里同特异度再压一次，理由同 .habit-list.mc） */
+  .hgroup-body.mc { display: grid; }
+}
+
 
 .task-row {
   position: relative;

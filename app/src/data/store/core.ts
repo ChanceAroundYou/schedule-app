@@ -8,7 +8,7 @@
  * 几百 KB 的浪费，而 useSyncExternalStore 只需要一个会变的快照值。
  */
 import type {
-  Cal, Entity, Invite, LocalState, Project, Task, Habit,
+  Cal, Entity, HabitGroup, Invite, LocalState, Project, Task, Habit,
 } from '../../domain/types.ts';
 import { defaultUi, resolveDefaultCal } from '../../domain/model.ts';
 
@@ -17,7 +17,7 @@ export const KEY = 'schedule-app-v4';
 
 export function blank(): LocalState {
   return {
-    tasks: {}, habits: {}, projects: {}, cals: [], habitsCal: null, invites: [], users: {}, meId: null, cursor: 0, outbox: [],
+    tasks: {}, habits: {}, habitGroups: {}, projects: {}, cals: [], habitsCal: null, invites: [], users: {}, meId: null, cursor: 0, outbox: [],
     ui: defaultUi(), lastError: null, clockBlocked: [], syncing: false,
     denied: 0, deniedCals: [], conflicts: [],
   };
@@ -40,11 +40,13 @@ export function emit(): void {
 }
 
 /** 只有 load() / resetLocal() 会整体换掉 state */
-export function setState(s: LocalState): void { state = s; }
+export function setState(s: LocalState): void {
+  state = s;
+}
 
 /* ---------------------------------------------------------------- 桶 */
 
-type AnyBucket = Record<string, Task> | Record<string, Habit> | Record<string, Project>;
+type AnyBucket = Record<string, Task> | Record<string, Habit> | Record<string, HabitGroup> | Record<string, Project>;
 
 /** 实体的「裸字段」视图 —— 按 key 读写任意字段。
  *
@@ -55,6 +57,7 @@ type RawEntity = Record<string, unknown>;
 
 export function bucketOf(e: Entity): AnyBucket {
   if (e === 'habit') return state.habits;
+  if (e === 'habitGroup') return state.habitGroups;
   if (e === 'project') return state.projects;
   return state.tasks;
 }
@@ -71,7 +74,7 @@ export function calOf(entity: Entity, id: string): string {
 }
 
 /** 一个实体里属于「数据」的那部分字段（排除 id / calId 与同步元数据） */
-export function dataOf(e: Task | Habit | Project): Record<string, unknown> {
+export function dataOf(e: Task | Habit | HabitGroup | Project): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(e)) {
     if (k === 'id' || k === 'calId' || k === '_ts' || k === '_dev') continue;

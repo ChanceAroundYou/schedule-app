@@ -6,6 +6,7 @@ export { useDragSensors } from './sensors.ts';
 export { DragCtx, useDragSession } from './context.ts';
 export { DndProvider, type DndProviderProps } from './provider.tsx';
 export { useSortableItem, SortableZone, SortableList } from './sortable.tsx';
+export { SortableGroups, type SortableGroupData } from './groups.tsx';
 export { useDraggableEvent, useClampedDraggableEvent, useDroppableZone } from './draggable.ts';
 export { eventX, eventY, minFromY, zoneWindow } from './coords.ts';
 export { drawTimeGuide, drawTimeCursor, clearTimeCursor, showDurationTag, clearDurationTags, clearTimeGuide } from './guide.ts';

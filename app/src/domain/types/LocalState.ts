@@ -4,6 +4,7 @@
 
 import type { Task } from './Task.ts';
 import type { Habit } from './Habit.ts';
+import type { HabitGroup } from './HabitGroup.ts';
 import type { Project } from './Project.ts';
 import type { Cal, Invite } from './Cal.ts';
 import type { Op, FieldConflict } from './Op.ts';
@@ -12,6 +13,11 @@ import type { UiPrefs } from './UiPrefs.ts';
 export interface LocalState {
   tasks: Record<string, Task>;
   habits: Record<string, Habit>;
+  /**
+   * 打卡分类（2026-11-02）。跟 `habits` 一样落在私有打卡集里，
+   * 所以「共享日程的人看不到你的分类名」与「看不到你的打卡」是同一件事。
+   */
+  habitGroups: Record<string, HabitGroup>;
   projects: Record<string, Project>;
   /** 我加入的日程集。服务器每次同步都会刷新 */
   cals: Cal[];

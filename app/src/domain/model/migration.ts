@@ -130,6 +130,8 @@ function migrateHabits(raw: V3State, now: number): { list: Habit[]; ignored: num
       calId: '',
       title: h.title || '未命名习惯',
       order: h.order ?? 0,
+      // v3 没有分类的概念，迁移进来的一律落「未分类」
+      groupId: null,
       log: h.log || {},
       createdAt: h.createdAt || now,
       _ts: {},
