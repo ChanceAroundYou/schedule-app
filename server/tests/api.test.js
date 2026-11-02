@@ -1133,6 +1133,29 @@ test('小组件 bootstrap：未登录进不来，登录后返回快照形状', a
   assert.strictEqual(t.done, false);
 });
 
+test('小组件 bootstrap：打卡顺序跟着 order 走，不是 id 字典序', async () => {
+  /* 用户 2026-11-02：「点桌面小组件的刷新按钮之后，打卡的顺序自己换了」。
+     病根：widgetView 组装 habit 时**漏带 order**，下面那句排序读不到值，
+     整个比较器退化成 id 字典序（uuid 排出来是乱的）。App 推的本地快照是按
+     order 排的，桌面上点一次「立即刷新」就换回 id 序 —— 格子当场换位置。
+
+     这里的 id 刻意反着排：id 序 = A,M,Z；order 序 = Z,A,M。
+     把 order 丢了这条必红。 */
+  await push([
+    op('hb-z', { title: '打卡Z', order: 0, log: {} }, 0, 'd1', 'habit'),
+    op('hb-a', { title: '打卡A', order: 1, log: {} }, 0, 'd1', 'habit'),
+    op('hb-m', { title: '打卡M', order: 2, log: {} }, 0, 'd1', 'habit'),
+  ], 1);
+
+  const r = await api('GET', '/api/widget/bootstrap', { token: dad.token });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const mine = r.body.habits.filter((h) => /^打卡[ZAM]$/.test(h.title));
+  assert.deepEqual(mine.map((h) => h.title), ['打卡Z', '打卡A', '打卡M'],
+    '打卡顺序必须是 order 升序（漏带 order 会退化成 id 序）');
+  assert.deepEqual(mine.map((h) => h.order), [0, 1, 2],
+    'order 字段本身也必须出现在 payload 里 —— App 那份快照靠它排');
+});
+
 test('小组件 op：勾完成真的落库，@new 由服务端发 id', async () => {
   const todayIso = localDay();
   await push([

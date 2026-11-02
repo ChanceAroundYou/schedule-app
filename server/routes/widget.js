@@ -115,6 +115,15 @@ function widgetView(userId) {
       id: h.id,
       calId: h.calId,
       title: typeof h.title === 'string' ? h.title : '',
+      /* ⚠️ **order 必须带出来**（2026-11-02 修，用户报「点小组件的刷新按钮之后
+         打卡的顺序自己换了」）。
+         下面那行排序读的就是 `a.order` —— 早先这里漏了它，于是每条都是
+         undefined、`?? 1e9` 全落到同一个值，比较器恒返回 0，最后只剩
+         **id 字典序**在决定先后（uuid 排出来是乱的）。App 推的快照是按 order
+         排的，桌面点一次「立即刷新」拉回来的却是 id 序 —— 打卡格子当场换位置。
+         和 2026-10-26 那次不是同一处：那次统一了两边的**排序公式**，
+         这次是公式要用的字段没进 payload。 */
+      order: typeof h.order === 'number' ? h.order : null,
       done: !!(h.log && h.log[today]),
       streak: streakOf(h.log, today),
       // ⚠️ **必须带上整个 log 映射**，不能只给 done。
