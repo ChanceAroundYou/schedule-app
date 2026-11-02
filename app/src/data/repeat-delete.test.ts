@@ -292,3 +292,34 @@ test('根被彻底删掉了（本机没有根）→ 族里最早那条是墓碑�
   assert.deepEqual(left, [], '系列起点是墓碑 → 一条都不许再留（含那条漏网的活实例）');
   assert.ok(store.get().tasks[aliveOne.id].deleted === true, '那条活实例要被收进垃圾桶');
 });
+
+/**
+ * 真机上 B 的实际形态（2026-11-02 晚上复核）：本机**连墓碑都没有**，
+ * 只剩一串派生实例（10-28 那条还活着 + 之前铺出来的未来）。
+ * 这是某次全量快照把已删实体丢掉之后的样子 —— 服务端快照不返回墓碑。
+ * 判据：族里一条「像定义」的成员都没有（全是 `根#日期` 形状）→ 停止派生。
+ */
+test('族里只剩派生实例（根和墓碑都不在本机）→ 停止派生并清掉残骸', () => {
+  fresh();
+  const rpt = { unit: 'week' as const, n: 1, weekdays: [3], monthday: 1, yearMonth: 1, end: null };
+  const s = store.get();
+  const rootId = 't_445c610190c410c6';
+  const a = makeTask({
+    id: rootId + '#2026-10-28', calId: CAL, title: 'B', date: '2026-10-28',
+    time: null, repeat: rpt, seriesId: rootId, repeatSeq: 2,
+  });
+  const b = makeTask({
+    id: rootId + '#2026-11-11', calId: CAL, title: 'B', date: '2026-11-11',
+    time: null, repeat: rpt, seriesId: rootId, repeatSeq: 4,
+  });
+  s.tasks[a.id] = a;
+  s.tasks[b.id] = b;
+
+  ensureRepeatOccurrences();
+
+  const left = Object.values(store.get().tasks)
+    .filter((t) => !t.deleted && t.id.startsWith(rootId))
+    .map((t) => t.date as string).sort();
+  console.log('  只剩派生实例的族，跑完之后还活着的:', left.join(', ') || '(无)');
+  assert.deepEqual(left, [], '没有定义就不许再铺，残骸一并收掉');
+});

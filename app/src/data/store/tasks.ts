@@ -195,6 +195,29 @@ export function ensureRepeatOccurrences(opts?: { until?: string | null; revive?:
     // 定义来源：优先系列根本身（它的标题/时间是「原始定义」），
     // 根被删就退而取组里任何一条。
     const rootTask = state.tasks[root];
+    /* 本机有没有一条「像定义」的成员：系列根，或任何 id 不带 `#` 的成员。
+       派生实例的 id 一定是 `根#日期`，所以「全是带 # 的」= 这族只剩残骸。 */
+    const hasDefinition = !!rootTask || all.some((o) => !o.id.includes('#'));
+
+    /* ⚠️ 2026-11-02（用户报「删掉的 B 每周三自己长回来」，真机实测）：
+       系列根本身不在本机 —— 被彻底删过、或者某次全量快照把墓碑丢了 ——
+       这一族就只剩一串没有定义的派生实例。**没有定义就不许继续铺**：
+       否则用户删掉的系列会永远在「下周」长出来。
+       判据不用 `!rootTask` 是因为还有「根被删、同族另有一条非派生成员」的
+       老数据；那种仍算有定义，交给下一道墓碑判断。
+
+       ⚠️ 带 `repeatUntil`（系列级「到此为止」）的族**不走这条**：那说明
+       标记已经被搬到某个存活成员身上（别的设备建的系列，根从没同步过来，
+       2026-10-17 的 #104 用例），它有明确的上界语义，交给后面的常规逻辑。 */
+    if (!hasDefinition && !markers.has(root)) {
+      for (const o of members) {
+        items.push({
+          entity: 'task', id: o.id, calId: o.calId,
+          fields: { deleted: true, deletedAt: now, trashFrom: '重复任务结束' },
+        });
+      }
+      continue;
+    }
 
     /* 系列**起点**是不是墓碑？根不在本机（垃圾箱里彻底删过）时，退而取族内
        日期最早的那条（含墓碑）—— 它是这个系列还留在数据里的「最早一截」。 */
