@@ -302,6 +302,8 @@ class AppUpdate {
                     return;
                 }
                 String cur = selfVersionName(activity);
+                Log.i(TAG, "弹更新提示: 新 " + m.versionCode + "(" + m.versionName
+                        + ") / 当前 " + selfVersionCode(activity) + "(" + cur + ")");
                 String msg = "新版本 " + m.versionName + "（versionCode " + m.versionCode + "）"
                         + "\n当前 " + cur
                         + (m.notes.isEmpty() ? "" : "\n\n" + m.notes);
@@ -327,6 +329,7 @@ class AppUpdate {
         // Android 8+ 的「安装未知应用」是特殊权限，弹不了系统安装器就先送设置页
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
+            Log.i(TAG, "没有「安装未知应用」权限 → 先送设置页");
             Toast.makeText(activity, "请先允许本应用「安装未知应用」，回来会自动继续", Toast.LENGTH_LONG).show();
             sWaitingForPermission = true;      // 交给 onResume 补刀
             Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -430,8 +433,16 @@ class AppUpdate {
         }
     }
 
-    /** 轮询间隔（ms）：3s 起、逐步放长，整轮约 1 分钟，之后就交给广播/下次启动 */
-    private static final long[] POLL_STEPS = {3000L, 5000L, 8000L, 10000L, 15000L, 15000L};
+    /**
+     * 轮询间隔（ms）：3s 起、逐步放长。2026-11-03 加长尾（30s/60s/120s）：
+     * 以前约 1 分钟就收摊，下载慢一点 + 广播被 OEM 拦 + App 一直开着 =
+     * 彻底静默，用户看到的就是「点了没反应」（报障原话）。长尾多盯几分钟，
+     * 期间每 tick 都记进度日志，远程排查时能看出「在下但慢」还是「压根没下」。
+     */
+    private static final long[] POLL_STEPS = {
+            3000L, 5000L, 8000L, 10000L, 15000L, 15000L,
+            30000L, 30000L, 60000L, 60000L, 120000L, 120000L,
+    };
 
     /** 用 id 主动问 DownloadManager「下完没有」—— 不依赖任何广播 */
     private static void startPolling(Context c) {
@@ -468,15 +479,36 @@ class AppUpdate {
                 toast(c, "下载失败，请在「设置 → 关于」重试");
                 return;
             }
-            // 还在下（PENDING / RUNNING / PAUSED 等网络）—— 按 POLL_STEPS 放长间隔继续等
+            // 还在下（PENDING / RUNNING / PAUSED 等网络）—— 记一行进度（远程
+            // 排查的关键证据），按 POLL_STEPS 放长间隔继续等
+            Log.i(TAG, "下载中 " + progressOf(c, sDownloadId) + "%（step " + sPollStep + "）");
             sPollStep++;
             if (sPollStep >= POLL_STEPS.length) {
-                Log.i(TAG, "轮询超时（还没下完），交给广播或下次启动接手");
+                Log.w(TAG, "轮询超时（约 8 分钟还没下完），交给广播或下次启动接手");
                 return;
             }
             sUi.postDelayed(sPollTick, POLL_STEPS[sPollStep]);
         }
     };
+
+    /** 下载进度百分比（查不到 / 总量未知 → -1）。日志与将来「进度条」共用 */
+    private static int progressOf(Context c, long id) {
+        DownloadManager dm = (DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (dm == null || id < 0) return -1;
+        Cursor cur = dm.query(new DownloadManager.Query().setFilterById(id));
+        if (cur == null) return -1;
+        try {
+            if (!cur.moveToFirst()) return -1;
+            long total = cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+            long done = cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+            if (total <= 0) return -1;
+            return (int) (done * 100 / total);
+        } catch (Exception e) {
+            return -1;
+        } finally {
+            cur.close();
+        }
+    }
 
     /** 收摊：轮询停掉、前台接收器摘掉。三种「下载完成」来源只许第一个进安装 */
     private static void stopWatching(Context c) {

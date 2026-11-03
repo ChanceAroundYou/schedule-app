@@ -132,12 +132,31 @@ function widgetView(userId) {
       // 早年这里没带 log，小组件只能发一个日期字符串，服务端存进去之后
       // `h.log[today]` 恒为 undefined，表现是「打卡点了永远不生效」。
       log: (h.log && typeof h.log === 'object') ? h.log : {},
+      // ⚠️ 分组归属（2026-11-03 加）：小组件打卡区按分类分区。
+      // 悬空引用（指向已删分类）原样带 null 之外**不做裁决** —— 裁决在
+      // 两侧各有：App 快照用 groupOfHabit，原生渲染把「组表里找不到的 id」
+      // 直接当未分类画。这里只负责如实带字段。
+      grp: h.groupId == null ? null : String(h.groupId),
     });
   }
   // 与 app/src/domain/widgetSnapshot.ts 的排序**逐字对齐**：order 升序 + id 兜底。
   // 两边口径不一致时，同一批习惯换一条数据来源就会整体换位置（用户看到
   // 「打完卡格子自己换了位置」，2026-10-26）。
   habits.sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || String(a.id).localeCompare(String(b.id)));
+
+  // 打卡分类（2026-11-03 加）：小组件分组渲染的数据源之一（另一份来自
+  // App 推的快照，两边字段一致）。只带活的 —— sync.snapshot 已剔掉墓碑。
+  // 排序口径与 app/src/domain/model/habitGroups.ts 的 byOrder 相同：
+  // order 升序（缺 0）+ id 兜底。
+  const groups = [];
+  for (const g of Object.values(snap.habitGroups || {})) {
+    groups.push({
+      id: g.id,
+      name: typeof g.name === 'string' ? g.name : '',
+      order: typeof g.order === 'number' ? g.order : 0,
+    });
+  }
+  groups.sort((a, b) => (a.order - b.order) || String(a.id).localeCompare(String(b.id)));
 
   return {
     v: 1,
@@ -147,6 +166,7 @@ function widgetView(userId) {
     to: hi,
     tasks,
     habits,
+    groups,
   };
 }
 

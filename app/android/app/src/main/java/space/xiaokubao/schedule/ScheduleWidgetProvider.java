@@ -76,6 +76,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     static final String ACTION_SETTINGS = "space.xiaokubao.schedule.SETTINGS";
     /** 点左上角标识 = 回到今天 */
     static final String ACTION_TODAY = "space.xiaokubao.schedule.TODAY";
+    /**
+     * 打卡区「+N」展开 /「收起」折叠（2026-11-03）。
+     * extra {@link #EXTRA_WID} = 组件实例 id —— 展开状态按实例存，
+     * 桌面上多个组件各自高矮不同，互不影响。
+     */
+    static final String ACTION_HABITS_TOGGLE = "space.xiaokubao.schedule.HABITS_TOGGLE";
 
     /**
      * 每天 0:05 自动重画一次（2026-10-31 加）。
@@ -94,6 +100,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     static final String EXTRA_DAY = "day";
     static final String EXTRA_DELTA = "delta";
     static final String EXTRA_ID = "id";
+    /** 组件实例 id（{@link #ACTION_HABITS_TOGGLE} 用） */
+    static final String EXTRA_WID = "wid";
 
     /**
      * 打卡区每行放几个。
@@ -103,6 +111,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 常见习惯数（6-9 个）也都在两到三行内。
      */
     private static final int HABITS_PER_ROW = 4;
+
+    /** 分组标题行高（未缩放）。8sp 字 + 上下 padding，比 chip 行矮 */
+    private static final int HABIT_HEAD_DP = 13;
 
     @Override
     public void onUpdate(Context c, AppWidgetManager mgr, int[] ids) {
@@ -175,6 +186,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // 明天点一下，改的其实是今天，而屏幕上那格的完成态又始终按今天
             // 渲染，两下一凑就成了用户报的「今天打了卡，日后几天全变成已完成」。
             toggleHabit(c, intent.getStringExtra(EXTRA_ID), WidgetPrefs.selectedDay(c));
+        } else if (ACTION_HABITS_TOGGLE.equals(a)) {
+            // 「+N」↔「收起」：只翻本实例的展开标记，落到底下的 refresh 重画
+            int wid = intent.getIntExtra(EXTRA_WID, -1);
+            if (wid >= 0) {
+                WidgetPrefs.setHabitsExpanded(c, wid, !WidgetPrefs.habitsExpanded(c, wid));
+            }
         }
 
         // 顺手把攒着没发出去的改动补一次 —— 用户此刻正在看桌面，是票最新、
@@ -353,8 +370,42 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             else timed.add(t);
         }
 
-        int habitRows = snap.habits.isEmpty() ? 0
-                : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
+        /* ---- 打卡区分桶（2026-11-03 分组版）----
+           分组渲染和高度预算都要用它，提前算一次：
+           · 有分类数据 → 按快照 groups 的顺序（order 升序，App 与服务端同一
+             口径）逐组建桶，未分类的桶排最后；
+           · 没有分类数据（老快照 / 用户没建过分组）→ 桶只有未分类一个，
+             渲染时完全不画组头，和升级前那条平铺列表一模一样。
+           悬空引用（groupId 指向已删分类）按未分类处理 —— 渲染拿 groups
+           表核对，App 侧 groupOfHabit 也是同一裁决。 */
+        java.util.Map<String, List<WHabit>> buckets = new java.util.LinkedHashMap<>();
+        List<WHabit> ungrouped = new ArrayList<>();
+        if (!snap.habits.isEmpty()) {
+            for (WGroup g : snap.groups) buckets.put(g.id, new ArrayList<>());
+            for (WHabit h : snap.habits) {
+                List<WHabit> b = h.groupId == null ? null : buckets.get(h.groupId);
+                if (b == null) ungrouped.add(h);
+                else b.add(h);
+            }
+        }
+        boolean grouped = !snap.groups.isEmpty();
+        int habitChipRows = 0;
+        int habitHeads = 0;
+        if (!snap.habits.isEmpty()) {
+            if (grouped) {
+                for (List<WHabit> b : buckets.values()) {
+                    if (b.isEmpty()) continue;
+                    habitHeads++;
+                    habitChipRows += (b.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
+                }
+                if (!ungrouped.isEmpty()) {
+                    habitHeads++;
+                    habitChipRows += (ungrouped.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
+                }
+            } else {
+                habitChipRows = (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
+            }
+        }
 
         // 未定时区实占多少高：**两两一行**，行数随任务增加（最多 3 行 = 6 格）。
         // 2026-10-25 修（用户报「最底下的时间数值被挡住、显示不完整」）：
@@ -379,7 +430,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
              组件拉大 → 每格更高 → 字和固定件跟着放大；拖小则反向。
              用**未缩放**的预算算行高，避免 k 自己喂自己的循环。 */
         int fixed0 = 10 + 30 + 2 + DATE_STRIP_DP + 2
-                + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)
+                + (snap.habits.isEmpty() ? 0
+                        : habitChipRows * HABIT_ROW_DP + habitHeads * HABIT_HEAD_DP + 7)
                 + barDp + 1 + 2;
         int timeline0 = Math.max(70, totalDp - fixed0);
         float rowsH0 = Math.max(1f, (timeline0 - AXIS_END_DP) / (float) Math.max(1, hi - lo));
@@ -389,12 +441,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 未定时区的横条高度也要跟着缩（行数不变，单行高度 × k）
         barDp = Math.max(m.panelBar, untimedRows * m.untimedRow);
 
-        int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
+        // 打卡区以外的固定件（缩放后）。时间轴高度在打卡区渲染完、知道实占
+        // 多少之后再算 —— 折叠会改变实占（2026-11-03）。
+        final int fixedNoHabit = 10                       // root padding：上 8 + 下 2（底部只留一条边）
                 + m.headRow + 2                 // head 行（FrameLayout 30dp）+ margin
                 + m.dateStrip + 2              // 日期条 + margin
-                + (habitRows > 0 ? habitRows * m.habitRow + 7 : 0)   // 打卡区 + margin
                 + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
-        int timelineDp = Math.max(70, totalDp - fixedDp);
 
         /* ---- 顶部：标题、日期徽标、四颗按钮随 k 缩放（宽高 + 字号） ---- */
         v.setViewLayoutHeight(R.id.head_row, m.headRow, TypedValue.COMPLEX_UNIT_DIP);
@@ -439,61 +491,95 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             v.addView(R.id.date_strip, chip);
         }
 
-        /* ---- 打卡区：每行 HABITS_PER_ROW 个，自动折行 ----
+        /* ---- 打卡区：按分类分区 + 高度不够折「+N」（2026-11-03）----
            完成态**只用一个信号**：整格变实心主绿 + 白字。
-           以前还在文字前加「✓」，跟底色变化是同一件事说两遍 ——
-           而且 chip 变宽会挤动排布，正是上一版「打卡项消失」的病根。 */
+           流程：先把全部要显示的行（组头 + chip 行）造出来，再按可用高度
+           决定折叠点，最后统一上屏 —— 折叠点影响时间轴预算，所以顺序不能反。 */
         v.removeAllViews(R.id.habit_rows);
+        int shownHabitDp = 0;                       // 打卡区实占（不含 7dp margin）
         if (snap.habits.isEmpty()) {
             v.setViewVisibility(R.id.habit_rows, View.GONE);
         } else {
             v.setViewVisibility(R.id.habit_rows, View.VISIBLE);
             // 打卡条的底色跟着透明度走（这里没有圆角/描边，能直接用纯色）
             v.setInt(R.id.habit_rows, "setBackgroundColor", withAlpha(0xFFE7F3EA, alpha));
-            int n = snap.habits.size();
-            for (int i = 0; i < n; i += HABITS_PER_ROW) {
-                RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
-                for (int kk = i; kk < i + HABITS_PER_ROW; kk++) {
-                    boolean real = kk < n;
-                    RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
-                    if (!real) {
-                        // 不满一行时补占位，让已有那几个的宽度跟满行一致 ——
-                        // 不补的话最后一行两个格子各占一半，看着像放大了
-                        chip.setTextViewText(R.id.habit_chip, "");
-                        chip.setInt(R.id.habit_chip, "setBackgroundResource", 0);
-                        row.addView(R.id.habit_row, chip);
-                        continue;
-                    }
-                    WHabit h = snap.habits.get(kk);
-                    chip.setTextViewText(R.id.habit_chip, h.title);
-                    /* 完成态按**组件当前选中的那一天**取，不能用快照里的 h.done
-                     * （那是按服务端的「今天」算好的固定值）。
-                     *
-                     * 2026-10-14 修：原来这里读 h.done，于是组件翻到任何一天，
-                     * 打卡显示的都是「今天」的状态 —— 用户今天打了卡，翻到
-                     * 明天/后天发现每一项都是已完成，看起来像「完成态传染了」。
-                     * 打卡本来就是按天独立的（Habit.log 是按日期的稀疏表），
-                     * 这里就该按天读。
-                     *
-                     * 颜色变化**跟随日程**：未完成=深色实心（主绿）+ 白字；
-                     * 完成=浅底 + 灰字，与任务卡「完成变淡」一致。 */
-                    /* 没有 log 表的老快照（App 侧 2026-10-26 之前推的那种只带
-                       done/streak）→ 只能拿 done 兜底，而且只对「今天」有意义：
-                       done 表达的就是今天。有 log 时一律按天读（见上面那段注释）。 */
-                    boolean hDone = h.log != null
-                            ? h.log.optBoolean(day, false)
-                            : (h.done && day.equals(today));
-                    chip.setInt(R.id.habit_chip, "setBackgroundResource",
-                            hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
-                    chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
-                    font(chip, R.id.habit_chip, 8, k);
-                    chip.setOnClickPendingIntent(R.id.habit_chip,
-                            WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
-                    row.addView(R.id.habit_row, chip);
+
+            /* 行计划：rows 与 rowDp / rowHabits 一一对应（高度、行内实有几个 chip） */
+            List<RemoteViews> rows = new ArrayList<>();
+            List<Integer> rowDp = new ArrayList<>();
+            List<Integer> rowHabits = new ArrayList<>();
+            if (grouped) {
+                for (WGroup g : snap.groups) {
+                    List<WHabit> b = buckets.get(g.id);
+                    if (b == null || b.isEmpty()) continue;   // 空组不占地方
+                    rows.add(habitHead(c, g.name, k));
+                    rowDp.add(m.habitHead);
+                    rowHabits.add(0);
+                    addHabitRows(c, rows, rowDp, rowHabits, b, day, today, k);
                 }
-                v.addView(R.id.habit_rows, row);
+                if (!ungrouped.isEmpty()) {
+                    rows.add(habitHead(c, "未分类", k));
+                    rowDp.add(m.habitHead);
+                    rowHabits.add(0);
+                    addHabitRows(c, rows, rowDp, rowHabits, ungrouped, day, today, k);
+                }
+            } else {
+                addHabitRows(c, rows, rowDp, rowHabits, snap.habits, day, today, k);
+            }
+
+            int needDp = 0;
+            for (int d : rowDp) needDp += d;
+
+            /* 可用高度 = 组件总高 − 打卡区以外的固定件 − 打卡区 margin(7)
+               − 时间轴最低预算(70)。装不下就整行折掉，把折掉的 chip 数
+               折成一颗「+N」，点了在本组件内展开全部（再点「收起」折回）。 */
+            int availDp = totalDp - fixedNoHabit - 7 - 70;
+            boolean expanded = WidgetPrefs.habitsExpanded(c, widgetId);
+            boolean fold = needDp > availDp;
+            int shown = rows.size();
+
+            if (fold && !expanded) {
+                int acc = 0;
+                shown = 0;
+                for (int i = 0; i < rows.size(); i++) {
+                    if (acc + rowDp.get(i) > availDp) break;
+                    acc += rowDp.get(i);
+                    shown++;
+                }
+                // 「+N」自己也要占一行：最后一行装不下它就让位
+                if (shown > 0 && acc + m.habitRow > availDp) {
+                    acc -= rowDp.get(shown - 1);
+                    shown--;
+                }
+                int hidden = 0;
+                for (int i = shown; i < rowHabits.size(); i++) hidden += rowHabits.get(i);
+                if (shown < rows.size()) {
+                    RemoteViews row = toggleRow(c, widgetId, "+" + hidden, k);
+                    rows.add(row);
+                    rowDp.add(m.habitRow);
+                    rowHabits.add(0);
+                }
+                shownHabitDp = acc + m.habitRow;
+            } else {
+                shown = rows.size();
+                if (fold) {   // 展开态：尾部给一颗「收起」
+                    RemoteViews row = toggleRow(c, widgetId, "收起", k);
+                    rows.add(row);
+                    rowDp.add(m.habitRow);
+                    rowHabits.add(0);
+                    shownHabitDp = needDp + m.habitRow;
+                } else {
+                    shownHabitDp = needDp;
+                }
+            }
+
+            for (int i = 0; i < shown; i++) {
+                v.addView(R.id.habit_rows, rows.get(i));
             }
         }
+
+        // 打卡区实占定了，时间轴拿剩下的（至少 70dp，见下面 renderScale 的说明）
+        int timelineDp = Math.max(70, totalDp - (fixedNoHabit + 7 + shownHabitDp));
 
         /* 轴尾 = 设定终点，但**晚间任务不能因此丢掉**：轴现在只画到终点，
            有任务跨过终点就把它延到任务结束的那个整点（没有就没有代价）。 */
@@ -525,6 +611,85 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 WidgetIntent.of(c, ACTION_TODAY, "today").build(c));
 
         mgr.updateAppWidget(widgetId, v);
+    }
+
+    /* ==================== 打卡区（分组版 2026-11-03） ==================== */
+
+    /** 分组标题行。灰绿小字，与 App 打卡页的组头同一套视觉语言；不可点 */
+    private static RemoteViews habitHead(Context c, String name, float k) {
+        RemoteViews head = new RemoteViews(c.getPackageName(), R.layout.widget_habit_head);
+        head.setTextViewText(R.id.habit_head, name);
+        font(head, R.id.habit_head, 8, k);
+        return head;
+    }
+
+    /** 一颗打卡 chip（平铺/分组两条路共用；完成态判定规则见 habitRows 循环时代的注释） */
+    private static RemoteViews habitChip(Context c, WHabit h, String day, String today, float k) {
+        RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
+        chip.setTextViewText(R.id.habit_chip, h.title);
+        /* 完成态按**组件当前选中的那一天**取（不能用快照里按「今天」算好的
+         * h.done —— 翻到别的日期会整片误亮，2026-10-14 修）。
+         * 没有 log 表的老快照只能拿 done 兜底，且只对「今天」有意义。 */
+        boolean hDone = h.log != null
+                ? h.log.optBoolean(day, false)
+                : (h.done && day.equals(today));
+        chip.setInt(R.id.habit_chip, "setBackgroundResource",
+                hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
+        chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
+        font(chip, R.id.habit_chip, 8, k);
+        chip.setOnClickPendingIntent(R.id.habit_chip,
+                WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
+        return chip;
+    }
+
+    /** 占位 chip：不满一行时补空格，让已有那几个的宽度跟满行一致 */
+    private static RemoteViews emptyChip(Context c) {
+        RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
+        chip.setTextViewText(R.id.habit_chip, "");
+        chip.setInt(R.id.habit_chip, "setBackgroundResource", 0);
+        return chip;
+    }
+
+    /** 「+N」/「收起」那一行：一颗主绿字的 chip + 占位，点了翻本实例的展开标记 */
+    private static RemoteViews toggleRow(Context c, int widgetId, String label, float k) {
+        RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
+        RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
+        chip.setTextViewText(R.id.habit_chip, label);
+        chip.setInt(R.id.habit_chip, "setBackgroundResource", 0);
+        chip.setTextColor(R.id.habit_chip, 0xFF27795A);
+        font(chip, R.id.habit_chip, 8, k);
+        chip.setOnClickPendingIntent(R.id.habit_chip,
+                WidgetIntent.of(c, ACTION_HABITS_TOGGLE, "ht" + widgetId)
+                        .put(EXTRA_WID, widgetId).build(c));
+        row.addView(R.id.habit_row, chip);
+        for (int p = 1; p < HABITS_PER_ROW; p++) {
+            row.addView(R.id.habit_row, emptyChip(c));
+        }
+        return row;
+    }
+
+    /**
+     * 把一批打卡项按每行 {@link #HABITS_PER_ROW} 个折成 chip 行，追加到行计划里。
+     * 行内不足补占位（否则最后一行的格子会被均分放大 —— 踩过）。
+     */
+    private static void addHabitRows(Context c, List<RemoteViews> rows, List<Integer> rowDp,
+                                     List<Integer> rowHabits, List<WHabit> list,
+                                     String day, String today, float k) {
+        for (int i = 0; i < list.size(); i += HABITS_PER_ROW) {
+            RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
+            int real = 0;
+            for (int kk = i; kk < i + HABITS_PER_ROW; kk++) {
+                if (kk < list.size()) {
+                    row.addView(R.id.habit_row, habitChip(c, list.get(kk), day, today, k));
+                    real++;
+                } else {
+                    row.addView(R.id.habit_row, emptyChip(c));
+                }
+            }
+            rows.add(row);
+            rowDp.add(Metrics.px(HABIT_ROW_DP, k));
+            rowHabits.add(real);
+        }
     }
 
     /* ==================== 时间轴渲染 ==================== */
@@ -607,6 +772,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         final int scaleW;
         /** 未定时区单张卡的高（行高 untimedRow 里减去那条缝） */
         final int untimedCard;
+        /** 分组标题行高（2026-11-03 随 k 缩放） */
+        final int habitHead;
 
         Metrics(float k) {
             this.k = k;
@@ -621,6 +788,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             headRow = px(30, k);
             scaleW = px(SCALE_COL_DP, k);
             untimedCard = px(UNTIMED_ROW_DP - 1, k);
+            habitHead = px(HABIT_HEAD_DP, k);
         }
 
         static int px(int base, float k) {

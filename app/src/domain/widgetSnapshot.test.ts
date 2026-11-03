@@ -91,7 +91,28 @@ test('打卡：done 看今天，streak 按今天/昨天起算', () => {
     id: habit.id, calId: 'c1', title: '学英语', done: true, streak: 3,
     // 整张表必须原样带上（2026-10-26：缺了它小组件上打完卡会弹回浅色）
     log,
+    // 分组归属（2026-11-03）：没分组 → null = 未分类
+    grp: null,
   }]);
+});
+
+test('分组进快照：groups 按 order 排、grp 用 groupOfHabit 的裁决（悬空算未分类）', () => {
+  const s = state([], { h1: makeHabit('学英语', 0, 'c1') });
+  s.habitGroups = {
+    g2: { id: 'g2', name: '运动', order: 10, calId: 'c1', createdAt: 1 } as never,
+    g1: { id: 'g1', name: '工作学习', order: 0, calId: 'c1', createdAt: 1 } as never,
+    // 悬空引用：h1 指向已删除的分类 → 必须裁决成未分类，不能画出幽灵组
+    gone: { id: 'gone', name: '已删', order: 20, calId: 'c1', deleted: true, deletedAt: 2 } as never,
+  };
+  s.habits.h1.groupId = 'gone';
+  const snap = buildWidgetSnapshot(s, T);
+  // liveGroups 已剔墓碑，且按 order 升序
+  assert.deepEqual(snap.groups.map((g) => g.name), ['工作学习', '运动']);
+  // 悬空 groupId → 未分类（null）
+  assert.equal(snap.habits[0].grp, null);
+  // 归到活组
+  s.habits.h1.groupId = 'g2';
+  assert.equal(buildWidgetSnapshot(s, T).habits[0].grp, 'g2');
 });
 
 test('打卡记录整张表进快照 —— 缺了它小组件「点完又弹回浅色」', () => {

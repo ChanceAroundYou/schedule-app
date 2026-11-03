@@ -16,7 +16,7 @@
 
 import type { LocalState } from './types/types.ts';
 import * as D from './date.ts';
-import { liveTasks, liveHabits, habitStreak } from './model.ts';
+import { liveTasks, liveHabits, habitStreak, liveGroups, groupOfHabit, UNGROUPED } from './model.ts';
 import { plain } from './model/richText.ts';
 
 /** 前后各带几周。少了箭头切不远，多了白写 —— 9 周够了 */
@@ -97,6 +97,21 @@ export interface SnapshotHabit {
    *      把改动堆在本地队列里，表现为「点了也不生效」。
    */
   log: Record<string, true>;
+  /**
+   * 所属分类 id。null = 未分类。2026-11-03 加：小组件打卡区要按分类分区。
+   *
+   * ⚠️ 用 `groupOfHabit` 的**裁决结果**而不是裸 `h.groupId`：指向已删分类的
+   * 悬空引用要算成未分类（跟 App 打卡页同一口径），否则桌面会画出一个
+   * 谁也不认识的空组头。
+   */
+  grp: string | null;
+}
+
+/** 打卡分类（小组件分组渲染用）。与 App 打卡页的组头同一份顺序口径 */
+export interface SnapshotGroup {
+  id: string;
+  name: string;
+  order: number;
 }
 
 export interface WidgetSnapshot {
@@ -117,6 +132,8 @@ export interface WidgetSnapshot {
   to: string;
   tasks: SnapshotTask[];
   habits: SnapshotHabit[];
+  /** 打卡分类（2026-11-03 加）。老快照没有它 → 原生侧按平铺渲染，向后兼容 */
+  groups: SnapshotGroup[];
 }
 
 /** 快照覆盖的日期范围：本周往前 4 周、往后 4 周 */
@@ -191,9 +208,19 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       // 整张表原样带上（见 SnapshotHabit.log 的说明）—— 少这一个字段，
       // 小组件上的打卡就会「点完又弹回浅色」
       log: { ...(h.log ?? {}) },
+      // 分类归属：用 groupOfHabit 的裁决结果（悬空引用算未分类）
+      grp: (() => { const gid = groupOfHabit(s, h); return gid === UNGROUPED ? null : gid; })(),
     }));
 
-  return { v: 1, at: Date.now(), today: todayIso, from, to, tasks, habits };
+  // 分组列表：只带活的，顺序口径与 App 打卡页一致（order 升序 + id 兜底，
+  // liveGroups 内部已排好）
+  const groups: SnapshotGroup[] = liveGroups(s).map((g) => ({
+    id: g.id,
+    name: g.name,
+    order: g.order || 0,
+  }));
+
+  return { v: 1, at: Date.now(), today: todayIso, from, to, tasks, habits, groups };
 }
 
 /** 序列化。**给原生读的那一份**，键名短、无缩进 */

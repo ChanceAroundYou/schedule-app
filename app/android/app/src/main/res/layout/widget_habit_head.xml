@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 打卡区的分组标题行（2026-11-03）。文字字号由 Provider 按缩放系数
+     setTextViewTextSize 动态设，这里的 8sp 只是「标准档」的默认值。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/habit_head"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="3dp"
+    android:paddingBottom="1dp"
+    android:text="分类"
+    android:textColor="#6B8574"
+    android:textSize="8sp" />

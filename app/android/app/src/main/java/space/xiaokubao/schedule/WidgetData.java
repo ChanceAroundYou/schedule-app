@@ -101,6 +101,12 @@ class WHabit {
     final int streak;
 
     /**
+     * 所属分类 id。null = 未分类（或老快照没这个字段 —— 同样按未分类画，
+     * 向后兼容）。2026-11-03 加：小组件打卡区按分类分区。
+     */
+    final String groupId;
+
+    /**
      * 完整的打卡记录：{ "2026-10-13": true } 这样的**稀疏表**。
      *
      * ⚠️ 为什么要整个表而不是只知道「今天打没打」：服务端的 applyOps 是
@@ -115,12 +121,31 @@ class WHabit {
 
     WHabit(String id, String calId, String title, boolean done, int streak,
            org.json.JSONObject log) {
+        this(id, calId, title, done, streak, log, null);
+    }
+
+    WHabit(String id, String calId, String title, boolean done, int streak,
+           org.json.JSONObject log, String groupId) {
         this.id = id;
         this.calId = calId;
         this.title = title;
         this.done = done;
         this.streak = streak;
         this.log = log;
+        this.groupId = groupId;
+    }
+}
+
+/** 打卡分类（小组件分组渲染用）。2026-11-03 加，老快照没有 → 列表为空 */
+class WGroup {
+    final String id;
+    final String name;
+    final int order;
+
+    WGroup(String id, String name, int order) {
+        this.id = id;
+        this.name = name;
+        this.order = order;
     }
 }
 
@@ -132,6 +157,8 @@ class WidgetSnapshot {
     final String today;
     final List<WTask> tasks = new ArrayList<>();
     final List<WHabit> habits = new ArrayList<>();
+    /** 打卡分类，已按 order 升序排好。老快照没有 groups 键 → 空 = 平铺渲染 */
+    final List<WGroup> groups = new ArrayList<>();
 
     private WidgetSnapshot(long at, String from, String to, String today) {
         this.at = at;
@@ -184,8 +211,23 @@ class WidgetSnapshot {
                         h.optBoolean("done"), h.optInt("streak"),
                         // 老服务端没有这个字段 → null（= 「不敢写打卡」），
                         // 新服务端至少返回 {}（= 「可以写，表是空的」）
-                        h.optJSONObject("log")));
+                        h.optJSONObject("log"),
+                        // 分组归属：null/缺失 = 未分类。渲染时还要拿它对
+                        // groups 表核一遍 —— 指向已删分类的悬空 id 按未分类画
+                        h.isNull("grp") ? null : h.optString("grp", null)));
             }
+        }
+        JSONArray gs = o.optJSONArray("groups");
+        if (gs != null) {
+            for (int i = 0; i < gs.length(); i++) {
+                JSONObject g = gs.optJSONObject(i);
+                if (g == null) continue;
+                s.groups.add(new WGroup(
+                        g.optString("id"), g.optString("name"), g.optInt("order")));
+            }
+            // order 升序 + id 兜底（Java 没有 JS 那种「int 当 boolean」的写法）
+            s.groups.sort((a, b) -> a.order != b.order
+                    ? Integer.compare(a.order, b.order) : a.id.compareTo(b.id));
         }
         return s;
     }

@@ -62,6 +62,9 @@ class WidgetPrefs {
     static final String KEY_FONT_SCALE = "schedule_widget_font_scale";
     static final int DEFAULT_FONT_SCALE = 100;
 
+    /** 打卡区「+N」展开状态的组件 id 集合（逗号分隔）。2026-11-03 加 */
+    static final String KEY_HABIT_EXPANDED = "schedule_widget_habit_expanded";
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -74,6 +77,25 @@ class WidgetPrefs {
         } catch (Exception e) {
             return WidgetSnapshot.empty();
         }
+    }
+
+    /**
+     * 这个实例的打卡区当前是不是「展开」态（点了「+N」之后）。
+     *
+     * 按组件 id 存 —— 桌面上可以有多个实例，各自高矮不同，折叠与否互不影响。
+     * 用 StringSet 存 id 字符串，免去手工拼分隔符的边界问题。
+     */
+    static boolean habitsExpanded(Context c, int widgetId) {
+        java.util.Set<String> s = sp(c).getStringSet(KEY_HABIT_EXPANDED, null);
+        return s != null && s.contains(String.valueOf(widgetId));
+    }
+
+    static void setHabitsExpanded(Context c, int widgetId, boolean expanded) {
+        java.util.Set<String> cur = sp(c).getStringSet(KEY_HABIT_EXPANDED, null);
+        java.util.Set<String> next = new java.util.HashSet<>(cur == null ? java.util.Collections.emptySet() : cur);
+        String key = String.valueOf(widgetId);
+        if (expanded ? !next.add(key) : !next.remove(key)) return;
+        sp(c).edit().putStringSet(KEY_HABIT_EXPANDED, next).apply();
     }
 
     /** 用户选中的那天；没选过就是今天 */
