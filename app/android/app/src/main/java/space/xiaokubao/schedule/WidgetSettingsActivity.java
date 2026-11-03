@@ -47,6 +47,12 @@ public class WidgetSettingsActivity extends Activity {
     private TextView status;
     private SeekBar alphaBar;
     private TextView alphaLabel;
+    private SeekBar fontBar;
+    private TextView fontLabel;
+
+    /** 字号四档（2026-11-03 用户：小组件字体要可选大小）。SeekBar 进度即数组下标 */
+    private static final int[] FONT_STEPS = {85, 100, 115, 130};
+    private static final String[] FONT_NAMES = {"偏小", "标准", "偏大", "特大"};
 
     @Override
     protected void onCreate(Bundle b) {
@@ -63,6 +69,8 @@ public class WidgetSettingsActivity extends Activity {
         status = findViewById(R.id.s_status);
         alphaBar = findViewById(R.id.s_alpha);
         alphaLabel = findViewById(R.id.s_alpha_label);
+        fontBar = findViewById(R.id.s_font);
+        fontLabel = findViewById(R.id.s_font_label);
 
         refreshLabels();
 
@@ -98,6 +106,25 @@ public class WidgetSettingsActivity extends Activity {
         });
 
         findViewById(R.id.s_refresh).setOnClickListener(v -> doRefresh());
+
+        // 字号四档：拖到哪格就定哪档，立刻重绘组件
+        fontBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) return;      // refreshLabels() 里回写进度也会触发
+                WidgetPrefs.setFontScale(WidgetSettingsActivity.this, FONT_STEPS[progress]);
+                refreshLabels();
+                ScheduleWidgetProvider.refresh(WidgetSettingsActivity.this);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
     }
 
     private void afterChange() {
@@ -119,6 +146,15 @@ public class WidgetSettingsActivity extends Activity {
         int prog = cur - WidgetPrefs.MIN_ALPHA;
         if (alphaBar.getProgress() != prog) alphaBar.setProgress(prog);
         alphaLabel.setText(cur + "%");
+
+        // 字号：存的是百分比，回显成最近的档（老值 70~160 里不在档上的也能落位）
+        int fs = WidgetPrefs.fontScale(this);
+        int fi = 0;
+        for (int i = 1; i < FONT_STEPS.length; i++) {
+            if (Math.abs(FONT_STEPS[i] - fs) < Math.abs(FONT_STEPS[fi] - fs)) fi = i;
+        }
+        if (fontBar.getProgress() != fi) fontBar.setProgress(fi);
+        fontLabel.setText(FONT_NAMES[fi] + "（" + fs + "%）");
 
         long at = WidgetPrefs.snapshot(this).at;
         status.setText(at > 0 ? "数据更新于 " + clockOf(at) : "还没有同步过数据，打开 App 一次");

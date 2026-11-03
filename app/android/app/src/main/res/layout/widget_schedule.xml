@@ -56,7 +56,9 @@
            2026-10-25：整体缩一号（head 30dp、图标 26/20dp、字号各 -1sp）。
          · 左上角原来的绿白 logo 换成**当天日期徽标**：一个黑白日历轮廓 +
              中间写着今天几号（见 ic_calendar_badge），点一下仍回今天。 -->
+    <!-- head_row：render() 用 setViewLayoutHeight 按 k 缩放这一行（2026-11-03） -->
     <FrameLayout
+        android:id="@+id/head_row"
         android:layout_width="match_parent"
         android:layout_height="30dp">
 
@@ -184,8 +186,11 @@
 
             <!-- 左上空白角 = 未定时的标记。宽度与左下刻度列（tl_scale）一致，
                  否则十字的竖线上下错位。2026-10-14：16 → 20dp，
-                 配合刻度列加宽（见 widget_tl_hour 的说明）。 -->
+                 配合刻度列加宽（见 widget_tl_hour 的说明）。
+                 2026-11-03：宽度跟刻度列一起按 k 缩放（panel_corner），字大了
+                 列窄了两位数会挤 —— 两处必须同一个值。 -->
             <TextView
+                android:id="@+id/panel_corner"
                 android:layout_width="20dp"
                 android:layout_height="match_parent"
                 android:text="" />

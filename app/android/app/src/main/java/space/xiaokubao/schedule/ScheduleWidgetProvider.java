@@ -340,6 +340,75 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 光一个数字太素，要日历小图标、中间写着今天几号；点一下仍回今天。
         v.setTextViewText(R.id.tv_logo_day, dayOfMonth(today));
 
+        /* ---- 预算与缩放系数（提前到一切渲染之前）----
+           2026-11-03：字/圆/格都要乘 k，而日期条、打卡区在时间轴之前就渲染，
+           所以这套计算必须放在最前面，不能等画完头部再算。 */
+        int lo = WidgetPrefs.startHour(c);
+        int hi = WidgetPrefs.endHour(c);
+        List<WTask> dayTasks = snap.tasksOf(day);
+        List<WTask> timed = new ArrayList<>();
+        List<WTask> untimed = new ArrayList<>();
+        for (WTask t : dayTasks) {
+            if (t.time == null) untimed.add(t);
+            else timed.add(t);
+        }
+
+        int habitRows = snap.habits.isEmpty() ? 0
+                : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
+
+        // 未定时区实占多少高：**两两一行**，行数随任务增加（最多 3 行 = 6 格）。
+        // 2026-10-25 修（用户报「最底下的时间数值被挡住、显示不完整」）：
+        // 以前这里只按常驻的 PANEL_BAR_DP(15) 算，未定时任务一多，顶行实际长到
+        // 30/45dp，时间轴却仍按 15dp 分预算 → 时间轴画得比可用空间高，底部被裁，
+        // 最后一格刻度（20 点那个数字）就剩半截。按实际行数算，一分不差。
+        int untimedShown = Math.min(untimed.size(), UNTIMED_MAX);
+        int untimedRows = (untimedShown + 1) / 2;
+        int barDp = Math.max(PANEL_BAR_DP, untimedRows * UNTIMED_ROW_DP);
+
+        // 时间轴能分到多少高度。**顶部和面板的固定件全是定值**（用户要求顶部
+        // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
+        int totalDp = widgetHeightDp(c, mgr, widgetId);
+
+        /* ---- 缩放系数（2026-11-03 用户：①字号要可选 ②组件拉大/缩小，
+           字、图标、单元格要**同比**变大变小 —— 原来字固定 8/9sp，
+           拉大后格子变大、字相对显小）----
+           两层相乘：
+           · 用户档位 —— 设置里的字号选项（85/100/115/130%）；
+           · sizeK —— 同比系数，锚点是「时间轴每格多高」：设计上每格 16dp
+             正好是最舒展、逐小时标数的档（见 axisPlan 的 11/16 两道线）。
+             组件拉大 → 每格更高 → 字和固定件跟着放大；拖小则反向。
+             用**未缩放**的预算算行高，避免 k 自己喂自己的循环。 */
+        int fixed0 = 10 + 30 + 2 + DATE_STRIP_DP + 2
+                + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)
+                + barDp + 1 + 2;
+        int timeline0 = Math.max(70, totalDp - fixed0);
+        float rowsH0 = Math.max(1f, (timeline0 - AXIS_END_DP) / (float) Math.max(1, hi - lo));
+        float sizeK = Math.max(0.75f, Math.min(2.0f, rowsH0 / 16f));
+        float k = sizeK * (WidgetPrefs.fontScale(c) / 100f);
+        Metrics m = new Metrics(k);
+        // 未定时区的横条高度也要跟着缩（行数不变，单行高度 × k）
+        barDp = Math.max(m.panelBar, untimedRows * m.untimedRow);
+
+        int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
+                + m.headRow + 2                 // head 行（FrameLayout 30dp）+ margin
+                + m.dateStrip + 2              // 日期条 + margin
+                + (habitRows > 0 ? habitRows * m.habitRow + 7 : 0)   // 打卡区 + margin
+                + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
+        int timelineDp = Math.max(70, totalDp - fixedDp);
+
+        /* ---- 顶部：标题、日期徽标、四颗按钮随 k 缩放（宽高 + 字号） ---- */
+        v.setViewLayoutHeight(R.id.head_row, m.headRow, TypedValue.COMPLEX_UNIT_DIP);
+        scaleView(v, R.id.iv_logo, 26, k);
+        scaleView(v, R.id.btn_prev_month, 20, k);
+        scaleView(v, R.id.btn_next_month, 20, k);
+        scaleView(v, R.id.btn_add, 26, k);
+        scaleView(v, R.id.btn_settings, 26, k);
+        font(v, R.id.tv_logo_day, 10, k);
+        font(v, R.id.tv_month, 15, k);
+        // 十字面板左列（左上空白角 + 左下刻度列）同宽同缩，竖线才不错位
+        v.setViewLayoutWidth(R.id.panel_corner, m.scaleW, TypedValue.COMPLEX_UNIT_DIP);
+        v.setViewLayoutWidth(R.id.tl_scale, m.scaleW, TypedValue.COMPLEX_UNIT_DIP);
+
         /* ---- 日期条：选中日所在的那一周 ---- */
         v.removeAllViews(R.id.date_strip);
         for (int i = 0; i < 7; i++) {
@@ -349,6 +418,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             boolean isToday = iso.equals(today);
             chip.setTextViewText(R.id.chip_wd, WD[i]);
             chip.setTextViewText(R.id.chip_date, dayOfMonth(iso));
+            // 字与圆随 k 缩放（2026-11-03）。圆的父框 chip_frame 宽=高 → 缩放后
+            // 仍是正圆；chip_circle / chip_date 都是 match_parent，跟着框走。
+            font(chip, R.id.chip_wd, 8, k);
+            font(chip, R.id.chip_date, 11, k);
+            scaleView(chip, R.id.chip_frame, 20, k);
             // 圆放在**固定 26dp 的 chip_circle** 上（宽高相等 → 永远是正圆）。
             // 不能放在 chip_root 上：那是 weight 等分出来的矩形，oval 铺上去
             // 必然被拉成椭圆 —— 这正是用户看到的「选中的日期变成了椭圆」。
@@ -379,8 +453,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             int n = snap.habits.size();
             for (int i = 0; i < n; i += HABITS_PER_ROW) {
                 RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
-                for (int k = i; k < i + HABITS_PER_ROW; k++) {
-                    boolean real = k < n;
+                for (int kk = i; kk < i + HABITS_PER_ROW; kk++) {
+                    boolean real = kk < n;
                     RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
                     if (!real) {
                         // 不满一行时补占位，让已有那几个的宽度跟满行一致 ——
@@ -390,7 +464,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                         row.addView(R.id.habit_row, chip);
                         continue;
                     }
-                    WHabit h = snap.habits.get(k);
+                    WHabit h = snap.habits.get(kk);
                     chip.setTextViewText(R.id.habit_chip, h.title);
                     /* 完成态按**组件当前选中的那一天**取，不能用快照里的 h.done
                      * （那是按服务端的「今天」算好的固定值）。
@@ -412,6 +486,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                     chip.setInt(R.id.habit_chip, "setBackgroundResource",
                             hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
                     chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
+                    font(chip, R.id.habit_chip, 8, k);
                     chip.setOnClickPendingIntent(R.id.habit_chip,
                             WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
                     row.addView(R.id.habit_row, chip);
@@ -419,40 +494,6 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 v.addView(R.id.habit_rows, row);
             }
         }
-
-        /* ---- 时间轴 ---- */
-        List<WTask> dayTasks = snap.tasksOf(day);
-        List<WTask> timed = new ArrayList<>();
-        List<WTask> untimed = new ArrayList<>();
-        for (WTask t : dayTasks) {
-            if (t.time == null) untimed.add(t);
-            else timed.add(t);
-        }
-
-        int lo = WidgetPrefs.startHour(c);
-        int hi = WidgetPrefs.endHour(c);
-
-        int habitRows = snap.habits.isEmpty() ? 0
-                : (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-
-        // 未定时区实占多少高：**两两一行**，行数随任务增加（最多 3 行 = 6 格）。
-        // 2026-10-25 修（用户报「最底下的时间数值被挡住、显示不完整」）：
-        // 以前这里只按常驻的 PANEL_BAR_DP(15) 算，未定时任务一多，顶行实际长到
-        // 30/45dp，时间轴却仍按 15dp 分预算 → 时间轴画得比可用空间高，底部被裁，
-        // 最后一格刻度（20 点那个数字）就剩半截。按实际行数算，一分不差。
-        int untimedShown = Math.min(untimed.size(), UNTIMED_MAX);
-        int untimedRows = (untimedShown + 1) / 2;
-        int barDp = Math.max(PANEL_BAR_DP, untimedRows * UNTIMED_ROW_DP);
-
-        // 时间轴能分到多少高度。**顶部和面板的固定件全是定值**（用户要求顶部
-        // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
-        int totalDp = widgetHeightDp(c, mgr, widgetId);
-        int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
-                + 30 + 2                        // head 行（FrameLayout 30dp）+ margin
-                + DATE_STRIP_DP + 2             // 日期条 + margin
-                + (habitRows > 0 ? habitRows * HABIT_ROW_DP + 7 : 0)   // 打卡区 + margin
-                + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
-        int timelineDp = Math.max(70, totalDp - fixedDp);
 
         /* 轴尾 = 设定终点，但**晚间任务不能因此丢掉**：轴现在只画到终点，
            有任务跨过终点就把它延到任务结束的那个整点（没有就没有代价）。 */
@@ -464,9 +505,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         boolean isToday = day.equals(today);
         int nowMin = isToday ? nowMinutes() : -1;
-        renderScale(c, v, lo, hiEff, timelineDp, isToday, nowMin);
-        renderTimeline(c, v, timed, lo, hiEff, timelineDp, isToday, nowMin);
-        renderUntimedBar(c, v, untimed);
+        renderScale(c, v, lo, hiEff, timelineDp, m);
+        renderTimeline(c, v, timed, lo, hiEff, timelineDp, isToday, nowMin, m);
+        renderUntimedBar(c, v, untimed, m);
 
         /* ---- 底部状态：用户 2026-10-14 要求整行去掉，页面更精简 ---- */
         v.setViewVisibility(R.id.tv_footer, View.GONE);
@@ -513,6 +554,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      */
     private static final int AXIS_END_DP = 10;
 
+    /** 十字面板左列宽（左上空白角 / 左下刻度列共用，2026-10-14 定 20dp） */
+    private static final int SCALE_COL_DP = 20;
+
     /** 未定时横条最多直接露几个，超出的折成一格「+N」 */
     /** 未定时区最多显示的**格子数**（3 排 × 每排 2 格，2026-10-25 用户定：
      *  两两一行、行数随任务增加；再多折「+N」—— 再多就没法看了，
@@ -552,6 +596,52 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int NOTE_LINE_MIN_DP = 24;
 
     /**
+     * 一次渲染里随缩放系数 k 变化的全部尺寸（2026-11-03）。
+     * 常量是**设计基准值**，这里统一乘 k 得到实际用的 dp —— 免得每处手乘、
+     * 漏一处就出现「字大了格子没大」的错位。
+     */
+    private static class Metrics {
+        final float k;
+        final int dateStrip, panelBar, untimedRow, habitRow, minBlock, noteMin, axisEnd, lineOff, headRow;
+        /** 十字面板左列宽（左上空白角 + 左下刻度列必须同宽，2026-11-03 随 k 缩放） */
+        final int scaleW;
+        /** 未定时区单张卡的高（行高 untimedRow 里减去那条缝） */
+        final int untimedCard;
+
+        Metrics(float k) {
+            this.k = k;
+            dateStrip = px(DATE_STRIP_DP, k);
+            panelBar = px(PANEL_BAR_DP, k);
+            untimedRow = px(UNTIMED_ROW_DP, k);
+            habitRow = px(HABIT_ROW_DP, k);
+            minBlock = px(MIN_BLOCK_DP, k);
+            noteMin = px(NOTE_LINE_MIN_DP, k);
+            axisEnd = px(AXIS_END_DP, k);
+            lineOff = px(LINE_OFFSET_DP, k);
+            headRow = px(30, k);
+            scaleW = px(SCALE_COL_DP, k);
+            untimedCard = px(UNTIMED_ROW_DP - 1, k);
+        }
+
+        static int px(int base, float k) {
+            return Math.max(1, Math.round(base * k));
+        }
+    }
+
+    /** 文字随 k 缩放（sp）。RemoteViews 有 setTextViewTextSize（API 16+），最稳的一条路 */
+    private static void font(RemoteViews v, int id, float baseSp, float k) {
+        v.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, Math.max(1f, baseSp * k));
+    }
+
+    /** 方形图标视图随 k 缩放（宽高一起）。setViewLayoutWidth/Height 是 API 31+，
+     *  与时间轴定位用的 setViewLayoutHeight 同一条款 —— 目标机 API 36，没问题 */
+    private static void scaleView(RemoteViews v, int id, int baseDp, float k) {
+        int d = Metrics.px(baseDp, k);
+        v.setViewLayoutWidth(id, d, TypedValue.COMPLEX_UNIT_DIP);
+        v.setViewLayoutHeight(id, d, TypedValue.COMPLEX_UNIT_DIP);
+    }
+
+    /**
      * 时间轴「画几格 + 每几个钟头写一个数字」。
      *
      * **返回 {bands, step}**，刻度列和网格层共用同一份 —— 两边都必须据此算高度，
@@ -567,17 +657,17 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 终点数字单独占一条 {@link #AXIS_END_DP} 高的尾巴压在轴底 —— 轴底再没有
      * 空出来的格子。
      */
-    private static int[] axisPlan(int lo, int hi, int timelineDp) {
+    private static int[] axisPlan(int lo, int hi, int timelineDp, int axisEndDp) {
         int bands = Math.max(1, hi - lo);
-        float dph = Math.max(1, timelineDp - AXIS_END_DP) / (float) bands;
+        float dph = Math.max(1, timelineDp - axisEndDp) / (float) bands;
         // 行高很小 → 数字会叠在一起，隔 2~3 小时才写一个（判据跟 App 日视图一致）
         int step = dph < 11f ? 3 : (dph < 16f ? 2 : 1);
         return new int[]{bands, step};
     }
 
     /** 时间轴主体（不含贴底那一条终点数字）的高度 */
-    private static int axisHeight(int timelineDp) {
-        return Math.max(1, timelineDp - AXIS_END_DP);
+    private static int axisHeight(int timelineDp, int axisEndDp) {
+        return Math.max(1, timelineDp - axisEndDp);
     }
 
     /**
@@ -587,12 +677,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 所以左边的数字和右边的小时线严格同高。
      */
     private static void renderScale(Context c, RemoteViews v, int lo, int hi,
-                                    int timelineDp, boolean isToday, int nowMin) {
+                                    int timelineDp, Metrics m) {
         v.removeAllViews(R.id.tl_scale);
-        int[] plan = axisPlan(lo, hi, timelineDp);
+        int[] plan = axisPlan(lo, hi, timelineDp, m.axisEnd);
         int bands = plan[0];
         int step = plan[1];
-        float dpPerHour = axisHeight(timelineDp) / (float) bands;
+        float dpPerHour = axisHeight(timelineDp, m.axisEnd) / (float) bands;
 
         int prevY = 0;
         for (int k = 0; k < bands; k++) {
@@ -607,6 +697,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // 刻度数字恒为普通灰。**不再给「当前那一小时」标红**（用户 2026-10-14：
             // 不要任何「现在几点」的体现）。
             e.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
+            font(e, R.id.tl_hour, 8, m.k);
             v.addView(R.id.tl_scale, e);
         }
 
@@ -614,9 +705,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
            「设到 20 点」就画到 20:00 为止，20 这个数字本身没有整格可用 ——
            给它 6dp 的高度，轴底自然收在数字下面，不再白出一格。 */
         RemoteViews end = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
-        end.setViewLayoutHeight(R.id.tl_hour, AXIS_END_DP, TypedValue.COMPLEX_UNIT_DIP);
+        end.setViewLayoutHeight(R.id.tl_hour, m.axisEnd, TypedValue.COMPLEX_UNIT_DIP);
         end.setTextViewText(R.id.tl_hour, String.format(Locale.US, "%02d", lo + bands));
         end.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
+        font(end, R.id.tl_hour, 8, m.k);
         v.addView(R.id.tl_scale, end);
     }
 
@@ -640,20 +732,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      */
     private static void renderTimeline(Context c, RemoteViews v, List<WTask> timed,
                                        int lo, int hi, int timelineDp,
-                                       boolean isToday, int nowMin) {
-        int[] plan = axisPlan(lo, hi, timelineDp);
+                                       boolean isToday, int nowMin, Metrics m) {
+        int[] plan = axisPlan(lo, hi, timelineDp, m.axisEnd);
         int bands = plan[0];
         int fromMin = lo * 60;
         int toMin = (lo + bands) * 60;
         // 扣掉整体下移量。**线、红线和任务卡共用这一个比例**，
         // 所以下移之后三者仍然严格对齐（见 LINE_OFFSET_DP）。
-        int innerDp = Math.max(1, axisHeight(timelineDp) - LINE_OFFSET_DP);
+        int innerDp = Math.max(1, axisHeight(timelineDp, m.axisEnd) - m.lineOff);
         float dpPerMin = innerDp / (float) (bands * 60);
         float dpPerHour = innerDp / (float) bands;
 
         /* ---- 网格层：等高的格子，格子的顶边就是整点。只有线，刻度在左侧列 ---- */
         v.removeAllViews(R.id.tl_grid);
-        v.addView(R.id.tl_grid, spacer(c, LINE_OFFSET_DP));
+        v.addView(R.id.tl_grid, spacer(c, m.lineOff));
         int prevY = 0;
         for (int k = 0; k < bands; k++) {
             // 用累进目标值取整，避免逐行四舍五入攒出十几 dp 的偏移
@@ -684,7 +776,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         evs.sort((a, b) -> Integer.compare(a.s, b.s));
 
         // 从「负的偏移」起步 → 第一个 spacer 自动多出 5dp，整层跟着下移
-        int cursor = -LINE_OFFSET_DP;
+        int cursor = -m.lineOff;
         int i = 0;
         while (i < evs.size()) {
             // 摘一个「时间上连通重叠」的簇：簇内的任务才需要并排分列
@@ -700,7 +792,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             List<List<Ev>> cols = assignColumns(cluster);
 
             int topDp = Math.round((clS - fromMin) * dpPerMin);
-            int spanDp = Math.max(MIN_BLOCK_DP, Math.round((clE - clS) * dpPerMin));
+            int spanDp = Math.max(m.minBlock, Math.round((clE - clS) * dpPerMin));
             if (topDp - cursor > 0) v.addView(R.id.tl_tasks, spacer(c, topDp - cursor));
 
             RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_tl_row);
@@ -712,9 +804,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 for (Ev ev : col) {
                     // 列内互不重叠 → 用前置占位条把卡片顶到它自己的分钟
                     int sDp = Math.round((ev.s - clS) * dpPerMin);
-                    int hDp = Math.max(MIN_BLOCK_DP, Math.round((ev.e - ev.s) * dpPerMin));
+                    int hDp = Math.max(m.minBlock, Math.round((ev.e - ev.s) * dpPerMin));
                     if (sDp - inner > 0) colv.addView(R.id.tl_col, spacer(c, sDp - inner));
-                    colv.addView(R.id.tl_col, taskBlock(c, ev.t, hDp));
+                    colv.addView(R.id.tl_col, taskBlock(c, ev.t, hDp, m));
                     inner = sDp + hDp;
                 }
                 row.addView(R.id.tl_row, colv);
@@ -772,20 +864,21 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         return cols;
     }
 
-    private static RemoteViews taskBlock(Context c, WTask t, int hDp) {
+    private static RemoteViews taskBlock(Context c, WTask t, int hDp, Metrics m) {
         RemoteViews block = new RemoteViews(c.getPackageName(), R.layout.widget_task_block);
         /* 给不给第二行，看**这块有多高**（8sp 两行 ≈ 24dp，见 NOTE_LINE_MIN_DP）。
            块矮时硬塞两行会把两行的头尾一起切掉 —— 那是比只画标题更糟的读法。
            15 分钟的小块本来就只够放一个名字。 */
-        boolean roomy = hDp >= NOTE_LINE_MIN_DP;
+        boolean roomy = hDp >= m.noteMin;
         CharSequence text = label(t, roomy);
         // 完成态整块是灰的，不需要再分色
         if (!t.done) text = dimTimePrefix(text, t);
         block.setTextViewText(R.id.task_block, text);
         block.setViewLayoutHeight(R.id.task_block, hDp, TypedValue.COMPLEX_UNIT_DIP);
-        // ⚠️ **字号不再按块高变化** —— 用户 2026-10-13 明确「任务卡上的文字不随着
-        // 卡片变大而变大」。统一 9sp，写在 widget_task_block.xml 里（以前这里
-        // 按 hDp 挑 9/10/11sp，同屏卡片字大小不一）。
+        // ⚠️ 字号**不按块高变化**（用户 2026-10-13），但**随缩放系数走**
+        //（2026-11-03：字号档位 + 组件尺寸同比）—— 基准 8sp 写在
+        // widget_task_block.xml 里，这里乘 k 覆盖。
+        font(block, R.id.task_block, 8, m.k);
         if (t.done) {
             // 完成后**整块退色**：底变浅灰、字转灰。
             // **不用删除线** —— 用户明确反感过，那东西在本来就不宽的任务块里太吵。
@@ -813,7 +906,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 6 格）；奇数落单时右半格留空（1A）；超过 6 个折成最后一格「+N」（2A）。
      * 空 n=0 时整区留空 —— 外层 minHeight 15dp 保住空白角与分割线常驻。
      */
-    private static void renderUntimedBar(Context c, RemoteViews v, List<WTask> untimed) {
+    private static void renderUntimedBar(Context c, RemoteViews v, List<WTask> untimed, Metrics m) {
         v.removeAllViews(R.id.untimed_bar);
         int n = untimed.size();
         if (n == 0) return;
@@ -823,12 +916,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         for (int i = 0; i < shown; i += 2) {
             RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_pair);
-            row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i)));
+            // 行高随 k（XML 里 15dp 只是缺省；2026-11-03 同比缩放）
+            row.setViewLayoutHeight(R.id.untimed_pair, m.untimedRow, TypedValue.COMPLEX_UNIT_DIP);
+            row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i), m));
             if (i + 1 < shown) {
-                row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i + 1)));
+                row.addView(R.id.untimed_pair, untimedCard(c, untimed.get(i + 1), m));
             } else if (fold) {
                 // 折叠：最后一个显示位旁边那格给「+N」
-                row.addView(R.id.untimed_pair, untimedMore(c, n - shown));
+                row.addView(R.id.untimed_pair, untimedMore(c, n - shown, m));
             } else {
                 // 奇数落单（1A）：右半格空占位，把左卡顶成半宽
                 row.addView(R.id.untimed_pair,
@@ -839,9 +934,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /** 一张未定时卡（样式与点击不变，从 renderUntimedBar 抽出来复用） */
-    private static RemoteViews untimedCard(Context c, WTask t) {
+    private static RemoteViews untimedCard(Context c, WTask t, Metrics m) {
         RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_row);
         r.setTextViewText(R.id.untimed_row, t.title);
+        // 高度与字号随 k（2026-11-03）
+        r.setViewLayoutHeight(R.id.untimed_row, m.untimedCard, TypedValue.COMPLEX_UNIT_DIP);
+        font(r, R.id.untimed_row, 8, m.k);
         if (t.done) {
             r.setInt(R.id.untimed_row, "setBackgroundResource",
                     R.drawable.widget_task_bg_done);
@@ -858,10 +956,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /** 「+N」折叠提示，占半格 */
-    private static RemoteViews untimedMore(Context c, int more) {
-        RemoteViews m = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_more);
-        m.setTextViewText(R.id.untimed_more, "+" + more);
-        return m;
+    private static RemoteViews untimedMore(Context c, int more, Metrics m) {
+        RemoteViews mv = new RemoteViews(c.getPackageName(), R.layout.widget_untimed_more);
+        mv.setTextViewText(R.id.untimed_more, "+" + more);
+        mv.setViewLayoutHeight(R.id.untimed_more, m.untimedCard, TypedValue.COMPLEX_UNIT_DIP);
+        font(mv, R.id.untimed_more, 8, m.k);
+        return mv;
     }
 
     /* ============================ 打卡 ============================ */

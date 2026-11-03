@@ -59,16 +59,31 @@ export async function run(ctx) {
       `stopPropagation` 的 click 拦截，拖完要等它 detach 里的 `setTimeout(…, 50)`
       才摘（core.cjs：`setTimeout(this.documentListeners.removeAll, 50)`）。
       这 50ms 里**任何**点击都被吞（真鼠标 / `.click()` 一视同仁），症状是
-      「点了没反应」，很容易误判成产品坏了。 */
+      「点了没反应」，很容易误判成产品坏了。
+      ⚠️ 激活确认 + 重试（2026-11-03）：CDP 合成鼠标下 dnd-kit 的激活是
+      **间歇性失败**的（按下→位移 12px，浮层有时就是不出现；探针 + 冒烟双证）。
+      按下后查 `.drag-overlay`，没起来就松开重试，最多 3 次 —— 不然断言会把
+      「没拖起来」误报成「拖了没落对组」。 */
   const dragFromTo = async (g) => {
-    await mouse('mouseMoved', g.sx, g.sy, 0);
-    await mouse('mousePressed', g.sx, g.sy, 1);
-    await mouse('mouseMoved', g.sx + 12, g.sy + 4, 1);
-    for (const k of [0.34, 0.67, 1]) {
-      await mouse('mouseMoved', Math.round(g.sx + (g.tx - g.sx) * k), Math.round(g.sy + (g.ty - g.sy) * k), 1);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await mouse('mouseMoved', g.sx, g.sy, 0);
+      await mouse('mousePressed', g.sx, g.sy, 1);
+      await mouse('mouseMoved', g.sx + 12, g.sy + 4, 1);
+      await new Promise((r) => setTimeout(r, 200));
+      const on = await evalJs(page, `return !!document.querySelector('.drag-overlay');`);
+      if (!on) {
+        await mouse('mouseReleased', g.sx + 12, g.sy + 4, 0);
+        await new Promise((r) => setTimeout(r, 400));
+        continue;
+      }
+      for (const k of [0.34, 0.67, 1]) {
+        await mouse('mouseMoved', Math.round(g.sx + (g.tx - g.sx) * k), Math.round(g.sy + (g.ty - g.sy) * k), 1);
+      }
+      await mouse('mouseReleased', g.tx, g.ty, 0);
+      await new Promise((r) => setTimeout(r, 300));
+      return true;
     }
-    await mouse('mouseReleased', g.tx, g.ty, 0);
-    await new Promise((r) => setTimeout(r, 300));
+    return false;
   };
 
   /* ---------- 1. 默认分类播种 ---------- */
@@ -136,6 +151,132 @@ export async function run(ctx) {
       + (gid ? '' : '，实际 ' + JSON.stringify(await evalJs(page, `return [...document.querySelectorAll('.hgroup')]
         .map((h) => [(h.querySelector('.hgroup-name') || {}).textContent || '?',
           [...h.querySelectorAll('[data-habit]')].map((r) => (r.textContent || '').trim().slice(0, 6))])`))));
+  }
+
+  /* ---------- 3b. 拖到**组头**也要能落组（2026-11-03 用户实测的落法） ----------
+     droppable 原来只挂在 body 的 44px 窄条上，用户把打卡项「放进分类」时
+     落在组头/组间空隙就近判空 → 原地弹回。现在整个 section 都是落区。 */
+  const geoHead = await evalJs(page, `return (() => {
+    const src = [...document.querySelectorAll('.habit-row')]
+      .find((r) => (r.textContent || '').includes('分类乙'));
+    const dst = [...document.querySelectorAll('.hgroup')]
+      .find((h) => (h.querySelector('.hgroup-name')?.textContent || '').trim() === '运动');
+    if (!src || !dst) return null;
+    const a = src.getBoundingClientRect();
+    const b = dst.querySelector('.hgroup-head').getBoundingClientRect();
+    return { id: src.dataset.habit, sx: Math.round(a.left + 30),
+      sy: Math.round(a.top + Math.min(16, a.height / 2)),
+      tx: Math.round(b.left + b.width / 2), ty: Math.round(b.top + b.height / 2),
+      gid: dst.dataset.group };
+  })()`);
+  if (geoHead) {
+    await dragFromTo(geoHead);
+    const headLanded = await waitFor(page, `(() => {
+      const dst = document.querySelector('.hgroup[data-group="${geoHead.gid}"]');
+      return !!(dst && dst.querySelector('[data-habit="${geoHead.id}"]'));
+    })()`, '「分类乙」也进了目标组', 6000).catch(() => null);
+    ok(!!headLanded, '拖到**组头**松手也落进这个组（用户最自然的落点）');
+  }
+
+  /* ---------- 3c. 拖到屏幕上缘，页面自己滚（2026-11-03 用户报手机端拖不到顶部） ----------
+     dnd-kit 的 autoScroll 是 JS 驱动的（合成事件也能触发）。先把页面撑到超高、
+     **滚到底** —— 必须滚下去：dnd-kit 的 getScrollDirectionAndSpeed 里有
+     `!isTop` 硬条件（scrollTop=0 时往上没有可滚空间，autoScroll 正确地不动）。
+     之前这条断言在页面处于顶部时拖上缘，永远假红（scrollTop 0 → 0），
+     根因不是产品，是断言造错了状态。 */
+  for (let i = 1; i <= 10; i++) {
+    await evalJs(page, `return (() => {
+      const el = document.querySelector('.habit-add input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '滚动蛋${i}');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('.habit-add [data-act="add-habit"]').click();
+      return true;
+    })()`);
+  }
+  await waitFor(page, `[...document.querySelectorAll('.habit-row')].filter((r) => r.textContent.includes('滚动蛋')).length >= 10`,
+    '10 条滚动蛋就位', 8000).catch(() => null);
+  const tall = await evalJs(page, `return (() => {
+    const c = document.querySelector('#content');
+    return { sh: c.scrollHeight, ch: c.clientHeight, st0: c.scrollTop };
+  })()`);
+  if (tall && tall.sh > tall.ch + 100) {
+    /* 滚到底：制造「往上还有内容」的状态（用户真实场景：从底部往上拖） */
+    await evalJs(page, `const c = document.querySelector('#content'); c.scrollTop = c.scrollHeight; return c.scrollTop;`);
+    const dragEgg = await evalJs(page, `return (() => {
+      /* 必须选**可见**的行：滚到底之后顶部行多半在视口外，按在视口外
+         的坐标上拖拽根本起不来（之前这条断言就是栽在这）。 */
+      const rows = [...document.querySelectorAll('.habit-row')]
+        .filter((r) => r.textContent.includes('滚动蛋') && r.offsetParent !== null
+          && r.getBoundingClientRect().top > 0 && r.getBoundingClientRect().bottom < window.innerHeight);
+      if (!rows.length) return null;
+      const b = rows[rows.length - 1].getBoundingClientRect();
+      const c = document.querySelector('#content').getBoundingClientRect();
+      return { id: rows[rows.length - 1].dataset.habit, x: Math.round(b.left + 30),
+        y: Math.round(b.top + 12), top: Math.round(c.top),
+        st0: c.top >= 0 ? document.querySelector('#content').scrollTop : 0 };
+    })()`);
+    let dragging = false;
+    let scrolled = -1;
+    let dbg = '';
+    for (let attempt = 0; attempt < 3 && !dragging; attempt++) {
+      /* 每次尝试都重读几何：前面几次拖拽会让行挪组，坐标可能已经变了 */
+      const egg = await evalJs(page, `return (() => {
+        /* 滚到底之后最后几行会被**吸底的新增输入条**盖住 —— 矩形可见 ≠ 按
+           得到。必须 elementFromPoint 验证按压点真的落在行上（2026-11-03
+           三次激活全失败的真凶就是按在了输入条上）。 */
+        const rows = [...document.querySelectorAll('.habit-row')]
+          .filter((r) => r.textContent.includes('滚动蛋') && r.offsetParent !== null
+            && r.getBoundingClientRect().top > 0 && r.getBoundingClientRect().bottom < window.innerHeight
+            && (() => { const b = r.getBoundingClientRect();
+              const hit = document.elementFromPoint(b.left + 30, b.top + 12);
+              return !!hit && !!hit.closest('[data-habit]'); })());
+        if (!rows.length) return null;
+        const b = rows[rows.length - 1].getBoundingClientRect();
+        const c = document.querySelector('#content').getBoundingClientRect();
+        return { id: rows[rows.length - 1].dataset.habit, x: Math.round(b.left + 30),
+          y: Math.round(b.top + 12), top: Math.round(c.top) };
+      })()`);
+      if (!egg) break;
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: egg.x, y: egg.y, button: 'left', buttons: 0, clickCount: 1 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: egg.x, y: egg.y, button: 'left', buttons: 1, clickCount: 1 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: egg.x + 12, y: egg.y + 4, button: 'left', buttons: 1, clickCount: 1 });
+      await new Promise((r) => setTimeout(r, 250));
+      /* 激活确认：3c 若拖拽没起来，后面一切采样都是死数据（之前 187→187
+         就分不清是「没滚」还是「没拖」）。浮层在 = dnd-kit 真开拖了。 */
+      dragging = await evalJs(page, `return !!document.querySelector('.drag-overlay');`);
+      if (!dragging) {
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: egg.x + 12, y: egg.y + 4, button: 'left', buttons: 0, clickCount: 1 });
+        await new Promise((r) => setTimeout(r, 400));
+        if (attempt === 2) {
+          /* 最后一次也没起来：抓现场 —— 按压点底下到底是谁 */
+          dbg = JSON.stringify(await evalJs(page, `return (() => {
+            const el = document.elementFromPoint(${egg.x}, ${egg.y});
+            const c = document.querySelector('#content');
+            return { hit: el ? el.tagName + '.' + String(el.className).slice(0, 50) : 'null',
+              inRow: !!(el && el.closest('[data-habit]')),
+              ih: window.innerHeight, st: c ? c.scrollTop : -9 };
+          })()`));
+        }
+        continue;
+      }
+      /* 按住拖到**越过**内容区上缘并停住：阈值带 64px（见 groups.tsx
+         SCROLL_EDGE），停住不松手也持续滚（rAF 每帧 scrollBy）。 */
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: egg.x, y: Math.max(20, egg.top - 24), button: 'left', buttons: 1, clickCount: 1 });
+      await new Promise((r) => setTimeout(r, 900));
+      scrolled = await evalJs(page, `return document.querySelector('#content').scrollTop;`);
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: egg.x, y: Math.max(20, egg.top - 24), button: 'left', buttons: 0, clickCount: 1 });
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    ok(dragging && dragEgg.st0 > 0 && scrolled >= 0 && scrolled < dragEgg.st0,
+      '拖着行贴到屏幕上缘，页面自己往上滚（scrollTop ' + dragEgg.st0 + ' → ' + scrolled
+      + '，激活=' + dragging + (dbg ? '，现场=' + dbg : '') + '）');
+    const eggBack = await evalJs(page, `return (() => {
+      const r = document.querySelector('[data-habit="${dragEgg.id}"]');
+      return { vis: r && r.offsetParent !== null, inRect: r ? r.getBoundingClientRect().top < window.innerHeight : false };
+    })()`);
+    ok(!!eggBack && eggBack.vis && eggBack.inRect, '松手（不在任何组上）后这一行留在原组没丢');
+  } else {
+    ok(false, '页面没撑到超高，autoScroll 断言跳过（sh=' + (tall && tall.sh) + ' ch=' + (tall && tall.ch) + '）');
   }
 
   /* ---------- 4. 折叠 ---------- */

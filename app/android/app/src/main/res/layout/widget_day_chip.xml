@@ -13,6 +13,10 @@
   2026-10-14：星期 8 → 9sp、日期 11 → 12sp，行距略放大（用户要求）；
   2026-10-25 整体小 1sp：星期 8sp、日期 11sp，圆 22 → 20dp。
   但仍明显小于标题。
+
+  2026-11-03：给圆的父 FrameLayout 加 id（chip_frame），代码按 k 缩放这一个
+  框即可 —— 圆和数字都改成 match_parent 跟着框走（宽=高 → 永远是正圆），
+  免得三个视图各缩各的、圆和数字错位。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/chip_root"
@@ -27,7 +31,7 @@
         android:gravity="center_horizontal"
         android:orientation="vertical">
 
-        <!-- 星期：始终无底，选中时只换字色（不再变白） -->
+        <!-- 星期：始终无底，选中时只换字色（不再变白）。字号随 k（代码里 setTextViewTextSize） -->
         <TextView
             android:id="@+id/chip_wd"
             android:layout_width="wrap_content"
@@ -36,22 +40,23 @@
             android:textColor="#6B8574"
             android:textSize="8sp" />
 
-        <!-- 日期：圆形高亮只作用于这一格 -->
+        <!-- 日期：圆形高亮只作用于这一格（圆底在 chip_circle，数字在 chip_date） -->
         <FrameLayout
+            android:id="@+id/chip_frame"
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:layout_marginTop="2dp">
 
             <TextView
                 android:id="@+id/chip_circle"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:text="" />
 
             <TextView
                 android:id="@+id/chip_date"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="12"
                 android:textColor="#1B3A2A"

@@ -136,6 +136,45 @@
         android:progressTint="#27795A"
         android:thumbTint="#27795A" />
 
+    <!-- ============ 字体大小 ============
+         四档（偏小 85% / 标准 100% / 偏大 115% / 特大 130%）。
+         SeekBar 只有整数进度 → max=3，每格一档；百分比显示在右侧 label。
+         组件整体还会随自身大小同比缩放（sizeK），这一档是再乘的用户偏好。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="字体大小"
+            android:textColor="#6B8574"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/s_font_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="标准"
+            android:textColor="#27795A"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/s_font"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:max="3"
+        android:progress="1"
+        android:progressTint="#27795A"
+        android:thumbTint="#27795A" />
+
     <!-- ============ 数据 ============ -->
     <TextView
         android:layout_width="match_parent"

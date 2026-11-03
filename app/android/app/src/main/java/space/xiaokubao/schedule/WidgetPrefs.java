@@ -54,6 +54,14 @@ class WidgetPrefs {
     static final int MAX_ALPHA = 100;
     static final int DEFAULT_ALPHA = 100;
 
+    /**
+     * 字体档位（百分比，100 = 标准）。四档：85 / 100 / 115 / 130。
+     * 用户 2026-11-03：「桌面小组件的字体要提供字体大小的选项」。
+     * 存**整数百分比**而不是档位下标 —— 以后加档位/改数值，老安装里的存值照样有意义。
+     */
+    static final String KEY_FONT_SCALE = "schedule_widget_font_scale";
+    static final int DEFAULT_FONT_SCALE = 100;
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -483,6 +491,16 @@ class WidgetPrefs {
     /** 夹到合法区间 40–100 —— 免得旧版本存下的值或手改的值画出四不像 */
     private static int normalizeAlpha(int pct) {
         return Math.max(MIN_ALPHA, Math.min(MAX_ALPHA, pct));
+    }
+
+    /** 字体档位（百分比）。没设过 = 100（标准），跟升级前的观感完全一致 */
+    static int fontScale(Context c) {
+        int v = sp(c).getInt(KEY_FONT_SCALE, DEFAULT_FONT_SCALE);
+        return Math.max(70, Math.min(160, v));
+    }
+
+    static void setFontScale(Context c, int pct) {
+        sp(c).edit().putInt(KEY_FONT_SCALE, Math.max(70, Math.min(160, pct))).apply();
     }
 
     private static int clampHour(int h) {
