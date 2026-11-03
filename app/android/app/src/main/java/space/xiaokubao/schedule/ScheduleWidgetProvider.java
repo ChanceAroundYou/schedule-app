@@ -554,23 +554,22 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 int hidden = 0;
                 for (int i = shown; i < rowHabits.size(); i++) hidden += rowHabits.get(i);
                 if (shown < rows.size()) {
-                    RemoteViews row = toggleRow(c, widgetId, "+" + hidden, k);
-                    rows.add(row);
+                    rows.add(toggleRow(c, widgetId, "+" + hidden, k));
                     rowDp.add(m.habitRow);
                     rowHabits.add(0);
+                    shown++;                      // toggle 行自己也要上屏
                 }
                 shownHabitDp = acc + m.habitRow;
             } else {
-                shown = rows.size();
                 if (fold) {   // 展开态：尾部给一颗「收起」
-                    RemoteViews row = toggleRow(c, widgetId, "收起", k);
-                    rows.add(row);
+                    rows.add(toggleRow(c, widgetId, "收起", k));
                     rowDp.add(m.habitRow);
                     rowHabits.add(0);
                     shownHabitDp = needDp + m.habitRow;
                 } else {
                     shownHabitDp = needDp;
                 }
+                shown = rows.size();
             }
 
             for (int i = 0; i < shown; i++) {
