@@ -174,9 +174,8 @@ public class HabitWidgetProvider extends AppWidgetProvider {
 
         /* ---- 筛选（按实例）---- */
         String filter = WidgetPrefs.filterOf(c, widgetId);
-        boolean ungrouped = habitsUngrouped(snap);
         boolean filterable = !snap.habits.isEmpty();
-        List<WHabit> shown = applyFilter(snap, filter, ungrouped, today);
+        List<WHabit> shown = applyFilter(snap, filter, today);
 
         /* ---- 缩放系数 ----
            竖向可用高度 = 组件总高 − 顶栏 − padding。chip 行高基准 18dp，
@@ -231,10 +230,11 @@ public class HabitWidgetProvider extends AppWidgetProvider {
         boolean grouped = !snap.groups.isEmpty();
         if (shown.isEmpty()) {
             RemoteViews empty = new RemoteViews(c.getPackageName(), R.layout.widget_habit_head);
+            // shown 为空只有两种来路：整个账号还没有打卡项；或有打卡项但当前
+            // 筛选（多半是「未打」）下一条都不剩
             empty.setTextViewText(R.id.habit_head,
                     snap.habits.isEmpty() ? "还没有打卡项，打开 App 加一个"
-                            : filterable ? "这个筛选下没有要打的 ✓"
-                                  : "都打完了，今天全部完成 ✓");
+                                          : "这个筛选下没有要打的 ✓");
             ScheduleWidgetProvider.font(empty, R.id.habit_head, 8, k);
             v.addView(R.id.hab_rows, empty);
         } else {
@@ -415,8 +415,7 @@ public class HabitWidgetProvider extends AppWidgetProvider {
         return -1;
     }
 
-    private static List<WHabit> applyFilter(WidgetSnapshot snap, String filter,
-                                            boolean ungrouped, String today) {
+    private static List<WHabit> applyFilter(WidgetSnapshot snap, String filter, String today) {
         List<WHabit> out = new ArrayList<>();
         boolean undone = WidgetPrefs.FILTER_UNDONE.equals(filter);
         boolean byGroup = !isPlainAll(filter) && !undone
