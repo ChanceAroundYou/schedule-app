@@ -45,6 +45,8 @@ public class HabitWidgetService extends RemoteViewsService {
 
     /** 一颗 chip 的实用宽度（dp），与 HabitWidgetProvider.CHIP_CELL_DP 同值 */
     private static final int CHIP_CELL_DP = 62;
+    /** 每行最少几颗 —— 用户 2026-11-04 定：2×2 也要 3 列（原来下限是 2） */
+    private static final int MIN_PER_ROW = 3;
 
     static final class HabitViewsFactory implements RemoteViewsFactory {
 
@@ -205,19 +207,29 @@ public class HabitWidgetService extends RemoteViewsService {
             }
         }
 
-        /** 每行几颗：按组件实测宽度反算（与 HabitWidgetProvider 同一套算法） */
+        /**
+         * 每行几颗：按组件实测宽度反算。
+         *
+         * 2026-11-04 用户：**2×2 也要显示 3 列**（原来 2×2 只有 2 列，一排只能放两项，
+         * 打卡项一多就要翻好几次）。所以下限从 2 抬到 3：
+         *   < 3×62dp(≈186dp) → 3     ← 2×2 实测约 155dp，落这一档
+         *   < 4×62dp(≈248dp) → 3
+         *   ≥ 4×62dp        → 4
+         * 代价：2×2 时单颗 chip 只有 ~48dp 宽，8sp 字能放 3~4 个汉字，再多就省略号
+         * （chip 本来就有 ellipsize="end" + maxLines=1，不会撑破布局）。
+         */
         private int perRow() {
-            if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return 2;
+            if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return MIN_PER_ROW;
             try {
                 AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
                 Bundle o = mgr.getAppWidgetOptions(widgetId);
-                if (o == null) return 2;
+                if (o == null) return MIN_PER_ROW;
                 int wDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
                 if (wDp <= 0) wDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0);
-                if (wDp <= 0) return 2;
-                return wDp >= 4 * CHIP_CELL_DP ? 4 : (wDp >= 3 * CHIP_CELL_DP ? 3 : 2);
+                if (wDp <= 0) return MIN_PER_ROW;
+                return wDp >= 4 * CHIP_CELL_DP ? 4 : 3;
             } catch (Exception e) {
-                return 2;
+                return MIN_PER_ROW;
             }
         }
 
