@@ -42,9 +42,15 @@ import java.util.Locale;
  *   · 服务端接受 → 只把碰到的这几条换成服务端的值，别的不动
  *   · 服务端拒绝 → 同样换成服务端的值 = 回到它返回的真相，并提示用户
  *   · 问不出去（离线/超时/票失效）→ 保留本地结果，入队等下次补发
- * 实现散在 {@link #toggleHabit}、TaskDetailActivity、CreateTaskActivity 和
- * {@link #flushPending}，共用的合并逻辑在 {@link WidgetPrefs#mergeEntities}，
- * 三态回调在 {@link WidgetApi.OpCallback}。
+ * 实现散在 TaskDetailActivity、CreateTaskActivity 和 {@link #flushPending}，
+ * 共用的合并逻辑在 {@link WidgetPrefs#mergeEntities}，三态回调在
+ * {@link WidgetApi.OpCallback}。
+ *
+ * **2026-11-04 拆分**（用户：「打卡是打卡，日程是日程」）：打卡区、打卡 chip、
+ * 打卡写入整体迁到 {@link HabitWidgetProvider}，本组件只剩时间表。
+ * 渲染工具（bgFor / withAlpha / Metrics / habitChip / emptyChip / habitHead /
+ * toggleHabit / flushPending / 每日换日闹钟）**留着供那边复用**——同包、
+ * package-private，不复制第二份。
  *
  * ⚠️ RemoteViews 的限制（踩过的坑，改之前先看）：
  *   1. 容器只能是 FrameLayout / LinearLayout / RelativeLayout / GridLayout。
@@ -71,17 +77,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     /** 左右箭头：按**周**翻（delta 单位是周，不是月） */
     static final String ACTION_WEEK = "space.xiaokubao.schedule.WEEK";
     static final String ACTION_TASK = "space.xiaokubao.schedule.TASK";
-    static final String ACTION_HABIT = "space.xiaokubao.schedule.HABIT";
     static final String ACTION_ADD = "space.xiaokubao.schedule.ADD";
     static final String ACTION_SETTINGS = "space.xiaokubao.schedule.SETTINGS";
     /** 点左上角标识 = 回到今天 */
     static final String ACTION_TODAY = "space.xiaokubao.schedule.TODAY";
-    /**
-     * 打卡区「+N」展开 /「收起」折叠（2026-11-03）。
-     * extra {@link #EXTRA_WID} = 组件实例 id —— 展开状态按实例存，
-     * 桌面上多个组件各自高矮不同，互不影响。
-     */
-    static final String ACTION_HABITS_TOGGLE = "space.xiaokubao.schedule.HABITS_TOGGLE";
+    /* 2026-11-04 拆分：ACTION_HABIT / ACTION_HABITS_TOGGLE（打卡 chip 与
+       「+N/收起」）随打卡区整体迁到 HabitWidgetProvider，这里不再有打卡交互 */
 
     /**
      * 每天 0:05 自动重画一次（2026-10-31 加）。
@@ -100,19 +101,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     static final String EXTRA_DAY = "day";
     static final String EXTRA_DELTA = "delta";
     static final String EXTRA_ID = "id";
-    /** 组件实例 id（{@link #ACTION_HABITS_TOGGLE} 用） */
-    static final String EXTRA_WID = "wid";
 
-    /**
-     * 打卡区每行放几个。
-     *
-     * 3 → 4 是因为用户说「很有可能会添加第七个」：3 个一行时第 7 个要单开
-     * 第三行，白占一整行高度；4 个一行的话 7 个正好两行（4+3），
-     * 常见习惯数（6-9 个）也都在两到三行内。
-     */
-    private static final int HABITS_PER_ROW = 4;
-
-    /** 分组标题行高（未缩放）。8sp 字 + 上下 padding，比 chip 行矮 */
+    /** 分组标题行高（未缩放）。8sp 字 + 上下 padding，比 chip 行矮。
+     *  2026-11-04 起供 HabitWidgetProvider 复用（chip 三件套不复制第二份） */
     private static final int HABIT_HEAD_DP = 13;
 
     @Override
@@ -150,16 +141,33 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     @Override
     public void onDisabled(Context c) {
         super.onDisabled(c);
-        // 桌面上最后一个实例被移除 → 没东西可画了，撤掉换日闹钟
-        cancelDaily(c);
+        // 桌面上最后一个**日程**实例被移除 → 本组件没东西可画了。但换日闹钟是
+        // 全 App 共用的一条（2026-11-04 起打卡组件也靠它翻页）——只有当打卡
+        // 实例也不剩时才撤。
+        if (!hasHabitInstances(c)) cancelDaily(c);
+    }
+
+    /** 桌面上还留着打卡组件实例（闹钟撤不撤的判据） */
+    private static boolean hasHabitInstances(Context c) {
+        try {
+            AppWidgetManager mgr = AppWidgetManager.getInstance(c);
+            int[] ids = mgr.getAppWidgetIds(
+                    new android.content.ComponentName(c, HabitWidgetProvider.class));
+            return ids != null && ids.length > 0;
+        } catch (Exception e) {
+            return true;   // 查不到就当还有——多留一条闹钟无害，掐错了打卡组件不翻页
+        }
     }
 
     @Override
     public void onReceive(Context c, Intent intent) {
         final String a = intent.getAction();
         if (ACTION_DAILY.equals(a)) {
-            // 每天换日：重画一次（doRefresh 里会顺手把明天的闹钟续上），然后收工
+            // 每天换日：重画一次（doRefresh 里会顺手把明天的闹钟续上），然后收工。
+            // 2026-11-04：打卡组件的「今天」也要跟着翻页——闹钟只有这一条（由
+            // 日程组件排），顺带把 HabitWidgetProvider 一起刷，打卡组件不自己排闹钟。
             refresh(c);
+            HabitWidgetProvider.refresh(c);
             return;
         }
         if (ACTION_PICK_DAY.equals(a)) {
@@ -180,19 +188,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         } else if (ACTION_SETTINGS.equals(a)) {
             WidgetSettingsActivity.start(c);
             return;
-        } else if (ACTION_HABIT.equals(a)) {
-            // ⚠️ 必须带上组件**当前选中的日期**（2026-10-14 修）。
-            // 不传的话 toggleHabit 会拿「今天」去写 —— 用户在组件上翻到
-            // 明天点一下，改的其实是今天，而屏幕上那格的完成态又始终按今天
-            // 渲染，两下一凑就成了用户报的「今天打了卡，日后几天全变成已完成」。
-            toggleHabit(c, intent.getStringExtra(EXTRA_ID), WidgetPrefs.selectedDay(c));
-        } else if (ACTION_HABITS_TOGGLE.equals(a)) {
-            // 「+N」↔「收起」：只翻本实例的展开标记，落到底下的 refresh 重画
-            int wid = intent.getIntExtra(EXTRA_WID, -1);
-            if (wid >= 0) {
-                WidgetPrefs.setHabitsExpanded(c, wid, !WidgetPrefs.habitsExpanded(c, wid));
-            }
         }
+        // 2026-11-04 拆分：ACTION_HABIT / ACTION_HABITS_TOGGLE 随打卡区迁往
+        // HabitWidgetProvider.onReceive，本组件不再有打卡交互
 
         // 顺手把攒着没发出去的改动补一次 —— 用户此刻正在看桌面，是票最新、
         // 最可能推成功的时候。以前只有 onUpdate 才补发，所以积压的队列
@@ -209,7 +207,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
     /** 上次尝试补发的时间戳 + 最小间隔，见 onReceive 里的限流说明 */
     private static long lastFlushAt = 0;
-    private static final long FLUSH_MIN_GAP_MS = 60_000;
+    static final long FLUSH_MIN_GAP_MS = 60_000;
 
     /**
      * 重入保护：已经在刷就别再进一次。
@@ -257,14 +255,24 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         AppWidgetManager mgr = AppWidgetManager.getInstance(c);
         int[] ids = mgr.getAppWidgetIds(new android.content.ComponentName(c, ScheduleWidgetProvider.class));
-        if (ids == null || ids.length == 0) return;
-        // 逐个渲染而不是批量 updateAppWidget(ids, v) —— 每个实例的尺寸可能
-        // 不同（用户能各自拖大拖小），行高档位要按各自的 options 算
-        WidgetSnapshot snap = WidgetPrefs.snapshot(c);
-        String day = WidgetPrefs.selectedDay(c);
-        for (int id : ids) render(c, mgr, id, snap, day);
+        if (ids != null && ids.length > 0) {
+            // 逐个渲染而不是批量 updateAppWidget(ids, v) —— 每个实例的尺寸可能
+            // 不同（用户能各自拖大拖小），行高档位要按各自的 options 算
+            WidgetSnapshot snap = WidgetPrefs.snapshot(c);
+            String day = WidgetPrefs.selectedDay(c);
+            for (int id : ids) render(c, mgr, id, snap, day);
+        }
         // 每次刷新都（幂等）续一条明天的换日闹钟。开机/重启后由 ReminderReceiver 补排。
+        // 2026-11-04：桌面上**只剩打卡组件**时也要排——全 App 只有这一条换日闹钟，
+        // 打卡组件的「今天」翻页靠它（ACTION_DAILY 会顺带刷那边）。以前这里
+        // 在「没有日程实例」时提前 return，闹钟就永远不排了。
         scheduleDaily(c);
+
+        // 2026-11-04 拆分：打卡组件跟着一起重画。共用快照、共用设置
+        //（透明度 / 字号在同一个设置弹框里改）、共用离线队列（flush 的 settle
+        // 也走到这里）——只刷日程实例会让打卡组件停留在旧外观。
+        // 打卡侧 render 不会再回调本方法，无递归风险。
+        HabitWidgetProvider.refresh(c);
     }
 
     /* ======================= 每日换日闹钟 ======================= */
@@ -320,7 +328,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 跟着长，看起来就是「大小改不了」。CounterWidgetProvider 一直用的是
      * MIN_*，这里对齐。
      */
-    private static int widgetHeightDp(Context c, AppWidgetManager mgr, int widgetId) {
+    static int widgetHeightDp(Context c, AppWidgetManager mgr, int widgetId) {
         int h = 0;
         try {
             Bundle o = mgr.getAppWidgetOptions(widgetId);
@@ -370,42 +378,8 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             else timed.add(t);
         }
 
-        /* ---- 打卡区分桶（2026-11-03 分组版）----
-           分组渲染和高度预算都要用它，提前算一次：
-           · 有分类数据 → 按快照 groups 的顺序（order 升序，App 与服务端同一
-             口径）逐组建桶，未分类的桶排最后；
-           · 没有分类数据（老快照 / 用户没建过分组）→ 桶只有未分类一个，
-             渲染时完全不画组头，和升级前那条平铺列表一模一样。
-           悬空引用（groupId 指向已删分类）按未分类处理 —— 渲染拿 groups
-           表核对，App 侧 groupOfHabit 也是同一裁决。 */
-        java.util.Map<String, List<WHabit>> buckets = new java.util.LinkedHashMap<>();
-        List<WHabit> ungrouped = new ArrayList<>();
-        if (!snap.habits.isEmpty()) {
-            for (WGroup g : snap.groups) buckets.put(g.id, new ArrayList<>());
-            for (WHabit h : snap.habits) {
-                List<WHabit> b = h.groupId == null ? null : buckets.get(h.groupId);
-                if (b == null) ungrouped.add(h);
-                else b.add(h);
-            }
-        }
-        boolean grouped = !snap.groups.isEmpty();
-        int habitChipRows = 0;
-        int habitHeads = 0;
-        if (!snap.habits.isEmpty()) {
-            if (grouped) {
-                for (List<WHabit> b : buckets.values()) {
-                    if (b.isEmpty()) continue;
-                    habitHeads++;
-                    habitChipRows += (b.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-                }
-                if (!ungrouped.isEmpty()) {
-                    habitHeads++;
-                    habitChipRows += (ungrouped.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-                }
-            } else {
-                habitChipRows = (snap.habits.size() + HABITS_PER_ROW - 1) / HABITS_PER_ROW;
-            }
-        }
+        /* ---- 2026-11-04 拆分：打卡区分桶整体迁到 HabitWidgetProvider ----
+           本组件只剩时间表，snap.habits / groups 不再参与这里的任何预算。 */
 
         // 未定时区实占多少高：**两两一行**，行数随任务增加（最多 3 行 = 6 格）。
         // 2026-10-25 修（用户报「最底下的时间数值被挡住、显示不完整」）：
@@ -430,8 +404,6 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
              组件拉大 → 每格更高 → 字和固定件跟着放大；拖小则反向。
              用**未缩放**的预算算行高，避免 k 自己喂自己的循环。 */
         int fixed0 = 10 + 30 + 2 + DATE_STRIP_DP + 2
-                + (snap.habits.isEmpty() ? 0
-                        : habitChipRows * HABIT_ROW_DP + habitHeads * HABIT_HEAD_DP + 7)
                 + barDp + 1 + 2;
         int timeline0 = Math.max(70, totalDp - fixed0);
         float rowsH0 = Math.max(1f, (timeline0 - AXIS_END_DP) / (float) Math.max(1, hi - lo));
@@ -441,9 +413,9 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 未定时区的横条高度也要跟着缩（行数不变，单行高度 × k）
         barDp = Math.max(m.panelBar, untimedRows * m.untimedRow);
 
-        // 打卡区以外的固定件（缩放后）。时间轴高度在打卡区渲染完、知道实占
-        // 多少之后再算 —— 折叠会改变实占（2026-11-03）。
-        final int fixedNoHabit = 10                       // root padding：上 8 + 下 2（底部只留一条边）
+        // 全部固定件（缩放后）。2026-11-04 拆分后打卡区不在这份预算里了，
+        // 时间轴 = 总高 − 固定件，一步到位。
+        final int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
                 + m.headRow + 2                 // head 行（FrameLayout 30dp）+ margin
                 + m.dateStrip + 2              // 日期条 + margin
                 + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
@@ -491,94 +463,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             v.addView(R.id.date_strip, chip);
         }
 
-        /* ---- 打卡区：按分类分区 + 高度不够折「+N」（2026-11-03）----
-           完成态**只用一个信号**：整格变实心主绿 + 白字。
-           流程：先把全部要显示的行（组头 + chip 行）造出来，再按可用高度
-           决定折叠点，最后统一上屏 —— 折叠点影响时间轴预算，所以顺序不能反。 */
-        v.removeAllViews(R.id.habit_rows);
-        int shownHabitDp = 0;                       // 打卡区实占（不含 7dp margin）
-        if (snap.habits.isEmpty()) {
-            v.setViewVisibility(R.id.habit_rows, View.GONE);
-        } else {
-            v.setViewVisibility(R.id.habit_rows, View.VISIBLE);
-            // 打卡条的底色跟着透明度走（这里没有圆角/描边，能直接用纯色）
-            v.setInt(R.id.habit_rows, "setBackgroundColor", withAlpha(0xFFE7F3EA, alpha));
+        /* ---- 2026-11-04 拆分：打卡区整体移除（迁往 HabitWidgetProvider）----
+           布局里的 habit_rows 容器留着但恒 GONE —— 删容器要动 XML、且旧版
+           快照用户升级后第一次渲染前，RemoteViews 对缺失 id 会抛。藏掉最稳。 */
+        v.setViewVisibility(R.id.habit_rows, View.GONE);
 
-            /* 行计划：rows 与 rowDp / rowHabits 一一对应（高度、行内实有几个 chip） */
-            List<RemoteViews> rows = new ArrayList<>();
-            List<Integer> rowDp = new ArrayList<>();
-            List<Integer> rowHabits = new ArrayList<>();
-            if (grouped) {
-                for (WGroup g : snap.groups) {
-                    List<WHabit> b = buckets.get(g.id);
-                    if (b == null || b.isEmpty()) continue;   // 空组不占地方
-                    rows.add(habitHead(c, g.name, k));
-                    rowDp.add(m.habitHead);
-                    rowHabits.add(0);
-                    addHabitRows(c, rows, rowDp, rowHabits, b, day, today, k);
-                }
-                if (!ungrouped.isEmpty()) {
-                    rows.add(habitHead(c, "未分类", k));
-                    rowDp.add(m.habitHead);
-                    rowHabits.add(0);
-                    addHabitRows(c, rows, rowDp, rowHabits, ungrouped, day, today, k);
-                }
-            } else {
-                addHabitRows(c, rows, rowDp, rowHabits, snap.habits, day, today, k);
-            }
-
-            int needDp = 0;
-            for (int d : rowDp) needDp += d;
-
-            /* 可用高度 = 组件总高 − 打卡区以外的固定件 − 打卡区 margin(7)
-               − 时间轴最低预算(70)。装不下就整行折掉，把折掉的 chip 数
-               折成一颗「+N」，点了在本组件内展开全部（再点「收起」折回）。 */
-            int availDp = totalDp - fixedNoHabit - 7 - 70;
-            boolean expanded = WidgetPrefs.habitsExpanded(c, widgetId);
-            boolean fold = needDp > availDp;
-            int shown = rows.size();
-
-            if (fold && !expanded) {
-                int acc = 0;
-                shown = 0;
-                for (int i = 0; i < rows.size(); i++) {
-                    if (acc + rowDp.get(i) > availDp) break;
-                    acc += rowDp.get(i);
-                    shown++;
-                }
-                // 「+N」自己也要占一行：最后一行装不下它就让位
-                if (shown > 0 && acc + m.habitRow > availDp) {
-                    acc -= rowDp.get(shown - 1);
-                    shown--;
-                }
-                int hidden = 0;
-                for (int i = shown; i < rowHabits.size(); i++) hidden += rowHabits.get(i);
-                if (shown < rows.size()) {
-                    rows.add(toggleRow(c, widgetId, "+" + hidden, k));
-                    rowDp.add(m.habitRow);
-                    rowHabits.add(0);
-                    shown++;                      // toggle 行自己也要上屏
-                }
-                shownHabitDp = acc + m.habitRow;
-            } else {
-                if (fold) {   // 展开态：尾部给一颗「收起」
-                    rows.add(toggleRow(c, widgetId, "收起", k));
-                    rowDp.add(m.habitRow);
-                    rowHabits.add(0);
-                    shownHabitDp = needDp + m.habitRow;
-                } else {
-                    shownHabitDp = needDp;
-                }
-                shown = rows.size();
-            }
-
-            for (int i = 0; i < shown; i++) {
-                v.addView(R.id.habit_rows, rows.get(i));
-            }
-        }
-
-        // 打卡区实占定了，时间轴拿剩下的（至少 70dp，见下面 renderScale 的说明）
-        int timelineDp = Math.max(70, totalDp - (fixedNoHabit + 7 + shownHabitDp));
+        // 时间轴拿剩下的（至少 70dp，见下面 renderScale 的说明）
+        int timelineDp = Math.max(70, totalDp - fixedDp);
 
         /* 轴尾 = 设定终点，但**晚间任务不能因此丢掉**：轴现在只画到终点，
            有任务跨过终点就把它延到任务结束的那个整点（没有就没有代价）。 */
@@ -612,23 +503,32 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         mgr.updateAppWidget(widgetId, v);
     }
 
-    /* ==================== 打卡区（分组版 2026-11-03） ==================== */
+    /* ============ 打卡 chip 三件套（2026-11-04 起供 HabitWidgetProvider 复用） ============
+       渲染工具留在这里、不复制第二份（用户 2026-10-13 的「先想能不能复用已有的」）。
+       完成态判定、底色语言、占位补法全部原样保留。 */
 
     /** 分组标题行。灰绿小字，与 App 打卡页的组头同一套视觉语言；不可点 */
-    private static RemoteViews habitHead(Context c, String name, float k) {
+    static RemoteViews habitHead(Context c, String name, float k) {
         RemoteViews head = new RemoteViews(c.getPackageName(), R.layout.widget_habit_head);
         head.setTextViewText(R.id.habit_head, name);
         font(head, R.id.habit_head, 8, k);
         return head;
     }
 
-    /** 一颗打卡 chip（平铺/分组两条路共用；完成态判定规则见 habitRows 循环时代的注释） */
-    private static RemoteViews habitChip(Context c, WHabit h, String day, String today, float k) {
+    /**
+     * 一颗打卡 chip。
+     *
+     * 完成态按**要显示的那一天**取（不能用快照里按「今天」算好的 h.done ——
+     * 翻到别的日期会整片误亮，2026-10-14 修）。没有 log 表的老快照只能拿 done
+     * 兜底，且只对「今天」有意义。
+     *
+     * 点击意图由调用方给（{@code pi}）：2026-11-04 拆分后 chip 归打卡组件，
+     * 它用自己的 action / requestCode 空间，这里只负责画和挂。
+     */
+    static RemoteViews habitChip(Context c, WHabit h, String day, String today,
+                                 float k, android.app.PendingIntent pi) {
         RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
         chip.setTextViewText(R.id.habit_chip, h.title);
-        /* 完成态按**组件当前选中的那一天**取（不能用快照里按「今天」算好的
-         * h.done —— 翻到别的日期会整片误亮，2026-10-14 修）。
-         * 没有 log 表的老快照只能拿 done 兜底，且只对「今天」有意义。 */
         boolean hDone = h.log != null
                 ? h.log.optBoolean(day, false)
                 : (h.done && day.equals(today));
@@ -636,60 +536,20 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 hDone ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
         chip.setTextColor(R.id.habit_chip, hDone ? 0xFF7E8F84 : 0xFF1B3A2A);
         font(chip, R.id.habit_chip, 8, k);
-        chip.setOnClickPendingIntent(R.id.habit_chip,
-                WidgetIntent.of(c, ACTION_HABIT, "h" + h.id).put(EXTRA_ID, h.id).build(c));
+        if (pi != null) chip.setOnClickPendingIntent(R.id.habit_chip, pi);
         return chip;
     }
 
     /** 占位 chip：不满一行时补空格，让已有那几个的宽度跟满行一致 */
-    private static RemoteViews emptyChip(Context c) {
+    static RemoteViews emptyChip(Context c) {
         RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
         chip.setTextViewText(R.id.habit_chip, "");
         chip.setInt(R.id.habit_chip, "setBackgroundResource", 0);
         return chip;
     }
 
-    /** 「+N」/「收起」那一行：一颗主绿字的 chip + 占位，点了翻本实例的展开标记 */
-    private static RemoteViews toggleRow(Context c, int widgetId, String label, float k) {
-        RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
-        RemoteViews chip = new RemoteViews(c.getPackageName(), R.layout.widget_habit_chip);
-        chip.setTextViewText(R.id.habit_chip, label);
-        chip.setInt(R.id.habit_chip, "setBackgroundResource", 0);
-        chip.setTextColor(R.id.habit_chip, 0xFF27795A);
-        font(chip, R.id.habit_chip, 8, k);
-        chip.setOnClickPendingIntent(R.id.habit_chip,
-                WidgetIntent.of(c, ACTION_HABITS_TOGGLE, "ht" + widgetId)
-                        .put(EXTRA_WID, widgetId).build(c));
-        row.addView(R.id.habit_row, chip);
-        for (int p = 1; p < HABITS_PER_ROW; p++) {
-            row.addView(R.id.habit_row, emptyChip(c));
-        }
-        return row;
-    }
-
-    /**
-     * 把一批打卡项按每行 {@link #HABITS_PER_ROW} 个折成 chip 行，追加到行计划里。
-     * 行内不足补占位（否则最后一行的格子会被均分放大 —— 踩过）。
-     */
-    private static void addHabitRows(Context c, List<RemoteViews> rows, List<Integer> rowDp,
-                                     List<Integer> rowHabits, List<WHabit> list,
-                                     String day, String today, float k) {
-        for (int i = 0; i < list.size(); i += HABITS_PER_ROW) {
-            RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_habit_row);
-            int real = 0;
-            for (int kk = i; kk < i + HABITS_PER_ROW; kk++) {
-                if (kk < list.size()) {
-                    row.addView(R.id.habit_row, habitChip(c, list.get(kk), day, today, k));
-                    real++;
-                } else {
-                    row.addView(R.id.habit_row, emptyChip(c));
-                }
-            }
-            rows.add(row);
-            rowDp.add(Metrics.px(HABIT_ROW_DP, k));
-            rowHabits.add(real);
-        }
-    }
+    /** chip 行高基准（dp）。HabitWidgetProvider 用它算每屏几行，保持两组件同一密度 */
+    static final int HABIT_ROW_DP = 18;
 
     /* ==================== 时间轴渲染 ==================== */
 
@@ -728,8 +588,6 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static final int UNTIMED_MAX = 6;
     /** 未定时区**一行**（两张半宽卡）占高。2026-10-25：16 → 15dp（整体缩一号） */
     private static final int UNTIMED_ROW_DP = 15;
-    /** 打卡区单行占高（格子本身 + 上下 margin），用于算预算 */
-    private static final int HABIT_ROW_DP = 18;
     /**
      * 日期条占高。2026-10-14 第八轮：高亮圈只包日期数字后，结构变成
      * 「星期（9sp）在上 + 日期圆（22dp）在下」，条高 29 → **35dp**。
@@ -764,7 +622,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 常量是**设计基准值**，这里统一乘 k 得到实际用的 dp —— 免得每处手乘、
      * 漏一处就出现「字大了格子没大」的错位。
      */
-    private static class Metrics {
+    static class Metrics {
         final float k;
         final int dateStrip, panelBar, untimedRow, habitRow, minBlock, noteMin, axisEnd, lineOff, headRow;
         /** 十字面板左列宽（左上空白角 + 左下刻度列必须同宽，2026-11-03 随 k 缩放） */
@@ -796,13 +654,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /** 文字随 k 缩放（sp）。RemoteViews 有 setTextViewTextSize（API 16+），最稳的一条路 */
-    private static void font(RemoteViews v, int id, float baseSp, float k) {
+    static void font(RemoteViews v, int id, float baseSp, float k) {
         v.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, Math.max(1f, baseSp * k));
     }
 
     /** 方形图标视图随 k 缩放（宽高一起）。setViewLayoutWidth/Height 是 API 31+，
      *  与时间轴定位用的 setViewLayoutHeight 同一条款 —— 目标机 API 36，没问题 */
-    private static void scaleView(RemoteViews v, int id, int baseDp, float k) {
+    static void scaleView(RemoteViews v, int id, int baseDp, float k) {
         int d = Metrics.px(baseDp, k);
         v.setViewLayoutWidth(id, d, TypedValue.COMPLEX_UNIT_DIP);
         v.setViewLayoutHeight(id, d, TypedValue.COMPLEX_UNIT_DIP);
@@ -1131,129 +989,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         return mv;
     }
 
-    /* ============================ 打卡 ============================ */
-
-    /**
-     * 点打卡格。
-     *
-     * **先本地改样式、再并发发请求**，三种结局分别处理：
-     *  ① 立刻改本地快照 + 重绘 —— 用户点下去那一瞬间桌面就得变，
-     *     不等服务端往返（走公网慢的时候能差好几秒）
-     *  ② 并发把 op 发出去
-     *  ③ 按结局收尾：
-     *     · 服务端**接受** → 只把这一条换成服务端的值，别的不动
-     *     · 服务端**拒绝** → 同样换成服务端的值 = 回到它返回的真相，并提示用户
-     *     · 问不出去（离线/超时/票失效）→ **保留本地结果**，入队等下次
-     *
-     * 为什么②③要分开：被拒和离线都长得像失败，但一个是有答案了（该回滚），
-     * 一个是还没答案（该保留 + 入队）。合成一个 onFail 就会把「服务端不答应」
-     * 当成「离线」，于是一条永远发不出去的 op 在队列里反复重发，桌面还一直
-     * 显示着一个服务端并不承认的状态。详见 {@link WidgetApi.OpCallback}。
-     */
-    private static void toggleHabit(Context c, String habitId, String selectedDay) {
-        WidgetSnapshot snap = WidgetPrefs.snapshot(c);
-        WHabit target = snap.habitById(habitId);
-        if (target == null) return;
-
-        // 按实时今天判断，不用可能过期的快照 today（2026-10-31，与 render 对齐）。
-        final String today = WidgetPrefs.today(c);
-        /* 打的是**组件当前选中那一天**的卡，不是「今天」的（2026-10-14 修）。
-         * 原来恒写 today，于是翻到别的日期点一下会改到今天 —— 用户看到的
-         * 是「今天打了卡，日后几天全成了已完成，而且点不掉」。 */
-        final String day = (selectedDay == null || selectedDay.isEmpty()) ? today : selectedDay;
-
-        final boolean on = !(target.log != null && target.log.optBoolean(day, false));
-
-        /* 新意图作废旧意图（2026-10-26）：队列里同一格的老操作先丢掉。
-           不丢的话，这次直连写成功后紧接着 flush，旧 op 重放会把刚打上的
-           勾又抹掉 —— 表现就是「点完变灰、马上回绿」。 */
-        WidgetPrefs.dropQueuedHabit(c, habitId, day);
-
-        // ① 乐观更新 + **立刻重绘**。写的是 log 里那一天，跟渲染取值口径一致
-        //    （渲染读 log[day]，不再读 h.done）。
-        try {
-            JSONObject log = target.log == null
-                    ? new JSONObject() : new JSONObject(target.log.toString());
-            if (on) log.put(day, true);
-            else log.remove(day);
-
-            JSONObject f = new JSONObject();
-            f.put("log", log);
-            // done 表达的是「今天打没打」，只在选中日就是今天时才跟着变 ——
-            // 否则会给别的日期留下一个含义错位的 done。
-            if (day.equals(today)) f.put("done", on);
-            WidgetPrefs.patchEntity(c, "habits", habitId, f, false);
-        } catch (Exception ignored) {
-        }
-        refresh(c);
-
-        // ② 直连。**必须拿到完整的 log 表才敢写**：applyOps 是字段整值替换，
-        //    手里没有原表就只能发一个空对象上去，那会把这个人过去所有打卡
-        //    一次抹干净。宁可先入队等 App 那边把新快照带下来。
-        if (!WidgetPrefs.canDirect(c) || target.log == null) {
-            // ⚠️ 入队也要带 day（不是 today），否则离线打卡会记到今天头上
-            enqueueHabit(c, habitId, day, on);
-            return;
-        }
-        try {
-            JSONArray ops = new JSONArray();
-            JSONObject op = new JSONObject();
-            op.put("entity", "habit");
-            op.put("entityId", habitId);
-            op.put("calId", target.calId);
-            JSONObject fields = new JSONObject();
-            // log 是「哪天打了勾」的稀疏表：勾上就加一个键，取消就把那个键删掉。
-            // **整表回写** —— 服务端存的就是这张表，不是今天这一个值。
-            // （以前这里发的是日期字符串，服务端存进去之后 h.log[today] 恒为
-            //   undefined，表现是「打卡点了永远不生效」，还查不出错。）
-            JSONObject log = new JSONObject(target.log.toString());
-            if (on) log.put(day, true);
-            else log.remove(day);
-            fields.put("log", log);
-            op.put("fields", fields);
-            ops.put(op);
-
-            WidgetApi.op(c, ops, new WidgetApi.OpCallback() {
-                @Override
-                public void onAccepted(JSONObject body) {
-                    // 只同步这一条：整表替换会把还没发出去的乐观改动抹掉
-                    // （见 WidgetPrefs.mergeEntities 的说明）
-                    WidgetPrefs.mergeEntities(c, body, "habits",
-                            java.util.Collections.singletonList(habitId));
-                    refresh(c);
-                }
-
-                @Override
-                public void onRejected(JSONObject body, String why) {
-                    // 服务端不答应 → 回到它返回的结果
-                    WidgetPrefs.mergeEntities(c, body, "habits",
-                            java.util.Collections.singletonList(habitId));
-                    refresh(c);
-                    Ui.toast(c, "这次打卡服务端没有接受");
-                }
-
-                @Override
-                public void onUnreachable(String why) {
-                    // 离线/问不出去 → 保留本地结果，入队等下次
-                    enqueueHabit(c, habitId, today, on);
-                }
-            });
-        } catch (Exception e) {
-            enqueueHabit(c, habitId, today, on);
-        }
-    }
-
-    private static void enqueueHabit(Context c, String habitId, String today, boolean on) {
-        try {
-            JSONObject op = new JSONObject();
-            op.put("kind", "habit");
-            op.put("habitId", habitId);
-            op.put("date", today);
-            op.put("on", on);
-            WidgetPrefs.enqueuePending(c, op);
-        } catch (Exception ignored) {
-        }
-    }
+    /* ==================== 打卡写入（2026-11-04 迁往 HabitWidgetProvider） ====================
+       toggleHabit / enqueueHabit 随打卡区整体移过去（那边只写「今天」，逻辑同
+       一条路）。本组件不再有任何打卡写入；flushPending 的 habit 队列分支保留 ——
+       打卡组件离线攒的 op 仍由这条共用队列代发。
 
     /**
      * 服务端一次最多收多少条 op。**超过直接 400「一次最多 50 条」**，
@@ -1557,7 +1296,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 这里把任意值吸附到最近的偶数档，再用资源名动态查到对应 drawable，
      * 滑杆就能真正平滑过渡。
      */
-    private static int bgFor(Context c, int alpha) {
+    static int bgFor(Context c, int alpha) {
         int a = Math.max(40, Math.min(100, alpha));
         int even = (a % 2 == 0) ? a : a + 1;
         int id = c.getResources().getIdentifier("widget_bg_a" + even, "drawable", c.getPackageName());
@@ -1565,7 +1304,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /** 把颜色按百分比调透明。用于能用纯色背景的地方（打卡条） */
-    private static int withAlpha(int color, int pct) {
+    static int withAlpha(int color, int pct) {
         int a = (color >>> 24) * Math.max(0, Math.min(100, pct)) / 100;
         return (a << 24) | (color & 0x00FFFFFF);
     }

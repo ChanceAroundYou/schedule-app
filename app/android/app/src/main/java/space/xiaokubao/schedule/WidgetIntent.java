@@ -41,12 +41,25 @@ class WidgetIntent {
      * 这里给计数器的 code 加一个固定前缀偏移。
      */
     static WidgetIntent of(Context c, Class<?> target, String action, String codeKey) {
-        int code = (codeKey == null ? action.hashCode() : codeKey.hashCode()) + CODE_SALT_COUNTER;
+        return of(c, target, CODE_SALT_COUNTER, action, codeKey);
+    }
+
+    /** 带显式 salt 的版本（打卡小组件用，见 {@link #CODE_SALT_HABIT}） */
+    static WidgetIntent of(Context c, Class<?> target, int salt, String action, String codeKey) {
+        int code = (codeKey == null ? action.hashCode() : codeKey.hashCode()) + salt;
         return new WidgetIntent(new Intent(c, target).setAction(action), code);
     }
 
     /** 计数器那套的 requestCode 偏移。换个值就等于换了一套 code 空间，别乱改。 */
     private static final int CODE_SALT_COUNTER = 0x5A5A0000;
+
+    /**
+     * 打卡小组件那套的 requestCode 偏移（2026-11-04 加）。
+     *
+     * 与计数器的 salt 必须是**不同的常数**：同一 salt 下「打卡的 chip」和
+     * 「计数器的 +」只要 codeKey 撞了就会互相顶掉 PendingIntent。
+     */
+    static final int CODE_SALT_HABIT = 0x6A6A0000;
 
     WidgetIntent put(String key, String value) {
         intent.putExtra(key, value);

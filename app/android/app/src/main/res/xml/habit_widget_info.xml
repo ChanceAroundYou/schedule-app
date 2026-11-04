@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  打卡小组件的元信息（2026-11-04）。
+
+  **尺寸：默认 2×2，用户口径「2×2 到 4×4 之间随便拖」**。
+  格数按 launcher 惯例 ≈55dp/格（日程组件 4×4=250dp、计数器 2 列=110dp 都是这个换算）：
+    · minResize 110×110dp ≈ 2×2 —— 下限，与 minWidth/minHeight 齐平；
+    · maxResize 265×265dp ≈ 4×4 —— 用户明说的上限（日程组件那边是不封顶的，
+      这边 chip 内容有限，超过 4 格只会剩一片空白底色，所以钉在 4×4）。
+  中间连续可拖：渲染按 launcher 报的实际 dp 反算每行几颗 chip（见
+  HabitWidgetProvider 的 perRow），2×3 / 3×2 / 2×4 / 4×2 和任意中间尺寸都成立，
+  不依赖目标格数。
+
+  targetCellWidth/Height = 2 —— 添加页里的预设形状是 2×2（用户指定的起点）。
+
+  ⚠️ 拖完尺寸 launcher 只发 onAppWidgetOptionsChanged，不重写它内容不会重排
+  （日程组件 2026-11-02 踩过这坑）—— HabitWidgetProvider 里已重写。
+
+  updatePeriodMillis 给 0：数据靠 App 推送 / 点击 / 刷新按钮 / 日程组件的
+  每日换日闹钟顺带刷新，定时自刷顶不上，设了只白耗电。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_habit"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:maxResizeWidth="265dp"
+    android:maxResizeHeight="265dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_habit"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2" />

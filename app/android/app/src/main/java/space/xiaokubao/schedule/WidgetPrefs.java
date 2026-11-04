@@ -65,6 +65,21 @@ class WidgetPrefs {
     /** 打卡区「+N」展开状态的组件 id 集合（逗号分隔）。2026-11-03 加 */
     static final String KEY_HABIT_EXPANDED = "schedule_widget_habit_expanded";
 
+    /**
+     * 打卡小组件的**按实例筛选**（2026-11-04）。
+     *
+     * 存成 `"widgetId|filter"` 的 StringSet —— 只 **Android 本地**，不进服务端：
+     *   · 快照通道全局一份，持久化到服务端要动同步协议 —— 为一个显示偏好不值；
+     *   · {@link #FILTER_UNDONE} / {@link #FILTER_UNGROUPED} 是哨兵值，在分类 id
+     *     空间里不存在，塞进服务端等于把客户端偏好伪装成共享数据。
+     * 已知边界：launcher 恢复组件时可能换发新 widget id（跨开机/换桌面），
+     * 那时本实例回落到「全部」—— id 生命周期如此，不是 bug。
+     */
+    static final String KEY_HABIT_FILTER = "schedule_widget_habit_filter";
+    static final String FILTER_ALL = "*";
+    static final String FILTER_UNDONE = "?undone";
+    static final String FILTER_UNGROUPED = "?ungrouped";
+
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
     }
@@ -96,6 +111,32 @@ class WidgetPrefs {
         String key = String.valueOf(widgetId);
         if (expanded ? !next.add(key) : !next.remove(key)) return;
         sp(c).edit().putStringSet(KEY_HABIT_EXPANDED, next).apply();
+    }
+
+    /** 这个实例当前的筛选；没设过 = {@link #FILTER_ALL} */
+    static String filterOf(Context c, int widgetId) {
+        String probe = widgetId + "|";
+        java.util.Set<String> s = sp(c).getStringSet(KEY_HABIT_FILTER, null);
+        if (s != null) {
+            for (String e : s) {
+                if (e.startsWith(probe)) {
+                    String f = e.substring(probe.length());
+                    if (!f.isEmpty()) return f;
+                }
+            }
+        }
+        return FILTER_ALL;
+    }
+
+    static void setFilter(Context c, int widgetId, String filter) {
+        java.util.Set<String> cur = sp(c).getStringSet(KEY_HABIT_FILTER, null);
+        java.util.Set<String> next = new java.util.HashSet<>(cur == null ? java.util.Collections.emptySet() : cur);
+        String probe = widgetId + "|";
+        // 先清掉这个实例的旧记录，再写新的（同键覆盖，集合里永留一条）
+        java.util.Iterator<String> it = next.iterator();
+        while (it.hasNext()) if (it.next().startsWith(probe)) it.remove();
+        next.add(probe + (filter == null || filter.isEmpty() ? FILTER_ALL : filter));
+        sp(c).edit().putStringSet(KEY_HABIT_FILTER, next).apply();
     }
 
     /** 用户选中的那天；没选过就是今天 */

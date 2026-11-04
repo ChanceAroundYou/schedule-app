@@ -87,7 +87,9 @@ export async function publishWidgetSnapshot(state: LocalState): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
   // 小程序件可能有多个，各自都刷一遍。类名写在这里而不是让原生写死 ——
-  // 见 WidgetBridge.java 的注释
+  // 见 WidgetBridge.java 的注释。
+  // 2026-11-04 拆分：「日程」与「打卡」是两个独立组件（用户：打卡是打卡、
+  // 日程是日程），共用同一份快照、各自重画。
   const providers = [
     'space.xiaokubao.schedule.ScheduleWidgetProvider',
     'space.xiaokubao.schedule.HabitWidgetProvider',

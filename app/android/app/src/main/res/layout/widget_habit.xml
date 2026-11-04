@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  打卡小组件布局（2026-11-04 拆分）。
+
+  只有两块：顶栏（日历徽标 + 月份 + 漏斗 + 刷新）和打卡 chip 区。
+  没有日期条、没有未定时区、没有时间轴 —— 打卡是打卡，日程是日程。
+
+  RemoteViews 老规矩照旧：容器只能是 LinearLayout / FrameLayout 等，
+  占位一律空 TextView，不能 ScrollView、不能自定义 View。
+
+  顶栏与日程组件同一套语言（ic_calendar_badge 徽标 + 中间月份 + 右侧两颗），
+  chip 区复用 widget_habit_head / widget_habit_row / widget_habit_chip 三个
+  布局文件 —— 与日程组件当年的打卡区同一视觉语言，不新造 chip。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/habit_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:paddingLeft="8dp"
+    android:paddingTop="8dp"
+    android:paddingRight="8dp"
+    android:paddingBottom="2dp">
+
+    <!-- ============ 顶栏（hab_head，Provider 按 k 缩放行高） ============ -->
+    <FrameLayout
+        android:id="@+id/hab_head"
+        android:layout_width="match_parent"
+        android:layout_height="30dp">
+
+        <!-- 左上角：与日程组件同一枚黑白日历徽标，中间写今天几号（不可点：
+             组件恒显今天，没有「回今天」这回事） -->
+        <FrameLayout
+            android:id="@+id/hab_logo"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="left|center_vertical"
+            android:background="@drawable/ic_calendar_badge">
+
+            <TextView
+                android:id="@+id/hab_logo_day"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginTop="5dp"
+                android:gravity="center"
+                android:text="4"
+                android:textColor="#333333"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/hab_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:text="十一月"
+            android:textColor="#1B3A2A"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="right|center_vertical"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 漏斗：循环切筛选（全部 → 各分类 → 未分类* → 未打 → 全部）。
+                 当前筛选非「全部」时 Provider 用 setColorFilter 把它染成主绿 -->
+            <ImageView
+                android:id="@+id/hab_filter_btn"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:contentDescription="筛选"
+                android:padding="4dp"
+                android:src="@drawable/ic_filter" />
+
+            <ImageView
+                android:id="@+id/hab_refresh_btn"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:contentDescription="刷新"
+                android:padding="4dp"
+                android:src="@drawable/ic_refresh" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- 当前筛选的名字（「全部」时 Provider 藏掉这行不占视觉） -->
+    <TextView
+        android:id="@+id/hab_filter_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:text=""
+        android:textColor="#27795A"
+        android:textSize="8sp"
+        android:visibility="invisible" />
+
+    <!-- ============ chip 区（行由代码动态塞，同一套 habit_row/chip/head） ============ -->
+    <LinearLayout
+        android:id="@+id/hab_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:background="#E7F3EA"
+        android:orientation="vertical"
+        android:padding="2dp" />
+</LinearLayout>

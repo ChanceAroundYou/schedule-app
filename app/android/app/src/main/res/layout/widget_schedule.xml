@@ -151,9 +151,10 @@
         android:layout_marginTop="2dp"
         android:orientation="horizontal" />
 
-    <!-- ============ 打卡区 ============
-         上下对称：容器 padding 2dp + 每格上下各 1dp margin = 上 3 / 下 3。
-         （以前格子只有 marginTop、没有 marginBottom，导致上 5 下 3。） -->
+    <!-- ============ 打卡区（2026-11-04 拆分后恒 GONE）============
+         打卡整体迁往独立的「打卡」小组件（HabitWidgetProvider / widget_habit.xml）。
+         容器留着不删：老快照升级后第一次渲染前删 id 会让 RemoteViews 抛；
+         Provider 里 setViewVisibility(GONE) 永久藏掉，预算也不再算它。 -->
     <LinearLayout
         android:id="@+id/habit_rows"
         android:layout_width="match_parent"
