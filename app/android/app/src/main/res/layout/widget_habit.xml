@@ -1,16 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  打卡小组件布局（2026-11-04 拆分）。
+  打卡小组件布局（2026-11-04 拆分；2026-11-04 第二轮：去筛选 + 三点菜单 + ListView 滚动）。
 
-  只有两块：顶栏（日历徽标 + 月份 + 漏斗 + 刷新）和打卡 chip 区。
-  没有日期条、没有未定时区、没有时间轴 —— 打卡是打卡，日程是日程。
+  顶栏：日历徽标 + 月份 + 三点菜单（底板透明度 / 字体大小）。
+  chip 区改成 ListView（RemoteViewsService 驱动），装不下时原生滚动。
+  没有日期条、没有漏斗、没有刷新按钮 —— 越简单越好（用户原话）。
 
-  RemoteViews 老规矩照旧：容器只能是 LinearLayout / FrameLayout 等，
-  占位一律空 TextView，不能 ScrollView、不能自定义 View。
-
-  顶栏与日程组件同一套语言（ic_calendar_badge 徽标 + 中间月份 + 右侧两颗），
-  chip 区复用 widget_habit_head / widget_habit_row / widget_habit_chip 三个
-  布局文件 —— 与日程组件当年的打卡区同一视觉语言，不新造 chip。
+  RemoteViews 老规矩：ScrollView 不能用（launcher inflate 会抛），滚动只能靠
+  ListView + setRemoteAdapter。容器/子视图白名单照旧。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/habit_root"
@@ -23,14 +20,13 @@
     android:paddingRight="8dp"
     android:paddingBottom="2dp">
 
-    <!-- ============ 顶栏（hab_head，Provider 按 k 缩放行高） ============ -->
+    <!-- ============ 顶栏 ============ -->
     <FrameLayout
         android:id="@+id/hab_head"
         android:layout_width="match_parent"
         android:layout_height="30dp">
 
-        <!-- 左上角：与日程组件同一枚黑白日历徽标，中间写今天几号（不可点：
-             组件恒显今天，没有「回今天」这回事） -->
+        <!-- 左上角：与日程组件同一枚黑白日历徽标，中间写今天几号 -->
         <FrameLayout
             android:id="@+id/hab_logo"
             android:layout_width="26dp"
@@ -61,52 +57,42 @@
             android:textSize="15sp"
             android:textStyle="bold" />
 
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+        <!-- 右上角三点菜单（和日程组件同一枚 ic_more） -->
+        <ImageView
+            android:id="@+id/hab_settings_btn"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
             android:layout_gravity="right|center_vertical"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <!-- 漏斗：循环切筛选（全部 → 各分类 → 未分类* → 未打 → 全部）。
-                 当前筛选非「全部」时 Provider 用 setColorFilter 把它染成主绿 -->
-            <ImageView
-                android:id="@+id/hab_filter_btn"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:contentDescription="筛选"
-                android:padding="4dp"
-                android:src="@drawable/ic_filter" />
-
-            <ImageView
-                android:id="@+id/hab_refresh_btn"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:contentDescription="刷新"
-                android:padding="4dp"
-                android:src="@drawable/ic_refresh" />
-        </LinearLayout>
+            android:contentDescription="设置"
+            android:padding="4dp"
+            android:src="@drawable/ic_more" />
     </FrameLayout>
 
-    <!-- 当前筛选的名字（「全部」时 Provider 藏掉这行不占视觉） -->
-    <TextView
-        android:id="@+id/hab_filter_hint"
+    <!-- ============ chip 区：ListView（装不下原生滚动） ============
+         RemoteViews 的 ListView 要配 setRemoteAdapter + RemoteViewsService。
+         divider 去掉（chip 自带间距）；background 由 Provider 按 alpha 设。 -->
+    <ListView
+        android:id="@+id/hab_list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="1dp"
-        android:paddingBottom="1dp"
-        android:text=""
-        android:textColor="#27795A"
-        android:textSize="8sp"
-        android:visibility="invisible" />
-
-    <!-- ============ chip 区（行由代码动态塞，同一套 habit_row/chip/head） ============ -->
-    <LinearLayout
-        android:id="@+id/hab_rows"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:layout_marginTop="3dp"
         android:background="#E7F3EA"
-        android:orientation="vertical"
-        android:padding="2dp" />
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:padding="2dp"
+        android:scrollbars="none" />
+
+    <!-- 空态：没有打卡项时显示（Provider 按 VISIBLE/GONE 切） -->
+    <TextView
+        android:id="@+id/hab_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="3dp"
+        android:gravity="center"
+        android:text="还没有打卡项，打开 App 加一个"
+        android:textColor="#8AA294"
+        android:textSize="8sp"
+        android:visibility="gone" />
 </LinearLayout>

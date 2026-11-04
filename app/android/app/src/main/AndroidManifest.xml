@@ -54,8 +54,9 @@
         </receiver>
 
         <!--
-          打卡小组件（2026-11-04 新增）。只看今天、点击即打卡、按实例筛选，
-          尺寸 2×2 起可拖到 4×4。与日程组件共用快照与离线队列，代码全独立。
+          打卡小组件（2026-11-04 新增；第二轮：去筛选 + 三点菜单 + ListView 滚动）。
+          只看今天、点击即打卡、尺寸 2×2 起可拖到 4×4。
+          chip 区用 ListView + HabitWidgetService 实现原生滚动。
         -->
         <receiver
             android:name=".HabitWidgetProvider"
@@ -69,6 +70,17 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/habit_widget_info" />
         </receiver>
+
+        <!--
+          打卡组件的 ListView 数据源（RemoteViewsService）。
+          被 HabitWidgetProvider 的 setRemoteAdapter 绑定，在 App 进程内读快照
+          构建 chip 行列表。必须 exported=true（launcher 要 bind 过来），
+          但 intent-filter 限制只认本 App 的绑定请求。
+        -->
+        <service
+            android:name=".HabitWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
 
         <!--
           桌面计数器。**两个独立条目**（桌面「添加小组件」列表里分开出现）：

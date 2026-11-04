@@ -394,21 +394,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         // 不随组件缩放），所以这里能精确算出来。组件越高，多出来的全给时间轴。
         int totalDp = widgetHeightDp(c, mgr, widgetId);
 
-        /* ---- 缩放系数（2026-11-03 用户：①字号要可选 ②组件拉大/缩小，
-           字、图标、单元格要**同比**变大变小 —— 原来字固定 8/9sp，
-           拉大后格子变大、字相对显小）----
-           两层相乘：
-           · 用户档位 —— 设置里的字号选项（85/100/115/130%）；
-           · sizeK —— 同比系数，锚点是「时间轴每格多高」：设计上每格 16dp
-             正好是最舒展、逐小时标数的档（见 axisPlan 的 11/16 两道线）。
-             组件拉大 → 每格更高 → 字和固定件跟着放大；拖小则反向。
-             用**未缩放**的预算算行高，避免 k 自己喂自己的循环。 */
-        int fixed0 = 10 + 30 + 2 + DATE_STRIP_DP + 2
-                + barDp + 1 + 2;
-        int timeline0 = Math.max(70, totalDp - fixed0);
-        float rowsH0 = Math.max(1f, (timeline0 - AXIS_END_DP) / (float) Math.max(1, hi - lo));
-        float sizeK = Math.max(0.75f, Math.min(2.0f, rowsH0 / 16f));
-        float k = sizeK * (WidgetPrefs.fontScale(c) / 100f);
+        /* ---- 缩放系数（2026-11-04 用户：字体不随组件尺寸变，只跟字号档位走）----
+           以前两层相乘：sizeK（组件越大字越大）× fontScale。用户明确不要 sizeK
+           那层——组件拉大只该多装内容，字号本身不变。现在 k 只有字号档位。 */
+        float k = WidgetPrefs.fontScale(c) / 100f;
         Metrics m = new Metrics(k);
         // 未定时区的横条高度也要跟着缩（行数不变，单行高度 × k）
         barDp = Math.max(m.panelBar, untimedRows * m.untimedRow);
