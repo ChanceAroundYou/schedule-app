@@ -1,6 +1,8 @@
 export async function run(ctx) {
   Object.assign(globalThis, ctx.helpers);
   Object.assign(globalThis, ctx.state);
+  // 主文件直接调这些函数，必须显式挂到 globalThis（module 作用域不通）。
+  globalThis.checkNowLine = checkNowLine;
 async function checkNowLine() {
   // now-line 只在「今天」渲染（isToday 门控），先点顶栏「今」跳回今天
   await evalIn(`(function(){var b=Array.from(document.querySelectorAll('button')).find(x=>(x.textContent||'').trim()==='今');if(!b)return 'no-btn';var r=b.getBoundingClientRect();var x=r.x+r.width/2,y=r.y+r.height/2;var t=document.elementFromPoint(x,y);if(!t)return 'no-pt';var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button:0};t.dispatchEvent(new MouseEvent('mousedown',o));t.dispatchEvent(new MouseEvent('mouseup',o));t.dispatchEvent(new MouseEvent('click',o));return 'clicked';})()`);

@@ -61,7 +61,7 @@ if (!device) { console.error('用法: node app/tests/android-live-check.mjs --de
 const FEATURES = new Set(featArg.split(',').map((s) => s.trim()).filter(Boolean));
 
 /* ---------- 结果统计 ---------- */
-let pass = 0, fail = 0; const lines = [];
+let pass = 0, fail = 0; let lines = [];
 const ok = (n, d) => { pass++; lines.push(`  ok   ${n}${d ? ' — ' + d : ''}`); };
 const bad = (n, d) => { fail++; lines.push(`  FAIL ${n}${d ? ' — ' + d : ''}`); };
 const assert = (c, n, d) => (c ? ok(n, d) : bad(n, d));
@@ -199,7 +199,7 @@ async function apiPush(ops) {
 /* ------------------------------------------------------------ 各项检查 */
 
 const ctx = {
-  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, apiPush },
+  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, apiMe, apiPush },
   state: {},
   features: FEATURES,
 };
@@ -217,7 +217,10 @@ for (const f of sectionFiles) {
   await mod.run(ctx);
 }
 
-pass = globalThis.pass; fail = globalThis.fail; lines = globalThis.lines;
+// section 可能直接改 globalThis 上的计数器，回收回来（lines 是同一个数组引用时等于空转）。
+if (typeof globalThis.pass === 'number') pass = globalThis.pass;
+if (typeof globalThis.fail === 'number') fail = globalThis.fail;
+if (Array.isArray(globalThis.lines)) lines = globalThis.lines;
 
 console.log(`\n== 安卓真机实测 ${device}（features: ${[...FEATURES].join(', ')}）`);
 try {

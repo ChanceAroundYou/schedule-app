@@ -1,6 +1,8 @@
 export async function run(ctx) {
   Object.assign(globalThis, ctx.helpers);
   Object.assign(globalThis, ctx.state);
+  // 主文件直接调这些函数，必须显式挂到 globalThis（module 作用域不通）。
+  globalThis.checkCore = checkCore;
 async function checkCore() {
   await openCalendar();
   await tap('button[data-view="day"]'); await wait(700);

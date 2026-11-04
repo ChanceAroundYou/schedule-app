@@ -1,6 +1,9 @@
 export async function run(ctx) {
   Object.assign(globalThis, ctx.helpers);
   Object.assign(globalThis, ctx.state);
+  // 主文件直接调这些函数，必须显式挂到 globalThis（module 作用域不通）。
+  globalThis.checkLook = checkLook;
+  globalThis.checkRepeat = checkRepeat;
 async function checkLook() {
   /* 先回「今天」：上一个用例可能把光标留在某天空白格跳过去的那一天，
      那一周没有任务，就量不到卡片了（2026-10-19 实测踩到）。 */
