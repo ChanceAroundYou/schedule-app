@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.TypedValue;
+import android.view.View;
 import android.widget.RemoteViews;
 import android.widget.RemoteViewsService;
 
@@ -88,6 +89,13 @@ public class HabitWidgetService extends RemoteViewsService {
         @Override
         public int getCount() { return items.size(); }
 
+        /** 每行最多几颗（= widget_habit_row4.xml 的槽位数，改布局要同步） */
+        private static final int MAX_PER_ROW = 4;
+        /** 四个预置槽位的 view id */
+        private static final int[] SLOT_IDS = {
+                R.id.habit_c1, R.id.habit_c2, R.id.habit_c3, R.id.habit_c4
+        };
+
         @Override
         public RemoteViews getViewAt(int position) {
             if (position < 0 || position >= items.size()) return loadingView();
@@ -102,33 +110,45 @@ public class HabitWidgetService extends RemoteViewsService {
                 return head;
             }
 
-            // chip 行：perRow 颗，不满补占位
+            /* ⚠️ 只能**改**预置槽位，绝不能 addView（RemoteViews.addView 是追加语义，
+               ListView 复用列表项时会越叠越多 —— 2026-11-04 用户看到「一行重复 3 遍」
+               就是这条）。四个槽位每次都被显式设成 VISIBLE / INVISIBLE / GONE，
+               apply 多少次结果都一样。 */
             int perRow = perRow();
-            RemoteViews row = new RemoteViews(ctx.getPackageName(), R.layout.widget_habit_row);
-            for (int i = 0; i < perRow; i++) {
-                if (i < it.chips.size()) {
-                    row.addView(R.id.habit_row, chipView(it.chips.get(i), today, k));
+            RemoteViews row = new RemoteViews(ctx.getPackageName(), R.layout.widget_habit_row4);
+            for (int i = 0; i < MAX_PER_ROW; i++) {
+                int id = SLOT_IDS[i];
+                if (i < perRow && i < it.chips.size()) {
+                    bindChip(row, id, it.chips.get(i), today, k);
+                } else if (i < perRow) {
+                    // 本行没满：留空占位（INVISIBLE 仍吃宽度），
+                    // 否则剩下几颗会被 weight 均分放大 —— 2026-11-03 踩过
+                    row.setTextViewText(id, "");
+                    row.setInt(id, "setBackgroundResource", 0);
+                    row.setViewVisibility(id, View.INVISIBLE);
                 } else {
-                    row.addView(R.id.habit_row, ScheduleWidgetProvider.emptyChip(ctx));
+                    // 超出本实例的每行颗数：整格不占宽
+                    row.setTextViewText(id, "");
+                    row.setInt(id, "setBackgroundResource", 0);
+                    row.setViewVisibility(id, View.GONE);
                 }
             }
             return row;
         }
 
-        /** 单颗 chip：完成态取**要显示的那一天**（恒为今天），点击挂 fill-in intent */
-        private RemoteViews chipView(WHabit h, String today, float k) {
-            RemoteViews chip = new RemoteViews(ctx.getPackageName(), R.layout.widget_habit_chip);
-            chip.setTextViewText(R.id.habit_chip, h.title);
+        /** 单颗 chip 的四件事（文字 / 底色 / 字色 / 字号）+ 点击 fill-in */
+        private void bindChip(RemoteViews row, int viewId, WHabit h, String today, float k) {
+            row.setViewVisibility(viewId, View.VISIBLE);
+            row.setTextViewText(viewId, h.title);
             boolean done = h.log != null && h.log.optBoolean(today, false);
-            chip.setInt(R.id.habit_chip, "setBackgroundResource",
+            row.setInt(viewId, "setBackgroundResource",
                     done ? R.drawable.widget_habit_bg : R.drawable.widget_habit_bg_done);
-            chip.setTextColor(R.id.habit_chip, done ? 0xFF7E8F84 : 0xFF1B3A2A);
-            ScheduleWidgetProvider.font(chip, R.id.habit_chip, 8, k);
+            row.setTextColor(viewId, done ? 0xFF7E8F84 : 0xFF1B3A2A);
+            row.setTextViewTextSize(viewId, TypedValue.COMPLEX_UNIT_SP, Math.max(1f, 8f * k));
             // fill-in：把 habitId 塞进 intent extras，Provider 的 template PendingIntent
-            // 提供了 action + component，这里只补 extras，系统合成最终 PendingIntent
+            // 提供 action + component，系统合成最终 PendingIntent
             Intent fill = new Intent().putExtra(HabitWidgetProvider.EXTRA_ID, h.id);
-            chip.setOnClickFillInIntent(R.id.habit_chip, fill);
-            return chip;
+            row.setOnClickFillInIntent(viewId, fill);
         }
 
         @Override
