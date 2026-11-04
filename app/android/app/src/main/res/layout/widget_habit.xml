@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  打卡小组件布局（2026-11-04 拆分；2026-11-04 第二轮：去筛选 + 三点菜单 + ListView 滚动）。
+  打卡小组件布局。
 
-  顶栏：日历徽标 + 月份 + 三点菜单（底板透明度 / 字体大小）。
-  chip 区改成 ListView（RemoteViewsService 驱动），装不下时原生滚动。
-  没有日期条、没有漏斗、没有刷新按钮 —— 越简单越好（用户原话）。
+  2026-11-04 第三轮（用户）：header 大幅度压缩、两侧边缘缩小、多让位置给正文；
+  **不再显示月份，只显示今天日期**；字体和三点缩小；左侧图标换成打卡勾。
+    · 顶栏 30dp → 20dp
+    · 左右 padding 8dp → 6dp（正文因此左右各多 2dp）
+    · 徽标 26dp → 18dp、号数 10sp → 9sp
+    · 月份整行删掉，号数直接跟在徽标左边（行内靠左，不再居中）
+    · 三点 26dp → 18dp、padding 4dp → 3dp
+    · 左侧图标 ic_calendar_badge → ic_habit_check（打勾徽标）
 
-  RemoteViews 老规矩：ScrollView 不能用（launcher inflate 会抛），滚动只能靠
-  ListView + setRemoteAdapter。容器/子视图白名单照旧。
+  chip 区是 ListView（RemoteViewsService 驱动），装不下时原生滚动。
+  RemoteViews 老规矩：ScrollView 不能用（launcher inflate 会抛）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/habit_root"
@@ -15,56 +20,55 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:paddingLeft="8dp"
-    android:paddingTop="8dp"
-    android:paddingRight="8dp"
+    android:paddingLeft="6dp"
+    android:paddingTop="5dp"
+    android:paddingRight="6dp"
     android:paddingBottom="2dp">
 
-    <!-- ============ 顶栏 ============ -->
+    <!-- ============ 顶栏（20dp，紧凑） ============ -->
     <FrameLayout
         android:id="@+id/hab_head"
         android:layout_width="match_parent"
-        android:layout_height="30dp">
+        android:layout_height="20dp">
 
-        <!-- 左上角：与日程组件同一枚黑白日历徽标，中间写今天几号 -->
-        <FrameLayout
-            android:id="@+id/hab_logo"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+        <!-- 左侧：打卡勾徽标 + 今天几号（横排、靠左）。
+             原来这里是「日历徽标 + 居中月份」，用户觉得太占地方 → 月份删掉，
+             号数直接挨着图标。 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
             android:layout_gravity="left|center_vertical"
-            android:background="@drawable/ic_calendar_badge">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/hab_logo"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="打卡"
+                android:src="@drawable/ic_habit_check" />
 
             <TextView
                 android:id="@+id/hab_logo_day"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_marginTop="5dp"
-                android:gravity="center"
-                android:text="4"
-                android:textColor="#333333"
-                android:textSize="10sp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="4dp"
+                android:gravity="center_vertical"
+                android:includeFontPadding="false"
+                android:text="11月4日"
+                android:textColor="#1B3A2A"
+                android:textSize="9sp"
                 android:textStyle="bold" />
-        </FrameLayout>
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/hab_month"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:text="十一月"
-            android:textColor="#1B3A2A"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <!-- 右上角三点菜单（和日程组件同一枚 ic_more） -->
+        <!-- 右上角三点菜单（缩小到 18dp） -->
         <ImageView
             android:id="@+id/hab_settings_btn"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
             android:layout_gravity="right|center_vertical"
             android:contentDescription="设置"
-            android:padding="4dp"
+            android:padding="1dp"
             android:src="@drawable/ic_more" />
     </FrameLayout>
 
@@ -76,7 +80,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="2dp"
         android:background="#E7F3EA"
         android:divider="@null"
         android:dividerHeight="0dp"
@@ -89,7 +93,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="2dp"
         android:gravity="center"
         android:text="还没有打卡项，打开 App 加一个"
         android:textColor="#8AA294"

@@ -110,14 +110,12 @@ public class HabitWidgetProvider extends AppWidgetProvider {
         float k = WidgetPrefs.fontScale(c) / 100f;
         ScheduleWidgetProvider.Metrics m = new ScheduleWidgetProvider.Metrics(k);
 
-        /* ---- 顶栏：日历徽标（今天几号）+ 月份 + 三点菜单 ---- */
-        v.setViewLayoutHeight(R.id.hab_head, m.headRow, TypedValue.COMPLEX_UNIT_DIP);
-        v.setTextViewText(R.id.hab_logo_day, today.substring(8, 10));
-        v.setTextViewText(R.id.hab_month, cnMonth(today));
-        ScheduleWidgetProvider.scaleView(v, R.id.hab_logo, 26, k);
-        ScheduleWidgetProvider.scaleView(v, R.id.hab_settings_btn, 26, k);
-        ScheduleWidgetProvider.font(v, R.id.hab_logo_day, 10, k);
-        ScheduleWidgetProvider.font(v, R.id.hab_month, 15, k);
+        /* ---- 顶栏（2026-11-04 第三轮：压到 20dp，只留「打卡勾 + 今天日期 + 三点」）---- */
+        v.setViewLayoutHeight(R.id.hab_head, HEAD_ROW_DP, TypedValue.COMPLEX_UNIT_DIP);
+        v.setTextViewText(R.id.hab_logo_day, cnDay(today));
+        ScheduleWidgetProvider.scaleView(v, R.id.hab_logo, 18, k);
+        ScheduleWidgetProvider.scaleView(v, R.id.hab_settings_btn, 18, k);
+        ScheduleWidgetProvider.font(v, R.id.hab_logo_day, 9, k);
 
         // 三点菜单 → 打开设置弹框（habit 模式：只有透明度 + 字体）
         v.setOnClickPendingIntent(R.id.hab_settings_btn, WidgetIntent
@@ -152,12 +150,18 @@ public class HabitWidgetProvider extends AppWidgetProvider {
         mgr.updateAppWidget(widgetId, v);
     }
 
-    private static String cnMonth(String todayIso) {
-        int m;
-        try { m = Integer.parseInt(todayIso.substring(5, 7)); } catch (Exception e) { return ""; }
-        String[] cn = {"一月", "二月", "三月", "四月", "五月", "六月",
-                       "七月", "八月", "九月", "十月", "十一月", "十二月"};
-        return (m >= 1 && m <= 12) ? cn[m - 1] : m + "月";
+    /** 顶栏高度（dp）。2026-11-04 第三轮从 30 压到 20 —— 用户要多让位置给正文 */
+    private static final int HEAD_ROW_DP = 20;
+
+    /** 「11月4日」—— 只显示今天日期，不再单独显示月份（用户 2026-11-04 第三轮） */
+    private static String cnDay(String todayIso) {
+        try {
+            int mo = Integer.parseInt(todayIso.substring(5, 7));
+            int d = Integer.parseInt(todayIso.substring(8, 10));
+            return mo + "月" + d + "日";
+        } catch (Exception e) {
+            return todayIso;
+        }
     }
 
     /* ============================ 打卡（复用日程那套） ============================ */
