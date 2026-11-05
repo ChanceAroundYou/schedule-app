@@ -74,14 +74,18 @@
 
     <!-- ============ chip 区：ListView（装不下原生滚动） ============
          RemoteViews 的 ListView 要配 setRemoteAdapter + RemoteViewsService。
-         divider 去掉（chip 自带间距）；background 由 Provider 按 alpha 设。 -->
+         divider 去掉（chip 自带间距）。
+
+         ⚠️ 2026-11-05 背景已**去掉**（原来 #E7F3EA 淡绿方形）：
+         用户要求 chip 区不要有底色差异 —— 那块方形色块的直角还溢出组件圆角。
+         现在透明，chip 自己的 5dp 圆角底是唯一视觉边界。
+         Provider 里 setBackgroundColor(0) 兜底（它会覆盖 XML 的设置）。 -->
     <ListView
         android:id="@+id/hab_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="2dp"
-        android:background="@drawable/widget_habit_list_bg"
         android:divider="@null"
         android:dividerHeight="0dp"
         android:padding="2dp"

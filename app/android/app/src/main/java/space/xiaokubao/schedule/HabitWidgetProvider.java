@@ -123,9 +123,13 @@ public class HabitWidgetProvider extends AppWidgetProvider {
                         ACTION_SETTINGS, "s" + widgetId)
                 .put(EXTRA_WID, widgetId).build(c));
 
-        /* ---- chip 区背景 ---- */
-        v.setInt(R.id.hab_list, "setBackgroundColor",
-                ScheduleWidgetProvider.withAlpha(0xFFE7F3EA, alpha));
+        /* ---- chip 区背景 ----
+           ⚠️ 2026-11-05 用户要求：**不要内容区底色差异**（原来这里是淡绿 #E7F3EA，
+           与组件底板 #F1F8F3 形成一块方形色块，它的直角还溢出组件圆角）。
+           现在 chip 区完全透明，跟组件底板同一个色 —— chip 自己的圆角底（5dp）
+           就是唯一的视觉边界，容器圆角不再被方形色块破坏。
+           原来的 setBackgroundColor 会覆盖 XML 里的背景，所以这里必须显式清成透明。 */
+        v.setInt(R.id.hab_list, "setBackgroundColor", 0x00000000);
 
         /* ---- ListView 绑 RemoteViewsService ---- */
         Intent adapterIntent = new Intent(c, HabitWidgetService.class);

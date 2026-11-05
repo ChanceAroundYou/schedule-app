@@ -404,7 +404,13 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
 
         // 全部固定件（缩放后）。2026-11-04 拆分后打卡区不在这份预算里了，
         // 时间轴 = 总高 − 固定件，一步到位。
-        final int fixedDp = 10                       // root padding：上 8 + 下 2（底部只留一条边）
+        //
+        // ⚠️ 2026-11-05（第三次修圆角）：底部留白回到 2dp —— 桌面圆角**不再靠
+        // root padding 硬留**（试过 4 / 14 / 20 / 32，全都不对：留少了被切、
+        // 留多了格子被挤掉甚至轴溢出）。现在由 renderScale 的 cornerGuardDp
+        // 只给刻度列留，任务区照常画满。这里必须和 widget_schedule.xml 的
+        // root paddingBottom 一致（都是 2dp）。
+        final int fixedDp = 10                       // root padding：上 8 + 下 2
                 + m.headRow + 2                 // head 行（FrameLayout 30dp）+ margin
                 + m.dateStrip + 2              // 日期条 + margin
                 + barDp + 1 + 2;                // 未定时区（按实际行数）+ 横分割线 + margin
@@ -457,8 +463,11 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
            快照用户升级后第一次渲染前，RemoteViews 对缺失 id 会抛。藏掉最稳。 */
         v.setViewVisibility(R.id.habit_rows, View.GONE);
 
-        // 时间轴拿剩下的（至少 70dp，见下面 renderScale 的说明）
-        int timelineDp = Math.max(70, totalDp - fixedDp);
+        // 时间轴拿剩下的（至少 40dp，见 renderScale 的说明）。
+        // ⚠️ 2026-11-05：下限从 70 降到 40。以前挤掉高度后仍按 70 画，时间轴会
+        // **溢出 panel 底边**，最下面那条「终点数字」照样被圆角切掉 —— 加多少
+        // padding 都没用。40dp 在最小号字体下仍够画 12 格。
+        int timelineDp = Math.max(40, totalDp - fixedDp);
 
         /* 轴尾 = 设定终点，但**晚间任务不能因此丢掉**：轴现在只画到终点，
            有任务跨过终点就把它延到任务结束的那个整点（没有就没有代价）。 */
@@ -685,10 +694,64 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     /**
+     * 刻度列最底部**必须让给桌面圆角遮罩**的高度（dp）。
+     *
+     * 2026-11-05（第三次修圆角）。前两轮的坑：
+     * · 第一轮给底行加 paddingBottom=4dp → 「21」整个消失（格子被压掉）；
+     * · 第二轮给 root 加 paddingBottom 14/20/32dp → 轴整体上移了，但 21 还是被切。
+     *
+     * 真凶有两个：
+     * 1. `timelineDp = Math.max(70, totalDp - fixedDp)` 的下限 70 一挤就顶住，
+     *    时间轴画得比 panel 还高，溢出的部分又被圆角吃掉 —— 加多少底距都没用；
+     * 2. 桌面（ColorOS）在组件外面**另加了一层圆角遮罩**，半径比 drawable 的 20dp
+     *    更大，且随组件高度变。刻度列宽只有 20dp，圆弧在这个 x 位置扫过的高度
+     *    是 `r - sqrt(r² - (r-20)²)`（r=32 时约 12dp），数字顶在格子顶部正好被切。
+     *
+     * 现在不猜底距：轴画满 panel，底部**只在刻度列这一支**留出这个高度，
+     * 数字放在这段高度**上方**，绕开圆弧。
+     */
+    private static int cornerGuardDp(Context c, Metrics m) {
+        int r = widgetCornerRadiusDp(c);
+        int inset = m.scaleW;                       // 数字离组件左边缘的距离
+        if (r <= inset) return 4;
+        int guard = r - (int) Math.round(
+                Math.sqrt((double) r * r - (double) (r - inset) * (r - inset)));
+        return Math.min(30, guard + 2);             // +2dp 余量，抗 launcher 遮罩抖动
+    }
+
+    /**
+     * 桌面给小组件套的圆角半径（dp），best-effort。
+     *
+     * 系统 dimen `system_app_widget_background_radius` 是 AOSP 给 launcher 用的
+     * 那个值（Android 12+ 存在），ColorOS 等 ROM 大多沿用。读不到就退到 28dp
+     * —— 这是实测这家 ROM 的量级，稍大一点只是多留一点白，不会切字。
+     */
+    private static int widgetCornerRadiusDp(Context c) {
+        try {
+            int id = c.getResources().getIdentifier("system_app_widget_background_radius",
+                    "dimen", "android");
+            if (id != 0) {
+                int px = c.getResources().getDimensionPixelSize(id);
+                if (px > 0) return Math.round(px / c.getResources().getDisplayMetrics().density);
+            }
+        } catch (Exception ignored) {
+            // 读不到走默认
+        }
+        return 28;
+    }
+
+    /**
      * 十字面板左下角的**刻度列**。
      *
      * 和右下主体的网格格用**同一个高度公式**（累进取整，避免逐行攒出误差），
      * 所以左边的数字和右边的小时线严格同高。
+     *
+     * 2026-11-05：数字改成**顶对齐到自己的整点线**（不再跟着网格整体下移
+     * LINE_OFFSET_DP）。网格/任务卡下移 5dp 是为了让卡片落在整点内部，刻度列
+     * 跟着下移会把最底下那格的字推出轴底 —— 那就是「21 直接没了」的真凶。
+     *
+     * 轴底那段 `guard` 高度留给桌面圆角：数字一律在 guard 之上，最底下那条
+     * 「终点数字」也整条落在这条线上方，不再贴轴底。
      */
     private static void renderScale(Context c, RemoteViews v, int lo, int hi,
                                     int timelineDp, Metrics m) {
@@ -696,18 +759,33 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         int[] plan = axisPlan(lo, hi, timelineDp, m.axisEnd);
         int bands = plan[0];
         int step = plan[1];
-        float dpPerHour = axisHeight(timelineDp, m.axisEnd) / (float) bands;
+        int guard = cornerGuardDp(c, m);
+
+        /* 有数字的格子 = lo, lo+step, ... ，每个数字顶在自己的整点线上；
+           轴底往上 guard 以内不写字（桌面圆角的裁剪区）。
+           数字顶对齐、占约 8dp 高 → 一个数字要完整显示，它的格顶必须
+           ≤ 轴底 - guard - 8。放不下的最后那个整点，把数字挪进轴尾（轴尾
+           自身高度已经含 guard，数字排在 guard 之上）。 */
+        int numH = Math.round(8 * m.k);             // 一行 8sp 数字的实际占高
+        int endNum = lo + bands;                    // 终点数字（如 21）
+        int lastOkIdx = -1;                         // 最后一个「放得下」的整点格下标
+        float dpPerBand = axisHeight(timelineDp, m.axisEnd) / (float) bands;
+        for (int k = 0; k < bands; k += step) {
+            if (Math.round(k * dpPerBand) <= timelineDp - guard - numH) lastOkIdx = k;
+        }
+        // 倒数第一格（bands-step）放得下吗？放不下 → 它的数字并进轴尾，尾巴里两行
+        boolean lastBandFits = (lastOkIdx >= bands - step);
 
         int prevY = 0;
         for (int k = 0; k < bands; k++) {
-            int nextY = Math.round((k + 1) * dpPerHour);
+            int nextY = Math.round((k + 1) * dpPerBand);
             int hgt = Math.max(1, nextY - prevY);
             prevY = nextY;
 
+            boolean show = (k % step == 0) && (k <= lastOkIdx);
             RemoteViews e = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
             e.setViewLayoutHeight(R.id.tl_hour, hgt, TypedValue.COMPLEX_UNIT_DIP);
-            e.setTextViewText(R.id.tl_hour,
-                    (k % step == 0) ? String.format(Locale.US, "%02d", lo + k) : "");
+            e.setTextViewText(R.id.tl_hour, show ? String.format(Locale.US, "%02d", lo + k) : "");
             // 刻度数字恒为普通灰。**不再给「当前那一小时」标红**（用户 2026-10-14：
             // 不要任何「现在几点」的体现）。
             e.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
@@ -715,15 +793,27 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             v.addView(R.id.tl_scale, e);
         }
 
-        /* 终点数字：单独一条贴住轴底。
-           「设到 20 点」就画到 20:00 为止，20 这个数字本身没有整格可用 ——
-           给它 6dp 的高度，轴底自然收在数字下面，不再白出一格。 */
-        RemoteViews end = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
-        end.setViewLayoutHeight(R.id.tl_hour, m.axisEnd, TypedValue.COMPLEX_UNIT_DIP);
-        end.setTextViewText(R.id.tl_hour, String.format(Locale.US, "%02d", lo + bands));
-        end.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
-        font(end, R.id.tl_hour, 8, m.k);
-        v.addView(R.id.tl_scale, end);
+        /* 轴尾：从主体底部一直到底（含 guard）。
+           · 倒数第一格放不下 → 它和终点数字一起放这里（两行竖排）
+           · 都排在 guard 之上，永远不会被桌面圆角切 */
+        String tailText = lastBandFits
+                ? String.format(Locale.US, "%02d", endNum)
+                : String.format(Locale.US, "%02d\n%02d", lo + bands - step, endNum);
+        int lines = lastBandFits ? 1 : 2;
+        int tailDp = m.axisEnd + guard + (lines - 1) * numH;
+
+        RemoteViews tail = new RemoteViews(c.getPackageName(), R.layout.widget_tl_hour);
+        tail.setViewLayoutHeight(R.id.tl_hour, tailDp, TypedValue.COMPLEX_UNIT_DIP);
+        tail.setTextViewText(R.id.tl_hour, tailText);
+        tail.setTextColor(R.id.tl_hour, 0xFFA2B5A9);
+        font(tail, R.id.tl_hour, 8, m.k);
+        if (lines > 1) {
+            // setInt 走 RemoteViews 的「setXxx(Type)」反射，只认 int/boolean 包装；
+            // false 会被当成 Object 找不到方法，必须用 0
+            tail.setInt(R.id.tl_hour, "setSingleLine", 0);
+            tail.setInt(R.id.tl_hour, "setMaxLines", 2);
+        }
+        v.addView(R.id.tl_scale, tail);
     }
 
     /**

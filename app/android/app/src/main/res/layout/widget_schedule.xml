@@ -220,15 +220,14 @@
             android:text="" />
 
         <!-- 底行：刻度列 + 竖分割线 + 主体。
-             paddingBottom=4dp（2026-11-05）：容器圆角 20dp，原来底行内容
-             顶到圆弧上（刻度列「20」卡在左下圆弧）。加 4dp 让刻度列和主体
-             都往上缩，避开左下/右下圆弧区。 -->
+             ⚠️ 2026-11-05 撤掉 paddingBottom=4dp：加了之后最下面那一格
+             （21 点）被挤出可见区，「21」整个消失。底行高度是 weight=1
+             撑满的，加 padding 等于从内容里扣高度，格子被压掉。 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="horizontal"
-            android:paddingBottom="4dp">
+            android:orientation="horizontal">
 
             <!-- 刻度列。2026-10-14：16 → 20dp —— 给数字留出「中心落在
                  卡片左边缘与分割线中点」所需的宽度（见 widget_tl_hour）。
