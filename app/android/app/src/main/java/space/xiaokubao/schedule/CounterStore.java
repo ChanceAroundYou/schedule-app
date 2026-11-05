@@ -142,7 +142,9 @@ class CounterStore {
      *   · 队列里这个 id 还有「设置成 X」→ 本地就是 X，服务端的值作废（绝对值优先）
      *   · 否则 → 用 服务端值 + 队列里剩余的 delta
      *
-     * @param stillQueued 此刻**还没发出去**的意图（已发成功的那几条调用方要先扣掉）
+     * @param stillQueued 此刻**还没确认完成的意图** —— 包括队列里没发的
+     *                    **和在途（已发但还没收到响应）**的。调用方应传
+     *                    {@link #pendingPlus}，不要再直接传 queue(c)。
      */
     static void applyServer(Context c, JSONArray counters, JSONArray stillQueued) {
         if (counters == null) return;
@@ -264,6 +266,83 @@ class CounterStore {
         sp(c).edit().putString(KEY_QUEUE, arr.toString()).apply();
     }
 
+    /* ------------------------------------------------------- 在途意图登记 */
+
+    /**
+     * 已发出但还没收到响应的意图。
+     *
+     * **为什么需要这个**（2026-11-05 修「+1 两三秒后跳回旧值」）：
+     * `next()` 把队首发出去时先从队列里摘掉，请求飞行期间队列是空的。
+     * 这时如果有别的路径调 {@link #applyServer}（`pull` / `resync` /
+     * App 推刷新），它会拿服务端**还没处理完的旧值**盖掉本地的新值 ——
+     * 用户看到的就是「+1 之后两三秒又跳回去了」。
+     *
+     * 把在途意图也喂给 applyServer，它就能算出
+     * 「服务端旧值 + 还在飞的 +1 = 正确值」，不再跳回。
+     *
+     * 进程死了在途表就丢了 —— 可接受：队列里的还在盘上，`resync` 会重发；
+     * 如果请求其实到了服务端，`pull` 拿到的是新值，不丢。
+     */
+    private static final java.util.Map<String, java.util.List<int[]>> sInflight = new java.util.HashMap<>();
+    // 每个 int[] = {delta_or_0, value_or_NO_VALUE}
+    private static final int NO_VALUE = Integer.MIN_VALUE;
+
+    private static void addInflight(String id, Integer delta, Integer value) {
+        int d = delta != null ? delta : 0;
+        int v = value != null ? value : NO_VALUE;
+        synchronized (sInflight) {
+            java.util.List<int[]> list = sInflight.get(id);
+            if (list == null) { list = new java.util.ArrayList<>(); sInflight.put(id, list); }
+            list.add(new int[]{d, v});
+        }
+    }
+
+    private static void removeInflight(String id, Integer delta, Integer value) {
+        int d = delta != null ? delta : 0;
+        int v = value != null ? value : NO_VALUE;
+        synchronized (sInflight) {
+            java.util.List<int[]> list = sInflight.get(id);
+            if (list == null) return;
+            java.util.Iterator<int[]> it = list.iterator();
+            while (it.hasNext()) {
+                int[] e = it.next();
+                if (e[0] == d && e[1] == v) { it.remove(); break; }
+            }
+            if (list.isEmpty()) sInflight.remove(id);
+        }
+    }
+
+    /**
+     * 把**在途意图 + 队列**合并成一个 JSONArray，喂给 applyServer。
+     * 形状和队列条目一致：{id, delta} 或 {id, value}。
+     *
+     * applyServer 的补丁逻辑原来只看队列（«还没发出去的那些»），漏掉了
+     * «已发但还没收到响应的那些» —— 后者同样不该被服务端旧值盖掉。
+     */
+    static JSONArray pendingPlus(Context c, JSONArray queue) {
+        JSONArray all = new JSONArray();
+        synchronized (sInflight) {
+            for (java.util.Map.Entry<String, java.util.List<int[]>> e : sInflight.entrySet()) {
+                for (int[] a : e.getValue()) {
+                    try {
+                        JSONObject o = new JSONObject();
+                        o.put("id", e.getKey());
+                        if (a[1] != NO_VALUE) o.put("value", a[1]);
+                        else o.put("delta", a[0]);
+                        all.put(o);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        if (queue != null) {
+            for (int i = 0; i < queue.length(); i++) {
+                JSONObject o = queue.optJSONObject(i);
+                if (o != null) all.put(o);
+            }
+        }
+        return all;
+    }
+
     /* -------------------------------------------------------------- 同步 */
 
     /**
@@ -357,19 +436,23 @@ class CounterStore {
         final Integer value = one.has("value") ? Integer.valueOf(one.optInt("value", 0)) : null;
 
         writeQueue(c, tail(q, 1));   // 先摘
+        addInflight(id, delta, value);  // 记在途：请求飞行期间 applyServer 能看到它
 
         WidgetApi.counterWrite(c, id, delta, value, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                // 队列此刻已经是「剩下的」，直接喂给 applyServer 就是它对
-                // «还有哪些意图没发出去» 的完整视角
-                applyServer(c, body.optJSONArray("counters"), queue(c));
+                // 先清在途：这条的响应已经到了，服务端值已经包含这次改动，
+                // 再把在途的 delta 加上去就会重复算
+                removeInflight(id, delta, value);
+                // pendingPlus = 还在飞的其它意图 + 队列里还没发的
+                applyServer(c, body.optJSONArray("counters"), pendingPlus(c, queue(c)));
                 WidgetBridge.notifyCountersChanged();   // App 开着就让它立刻对齐
                 next(c);
             }
 
             @Override
             public void onFail(String why) {
+                removeInflight(id, delta, value);   // 没发成功，清在途
                 requeueFront(c, one);
                 Log.w(TAG, "补发失败（" + why + "），还有 " + queue(c).length() + " 条留在队列里");
                 finish();
@@ -413,7 +496,9 @@ class CounterStore {
         WidgetApi.counters(c, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                applyServer(c, body.optJSONArray("counters"), queue(c));
+                // pendingPlus 把在途意图也算进去：如果请求刚发出还没回来，
+                // 服务端返回的可能是旧值 —— 在途的 +1 补回来，不会跳回旧数字
+                applyServer(c, body.optJSONArray("counters"), pendingPlus(c, queue(c)));
                 // 另一台设备（或网页版）改过时，App 那边也该知道
                 WidgetBridge.notifyCountersChanged();
                 if (done != null) done.run();
