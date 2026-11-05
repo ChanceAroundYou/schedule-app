@@ -35,15 +35,19 @@
  * 用递增序号丢弃过期响应；`load` 也占一个号，避免「刷新途中点了个 +」
  * 被旧快照盖回去。
  *
- * ## seq 够不够（2026-11-05 补：在途保留本地值）
+ * ## seq 够不够（2026-11-05 二修：写响应不 apply）
  * `seq` 只保证「只认最后发出的请求的响应」，但 HTTP 不保证请求按发出顺序
- * 被服务端处理 —— 连点 10 下（5→15），最后一个请求可能先被处理（值才 5→6），
- * 它的响应通过 seq 检查，用中间值 6 覆盖了本地乐观值 15，界面先跳到 6，
- * 轮询读到最终值 15 又跳回来 —— 就是用户报的「跳到 7、又跳到 15」。
+ * 被服务端处理。连点 10 下（5→15），最后一个请求可能先到达服务端（值才
+ * 5→6），它的响应通过 seq 检查。如果此时其他响应都已回来（inflight=0），
+ * merge 直接用中间值 6 覆盖了本地乐观值 15 → 界面跳到 6 → load 读到 15
+ * 又跳回来 —— 就是用户报的「跳回 5、又跳到 15」。
  *
- * 修法与桌面 CounterStore.sInflight 完全对齐：维护 `inflight`（id → 在飞数），
- * 响应回来时若该 id 还有在途请求，**保留本地乐观值**（不覆盖）；全回来后
- * 用服务端真值兜底（服务端夹了负数为 0 之类的也能自愈）。
+ * 一修加了 inflight 登记表，但漏洞在于：通过 seq 检查的响应可能是最后一个
+ * 回来的（inflight 已被其他响应减到 0），merge 此时直接用服务端值。
+ *
+ * 二修根除：**写响应永远不 apply 服务端值**（可能是中间值）。只在所有写请求
+ * 都回来（writes=0）时触发一次 load —— load 读到的一定是服务端最终值
+ * （写请求都已处理完），用它来对齐。乐观值在 load 响应回来前一直守住。
  *
  * ## 为什么不每次 setList
  * 轮询每 5s 一次，若无条件 setList 就是每 5s 一次整页重渲染（还带着位图化的
@@ -223,7 +227,18 @@ export function useCounters() {
     };
   }, [load]);
 
-  /** 先改界面、再发请求；成功用服务端返回覆盖，失败回滚成服务端最新值。 */
+  /**
+   * 先改界面、再发请求。
+   *
+   * ⚠️ **写响应的值不直接 apply。** HTTP 不保证请求按发出顺序被服务端处理，
+   * 最后一个发出的请求可能先到达服务端（值才 5→6），它的响应通过 seq 检查，
+   * 但值是中间值。如果此时其他响应都已回来（inflight=0），merge 会直接用
+   * 这个中间值覆盖本地乐观值 → 界面从 15 跳到 6 → load 读到 15 又跳回来。
+   *
+   * 修法（2026-11-05 二修）：写响应只确认成功 + 推桌面缓存（用本地值），
+   * **不 apply 服务端值**。所有写请求都回来（writes=0）时触发一次 load，
+   * load 读到的一定是服务端最终值（写请求都已处理完），用它来对齐。
+   */
   const send = useCallback((id: string, patch: CounterPatch, optimistic?: (c: Counter) => Counter) => {
     if (optimistic) {
       const next = lastList.current.map((c) => (c.id === id ? optimistic(c) : c));
@@ -234,24 +249,28 @@ export function useCounters() {
     writes.current++;
     inflight.current.set(id, (inflight.current.get(id) || 0) + 1);  // 在途 +1
     patchCounter(id, patch)
-      .then((next) => {
+      .then(() => {
         writes.current--;
-        decInflight(id);                  // 在途 -1（必须在 seq 丢弃之前减，否则永远不清零）
+        decInflight(id);
+        // 所有写请求都回来了 → 触发 load 读服务端最终值对齐
+        // （不看 seq：即使这个响应过期，writes 归 0 也要 load）
+        if (writes.current === 0) void load(true);
         if (mine !== seq.current) return;   // 后面还有更新的写，这次结果作废
         everLoaded.current = true;
-        const merged = merge(next);         // 还有在途 → 保留本地乐观值
-        if (apply(merged)) void pushCounterCache(merged);
+        // 不 apply 服务端值——可能是中间值（请求乱序处理）
+        // 只推桌面缓存（用本地乐观值），桌面等 load 对齐后自然更新
+        void pushCounterCache(lastList.current);
         setErr('');
         scheduleWidgetRefresh();            // 桌面那块跟着变
       })
       .catch((e: unknown) => {
         writes.current--;
         decInflight(id);
+        if (writes.current === 0) void load(true);  // 回滚：以服务端为准
         if (mine !== seq.current) return;   // 过期请求的失败不该盖住更新的结果
         setErr(e instanceof Error ? e.message : '没存上');
-        void load(true);  // 回滚：以服务端为准
       });
-  }, [apply, load, merge, scheduleWidgetRefresh, decInflight]);
+  }, [load, scheduleWidgetRefresh, decInflight]);
 
   /** 把正在编辑的那一格提交掉（失焦 / 回车）。Escape 直接 setEdit(null) 不进来。 */
   const commit = useCallback(() => {
