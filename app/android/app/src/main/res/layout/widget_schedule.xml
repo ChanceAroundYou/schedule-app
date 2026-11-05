@@ -219,12 +219,16 @@
             android:background="#C6DCCF"
             android:text="" />
 
-        <!-- 底行：刻度列 + 竖分割线 + 主体 -->
+        <!-- 底行：刻度列 + 竖分割线 + 主体。
+             paddingBottom=4dp（2026-11-05）：容器圆角 20dp，原来底行内容
+             顶到圆弧上（刻度列「20」卡在左下圆弧）。加 4dp 让刻度列和主体
+             都往上缩，避开左下/右下圆弧区。 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingBottom="4dp">
 
             <!-- 刻度列。2026-10-14：16 → 20dp —— 给数字留出「中心落在
                  卡片左边缘与分割线中点」所需的宽度（见 widget_tl_hour）。

@@ -81,7 +81,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="2dp"
-        android:background="#E7F3EA"
+        android:background="@drawable/widget_habit_list_bg"
         android:divider="@null"
         android:dividerHeight="0dp"
         android:padding="2dp"
