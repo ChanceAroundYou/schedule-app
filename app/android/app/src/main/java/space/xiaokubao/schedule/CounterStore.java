@@ -144,7 +144,8 @@ class CounterStore {
      *
      * @param stillQueued 此刻**还没确认完成的意图** —— 包括队列里没发的
      *                    **和在途（已发但还没收到响应）**的。调用方应传
-     *                    {@link #pendingPlus}，不要再直接传 queue(c)。
+     *                    **和在途（已发但还没收到响应）**的。调用方直接传 queue(c)；
+     *                    在途判断由 applyServer 内部查 sInflight 完成。
      */
     static void applyServer(Context c, JSONArray counters, JSONArray stillQueued) {
         if (counters == null) return;
@@ -166,6 +167,15 @@ class CounterStore {
             }
         }
 
+        // 在途 id 集合：这些 id 的请求已发出但还没收到响应。
+        // 本地值已被 localDelta/localSet 改过，**直接保留本地值**，
+        // 不叠加 delta（否则服务端可能已经处理完 → 再加一次 = 多算）。
+        // 等在途响应回来时 removeInflight + applyServer 用服务端新值覆盖。
+        java.util.Set<String> inflightIds;
+        synchronized (sInflight) {
+            inflightIds = new java.util.HashSet<>(sInflight.keySet());
+        }
+
         List<Item> local = load(c);
         List<Item> next = new ArrayList<>();
         for (int i = 0; i < counters.length(); i++) {
@@ -179,6 +189,11 @@ class CounterStore {
             int v;
             if (pendingSet.contains(id)) {
                 // 用户手输了一个绝对值还没发出去 —— 本地那个才是他想看到的
+                Item mine = find(local, id);
+                v = mine != null ? mine.value : clamp(serverValue);
+            } else if (inflightIds.contains(id)) {
+                // 在途：本地已被 localDelta 改过，直接保留，等服务端响应再覆盖。
+                // 不叠加 delta —— 服务端可能已经处理完了，再叠就是多算。
                 Item mine = find(local, id);
                 v = mine != null ? mine.value : clamp(serverValue);
             } else {
@@ -277,8 +292,14 @@ class CounterStore {
      * App 推刷新），它会拿服务端**还没处理完的旧值**盖掉本地的新值 ——
      * 用户看到的就是「+1 之后两三秒又跳回去了」。
      *
-     * 把在途意图也喂给 applyServer，它就能算出
-     * 「服务端旧值 + 还在飞的 +1 = 正确值」，不再跳回。
+     * 修法：applyServer 内部查 sInflight 的 id 集合，对在途 id **直接保留
+     * 本地值**（已被 localDelta 改过），不叠加 delta、不被服务端值覆盖。
+     * 等在途响应回来时 removeInflight + applyServer 用服务端新值覆盖。
+     *
+     * ⚠️ 不能把在途 delta **叠加**到服务端值上：服务端可能已经处理完了，
+     * 再叠一次就是多算（6 + 1 = 7）。保留本地值是唯一安全的做法：
+     *   · 服务端没处理 → local(6) vs server(5) → 保留 6 ✓
+     *   · 服务端已处理 → local(6) vs server(6) → 保留 6 ✓（一样）
      *
      * 进程死了在途表就丢了 —— 可接受：队列里的还在盘上，`resync` 会重发；
      * 如果请求其实到了服务端，`pull` 拿到的是新值，不丢。
@@ -310,37 +331,6 @@ class CounterStore {
             }
             if (list.isEmpty()) sInflight.remove(id);
         }
-    }
-
-    /**
-     * 把**在途意图 + 队列**合并成一个 JSONArray，喂给 applyServer。
-     * 形状和队列条目一致：{id, delta} 或 {id, value}。
-     *
-     * applyServer 的补丁逻辑原来只看队列（«还没发出去的那些»），漏掉了
-     * «已发但还没收到响应的那些» —— 后者同样不该被服务端旧值盖掉。
-     */
-    static JSONArray pendingPlus(Context c, JSONArray queue) {
-        JSONArray all = new JSONArray();
-        synchronized (sInflight) {
-            for (java.util.Map.Entry<String, java.util.List<int[]>> e : sInflight.entrySet()) {
-                for (int[] a : e.getValue()) {
-                    try {
-                        JSONObject o = new JSONObject();
-                        o.put("id", e.getKey());
-                        if (a[1] != NO_VALUE) o.put("value", a[1]);
-                        else o.put("delta", a[0]);
-                        all.put(o);
-                    } catch (Exception ignored) {}
-                }
-            }
-        }
-        if (queue != null) {
-            for (int i = 0; i < queue.length(); i++) {
-                JSONObject o = queue.optJSONObject(i);
-                if (o != null) all.put(o);
-            }
-        }
-        return all;
     }
 
     /* -------------------------------------------------------------- 同步 */
@@ -441,11 +431,10 @@ class CounterStore {
         WidgetApi.counterWrite(c, id, delta, value, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                // 先清在途：这条的响应已经到了，服务端值已经包含这次改动，
-                // 再把在途的 delta 加上去就会重复算
+                // 先清在途：这条的响应已经到了，服务端值已经包含这次改动
                 removeInflight(id, delta, value);
-                // pendingPlus = 还在飞的其它意图 + 队列里还没发的
-                applyServer(c, body.optJSONArray("counters"), pendingPlus(c, queue(c)));
+                // applyServer 内部会查 sInflight 剩下的在途 id，保留它们的本地值
+                applyServer(c, body.optJSONArray("counters"), queue(c));
                 WidgetBridge.notifyCountersChanged();   // App 开着就让它立刻对齐
                 next(c);
             }
@@ -496,9 +485,9 @@ class CounterStore {
         WidgetApi.counters(c, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
-                // pendingPlus 把在途意图也算进去：如果请求刚发出还没回来，
-                // 服务端返回的可能是旧值 —— 在途的 +1 补回来，不会跳回旧数字
-                applyServer(c, body.optJSONArray("counters"), pendingPlus(c, queue(c)));
+                // applyServer 内部查 sInflight：在途 id 保留本地值，
+                // 不被服务端旧值盖掉（这就是修「+1 跳回」的关键）
+                applyServer(c, body.optJSONArray("counters"), queue(c));
                 // 另一台设备（或网页版）改过时，App 那边也该知道
                 WidgetBridge.notifyCountersChanged();
                 if (done != null) done.run();
