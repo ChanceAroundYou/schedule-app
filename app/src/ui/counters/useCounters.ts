@@ -35,6 +35,16 @@
  * 用递增序号丢弃过期响应；`load` 也占一个号，避免「刷新途中点了个 +」
  * 被旧快照盖回去。
  *
+ * ## seq 够不够（2026-11-05 补：在途保留本地值）
+ * `seq` 只保证「只认最后发出的请求的响应」，但 HTTP 不保证请求按发出顺序
+ * 被服务端处理 —— 连点 10 下（5→15），最后一个请求可能先被处理（值才 5→6），
+ * 它的响应通过 seq 检查，用中间值 6 覆盖了本地乐观值 15，界面先跳到 6，
+ * 轮询读到最终值 15 又跳回来 —— 就是用户报的「跳到 7、又跳到 15」。
+ *
+ * 修法与桌面 CounterStore.sInflight 完全对齐：维护 `inflight`（id → 在飞数），
+ * 响应回来时若该 id 还有在途请求，**保留本地乐观值**（不覆盖）；全回来后
+ * 用服务端真值兜底（服务端夹了负数为 0 之类的也能自愈）。
+ *
  * ## 为什么不每次 setList
  * 轮询每 5s 一次，若无条件 setList 就是每 5s 一次整页重渲染（还带着位图化的
  * 按钮）。所以先比对，值没变就返回原数组，React 会跳过渲染。
@@ -105,6 +115,35 @@ export function useCounters() {
     return changed;
   }, []);
 
+  /** 在途登记：id → 在飞请求数。响应回来前，该 id 保留本地乐观值，不被服务端中间值覆盖 */
+  const inflight = useRef<Map<string, number>>(new Map());
+
+  const decInflight = useCallback((id: string) => {
+    const cnt = (inflight.current.get(id) || 0) - 1;
+    if (cnt <= 0) inflight.current.delete(id);
+    else inflight.current.set(id, cnt);
+  }, []);
+
+  /**
+   * 把服务端快照与本地合并：在途 id 保留本地值，其余用服务端。
+   *
+   * 连点时多个请求在飞，HTTP 不保证按发出顺序被服务端处理 —— 最后一个请求可能
+   * 先返回，它的响应里是那一刻的中间值（比如 6，而非最终 15）。`seq` 只认
+   * 最后发出的响应，但那个值可能是中间值 → 覆盖了本地乐观值。在途登记保证：
+   * 只要还有请求在飞，该 id 就守住本地值；全回来后用服务端真值兜底。
+   * 与桌面 CounterStore.sInflight 完全对齐（2026-11-05 修 App 内连点跳动）。
+   */
+  const merge = useCallback((server: Counter[]): Counter[] => {
+    const inf = inflight.current;
+    if (inf.size === 0) return server;
+    const local = lastList.current;
+    return server.map((s) => {
+      if (!inf.has(s.id)) return s;
+      const mine = local.find((c) => c.id === s.id);
+      return mine ? { ...s, value: mine.value } : s;
+    });
+  }, []);
+
   /* 写完让桌面组件跟着变。页面上改了数字，桌面那块不该等下次点击才更新。
      合并一小会儿：连点五下只发一次刷新。 */
   const widgetTimer = useRef<number | null>(null);
@@ -128,9 +167,10 @@ export function useCounters() {
       const next = await fetchCounters();
       if (mine !== seq.current) return;   // 期间又发了更新的请求，这份作废
       everLoaded.current = true;
-      if (apply(next)) {
+      const merged = merge(next);         // 在途 id 保留本地值，防中间值覆盖
+      if (apply(merged)) {
         // 数字真的变了才推桌面缓存：不然每 5s 一次轮询都会写一遍
-        void pushCounterCache(next);
+        void pushCounterCache(merged);
       }
       setErr('');
     } catch (e) {
@@ -138,7 +178,7 @@ export function useCounters() {
       if (quiet && everLoaded.current) return;
       setErr(e instanceof Error ? e.message : '读不到计数器');
     }
-  }, [apply]);
+  }, [apply, merge]);
 
   /* 进页面拉一次；之后四路信号对齐：回到窗口、切回标签页、App 回前台、
      原生侧写完的推送。最后加一路兜底轮询。 */
@@ -192,22 +232,26 @@ export function useCounters() {
     }
     const mine = ++seq.current;
     writes.current++;
+    inflight.current.set(id, (inflight.current.get(id) || 0) + 1);  // 在途 +1
     patchCounter(id, patch)
       .then((next) => {
         writes.current--;
+        decInflight(id);                  // 在途 -1（必须在 seq 丢弃之前减，否则永远不清零）
         if (mine !== seq.current) return;   // 后面还有更新的写，这次结果作废
         everLoaded.current = true;
-        if (apply(next)) void pushCounterCache(next);
+        const merged = merge(next);         // 还有在途 → 保留本地乐观值
+        if (apply(merged)) void pushCounterCache(merged);
         setErr('');
         scheduleWidgetRefresh();            // 桌面那块跟着变
       })
       .catch((e: unknown) => {
         writes.current--;
+        decInflight(id);
         if (mine !== seq.current) return;   // 过期请求的失败不该盖住更新的结果
         setErr(e instanceof Error ? e.message : '没存上');
         void load(true);  // 回滚：以服务端为准
       });
-  }, [apply, load, scheduleWidgetRefresh]);
+  }, [apply, load, merge, scheduleWidgetRefresh, decInflight]);
 
   /** 把正在编辑的那一格提交掉（失焦 / 回车）。Escape 直接 setEdit(null) 不进来。 */
   const commit = useCallback(() => {
