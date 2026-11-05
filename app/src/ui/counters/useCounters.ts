@@ -35,19 +35,16 @@
  * 用递增序号丢弃过期响应；`load` 也占一个号，避免「刷新途中点了个 +」
  * 被旧快照盖回去。
  *
- * ## seq 够不够（2026-11-05 二修：写响应不 apply）
- * `seq` 只保证「只认最后发出的请求的响应」，但 HTTP 不保证请求按发出顺序
- * 被服务端处理。连点 10 下（5→15），最后一个请求可能先到达服务端（值才
- * 5→6），它的响应通过 seq 检查。如果此时其他响应都已回来（inflight=0），
- * merge 直接用中间值 6 覆盖了本地乐观值 15 → 界面跳到 6 → load 读到 15
- * 又跳回来 —— 就是用户报的「跳回 5、又跳到 15」。
+ * ## 三层保护（2026-11-05 三修：写冷却期）
+ * 一修加了 inflight 登记表，二修让写响应不 apply 服务端值。但用户仍报
+ * 「刚开始点时闪一下6再回到5」—— load 的 GET 在移动网络下可能比 POST
+ * 先到达服务端（不同网络路径），读到写操作之前的旧值，覆盖了本地乐观值。
  *
- * 一修加了 inflight 登记表，但漏洞在于：通过 seq 检查的响应可能是最后一个
- * 回来的（inflight 已被其他响应减到 0），merge 此时直接用服务端值。
- *
- * 二修根除：**写响应永远不 apply 服务端值**（可能是中间值）。只在所有写请求
- * 都回来（writes=0）时触发一次 load —— load 读到的一定是服务端最终值
- * （写请求都已处理完），用它来对齐。乐观值在 load 响应回来前一直守住。
+ * 三修加**写冷却期**：send 时记时间戳，merge 在 2 秒内对该 id 保留本地值。
+ * 三层叠加：
+ *   1. inflight > 0 → 请求在飞，服务端值可能是中间值 → 保留本地
+ *   2. 写冷却期内（2s）→ load 的 GET 可能读到旧值 → 保留本地
+ *   3. 否则 → 用服务端值（此时服务端一定已处理完写请求）
  *
  * ## 为什么不每次 setList
  * 轮询每 5s 一次，若无条件 setList 就是每 5s 一次整页重渲染（还带着位图化的
@@ -72,6 +69,9 @@ const POLL_MS = 5000;
 
 /** 写完通知桌面的合并窗口：连点五下只刷一次组件 */
 const WIDGET_REFRESH_MS = 250;
+
+/** 写冷却期：send 后 2 秒内，load 的 merge 对该 id 保留本地值 */
+const WRITE_COOLDOWN_MS = 2000;
 
 /** 原生侧派发的事件名。**改这里必须同步改 WidgetBridge.java** */
 const NATIVE_EVENT = 'schedule:counters-changed';
@@ -122,6 +122,10 @@ export function useCounters() {
   /** 在途登记：id → 在飞请求数。响应回来前，该 id 保留本地乐观值，不被服务端中间值覆盖 */
   const inflight = useRef<Map<string, number>>(new Map());
 
+  /** 最近一次写操作的时间戳（id → ms）。冷却期内 load 读到的服务端值可能过期
+   *  （移动网络下 GET 可能比 POST 先到达服务端），对该 id 保留本地值。 */
+  const lastWriteAt = useRef<Map<string, number>>(new Map());
+
   const decInflight = useCallback((id: string) => {
     const cnt = (inflight.current.get(id) || 0) - 1;
     if (cnt <= 0) inflight.current.delete(id);
@@ -129,27 +133,30 @@ export function useCounters() {
   }, []);
 
   /**
-   * 把服务端快照与本地合并：在途 id 保留本地值，其余用服务端。
+   * 把服务端快照与本地合并：在途 id 或写冷却期内的 id 保留本地值，其余用服务端。
    *
-   * 连点时多个请求在飞，HTTP 不保证按发出顺序被服务端处理 —— 最后一个请求可能
-   * 先返回，它的响应里是那一刻的中间值（比如 6，而非最终 15）。`seq` 只认
-   * 最后发出的响应，但那个值可能是中间值 → 覆盖了本地乐观值。在途登记保证：
-   * 只要还有请求在飞，该 id 就守住本地值；全回来后用服务端真值兜底。
-   * 与桌面 CounterStore.sInflight 完全对齐（2026-11-05 修 App 内连点跳动）。
+   * 三层保护（2026-11-05 三修）：
+   *   1. inflight > 0：请求在飞，服务端值可能是中间值 → 保留本地
+   *   2. 写冷却期内（2s）：load 的 GET 可能比 POST 先到达服务端 → 保留本地
+   *   3. 否则：用服务端值（此时服务端一定已处理完写请求）
    */
   const merge = useCallback((server: Counter[]): Counter[] => {
     const inf = inflight.current;
-    if (inf.size === 0) return server;
+    const now = Date.now();
+    const wcl = lastWriteAt.current;
+    if (inf.size === 0 && wcl.size === 0) return server;
     const local = lastList.current;
     return server.map((s) => {
-      if (!inf.has(s.id)) return s;
+      const inFlight = inf.has(s.id);
+      const inCooldown = (now - (wcl.get(s.id) || 0)) < WRITE_COOLDOWN_MS;
+      if (!inFlight && !inCooldown) return s;
       const mine = local.find((c) => c.id === s.id);
       return mine ? { ...s, value: mine.value } : s;
     });
   }, []);
 
   /* 写完让桌面组件跟着变。页面上改了数字，桌面那块不该等下次点击才更新。
-     合并一小会儿：连点五下只发一次刷新。 */
+     合并一小会儿：连点五下只刷一次组件。 */
   const widgetTimer = useRef<number | null>(null);
   const scheduleWidgetRefresh = useCallback(() => {
     if (widgetTimer.current != null) window.clearTimeout(widgetTimer.current);
@@ -171,7 +178,7 @@ export function useCounters() {
       const next = await fetchCounters();
       if (mine !== seq.current) return;   // 期间又发了更新的请求，这份作废
       everLoaded.current = true;
-      const merged = merge(next);         // 在途 id 保留本地值，防中间值覆盖
+      const merged = merge(next);         // 在途/冷却期内的 id 保留本地值
       if (apply(merged)) {
         // 数字真的变了才推桌面缓存：不然每 5s 一次轮询都会写一遍
         void pushCounterCache(merged);
@@ -235,9 +242,12 @@ export function useCounters() {
    * 但值是中间值。如果此时其他响应都已回来（inflight=0），merge 会直接用
    * 这个中间值覆盖本地乐观值 → 界面从 15 跳到 6 → load 读到 15 又跳回来。
    *
-   * 修法（2026-11-05 二修）：写响应只确认成功 + 推桌面缓存（用本地值），
+   * 二修（2026-11-05）：写响应只确认成功 + 推桌面缓存（用本地值），
    * **不 apply 服务端值**。所有写请求都回来（writes=0）时触发一次 load，
    * load 读到的一定是服务端最终值（写请求都已处理完），用它来对齐。
+   *
+   * 三修（2026-11-05）：加写冷却期。load 的 GET 在移动网络下可能比 POST
+   * 先到达服务端，读到旧值。merge 在 send 后 2 秒内对该 id 保留本地值。
    */
   const send = useCallback((id: string, patch: CounterPatch, optimistic?: (c: Counter) => Counter) => {
     if (optimistic) {
@@ -248,6 +258,7 @@ export function useCounters() {
     const mine = ++seq.current;
     writes.current++;
     inflight.current.set(id, (inflight.current.get(id) || 0) + 1);  // 在途 +1
+    lastWriteAt.current.set(id, Date.now());                         // 记写时间戳
     patchCounter(id, patch)
       .then(() => {
         writes.current--;
