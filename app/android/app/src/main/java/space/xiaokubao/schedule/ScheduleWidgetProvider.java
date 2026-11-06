@@ -727,11 +727,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
     private static int[] axisPlan(int lo, int hi, int timelineDp, int axisEndDp) {
         int bands = Math.max(1, hi - lo);
         float dph = Math.max(1, timelineDp - axisEndDp) / (float) bands;
-        // 行高很小 → 数字会叠在一起，才隔 2~3 小时写一个。
-        // 2026-11-06（用户：要每个小时都写）：门槛从 16dp 降到 10dp。
-        // 一行 8sp 数字（k=0.85 时 6.8sp）实际占高约 8dp，格子 ≥10dp 就
-        // 放得下、还留 2dp 空隙 —— 用户那个组件每格 12.8dp，直接全写。
-        int step = dph < 6.5f ? 3 : (dph < 10f ? 2 : 1);
+        // 一格放不放得下「一行数字」：轴尾那条的高度 axisEndDp 就等于一行字的
+        // 高度（AXIS_END_DP 当初就是按「够放一行」量出来的），再留 1dp 空隙。
+        // 用 axisEndDp 当门槛的好处：它本身随字号档位缩放，字号调大时门槛跟着涨，
+        // 不会出现「字大了还硬塞每小时一个」。
+        float need = axisEndDp + 1f;
+        int step = dph < need * 0.65f ? 3 : (dph < need ? 2 : 1);
         return new int[]{bands, step};
     }
 
@@ -762,7 +763,10 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         if (r <= inset) return 4;
         int guard = r - (int) Math.round(
                 Math.sqrt((double) r * r - (double) (r - inset) * (r - inset)));
-        return Math.min(30, guard + 2);             // +2dp 余量，抗 launcher 遮罩抖动
+        // 下限 8dp：系统 dimen 给的是 AOSP 那套（有的 ROM 只有 16dp），而
+        // ColorOS 实际套在组件外面的遮罩明显更大 —— 算出来偏小时兜个底，
+        // 宁可多留一条窄空带，也不能再让最底下的数字被削。
+        return Math.min(30, Math.max(8, guard + 2));
     }
 
     /**
