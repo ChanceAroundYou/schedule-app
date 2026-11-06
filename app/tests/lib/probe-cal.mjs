@@ -129,6 +129,9 @@ export async function ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, pullSy
 export async function dropProbeCal({ apiCall }, calId) {
   if (!calId) return;
   const r = await apiCall('DELETE', `/api/cals/${calId}`);
+  /* 404 = 这个集已经没了（月视图那一节自己删过了，`finally` 只是兜底再删一次）。
+     那不是"没删掉"，别再吓人 —— 上一轮输出里就有一条假的「没删掉」告警。 */
   if (r.status === 200) console.log('       收尾：探针专用集已删除（所有端一起消失）');
+  else if (r.status === 404) console.log('       收尾：探针专用集已经不在了（前面某一步已删）');
   else console.log('       ⚠️ 收尾：探针专用集没删掉（status ' + r.status + '），下次开局会清');
 }
