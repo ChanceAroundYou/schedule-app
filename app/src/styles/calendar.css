@@ -946,10 +946,17 @@ body.is-drag-range { user-select: none; }
 /* 格子的 min-height 也收回 0（宽窄通用）：行高由 1fr 均分说了算，104px 的下限
    会让短窗口下网格超出容器、被 .month-grid 的 overflow:hidden 裁掉最后一行。 */
 .content-month .month-cell { min-height: 0; }
-.month-head { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
+.month-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-bottom: 6px; }
 .month-head-cell { text-align: center; font-size: var(--fs-meta); color: var(--text-2); padding: 4px 0; letter-spacing: .5px; }
+/* ⚠️ 列宽必须 `minmax(0, 1fr)`，不能写 `1fr`（2026-11-06 用户报「周三这一列被
+   严重压缩」）。裸 `1fr` 的最小值是 **auto** —— 也就是 `min-content`：格子里
+   只要有一条长任务名（或一串长单词），那一列就会被内容**撑宽**，其余 6 列
+   被挤到只剩几十像素。用户截图里周三 559px、其余 71px 就是这么来的。
+   `minmax(0, 1fr)` 把最小尺寸钉回 0，7 列在任何宽度下**严格均分**，
+   溢出的文字由 `.pill-title` 的 ellipsis 自己收。表头那行同理（同一个错要一起改，
+   否则表头与网格对不齐）。 */
 .month-grid {
-  display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(104px, auto);
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(104px, auto);
   gap: 1px; background: var(--border);
   /* 外框圆角比日/周的大卡小一档（2026-10-19 用户报「月视图太圆」）：
      12px 的一整块看着像个大药丸，9px 收住了仍不失圆润。 */

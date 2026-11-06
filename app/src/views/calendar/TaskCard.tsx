@@ -611,7 +611,7 @@ export function TimedCard({
  * 不走 `TaskCard` 主体那套 `.ev-body`：那是纵向两行的卡片语言，月格是单行文字行，
  * 硬套会把 `text-overflow: clip`（窄屏多看一个字）与 45px 整字宽量坏。
  */
-export function CompactCard({ t, moreSuffix, moreJumpDay, calColor, showRepeatMark }: {
+export function CompactCard({ t, moreSuffix, moreJumpDay, calColor, creator, showRepeatMark }: {
   t: Task; moreSuffix?: number;
   /**
    * 只给尾巴上的 `+N` 用：点它 → 跳到那一天的**日视图**（"还有 N 条，去日视图看全"）。
@@ -619,8 +619,11 @@ export function CompactCard({ t, moreSuffix, moreJumpDay, calColor, showRepeatMa
    * （2026-10-26 用户改；之前整条胶囊跳日视图，是 2026-10-19 的旧口径）。
    */
   moreJumpDay?: string;
-  /** 月视图也着色（集颜色不分宽度，用户 2026-10-28）；来源 tag 不在月视图画 */
+  /** 月视图也着色（集颜色不分宽度，用户 2026-10-28） */
   calColor?: CalColorKey;
+  /** 来源 tag（2026-11-06 起月视图也画）。胶囊只有一行高，这枚圈绝对定位在
+     右上角、不占文字位 —— 与卡片同一条规矩，别改成流内元素。 */
+  creator?: { initial: string; title: string } | null;
   /** 循环角标开关（月视图格子那张）。视图层从 `state.ui` 取，别在这里读 store */
   showRepeatMark: boolean;
 }) {
@@ -643,6 +646,7 @@ export function CompactCard({ t, moreSuffix, moreJumpDay, calColor, showRepeatMa
           月视图永远不显示）：格子里那一行只有勾选圈 + 任务名（窄屏连圈都藏）。
           时间没丢 —— 挂在 `title` 气泡上，点开还是全的。 */}
       <span className="pill-title">{t.title}</span>
+      {creator && <CreatorTag initial={creator.initial} title={creator.title} />}
       {showRepeatMark && <RepeatFlag t={t} corner />}
       {/* 窄屏月视图专用：这一行是格子里**最后一条可见的**，尾巴上挂 "+N" 表示
           还有 N 条没显示出来（参考图 Google 日历就是「公司+2」这样）。

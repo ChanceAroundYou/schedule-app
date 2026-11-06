@@ -96,13 +96,10 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch, undoneCursor = false }: {
+export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   state: LocalState; narrow: boolean;
   searchOpen: boolean; setSearchOpen: (v: boolean) => void;
   onSearch: (kw: string) => void;
-  /** 日视图那一天的标题下面要不要点一颗「还有没做完的」小圆点（判据在 Workbench
-   *  算好传进来 —— 那里同时有全量与按集过滤的两份 state，顶栏只有全量那份） */
-  undoneCursor?: boolean;
 }) {
   const ui = state.ui;
   const online = useOnline();
@@ -155,15 +152,10 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch, und
     <header className="topbar">
       <div className="topbar-left">
         {title && (
-          <h1 className="view-title" title={undoneCursor ? '这天还有没做完的' : undefined}>
-            {title}
-            {/* 「这天还有没做完的」（2026-11-06 用户：电脑端 / 手机端 / 桌面小组件统一）。
-                日视图没有自己的日期头 —— 屏幕上唯一的「哪天」就是这一行标题，
-                所以这一端只能落在标题正下方。**绝对定位**：不撑高标题、
-                不推顶栏（顶栏不许加 position/sticky/z-index，见文件头注释；
-                给标题自己加 position:relative 是安全的）。 */}
-            {undoneCursor && <i className="vt-dot" aria-hidden="true" />}
-          </h1>
+          /* 日视图标题下**不再画**「这天还有没做完的」小圆点（2026-11-06 用户：
+             「日视图下不需要小圆点」）。周视图 / 三天视图的日期头、月视图格子、
+             桌面小组件照旧；日视图这一天本来就只有它自己，圆点全亮等于没信息。 */
+          <h1 className="view-title">{title}</h1>
         )}
         {!narrow && !!range && <span className="date-range">{range}</span>}
       </div>

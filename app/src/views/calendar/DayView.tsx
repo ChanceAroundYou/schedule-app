@@ -31,7 +31,7 @@ import {
   coverWindow, dayTimeline, minToPct, pctRange, spanOf, untimedBlanks, untimedRowPx, windowOf,
 } from '../../domain/layout.ts';
 import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
-import { colorOf } from '../../domain/people.ts';
+import { colorOf, creatorOf } from '../../domain/people.ts';
 import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
@@ -109,6 +109,9 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
    *  只是被键盘一顶、界面上看不出变化），用户明确要求换掉 —— 空白行本身就是
    *  最自然的入口，而且它走的还是「点区域空白处开草稿」那条老路。 */
   const narrow = isNarrowNow();
+  /* 来源 tag：与周视图**同一口径**（2026-11-06 用户要求所有视图都显示）。
+     宽屏才画 —— 手机上卡片整宽也就三百来像素，圈会和标题抢字。 */
+  const tag = !narrow && state.ui.showCreatorTag;
   const cols = narrow ? 1 : 3;
   /* **一条都不截断**（2026-10-22 用户：要全部显示，不要「还有 N 个」）。
      区域高度由 CSS 的 max-height 兜住，超出在那区里自己滚 —— 时间轴高度不受影响。 */
@@ -128,6 +131,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
             {shown.map((t) => (
               <UntimedCard key={t.id} t={t} title={t.title} calColor={colorOf(state.cals, t.calId)}
+                creator={tag ? creatorOf(state.users, t.createdBy, state.meId) : null}
                 showRepeatMark={state.ui.showRepeatMark} />
             ))}
             {/* 点全天区任何一个空位 → 它就长在这一格里（未定时 → 不落时间） */}
@@ -197,6 +201,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
                 {events.map((e) => (
                   <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH}
                     calColor={colorOf(state.cals, e.item.calId)}
+                    creator={tag ? creatorOf(state.users, e.item.createdBy, state.meId) : null}
                     showRepeatMark={state.ui.showRepeatMark} />
                 ))}
               </div>

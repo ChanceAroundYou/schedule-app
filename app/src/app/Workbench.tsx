@@ -23,7 +23,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PublicUser } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { undoneDates } from '../domain/model.ts';
 import * as store from '../data/store.ts';
 import * as engine from '../sync/engine.ts';
 import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset } from '../ui/hooks.ts';
@@ -266,11 +265,6 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
               searchOpen={searchOpen}
               setSearchOpen={setSearchOpen}
               onSearch={onSearch}
-              /* 日视图没有自己的日期头，「这天还有没做完的」只能落在标题下方。
-                 判据用 `scoped`（按侧栏勾选过滤的那份）—— 和周 / 3 日视图
-                 日期头那几颗点是同一份 state，同一天在两个视图里不会一个亮一个不亮。 */
-              undoneCursor={state.ui.nav === 'calendar' && state.ui.view === 'day'
-                && undoneDates(scoped).has(state.ui.cursor)}
             />
             {state.ui.nav === 'calendar' && (
               /* 传 `scoped`：这个副header 里的「找日期」面板那本小月历要画的
