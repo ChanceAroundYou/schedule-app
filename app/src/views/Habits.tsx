@@ -21,10 +21,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Flame, Plus, X } from 'lucide-react';
-import type { LocalState } from '../domain/types.ts';
+import type { Habit, LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
-import { habitStreak, bucketsOf, groupTodayCount, UNGROUPED } from '../domain/model.ts';
-import { CheckBtn, Empty, HabitHeat, Caret } from './parts.tsx';
+import { habitStreak, habitBestStreak, habitDaySummary, bucketsOf, groupTodayCount, UNGROUPED } from '../domain/model.ts';
+import { CheckBtn, Empty, HabitHeat, HabitDayBar, Caret } from './parts.tsx';
 import { SortableGroups, type SortableGroupData } from '../ui/dndkit.tsx';
 import { Input, Btn, InlineRename, MiniIconBtn } from '../ui/kit.tsx';
 import {
@@ -35,6 +35,18 @@ export function HabitsView({ state }: { state: LocalState }) {
   const [draft, setDraft] = useState('');
   const addRef = useRef<HTMLButtonElement>(null);
   const today = D.today();
+  /**
+   * 正在看/正在打哪一天（丙方案，2026-11-06）。
+   *
+   * `ui.habitDate` 为 null 就是今天。翻到过去叫补打、翻到未来叫预打 ——
+   * 三个动作走**同一个**勾选圈、同一条写库路径（`store.toggleHabit(id, date)`），
+   * 不另造一套「补打模式」，否则规则会分叉（比如补打到底算不算连续天数）。
+   *
+   * ⚠️ 这个值每次载入都会被 normalizeUi 清回 null（见 model/ui.ts 的注释）：
+   * 昨天补完没翻回来、今天一打开还在昨天，那一勾就写进了历史，用户当场看不出。
+   */
+  const viewDate = state.ui.habitDate || today;
+  const isToday = viewDate === today;
 
   const buckets = bucketsOf(state);
   const closed = state.ui.closedGroups || [];
@@ -69,6 +81,37 @@ export function HabitsView({ state }: { state: LocalState }) {
 
   /* 一条分类都没有时不给选择器：一上来只有「未分类」一项，那个下拉是纯噪音 */
   const pickable = groupCount > 0;
+
+  /* 汇总口径跨**所有**打卡项（不分分类）：用户想看的是「今天到底清了几项」，
+     按组各报一个数字反而要在脑子里加总。 */
+  const allHabits = buckets.reduce<Habit[]>((a, b) => a.concat(b.habits), []);
+  const sum = habitDaySummary(allHabits, viewDate);
+
+  const dayHead = (
+    <>
+      <HabitDayBar
+        date={viewDate}
+        cal={state.ui.habitCal}
+        /* 月历里那根短横 = 那天打了几个。日历的密度语义在打卡页翻过来用：
+           日程页表示「这天有多少活」，这里表示「这天完成了几件」。 */
+        loadOf={(iso) => allHabits.filter((h) => h.log && h.log[iso]).length}
+      />
+      <div className="habit-sum">
+        <span className="habit-sum-i" title="所有打卡项里最长的那条当前连续">
+          <Flame size={11} className="habit-sum-flame" />
+          <b>{sum.best}</b><span className="habit-sum-t">天连续</span>
+        </span>
+        <span className="habit-sum-sep" aria-hidden="true" />
+        <span className="habit-sum-i" title="历史最长连续（断过也记得）">
+          <b>{sum.bestEver}</b><span className="habit-sum-t">天最长</span>
+        </span>
+        <span className="habit-sum-sep" aria-hidden="true" />
+        <span className="habit-sum-i" title="本月有打卡的天数 / 本月已过天数">
+          <b>{sum.month}</b><span className="habit-sum-t">/{sum.monthDays} 天 · 本月</span>
+        </span>
+      </div>
+    </>
+  );
 
   const addBar = (
     <div className="habit-add">
@@ -122,8 +165,10 @@ export function HabitsView({ state }: { state: LocalState }) {
   const renderRow = (id: string) => {
     const h = state.habits[id];
     if (!h) return null;
-    const done = !!(h.log && h.log[today]);
-    const st = habitStreak(h);
+    /* 勾的是**正在看的那天**，不是今天 —— 这就是补打/预打的全部实现 */
+    const done = !!(h.log && h.log[viewDate]);
+    const st = habitStreak(h, viewDate);
+    const best = habitBestStreak(h);
     return (
       <div
         className={'habit-row' + (done ? ' done' : '')}
@@ -131,7 +176,9 @@ export function HabitsView({ state }: { state: LocalState }) {
         data-id={h.id}
         data-kind="habit"
       >
-        <CheckBtn id={h.id} on={done} act="habit" />
+        {/* 非今天才把日期带下去：今天那条保持原来的 DOM（老的自动化断言按
+            「有 data-date 就是特殊态」来判断会踩空，所以今天干脆不带） */}
+        <CheckBtn id={h.id} on={done} act="habit" date={isToday ? undefined : viewDate} />
         <div className="habit-main">
           {/* 改名走 InlineRename（项目里所有改名同一套交互）。
               删除挪进它的操作槽第二格：这样「铅笔 + 删除」两态都是两格，
@@ -145,7 +192,7 @@ export function HabitsView({ state }: { state: LocalState }) {
                 <>
                   {h.title}
                   {st > 1 && (
-                    <span className="ci-streak" title={'连续打卡 ' + st + ' 天'}>
+                    <span className="ci-streak" title={`连续 ${st} 天 · 历史最长 ${best} 天`}>
                       <Flame size={11} style={{ verticalAlign: '-1px' }} /> {st}
                     </span>
                   )}
@@ -164,7 +211,7 @@ export function HabitsView({ state }: { state: LocalState }) {
               )}
             />
           </div>
-          <HabitHeat habit={h} />
+          <HabitHeat habit={h} date={viewDate} />
         </div>
       </div>
     );
@@ -174,6 +221,7 @@ export function HabitsView({ state }: { state: LocalState }) {
   if (flat) {
     return (
       <div className="habits-view">
+        {dayHead}
         {addBar}
         <SortableGroups
           groups={[{ id: UNGROUPED, items: buckets[0].habits.map((h) => h.id) }]}
@@ -193,6 +241,7 @@ export function HabitsView({ state }: { state: LocalState }) {
 
   return (
     <div className="habits-view">
+      {dayHead}
       {addBar}
       <SortableGroups
         groups={groups}
@@ -202,7 +251,7 @@ export function HabitsView({ state }: { state: LocalState }) {
         renderHeader={(gid) => {
           const b = buckets.find((x) => x.id === gid);
           if (!b) return null;
-          const { done, total: n } = groupTodayCount(b.habits, today);
+          const { done, total: n } = groupTodayCount(b.habits, viewDate);
           const open = !closed.includes(gid);
           return (
             <div className="hgroup-head" data-closed={open ? '0' : '1'}>

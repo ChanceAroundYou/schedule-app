@@ -86,11 +86,76 @@
 .habit-title { font-size: 14px; font-weight: 550; color: var(--text); margin-bottom: 7px; }
 .habit-row.done .habit-title { color: var(--text-2); }
 .habit-heat { display: flex; gap: 4px; }
+/* 热力点从 `<i>` 换成 `<button>`（2026-11-06 丙方案），
+   所以要显式抹掉 UA 按钮的 padding / 字体 / 边框粗细，尺寸口径与原来一致。 */
 .heat-dot {
   width: 13px; height: 13px; border-radius: var(--r-xs); background: var(--panel-3);
   border: var(--border-w) solid var(--border);
+  padding: 0; flex: none; cursor: pointer; appearance: none;
 }
 .heat-dot.on { background: var(--primary); border-color: var(--primary); }
+/* 「正在看的那一天」—— 描一圈深色，翻日期时一眼能定位到终点在哪 */
+.heat-dot.cur { box-shadow: 0 0 0 2px var(--primary-soft); border-color: var(--text-3); }
+.heat-dot.cur.on { border-color: var(--primary); }
+
+/* ===== 打卡页日期条 + 汇总（丙方案，2026-11-06）=====
+   补打 / 预打全靠这一条：它既翻日期，也要**明确说出正在看哪天**。
+   打卡是写历史的动作，日期条一旦含糊，用户就会把今天的卡打到三天前。 */
+/* 限宽：日期条是**一个控件**，横跨整个 1280 宽的内容区会变成一条空洞的横杠，
+   眼睛还要在两端来回找箭头。480 以内一眼能罩住（手机上是满宽）。 */
+.habit-day { position: relative; margin-bottom: 10px; max-width: 480px; }
+.habit-day-row { display: flex; align-items: center; gap: 6px; }
+.habit-day-nav {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 36px; flex: none; padding: 0;
+  border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+  background: var(--panel); color: var(--text-2); cursor: pointer;
+}
+.habit-day-nav:hover { background: var(--panel-2); color: var(--text); }
+.habit-day-pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px;
+  height: 36px; padding: 0 12px;
+  border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+  background: var(--panel); color: var(--text); cursor: pointer;
+}
+.habit-day-pick:hover { background: var(--panel-2); }
+.habit-day-pick[aria-expanded="true"] { border-color: var(--primary); background: var(--primary-soft); }
+.habit-day-date { font-size: 14px; font-weight: 650; }
+.habit-day-wd { font-size: 12px; color: var(--text-3); }
+.habit-day-tag {
+  font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: var(--r-pill);
+  background: var(--primary-soft); color: var(--primary); font-weight: 600;
+}
+/* 离开今天 = 这一勾不进「今天」—— 换成警示色，别让它看着跟平时一样 */
+.habit-day-tag.away { background: var(--warn-soft); color: var(--warn); }
+.habit-day-back {
+  flex: none; height: 36px; padding: 0 11px;
+  border: var(--border-w) solid var(--border); border-radius: var(--r-md);
+  background: var(--panel); color: var(--text-2); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.habit-day-back:hover { background: var(--panel-2); color: var(--text); }
+/* 月历就展开在日期条正下方（行内下拉，不是全屏浮层）：
+   补打常常是「上周三」「上个月 28 号」，按箭头点二十次不现实。
+   **宽度必须给死**：`.jp-cell` 是 `1fr`，铺满的话每个格子会被拉成一根大绿条
+   （实测 800 宽时 5 号和 6 号变成两条横幅），与顶栏「找日期」那份 300px 不一致。 */
+.habit-cal {
+  position: absolute; z-index: 3; left: 0; top: calc(100% + 6px);
+  width: 320px; max-width: 100%;
+  padding: 10px 12px 12px;
+  background: var(--panel); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+}
+
+/* 汇总一行：已打 / 连续 / 本月。数字加粗、单位小一号 —— 扫一眼只看数字 */
+.habit-sum {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 2px 14px; font-size: 12px; color: var(--text-3);
+}
+.habit-sum-i { display: inline-flex; align-items: baseline; gap: 3px; }
+.habit-sum-i b { font-size: 14px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.habit-sum-t { font-size: 11.5px; color: var(--text-3); }
+.habit-sum-flame { color: var(--warn); align-self: center; }
+.habit-sum-sep { width: 1px; height: 11px; background: var(--border); }
 /* 删除按钮以前是这一行右侧的固定一列（`.habit-del`），现在搬进 `.habit-title`
    里的 InlineRename 操作槽 —— 跟改名用的铅笔同一套位子，也不再单独占一列。 */
 

@@ -2,6 +2,8 @@
  * CheckBtn.tsx —— 勾选圈（全应用唯一实现）
  */
 
+import * as D from '../../domain/date.ts';
+
 /**
  * 勾选圈 —— 全应用**唯一**的实现。
  *
@@ -19,21 +21,37 @@
  * 原先 `sm` 写死 14px、基础档写死 18px、窄屏又覆写 22px —— 三处各定各的，
  * 于是「圈比任务名还大」。以后要圈跟着变，改那一行的字号或 `--check-k`。
  */
-export function CheckBtn({ id, on, act = 'toggle' }: {
+export function CheckBtn({ id, on, act = 'toggle', date }: {
   id: string;
   on?: boolean;
   /** 'toggle' = 勾任务，'habit' = 勾打卡。决定 title 的文案 */
   act?: 'toggle' | 'habit';
+  /**
+   * 打哪一天（丙方案，2026-11-06）。不传 = 今天。
+   *
+   * 只有打卡页会传 —— 翻到别的日期时，这个圈的读屏文案和悬停提示要跟着
+   * 说「补打 11-03」而不是「今日打卡」，否则用户（尤其是读屏用户）
+   * 根本分不清这一下写进了哪天。
+   */
+  date?: string;
 }) {
-  const label = act === 'habit'
-    ? (on ? '取消今日打卡' : '今日打卡')
-    : (on ? '取消完成' : '标记完成');
+  const isHabit = act === 'habit';
+  let label: string;
+  if (isHabit) {
+    const d = date || D.today();
+    const diff = D.diffDays(d, D.today());
+    const which = diff === 0 ? '今日' : (diff < 0 ? '补打 ' : '预打 ') + D.fmtMD(d);
+    label = (on ? '取消' : '') + which + '打卡';
+  } else {
+    label = on ? '取消完成' : '标记完成';
+  }
   return (
     <button
       type="button"
       className={'check-btn' + (on ? ' on' : '')}
       data-act={act}
       data-id={id}
+      data-date={date}
       title={label}
       aria-label={label}
     />

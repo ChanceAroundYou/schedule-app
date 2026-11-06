@@ -21,6 +21,7 @@ import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
+  habitBestStreak, habitDaySummary,
   quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
   undoneLoads, undoneLoadOf, undoneDates, hasUndone, makeHabit,
 } from './model.ts';
@@ -486,8 +487,54 @@ test('打卡连续天数：今天没打则从昨天起算', () => {
   assert.equal(habitStreak(h3), 0);
 });
 
-test('某一天的负载只算没完成、有时间的任务', () => {
-  const s = stateWith([
+test('历史最长连续：断过也记得，不因为今天断了就归零', () => {
+  const t = D.today();
+  const mk = (log: Record<string, true>) => ({
+    id: 'h', calId: '', title: 'x', order: 0, groupId: null, createdAt: 0, _ts: {}, _dev: {}, log,
+  });
+  // 连续 3 天（-10/-9/-8），断两天，再连续 2 天（-5/-4），之后一直没打
+  const h = mk({
+    [D.addDays(t, -10)]: true, [D.addDays(t, -9)]: true, [D.addDays(t, -8)]: true,
+    [D.addDays(t, -5)]: true, [D.addDays(t, -4)]: true,
+  });
+  assert.equal(habitBestStreak(h), 3, '最长的那段是 3，不是最近那段 2');
+  assert.equal(habitStreak(h), 0, '当前连续已经断了');
+  assert.equal(habitBestStreak(mk({})), 0);
+
+  // 跨月的连续也要数得上（字典序遍历不能被月份边界截断）
+  const crossMonth = mk({ '2026-01-31': true, '2026-02-01': true, '2026-02-02': true });
+  assert.equal(habitBestStreak(crossMonth), 3);
+});
+
+test('打卡页汇总按「正在看的那天」算，不是按今天', () => {
+  const t = D.today();
+  const mk = (id: string, log: Record<string, true>) => ({
+    id, calId: '', title: id, order: 0, groupId: null, createdAt: 0, _ts: {}, _dev: {}, log,
+  });
+  const d3 = D.addDays(t, -3);
+  const habits = [
+    mk('a', { [d3]: true, [D.addDays(d3, -1)]: true }),
+    mk('b', { [d3]: true }),
+    mk('c', {}),
+  ];
+  const sum = habitDaySummary(habits, d3);
+  assert.equal(sum.total, 3);
+  assert.equal(sum.done, 2, '那天只打了 a、b');
+  assert.equal(sum.best, 2, 'a 的当前连续最长');
+  assert.equal(sum.bestEver, 2);
+  /* 本月口径是「有打卡的**天数**」不是「打勾次数」：a 打了 11-02、11-03 两天，
+     b 只打 11-03（同一天），去重之后是 2 天而不是 3 次。 */
+  assert.equal(sum.month, 2, '本月有打卡的天数按天去重');
+  assert.equal(sum.monthDays, D.parseISO(t).getDate(), '分母是本月到今天的总天数');
+
+  // 翻到今天：一项没打
+  const todaySum = habitDaySummary(habits, t);
+  assert.equal(todaySum.done, 0);
+  assert.equal(todaySum.best, 0, '今天没打、昨天也没打 → 连续归零');
+  assert.equal(todaySum.bestEver, 2, '历史最长不会因为断了就归零');
+});
+
+test('某一天的负载只算没完成、有时间的任务', () => {  const s = stateWith([
     makeTask({ id: 'a', title: 'a', date: T, time: '09:00', duration: 60 }),
     makeTask({ id: 'b', title: 'b', date: T, time: '11:00', duration: 30 }),
     makeTask({ id: 'c', title: 'c', date: T, time: null }),

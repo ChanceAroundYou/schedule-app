@@ -86,6 +86,8 @@ export function defaultUi(): UiPrefs {
     showRepeatMark: true,
     showNowLine: true,
     closedGroups: [],
+    habitDate: null,
+    habitCal: null,
     sel: null,
     // 就地新建的草稿格。瞬时状态，同上
     draft: null,
@@ -141,6 +143,13 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
      上，用户第一眼看见的是「上次没打完的半句话」而不是今天要做的事；
      它记的日期多半也已经过期。 */
   ui.draft = null;
+  /* 打卡页「在看哪一天」也是**瞬时状态**（2026-11-06 丙方案）。
+     这条不是洁癖，是防错写：昨天翻到 11-03 补打完就关了 App，今天再打开
+     还停在 11-03，用户以为自己打的是今天的卡，实际全写进了三天前 ——
+     这种错用户当场看不出来，第二天才发现连续天数是乱的。
+     所以每次载入一律回到今天（null）。同一次浏览里切页面不受影响。 */
+  ui.habitDate = null;
+  ui.habitCal = null;
   normalizeDayWindow(ui);
   if (!ui.cursor) ui.cursor = D.today();
   if (ui.nav === 'notes') ui.nav = 'today';

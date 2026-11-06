@@ -3,10 +3,11 @@
  */
 
 import type { ReactNode } from 'react';
-import { Flame, ChevronRight } from 'lucide-react';
+import { Flame, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { Habit, LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { bucketsOf, habitStreak } from '../../domain/model.ts';
+import { MiniCalendar } from '../../ui/overlays/MiniCalendar.tsx';
 import { CheckBtn } from './CheckBtn.tsx';
 
 /* ============================== 打卡条 ============================== */
@@ -66,15 +67,91 @@ export function CheckinStrip({ state }: { state: LocalState }) {
   );
 }
 
-/** 最近 14 天的打卡热力点 */
-export function HabitHeat({ habit: h }: { habit: Habit }) {
+/**
+ * 最近 14 天的打卡热力点（终点 = 正在看的那一天）。
+ *
+ * 2026-11-06 丙方案：从纯展示的 `<i>` 换成 `<button data-act="habit-heat">` ——
+ * 点某个点**是「去看那天」，不是「替那天打卡」**。两个动作长在同一排小方块上，
+ * 手一抖就把过去某天误打上勾，而补打是要能反悔的（再点一次才取消）。
+ * 所以这里只切日期，打勾仍然回到那一行去点勾选圈。
+ */
+export function HabitHeat({ habit: h, date }: { habit: Habit; date?: string }) {
+  const end = date || D.today();
   const out: ReactNode[] = [];
   for (let i = 13; i >= 0; i--) {
-    const d = D.addDays(D.today(), -i);
+    const d = D.addDays(end, -i);
     const on = !!(h.log && h.log[d]);
-    out.push(<i className={'heat-dot' + (on ? ' on' : '')} key={d} title={d + (on ? ' 已打卡' : '')} />);
+    out.push(
+      <button
+        type="button"
+        className={'heat-dot' + (on ? ' on' : '') + (d === end ? ' cur' : '')}
+        key={d}
+        data-act="habit-heat"
+        data-date={d}
+        title={D.fmtMD(d) + (on ? ' 已打卡' : ' 未打卡')}
+        aria-label={'看 ' + D.fmtMD(d) + (on ? '（已打卡）' : '')}
+      />,
+    );
   }
   return <div className="habit-heat">{out}</div>;
+}
+
+/**
+ * 打卡页顶部的日期条（丙方案）：‹ 11月6日 周五 ›。
+ *
+ * 「任意一天都能打卡」的入口就在这儿 —— 往回翻能补打漏的，往前翻能预打。
+ * 中间那块点开是一个小月历（复用 `MiniCalendar`），要跨月补打时不用按二十下。
+ *
+ * 日期条本身就是状态指示器：离开今天时右边多一个「回到今天」，
+ * 中间还会挂上「补打 / 预打」的小标签 —— 打卡是**写历史**的动作，
+ * 用户必须一眼看出这一下会写进哪天。
+ */
+export function HabitDayBar({ date, cal, loadOf }: {
+  date: string;
+  /** `null` = 月历收起；非空 = 展开，值是显示哪个月（月初） */
+  cal: string | null;
+  loadOf: (iso: string) => number;
+}) {
+  const today = D.today();
+  const diff = D.diffDays(date, today);
+  const tag = diff === 0 ? '今天' : diff < 0 ? '补打' : '预打';
+  return (
+    <div className="habit-day">
+      <div className="habit-day-row">
+        <button type="button" className="habit-day-nav" data-act="habit-day" data-delta="-1" aria-label="前一天">
+          <ChevronLeft size={15} />
+        </button>
+        <button
+          type="button"
+          className="habit-day-pick"
+          data-act="habit-cal"
+          aria-expanded={!!cal}
+          aria-label="选日期"
+        >
+          <span className="habit-day-date">{D.fmtSmart(date)}</span>
+          <span className="habit-day-wd">周{D.weekdayShort(date)}</span>
+          <span className={'habit-day-tag' + (diff ? ' away' : '')}>{tag}</span>
+        </button>
+        <button type="button" className="habit-day-nav" data-act="habit-day" data-delta="1" aria-label="后一天">
+          <ChevronRight size={15} />
+        </button>
+        {diff !== 0 && (
+          <button type="button" className="habit-day-back" data-act="habit-today">回到今天</button>
+        )}
+      </div>
+      {cal && (
+        <div className="habit-cal">
+          <MiniCalendar
+            month={cal}
+            value={date}
+            todayIso={today}
+            loadOf={loadOf}
+            act="habit"
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** 可折叠区块的三角。用图标不用字符，字号变化时不会错位 */

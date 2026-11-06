@@ -18,6 +18,7 @@ export {
 } from './tasks.ts';
 export {
   liveHabits, trashedHabits, habitById, habitsTodayRemaining, habitStreak,
+  habitBestStreak, habitDaySummary,
 } from './habits.ts';
 export { undoneLoads, undoneLoadOf, undoneDates, hasUndone } from './undone.ts';
 export {

@@ -76,8 +76,46 @@ async function runAct(
       return;
     }
     case 'habit':
-      store.toggleHabit(id);
+      /* 丙方案（2026-11-06）：打卡页可以把这一勾写到「正在看的那天」——
+         往回翻是补打、往前翻是预打。日视图顶部那条打卡条、桌面组件都不带
+         `data-date`，走的还是今天，行为与之前完全一致。 */
+      store.toggleHabit(id, act.dataset.date || undefined);
       return;
+    /* ---- 打卡页的日期导航（丙方案）----
+       这一组只改 `ui.habitDate` / `ui.habitCal`，一个打卡记录都不碰；
+       真正落库的只有上面那个 `case 'habit'`。分成两层是为了「先看再写」：
+       翻日期不该有任何副作用。 */
+    case 'habit-day': {
+      // 月历格子上带 data-date（直接跳那天），左右箭头带 data-delta
+      const pick = act.dataset.date;
+      if (pick) { store.setUi({ habitDate: pick, habitCal: null }); return; }
+      const cur = store.get().ui.habitDate || D.today();
+      const delta = Number(act.dataset.delta || 0) || 0;
+      store.setUi({ habitDate: D.addDays(cur, delta), habitCal: null });
+      return;
+    }
+    case 'habit-heat':
+      /* 点热力点 = **去看那天**，不是替那天打卡。两个动作长在同一排小方块上，
+         手一抖就把过去某天误打上勾，而补打是要能反悔的 —— 所以分开。 */
+      store.setUi({ habitDate: act.dataset.date || null, habitCal: null });
+      return;
+    case 'habit-today':
+      store.setUi({ habitDate: null, habitCal: null });
+      return;
+    case 'habit-cal': {
+      // 同一个按钮开/关：开着再点一次就是收起
+      const cur = store.get().ui.habitDate || D.today();
+      const open = store.get().ui.habitCal;
+      store.setUi({ habitCal: open ? null : D.monthStart(cur) });
+      return;
+    }
+    case 'habit-cal-month': {
+      const month = store.get().ui.habitCal;
+      if (!month) return;
+      const delta = Number(act.dataset.delta || 0) || 0;
+      store.setUi({ habitCal: D.addMonths(month, delta) });
+      return;
+    }
     /* ---- 多选（批量管理，2026-10-14）----
        列表顶部的「选择」进入；进入后整条工具栏换成操作按钮。
        这三个列表（逾期 / 待办箱 / 已完成）共用一套动作，靠 data-selkind
@@ -358,6 +396,15 @@ export function makeOnClick(deps: ClickDeps) {
     /* 点的是就地新建框自己 → 什么都不做。它自己处理回车 / Esc，
        而且 `data-act="draft"` 会让下面的分派把它当成「又点了一次空白」。 */
     if (el.closest('.new-cell')) return;
+
+    /* 打卡页那个月历是**行内下拉**，没有遮罩层（见 styles/lists.css 的 .habit-cal），
+       所以「点别处收起」得自己判：除了月历自己、它的开关按钮和翻月键，
+       这一下点在哪儿都把面板收起来。**不 return** —— 用户点的是打卡项，
+       那就该连打卡一起发生，不能为了收面板白丢一次点击。 */
+    if (store.get().ui.habitCal) {
+      const inside = el.closest('.habit-cal, [data-act="habit-cal"], [data-act="habit-cal-month"]');
+      if (!inside) store.setUi({ habitCal: null });
+    }
 
     /* 这一下最终有没有开出新草稿。**必须在所有分支跑完之后统一结算**：
        见 finally —— 先把新草稿算好，再一次替换掉旧的，中间不留「已卸载」

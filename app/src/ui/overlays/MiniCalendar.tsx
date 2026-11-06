@@ -10,6 +10,7 @@
  * state，也不认识「任务」「日程集」这些概念 —— 它只知道一串 ISO 日期。
  */
 
+import type { ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import * as D from '../../domain/date.ts';
 
@@ -23,26 +24,48 @@ export interface MiniCalendarProps {
   /** 那天的未完成数，画淡底 + 底部短横（口径由调用方给，两处共用同一份） */
   loadOf: (iso: string) => number;
   /** 翻月 */
-  onMonth: (iso: string) => void;
+  onMonth?: (iso: string) => void;
   /** 点某天 */
-  onPick: (iso: string) => void;
+  onPick?: (iso: string) => void;
+  /**
+   * 谁负责响应点击（2026-11-06 加）。
+   *
+   *   · `'jump'`（默认，原有行为）：格子带 `data-jump`，自己调 `onPick`。
+   *   · `'habit'`：打了卡页那套约定 —— 格子改成 `data-act="habit-day"`、
+   *     翻月键带 `data-delta`，**不挂任何回调**，全交给 `#content` 上的
+   *     点击委托。
+   *
+   * 为什么不是一律改成委托：`WhenPop` 和顶栏「找日期」都在弹层里，
+   * 它们的 `onPick` 还要顺手关面板、改光标，不是单纯写一个 state。
+   * 保留两条路，才不至于为了打卡页把另外两处一起推翻。
+   */
+  act?: 'jump' | 'habit';
 }
 
-export function MiniCalendar({ month, value, todayIso, loadOf, onMonth, onPick }: MiniCalendarProps) {
+export function MiniCalendar({ month, value, todayIso, loadOf, onMonth, onPick, act = 'jump' }: MiniCalendarProps) {
   const days = D.monthMatrix(month);
   const curMonth = D.parseISO(month).getMonth();
+  const habit = act === 'habit';
+  /** 翻月键：habit 模式下不带回调，只带 data-* 交给委托 */
+  const navBtn = (delta: number, label: string, glyph: ReactNode) => (
+    habit
+      ? (
+        <button className="jp-nav" type="button" aria-label={label} title={label}
+          data-act="habit-cal-month" data-delta={delta}>{glyph}</button>
+      )
+      : (
+        <button className="jp-nav" type="button" aria-label={label} title={label}
+          onClick={() => onMonth?.(D.addMonths(month, delta))}>{glyph}</button>
+      )
+  );
   return (
     <>
       <div className="jp-head">
-        <button className="jp-nav" type="button" aria-label="上个月" title="上个月" onClick={() => onMonth(D.addMonths(month, -1))}>
-          <ChevronLeft size={14} />
-        </button>
+        {navBtn(-1, '上个月', <ChevronLeft size={14} />)}
         <span className="jp-label">
           {D.parseISO(month).getFullYear()} 年 {D.parseISO(month).getMonth() + 1} 月
         </span>
-        <button className="jp-nav" type="button" aria-label="下个月" title="下个月" onClick={() => onMonth(D.addMonths(month, 1))}>
-          <ChevronRight size={14} />
-        </button>
+        {navBtn(1, '下个月', <ChevronRight size={14} />)}
       </div>
 
       <div className="jp-week">
@@ -63,9 +86,10 @@ export function MiniCalendar({ month, value, todayIso, loadOf, onMonth, onPick }
                 + (d === value ? ' cur' : '')
                 + (n ? ' has' + (n >= 6 ? ' lv3' : n >= 3 ? ' lv2' : '') : '')}
               key={d}
-              data-jump={d}
+              {...(habit
+                ? { 'data-act': 'habit-day', 'data-date': d }
+                : { 'data-jump': d, onClick: () => onPick?.(d) })}
               title={D.fmtFull(d) + ' · ' + (n ? n + ' 项待办' : '空闲')}
-              onClick={() => onPick(d)}
             >{D.parseISO(d).getDate()}</button>
           );
         })}
