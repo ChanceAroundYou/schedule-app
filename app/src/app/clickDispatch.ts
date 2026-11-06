@@ -40,6 +40,7 @@ import { takeTap } from './tapSnap.ts';
 import { settleDraftAndSet } from '../ui/newCell.ts';
 import { pickDate } from './pickDate.ts';
 import { DAY_H, snapToHour, yToMin } from '../domain/layout.ts';
+import { defaultAddGroup, UNGROUPED } from '../domain/model.ts';
 import { isNarrowNow } from '../ui/hooks.ts';
 import type { DraftSeed } from '../domain/types.ts';
 
@@ -195,9 +196,12 @@ async function runAct(
       const v = box?.value.trim();
       if (!v) return;   // 空着不建：别造一个没有名字的打卡项
       /* 加到哪个分类：2026-11-06 起这个选择器是 Dropdown，值在 `ui.addGroup` 里
-         （不再能 `querySelector('select').value`）。带标记却没选过 = null，
-         交给 store 落「未分类」；一条分类都还没建时也没有这个标记，同样落未分类。 */
-      const gid = form?.querySelector('[data-add-habit-group]') ? (store.get().ui.addGroup || '') : '';
+         （不再能 `querySelector('select').value`）。
+         ⚠️ 没选过 ≠ 未分类：界面上的兜底是「第一个有名字的组」，这里必须跟
+         视图用**同一个**兜底（`defaultAddGroup`），否则会出现「下拉显示工作学习、
+         实际落进未分类」—— 2026-11-06 就是这么踩的。 */
+      const hasPicker = !!form?.querySelector('[data-add-habit-group]');
+      const gid = hasPicker ? defaultAddGroup(store.get()) : UNGROUPED;
       store.addHabit(v, gid || null);
       toast('已添加打卡项：' + v);
       return;

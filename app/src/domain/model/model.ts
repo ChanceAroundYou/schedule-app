@@ -23,7 +23,7 @@ export {
 export { undoneLoads, undoneLoadOf, undoneDates, hasUndone } from './undone.ts';
 export {
   UNGROUPED, DEFAULT_GROUPS, liveGroups, groupById, habitsOfGroup, groupOfHabit,
-  bucketsOf, groupTodayCount, type HabitBucket,
+  bucketsOf, groupTodayCount, defaultAddGroup, type HabitBucket,
 } from './habitGroups.ts';
 export { counts } from './counts.ts';
 export { makeTask, makeHabit, makeHabitGroup, makeProject } from './make.ts';

@@ -47,6 +47,23 @@ export function habitsOfGroup(s: LocalState, id: string): Habit[] {
 }
 
 /**
+ * 「新加的打卡项默认加到哪一组」—— **界面和写库共用这一个口径**。
+ *
+ * `ui.addGroup`（用户在选择器里挑过的）还在、且那个分类没被删 → 用它；
+ * 否则回落到第一个有名字的组（`bucketsOf` 的顺序：有分类的在前、未分类垫底）。
+ * 一条分类都没有 → `UNGROUPED`。
+ *
+ * 为什么必须共享：2026-11-06 视图算了一遍兜底、点击委托又算了一遍，
+ * 两边口径不同（一边 `|| 空串`、一边 `|| 第一个组`），结果下拉显示「工作学习」、
+ * 新项却落进「未分类」—— 用户看到的和实际写的不是一回事。
+ */
+export function defaultAddGroup(s: LocalState): string {
+  const picked = s.ui.addGroup;
+  if (picked && groupById(s, picked)) return picked;
+  return liveGroups(s)[0]?.id ?? UNGROUPED;
+}
+
+/**
  * 一条打卡项**实际**落在哪个分类 —— 不是直接读 `h.groupId`。
  *
  * 指向一个已被删除 / 不存在的分类时算未分类：这样「对方把分类删了、

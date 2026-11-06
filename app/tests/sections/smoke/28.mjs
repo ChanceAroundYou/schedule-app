@@ -109,6 +109,38 @@ export async function run(ctx) {
   })()`);
 
   /* ---------- 2. 造两条打卡项（落在选择器默认那一组）---------- */
+  /**
+   * 用**真实交互**把添加栏的分类选择器切到某个分类。
+   *
+   * 2026-11-06 之前那个选择器是原生 `<select>`，探针直接 `sel.value = id` 就行；
+   * 换成 Dropdown（ARIA listbox）之后没有 `.value` 可写 —— 值只活在 React state 里。
+   * 这里按用户的操作顺序走：点触发器 → 面板里点那条 `role="option"`。
+   *
+   * 点完必须**等面板真的关掉**：`pick()` 是 `setOpen(false)`，React 提交是异步的，
+   * 紧接着就输入 + 点「添加」的话，值可能还没落进 `ui.addGroup`，新项就进了旧组。
+   */
+  const pickGroup = async (groupName) => {
+    await evalJs(page, `return (() => {
+      const btn = document.querySelector('.habit-add [data-add-habit-group]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+    const picked = await waitFor(page, `!!document.querySelector('[role="option"]')`, '分类面板展开', 3000)
+      .catch(() => null);
+    if (!picked) return false;
+    await evalJs(page, `return (() => {
+      const opt = [...document.querySelectorAll('[role="option"]')].find(
+        (o) => (o.textContent || '').trim() === ${JSON.stringify(groupName)});
+      if (!opt) return false;
+      opt.click();
+      return true;
+    })()`);
+    return !!(await waitFor(page, `!document.querySelector('[role="option"]')`, '分类面板收起', 3000)
+      .catch(() => null));
+  };
+
+  /** 添加一条打卡项（不碰分类选择器，用当前选中的分类） */
   const addOne = async (name) => {
     await evalJs(page, `return (() => {
       const el = document.querySelector('.habit-add input');
@@ -123,7 +155,13 @@ export async function run(ctx) {
   await addOne('分类甲');
   await addOne('分类乙');
 
-  const picked = await evalJs(page, `return document.querySelector('[data-add-habit-group]')?.value || '';`);
+  const picked = await evalJs(page, `return (() => {
+    const btn = document.querySelector('.habit-add [data-add-habit-group]');
+    if (!btn) return '';
+    const box = [...document.querySelectorAll('.hgroup')].find(
+      (h) => (h.querySelector('.hgroup-name')?.textContent || '').trim() === (btn.textContent || '').trim());
+    return box ? (box.dataset.group || '') : '';
+  })()`);
   /* 归属直接读**界面上它落在哪一组** —— 比读 localStorage 可靠：落盘是 250ms
      防抖的，而这里要验的是「用户看到它在哪」。写库的正确性由 domain 单测管。 */
   const seeded = await evalJs(page, `return (() => {
@@ -132,7 +170,9 @@ export async function run(ctx) {
     return rows.map((r) => r.closest('.hgroup')?.dataset.group || '');
   })()`);
   ok(seeded.length === 2 && seeded.every((g) => g === picked) && picked !== '',
-    '新打卡项落到选择器指定的分类里（两条都是同一个组）');
+    '新打卡项落到选择器指定的分类里（两条都是同一个组）'
+    + (seeded.length === 2 && seeded.every((g) => g === picked) && picked !== '' ? ''
+      : `（选择器 ${picked || '∅'} / 实际落组 ${JSON.stringify(seeded)}）`));
 
   /* ---------- 3. 跨组拖拽：把「分类甲」拖进「运动」 ---------- */
   const geo = await geoOf('分类甲', '运动');
@@ -338,10 +378,11 @@ export async function run(ctx) {
   ok(!!created, '新建分类后立刻出现在打卡页（id ' + created + '）');
 
   if (created) {
-    /* 选择器是非受控的：直接写 value，添加处理器读的就是这个 DOM 值 */
+    /* 选择器是 Dropdown：按真实交互点开面板、点「探针分类」那条 option
+       （2026-11-06 之前是原生 select，直接写 value；现在没有 value 可写了）。 */
+    const switched = await pickGroup('探针分类');
+    const selNow = await evalJs(page, `return (document.querySelector('.habit-add [data-add-habit-group]')?.textContent || '').trim();`);
     await evalJs(page, `return (() => {
-      const sel = document.querySelector('[data-add-habit-group]');
-      sel.value = ${JSON.stringify(created)};
       const el = document.querySelector('.habit-add input');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '分类丙');
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -352,7 +393,8 @@ export async function run(ctx) {
       const box = document.querySelector('.hgroup[data-group="${created}"]');
       return !!(box && box.querySelector('[data-habit]'));
     })()`, '新打卡项加进了指定分类', 4000).catch(() => null);
-    ok(!!inGroup, '添加栏的分类选择器决定新打卡项落在哪一组');
+    ok(!!inGroup, '添加栏的分类选择器决定新打卡项落在哪一组'
+      + (switched ? '' : `（⚠️ 选择器没切过去，面板上的值=${selNow}）`));
   }
 
   const rowsBeforeDel = await evalJs(page, `return document.querySelectorAll('.habit-row').length;`);

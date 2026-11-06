@@ -21,7 +21,7 @@ import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
-  habitBestStreak, habitDaySummary,
+  habitBestStreak, habitDaySummary, defaultAddGroup, UNGROUPED,
   quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
   undoneLoads, undoneLoadOf, undoneDates, hasUndone, makeHabit,
 } from './model.ts';
@@ -532,6 +532,31 @@ test('打卡页汇总按「正在看的那天」算，不是按今天', () => {
   assert.equal(todaySum.done, 0);
   assert.equal(todaySum.best, 0, '今天没打、昨天也没打 → 连续归零');
   assert.equal(todaySum.bestEver, 2, '历史最长不会因为断了就归零');
+});
+
+test('新打卡项默认落到哪一组：界面显示的和实际写入的必须是同一组', () => {
+  const mk = (id: string, name: string, order: number) => ({
+    id, name, order, calId: '', createdAt: 0, _ts: {}, _dev: {},
+  });
+  const g1 = mk('g1', '工作学习', 0);
+  const g2 = mk('g2', '运动', 10);
+  const s = stateWith([], { habitGroups: { g1, g2 } });
+
+  // 还没选过 → 第一个有名字的组（不是 UNGROUPED 那个空串）
+  assert.equal(defaultAddGroup(s), 'g1');
+  assert.notEqual(defaultAddGroup(s), UNGROUPED, '空串是「未分类」，不能被当成兜底值');
+
+  // 选过 → 用它
+  s.ui = { ...s.ui, addGroup: 'g2' };
+  assert.equal(defaultAddGroup(s), 'g2');
+
+  // 选的那个后来被删了 → 回落，而不是把新项写进一个不存在的分类
+  s.ui = { ...s.ui, addGroup: 'ghost' };
+  assert.equal(defaultAddGroup(s), 'g1');
+
+  // 一条分类都没有 → 未分类
+  const empty = stateWith([], { habitGroups: {} });
+  assert.equal(defaultAddGroup(empty), UNGROUPED);
 });
 
 test('某一天的负载只算没完成、有时间的任务', () => {  const s = stateWith([
