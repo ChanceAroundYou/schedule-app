@@ -83,9 +83,9 @@ export function habitDaySummary(habits: Habit[], iso: string): {
   const ms = D.monthStart(iso);
   const monthLast = D.addDays(D.addMonths(ms, 1), -1);
   const today = D.today();
-  /* 分母 = 「这个月已经过了几天」。看的是本月就算到今天，过去的月算整月，
-     未来的月是 0（那时一天都还没过，显示 0/0 不如让它空着）。 */
-  const countedTo = monthLast < today ? monthLast : (ms > today ? null : today);
+  const tms = D.monthStart(today);
+  /* 分母 = 「这个月已经过了几天」。看的是本月就算到今天，过去的月算整月。 */
+  const countedTo = ms < tms ? monthLast : (ms > tms ? null : today);
   const monthDays = countedTo ? D.diffDays(countedTo, ms) + 1 : 0;
 
   let done = 0;
@@ -100,7 +100,9 @@ export function habitDaySummary(habits: Habit[], iso: string): {
     const ever = habitBestStreak(h);
     if (ever > bestEver) bestEver = ever;
     for (const d of Object.keys(log)) {
-      if (log[d] && d >= ms && d <= monthLast) hitDays.add(d);
+      /* 未来的月是 0/0 —— 一天都还没过，报个数只会让人以为「这个月打了 0 天」。
+         已经预约的预打仍然算进 `done`（那是「那天打了没」），但它不构成「坚持到几号」。 */
+      if (countedTo && log[d] && d >= ms && d <= monthLast && d <= countedTo) hitDays.add(d);
     }
   }
   return { done, total: habits.length, best, bestEver, month: hitDays.size, monthDays };

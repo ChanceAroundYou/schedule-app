@@ -26,9 +26,9 @@ import * as D from '../domain/date.ts';
 import { habitStreak, habitBestStreak, habitDaySummary, bucketsOf, groupTodayCount, UNGROUPED } from '../domain/model.ts';
 import { CheckBtn, Empty, HabitHeat, HabitDayBar, Caret } from './parts.tsx';
 import { SortableGroups, type SortableGroupData } from '../ui/dndkit.tsx';
-import { Input, Btn, InlineRename, MiniIconBtn } from '../ui/kit.tsx';
+import { Input, Btn, InlineRename, MiniIconBtn, Dropdown } from '../ui/kit.tsx';
 import {
-  renameHabit, renameHabitGroup, moveHabit, seedGroups, createHabitGroup,
+  renameHabit, renameHabitGroup, moveHabit, seedGroups, createHabitGroup, setAddGroup,
 } from '../ui/habits.ts';
 
 export function HabitsView({ state }: { state: LocalState }) {
@@ -81,11 +81,21 @@ export function HabitsView({ state }: { state: LocalState }) {
 
   /* 一条分类都没有时不给选择器：一上来只有「未分类」一项，那个下拉是纯噪音 */
   const pickable = groupCount > 0;
+  /* 「加到哪个分类」选一次就一直用它（连加几条不用每次重选）。
+     存 `ui.addGroup` 而不是组件 state：它跨分类重建、跨页面回来都要记得，
+     而 views 不许有自己的持久状态。选中的分类被删了 → 落回第一个能用的。 */
+  const addGroup = pickable && buckets.some((b) => b.id === state.ui.addGroup)
+    ? (state.ui.addGroup as string)
+    : (buckets.find((b) => b.id !== UNGROUPED)?.id || UNGROUPED);
 
   /* 汇总口径跨**所有**打卡项（不分分类）：用户想看的是「今天到底清了几项」，
      按组各报一个数字反而要在脑子里加总。 */
   const allHabits = buckets.reduce<Habit[]>((a, b) => a.concat(b.habits), []);
   const sum = habitDaySummary(allHabits, viewDate);
+  /* 「本月」只在看本月的日子时才叫本月。翻到 10 月还写「本月」、
+     数字却是 10 月的，那是在骗人；翻到未来更没有「本月已过几天」这回事。 */
+  const inThisMonth = D.monthStart(viewDate) === D.monthStart(today);
+  const monthLabel = inThisMonth ? '本月' : (D.parseISO(viewDate).getMonth() + 1) + ' 月';
 
   const dayHead = (
     <>
@@ -106,8 +116,8 @@ export function HabitsView({ state }: { state: LocalState }) {
           <b>{sum.bestEver}</b><span className="habit-sum-t">天最长</span>
         </span>
         <span className="habit-sum-sep" aria-hidden="true" />
-        <span className="habit-sum-i" title="本月有打卡的天数 / 本月已过天数">
-          <b>{sum.month}</b><span className="habit-sum-t">/{sum.monthDays} 天 · 本月</span>
+        <span className="habit-sum-i" title={'有打卡的天数 / ' + monthLabel + '已过天数'}>
+          <b>{sum.month}</b><span className="habit-sum-t">/{sum.monthDays} 天 · {monthLabel}</span>
         </span>
       </div>
     </>
@@ -116,20 +126,23 @@ export function HabitsView({ state }: { state: LocalState }) {
   const addBar = (
     <div className="habit-add">
       {pickable && (
-        <select
+        /* 原生 `<select>` 换成 Dropdown（2026-11-06）：项目约定零原生 select
+          （color-scan 一直在报这一处）。值落 `ui.addGroup`，委托那边从
+          触发按钮的 `data-add-habit-group` 读 —— 不再靠 DOM 里的 form value。 */
+        <Dropdown
           className="habit-group-pick"
-          data-add-habit-group="1"
-          aria-label="加到哪个分类"
-          /* 非受控：选过一次就一直是那一组，连加几条不用每次重选。
-             React 重渲染不影响 DOM 里已选中的值（defaultValue 只在挂载时用）。 */
-          defaultValue={buckets.find((b) => b.id !== UNGROUPED)?.id || UNGROUPED}
-        >
-          {buckets.map((b) => (
-            <option key={b.id || '__none'} value={b.id}>
-              {b.group ? b.group.name : '未分类'}
-            </option>
-          ))}
-        </select>
+          label="加到哪个分类"
+          size="sm"
+          value={addGroup}
+          options={buckets.map((b) => ({
+            value: b.id,
+            label: b.group ? b.group.name : '未分类',
+          }))}
+          onPick={(gid) => setAddGroup(gid)}
+          /* 委托那边读 `data-add-habit-group` 的**存在**（判断有没有选择器），
+             真正选中的分类改从 `ui.addGroup` 读 —— 见 clickDispatch 的 add-habit */
+          data={{ 'data-add-habit-group': '1' }}
+        />
       )}
       <Input
         type="text"

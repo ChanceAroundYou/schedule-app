@@ -88,6 +88,7 @@ export function defaultUi(): UiPrefs {
     closedGroups: [],
     habitDate: null,
     habitCal: null,
+    addGroup: null,
     sel: null,
     // 就地新建的草稿格。瞬时状态，同上
     draft: null,

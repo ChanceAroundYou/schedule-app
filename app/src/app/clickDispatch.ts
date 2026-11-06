@@ -194,9 +194,10 @@ async function runAct(
       const box = form?.querySelector<HTMLInputElement>('[data-add-habit]');
       const v = box?.value.trim();
       if (!v) return;   // 空着不建：别造一个没有名字的打卡项
-      /* 加到哪个分类由同一行的选择器决定（值是分类 id，空串 = 未分类）。
-         没那个选择器（一条分类都还没建）时就是未分类。 */
-      const gid = form?.querySelector<HTMLSelectElement>('[data-add-habit-group]')?.value || '';
+      /* 加到哪个分类：2026-11-06 起这个选择器是 Dropdown，值在 `ui.addGroup` 里
+         （不再能 `querySelector('select').value`）。带标记却没选过 = null，
+         交给 store 落「未分类」；一条分类都还没建时也没有这个标记，同样落未分类。 */
+      const gid = form?.querySelector('[data-add-habit-group]') ? (store.get().ui.addGroup || '') : '';
       store.addHabit(v, gid || null);
       toast('已添加打卡项：' + v);
       return;

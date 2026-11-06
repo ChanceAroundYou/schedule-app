@@ -48,3 +48,13 @@ export function toggleGroupClosed(id: string): void {
 export function seedGroups(): void {
   store.seedDefaultGroups();
 }
+
+/**
+ * 「新加的打卡项加到哪个分类」——选择器选一次就一直用它（连加几条不用重选）。
+ *
+ * 以前这是个非受控的原生 `<select>`，靠「DOM 值不因重渲染丢失」白拿了这个记忆；
+ * 换成 Dropdown 之后值只在 React 里，得落一处。`null` = 回落到第一个非「未分类」的组。
+ */
+export function setAddGroup(groupId: string): void {
+  store.setUi({ addGroup: groupId || null });
+}

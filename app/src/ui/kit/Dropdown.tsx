@@ -44,6 +44,16 @@ interface DropdownProps<K extends string | number> {
       传了 renderValue 就以它为准，没传才回退到选项文字 / placeholder。 */
   renderValue?: (option: DropdownOption<K> | undefined) => ReactNode;
   renderOption?: (option: DropdownOption<K>, selected: boolean) => ReactNode;
+  /**
+   * 给触发按钮挂一个 `data-*`（2026-11-06 加）。
+   *
+   * 用途是让**点击委托**能读到当前值：打卡页「加到哪个分类」以前是个原生
+   * `<select>`，委托那边一行 `querySelector('select').value` 就拿走了；
+   * 换成这个组件之后值只在 React state 里，委托碰不到。调用方多发一次
+   * `setUi`（低频操作，一次点击一次），换来的是不把跨组件的值往 DOM
+   * 属性上硬塞 —— 那反而更难维护。
+   */
+  data?: Record<string, string | undefined>;
 }
 
 export function Dropdown<K extends string | number>({
@@ -59,6 +69,7 @@ export function Dropdown<K extends string | number>({
   menuClassName,
   renderValue,
   renderOption,
+  data,
 }: DropdownProps<K>) {
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -120,6 +131,7 @@ export function Dropdown<K extends string | number>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        {...data}
         onClick={() => setOpen((currentOpen) => !currentOpen)}
         onKeyDown={handleKeyDown}
         className={cx(

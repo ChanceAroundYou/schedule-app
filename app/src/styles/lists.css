@@ -204,14 +204,21 @@
 .hgroup-new > summary:hover { background: var(--panel-2); color: var(--text-2); }
 .hgroup-new .habit-add { margin: 10px 0 0; }
 
-/* 新增打卡项时的「加到哪组」。做成无边框的轻量下拉，不抢输入框的视线 */
-.habit-group-pick {
-  flex: none; max-width: 108px; padding: 0 6px;
+/* 「加到哪组」。2026-11-06 从原生 `<select>` 换成 Dropdown，样式也得跟着改：
+   组件自带 `bg-[var(--panel-2)]` + `h-[30px]`（size="sm"），比右边那个
+   回车 45px 的输入框矮一截、还偏灰 —— 看着像禁用。这里只压高度和配色，
+   让它和输入框、添加按钮**同一条基线**。 */
+.habit-add .habit-group-pick {
+  flex: none; max-width: 116px; height: 45px;
   border: var(--border-w) solid var(--border); border-radius: var(--r-lg);
   background: var(--panel); color: var(--text-2); font-size: 12.5px;
-  cursor: pointer;
 }
-.habit-group-pick:focus { outline: none; border-color: var(--primary); }
+.habit-add .habit-group-pick:hover { border-color: var(--primary); color: var(--text); }
+
+@media (max-width: 520px) {
+  /* 手机上这一行本来就挤：输入框留够宽度，下拉收到「只够放下两个字」 */
+  .habit-add .habit-group-pick { max-width: 84px; height: 41px; }
+}
 
 @media (min-width: 1120px) {
   /* 宽屏每组两列（`.mc` 的规则在上面，这里同特异度再压一次，理由同 .habit-list.mc） */
