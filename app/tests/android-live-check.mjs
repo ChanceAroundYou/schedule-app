@@ -141,6 +141,39 @@ await send('Runtime.enable');
 await send('Page.enable');
 await send('Network.enable').catch(() => {});
 
+/* ---------- 硬前置：屏幕亮着 + 已解锁 ----------
+   2026-11-06 诊断出来的（三次真机实测跑红的根因，脚本自己当时没说清楚）：
+   锁屏时 WebView 的 `document.visibilityState` 恒为 hidden，而
+   `requestAnimationFrame` **一帧都不跑**（实测 600ms 内 0 帧）。
+   后果有两条，都是假的「产品失败」：
+   · 这个应用的卡高 / 圆角 / 卡宽全靠 rAF 里的量测写进 CSS 变量
+     （--card-px、--row-hour），rAF 停摆 → 变量停在兜底值 →
+     那一整批「月/周视图几何断言」全红（就是记忆里挂着的那 15 条）。
+   · `sync/lifecycle.ts` 的 onWake 在 hidden 时直接 return →
+     同步压根不发起 → 「刚建的探针集连拉五轮也拉不进来」。
+   所以先量一下；不满足就用一句话说清楚，别拿十几条假红糊住真正该看的。 */
+{
+  let power = '';
+  try { power = adb('shell dumpsys power', { stdio: 'pipe' }); } catch {}
+  let trust = '';
+  try { trust = adb('shell dumpsys trust', { stdio: 'pipe' }); } catch {}
+  const dozing = /mWakefulness=Dozing|mWakefulness=Asleep/.test(power);
+  const locked = /deviceLocked=1/.test(trust);
+  const vis = await evalIn(`document.visibilityState`).catch(() => '读不到');
+  if (dozing || locked || vis !== 'visible') {
+    console.log(`\n⛔ 真机实测没跑：手机现在处于「${dozing ? '息屏' : '亮屏'} / ${locked ? '锁屏' : '已解锁'}」，
+   WebView 里 document.visibilityState = ${JSON.stringify(vis)}。
+   这个状态下浏览器一帧 rAF 都不跑、同步也不发起，跑出来的几何断言全是假红。
+   解法：把手机解锁、让屏幕一直亮着（插电时 `svc power stayon true` 才真的生效），
+   再重跑本脚本。`);
+    for (const [, p] of pending) clearTimeout(p.timer);
+    pending.clear();
+    ws.close();
+    process.exit(2);
+  }
+  console.error(`[android-live-check] 前置 OK：屏幕亮、已解锁、visibilityState=${vis}`);
+}
+
 /* node 侧 eval：直接 Runtime.evaluate（无需页面侧 __cdp 注入） */
 async function evalIn(expr, timeoutMs = 20000) {
   const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, timeoutMs);
@@ -299,6 +332,12 @@ try {
   console.log(lines.join('\n'));
   console.log(`\n== 结果：${pass}/${pass + fail} 通过`);
   if (fail) { console.log('未通过：'); for (const l of lines.filter((x) => x.startsWith('  FAIL'))) console.log(l); }
+  /* 网络不通不记在断言里，但必须看得见 —— 「手机连不上服务器」和「应用有 bug」
+     是两件事，混在一起会逼人去改错的地方。 */
+  if (netErrors.length) {
+    console.log(`\n⚠️ 网络层报错 ${netErrors.length} 条（不算断言，但说明这一趟手机没能连上 ${BASE}）：`);
+    for (const e of netErrors.slice(0, 4)) console.log('   ' + e);
+  }
   for (const [, p] of pending) clearTimeout(p.timer);
   pending.clear();
   ws.close();

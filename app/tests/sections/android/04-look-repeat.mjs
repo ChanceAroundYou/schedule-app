@@ -322,7 +322,10 @@ async function checkRepeat() {
      **绝不用 me.cals[0]** —— 那是手机上登录着的那个账号自己每天在用的日程集，
      以前就是这么把「e2e安卓重复…」留在用户日历里的。 */
   let calId = globalThis.probeCalId;
-  if (!calId) calId = await ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, ok, bad });
+  /* 月视图那一节收尾已经把它删掉了，所以这里重新建一个。
+     ⚠️ pullSync 必须传：ensureProbeCal 靠它把「服务端刚建的集」拉进 App，
+     少传这个参数上一轮直接红成 `pullSync is not a function`。 */
+  if (!calId) calId = await ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, pullSync, ok, bad });
   globalThis.probeCalId = calId;
   if (!calId) { bad('能取到探针专用日程集（没有就一条都不写）'); return; }
   ok('重复系列写进探针专用集', calId);
