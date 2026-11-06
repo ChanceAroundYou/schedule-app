@@ -20,7 +20,7 @@ import { hours24 } from './shared.ts';
 export interface TimelineMetrics {
   /** 时间轴实测高度（px）。量不到时是 0 —— 调用方自己兜底 */
   boxH: number;
-  /** 每小时多少像素。0 意味着还没挂上，别拿它做除法 */
+  /** 每小时多少像素（**整数**）。0 意味着还没挂上，别拿它做除法 */
   pxPerHour: number;
   /** 刻度抽稀档位：1 每小时一条，2 隔小时一条，3 三小时一条 */
   step: number;
@@ -40,9 +40,17 @@ export function useTimelineMetrics(win: DayWindow, ref: RefObject<HTMLElement | 
     return () => ro.disconnect();
   }, [ref]);
 
-  const pxPerHour = boxH > 0 ? boxH / (spanOf(win) / 60) : 40;
-  const step = pxPerHour < 14 ? 3 : pxPerHour < 20 ? 2 : 1;
+  const spanH = spanOf(win) / 60;
+  /* ⚠️ **必须取整**（2026-11-06 用户报「3 日 / 周视图横向细线严重抖动」）。
+     原来这里是 `boxH / spanH`，而 boxH 是 flex 量出来的小数（实测 575.516），
+     于是每格 = 23.979px。线和标签都按百分比定位，落点就永远踩在半像素上：
+     浏览器逐帧抗锯齿时，同一条 1px 线的相位会左右漂 —— 看起来就是「线在抖、
+     17:00 那个数字也在抖」，而全屏后高度正好凑整就消失了。
+     取整之后线距恒定、落点全在整数像素上，抖动从源头消失。
+     代价：一天最多差不到 1px（用 boxH 做分母而不是反过来撑高容器，避免反馈循环）。 */
+  const hourPx = boxH > 0 ? Math.max(1, Math.round(boxH / spanH)) : 40;
+  const step = hourPx < 14 ? 3 : hourPx < 20 ? 2 : 1;
   /* `<=` 而非 `<`：把 dayTo 设成 22:00 时底部那条结束线得在 */
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 <= win.to && h % step === 0);
-  return { boxH, pxPerHour, step, hours };
+  return { boxH, pxPerHour: hourPx, step, hours };
 }

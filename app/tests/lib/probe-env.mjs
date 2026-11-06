@@ -38,8 +38,16 @@ const CHROME_CANDIDATES = [
   '/opt/google/chrome/chrome',
 ].filter(Boolean);
 
+/* ⚠️ **探测 Chrome 一定要只看文件在不在，绝对不要执行它**（2026-11-06 用户报
+   「跑测试老是弹出新的浏览器窗口」的真凶就在这一行）。
+   原来的写法是 `spawnSync(c, ['--version'])` —— 在 Linux/macOS 上 Chrome 认这个参数、
+   打印个版本号就退，没问题；但 **Windows 版 chrome.exe 不认 `--version`**，
+   它把参数当 URL 处理，于是**真的打开一个「新标签页」窗口**。
+   更糟的是这里是个 `find` 循环：候选路径有 7 个，前几个不存在/不认参数时
+   会一个接一个被**执行**，等于连开好几个窗口。
+   修法：`existsSync` 判存在即可 —— 后面的 launch 才是真正验证能不能用的地方。 */
 export const CHROME = process.env.CHROME
-  || CHROME_CANDIDATES.find((c) => { try { return spawnSync(c, ['--version'], { stdio: 'ignore' }).status === 0; } catch (_) { return false; } });
+  || CHROME_CANDIDATES.find((c) => { try { return existsSync(c) && statSync(c).isFile(); } catch (_) { return false; } });
 
 export async function makePorts(preferred = {}) {
   const api = +(process.env.SMOKE_API_PORT || await freePort(preferred.api || 25701));

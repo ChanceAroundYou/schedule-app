@@ -29,7 +29,7 @@ import {
 import { tasksOn, untimedOn, openFirst, undoneDates } from '../../domain/model.ts';
 import { colorOf, creatorOf } from '../../domain/people.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine } from './timeline.tsx';
+import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine, HourLines } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
 import { useOverlayScrollbar } from '../../ui/scroll.ts';
 import type { LayoutEvent } from './shared.ts';
@@ -156,12 +156,13 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const nowMin = D.nowMin();
   /* 「这天还有没做完的」—— 日 / 周 / 小组件共用 domain 里那一份口径 */
   const undone = undoneDates(state);
-  /* 来源 tag 的**唯一**判据（2026-11-06 第二次放宽）。
-     本来只在三日视图 + 宽屏画；用户先要求「所有视图都显示」，第二天又报
-     「移动端完全没有」—— 所以窄屏这一道闸也撤了。这枚圈是**绝对定位**在卡片右上角、
-     不占文字位（标题可以从它底下穿过去），窄列装得下；尺寸跟着卡片字号缩小。
-     现在唯一开关就是设置里那一项。 */
-  const tag = state.ui.showCreatorTag;
+  /* 来源 tag 的判据（2026-11-06 第三版，用户第二次修口径）：
+       · 日视图 → 宽窄都画（那儿的卡片是整宽，装得下）
+       · **周 / 三日视图 → 只在宽屏画**（用户原话：「移动端的月视图和[周]视图
+         不显示归属标记」）。窄屏一列 78px，一张卡上要挤名字 + 两个角标 + 标题，
+         圈会把标题挤成两三个字。
+       · 设置里那个开关是总闸，关了就全不画。 */
+  const tag = state.ui.showCreatorTag && !isNarrowNow();
 
   /* 七天的事件先算出来 —— 时间窗要按它们自动往外让（coverWindow） */
   const perDay = days.map((d) => dayEvents(state, d));
@@ -172,7 +173,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const nowPct = days.includes(today) ? minToPct(nowMin, win) : null;
 
   const colsRef = useRef<HTMLDivElement | null>(null);
-  const { hours } = useTimelineMetrics(win, colsRef);
+  const { hours, pxPerHour: hourPx } = useTimelineMetrics(win, colsRef);
   /* 容器实测高度给卡片算圆角 + 未定时行高用（半径 = 卡高 × 30%，见 calendar.css 的
      .task-el--timed）。卡的高度是百分比，乘上这个 px 才是真正的像素高。
      未定时那一行与日视图同源：行高 = 这一屏上的「一小时」（untimedRowPx）。 */
@@ -233,7 +234,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         {/* 左侧刻度列：**就是日视图那个 `.tl-gutter`**（骨架同一套，见 calendar.css），
             `.week-gutter` 这个老类名留着 —— 探针和调试按它找。 */}
         <div className="tl-gutter week-gutter" ref={gutterRef}>
-          <TimeGutter hours={hours} win={win} />
+          <TimeGutter hours={hours} win={win} hourPx={hourPx} />
           {/* 绿球挂刻度列里，半个球本来就在这一列；放进这层之后窄屏 sticky
               再也盖不住它（2026-10-25 用户报的 z-index 5 遮挡） */}
           {state.ui.showNowLine && <NowBall pct={nowPct} win={win} />}
@@ -241,8 +242,9 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         <div
           className="week-cols" ref={colsRef} onPointerDown={drag.onPointerDown}
           data-from={win.from} data-to={win.to}
-          style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
         >
+          {/* 横向小时线：真元素、整数像素定位（见 timeline.tsx HourLines 的注释） */}
+          <HourLines hours={hours} win={win} hourPx={hourPx} />
           {state.ui.showNowLine && <NowLine pct={nowPct} span="week" win={win} />}
           {days.map((d, i) => (
             <WeekColumn

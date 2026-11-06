@@ -14,17 +14,22 @@ export async function run(ctx) {
         墨迹质心的真实距离是逐像素扫出来的（22 个常见首字，见 CSS 注释），
         档位一改，下面 tagLineBoxDy 会跳约 1px。
 
-     2026-11-06 的新口径（用户：「圆只允许放大 10% 左右，字体可以放大占满一点，
-     而且这个字和循环符号应该也跟着设置里的字体大小变化」）：
-       · 直径 = 主字号档 × 0.968 → 12.5px 档下 **12.09px**（= 11 × 1.10）
-       · 圆里的字 = 主字号档 × 0.60 → **7.5px**
-       · 内缩 = 卡片自己的圆角半径 + 0.75px（**必须 ≥ R**，否则角的右上角落到圆弧外）
-       · 字形偏移用 em（−0.1em），padding-top 归 0 —— 原来那 3px 是靠整数栅格凑的 */
-  const TAG_BOX = 12.09;         // md 档（--card-font-scale: 1，--fs-title: 12.5px）
-  const TAG_FONT = 7.5;
-  const LINE_BOX_DY = -0.75;     // 字形行盒中心 − 圆心（padding-top 0 + translateY(-0.1em)）
+     2026-11-06 第三版口径（用户两轮反馈合起来）：
+       ①「圆只允许放大 10% 左右」→ 先试了 12.09px，用户看过后说「整体 +10% 太多了」，
+          回退成 **11px**（= 主字号档 × 0.88，与循环角标**同一个倍率**）；
+       ②「字体可以放大占满一点」→ 字取到不出圈的上限 = 圆径 × 0.64 = **7.04px**；
+       ③「这个字和循环符号应该也跟着设置里的字体大小变化」→ 两者都从
+          `--fs-title × --card-font-scale` 派生；
+       ④「归属徽标离重复的距离太远了，应该紧挨着」→ 两枚之间 **1px** 缝
+          （旧值 4px 是 2026-10-28 为「两枚实心描边圆糊成一团」留的，现在右边是
+          线条图标，1px 就分得开）；
+       ⑤「根据宽度适当调整右边距是指这些一起调整右边距」→ 内缩只管**整组**的位置。
+       字形偏移用 em（−0.1em），padding-top 归 0 —— 原来那 3px 是靠整数栅格凑的。 */
+  const TAG_BOX = 11;            // md 档（--card-font-scale: 1，--fs-title: 12.5px）
+  const TAG_FONT = 7.04;         // 11 × 0.64，不出圈的上限
+  const LINE_BOX_DY = -0.70;     // 字形行盒中心 − 圆心（padding-top 0 + translateY(-0.1em)）
   const LINE_BOX_TOL = 0.35;
-  const GLYPH_TY = -0.75;        // -0.1em × 7.5px
+  const GLYPH_TY = -0.70;        // -0.1em × 7.04px
 
   console.log('\n八、断言：卡片右上角那一格（两枚角标 + 圆里的字）');
   console.log('    ① 两枚圈之间 ≥ 4px 缝（2px 在屏上读成一团）');
@@ -71,9 +76,12 @@ export async function run(ctx) {
     /* ① 两枚圈不互相压、且留得到缝 */
     if (c.rep) {
       ok(c.tagVsRep === 0, label + ' 两枚角标互相不压（相交 ' + num(c.tagVsRep) + ' px²）');
-      /* 两枚都是 11px 的圈，缝小于 4px 在屏上就分不开（描边糊成一团）——
-         用户 2026-10-28 指着的正是这个：原先缝 2px，截图上两枚外沿只剩 1.5px。 */
-      ok(c.gapTagRep >= 4, label + ' 两枚之间留得到缝（' + num(c.gapTagRep) + 'px，小于 4 就糊成一团）');
+      /* 2026-11-06 第三版：用户要求**紧挨着**，缝从 4px 收到 1px。
+         旧下限 4px 是 2026-10-28 为「两枚实心描边圆贴一起、描边糊成一团」定的；
+         现在右边那枚是线条图标，1px 就分得开。但仍要求「看得见缝」：
+         0 缝会让两枚描边连成一条，视觉上是一坨。 */
+      ok(c.gapTagRep >= 0.5 && c.gapTagRep <= 1.8,
+        label + ' 两枚紧挨但留一丝缝（' + num(c.gapTagRep) + 'px，应在 0.5~1.8）');
       ok(c.tagFromRight > c.repFromRight + 8, label + ' 有角标时 tag 让到它左边（距右 '
         + num(c.tagFromRight) + ' vs 角标 ' + num(c.repFromRight) + '）');
     } else {

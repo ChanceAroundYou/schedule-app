@@ -29,17 +29,68 @@ import { pctRange, spanOf, timeRange, type DayWindow } from '../../domain/layout
 import { pad2 } from './shared.ts';
 import type { DragRange } from './dragCreate.ts';
 
-/** 小时刻度 + 标签。外层容器两视图都是 `.tl-gutter`（刻度列），由调用方给。 */
-export function TimeGutter({ hours, win }: { hours: number[]; win: DayWindow }) {
+/**
+ * 小时刻度 + 标签。外层容器两视图都是 `.tl-gutter`（刻度列），由调用方给。
+ *
+ * ⚠️ 定位方式（2026-11-06 改）：**整数像素**，不是百分比。
+ * 以前写 `top: ((h*60 - from) / span) * 100 + '%'`，而容器高度是 flex 量出来的
+ * 小数（实测 575.516px）—— 每个落点都在半像素上，浏览器逐帧抗锯齿时同一条
+ * 1px 线/同一个数字的相位会漂移，用户看到「横向细线和刻度数字在严重抖动」，
+ * 全屏后高度凑整就不抖了。现在调用方给整数的 `pxPerHour`，这里按格计算。
+ *
+ * `hourPx` 传 0（还没量到）时退回百分比 —— 首帧只用一瞬间，之后就会被整数覆盖。
+ */
+export function TimeGutter({ hours, win, hourPx }: {
+  hours: number[]; win: DayWindow; hourPx: number;
+}) {
   const span = spanOf(win);
   return (
     <>
-      {hours.map((h) => (
-        <div className="tl-hour" key={h} style={{ top: ((h * 60 - win.from) / span) * 100 + '%' }}>
-          <span className="tl-label">{pad2(h)}:00</span>
-        </div>
-      ))}
+      {hours.map((h) => {
+        const top = hourPx > 0
+          ? Math.round((h * 60 - win.from) / 60 * hourPx)
+          : ((h * 60 - win.from) / span) * 100 + '%';
+        return (
+          <div className="tl-hour" key={h} style={{ top }}>
+            <span className="tl-label">{pad2(h)}:00</span>
+          </div>
+        );
+      })}
     </>
+  );
+}
+
+/**
+ * 横向小时线（2026-11-06 从「背景渐变」改成**真元素**）。
+ *
+ * 为什么不再用 `repeating-linear-gradient`：渐变的步长只能是 `100% / 24` 这种
+ * 相对值，而容器高度是 flex 量出来的小数（实测 575.516px）。两个后果：
+ *   ① 落点全是半像素 → 浏览器逐帧抗锯齿时相位会漂，整排线看起来在**抖**
+ *      （用户报的「横向细线严重抖动」，全屏后高度凑整就消失，正是这个）；
+ *   ② 把步长改成整数像素后，`24 × step` 又凑不满容器高度（如 18×24=432 vs 438.656），
+ *      底部缺一截、和按百分比定位的卡片累积错位。
+ * 改成真元素之后，线、刻度标签、卡片全都走 `时间 × hourPx` 这一套整数坐标，
+ * 不存在两套坐标系打架的问题。`hourPx` 由 `useTimelineMetrics` 取整给出。
+ *
+ * **只为看得见的整点画线**（`hours` 已经按抽稀档位过滤过），一层一个元素，
+ * 数量在 8~25 之间，比渐变多不了几个节点。
+ */
+export function HourLines({ hours, win, hourPx }: {
+  hours: number[]; win: DayWindow; hourPx: number;
+}) {
+  if (!hourPx) return null;
+  return (
+    <div className="tl-hours" aria-hidden="true">
+      {hours.map((h) => (
+        <i
+          key={h}
+          className="tl-hline"
+          style={{ top: Math.round(((h * 60 - win.from) / 60) * hourPx) + 'px' }}
+        />
+      ))}
+      {/* 收尾线：窗口末端的整条底线（渐变时代靠第二层背景补，现在照旧单独画） */}
+      <i className="tl-hline tl-hline--end" />
+    </div>
   );
 }
 

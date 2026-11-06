@@ -304,8 +304,15 @@
    描边由容器提供，所以格子自己不带 border，改用右边框分段。 */
 .view-switch { display: flex; border: var(--border-w) solid var(--input); border-radius: var(--r-md); overflow: hidden; }
 .view-switch button {
-  height: 30px; padding: 0 12px; border: none; background: none; color: var(--text-2);
-  font-size: 12.5px; display: inline-flex; align-items: center;
+  /* 四格等宽（2026-11-06 用户：「缩小一下 3 日按钮的宽度，让它和日周月一样宽」）。
+     以前靠 padding 撑内容 —— 「3日」比「日」「周」「月」多一个字，那格就宽出一截，
+     一排四个格子参差不齐。等宽要**先定宽再居中**：给一个装得下两个汉字加一点
+     呼吸的固定宽，文字用 `justify-content: center` 居中，padding 只管触控高度。 */
+  /* 44px 是量出来的：两个汉字 25px + 左右各 9.5px 呼吸。四个字（日/3日/周/月）
+     里最宽的是「3日」，这一档刚好装下又不显空。 */
+  width: 44px;
+  height: 30px; padding: 0; border: none; background: none; color: var(--text-2);
+  font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center;
   transition: background .14s, color .14s;
 }
 .view-switch button + button { border-left: var(--border-w) solid var(--input); }

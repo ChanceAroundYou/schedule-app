@@ -255,6 +255,7 @@ try {
     './sections/geom/08-corner-tags.mjs',
     './sections/geom/09-card-font-scale.mjs',
     './sections/geom/10-month-cols.mjs',
+    './sections/geom/11-hour-lines.mjs',
   ];
   for (const f of sectionFiles) {
     const mod = await import(f);

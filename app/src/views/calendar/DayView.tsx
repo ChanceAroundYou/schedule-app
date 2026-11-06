@@ -36,7 +36,7 @@ import { useDroppableZone, useDragSession } from '../../ui/dndkit.tsx';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate } from './dragCreate.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
-import { TimeGutter, NowLine, NowBall, DragRangePreview, BlankRow } from './timeline.tsx';
+import { TimeGutter, NowLine, NowBall, DragRangePreview, BlankRow, HourLines } from './timeline.tsx';
 import { useTimelineMetrics } from './metrics.ts';
 import { useElementHeight, isNarrowNow } from '../../ui/hooks.ts';
 
@@ -81,7 +81,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const { hours } = useTimelineMetrics(win, tlRef);
+  const { hours, pxPerHour: hourPx } = useTimelineMetrics(win, tlRef);
   const panelH = useElementHeight(panelRef) || 752;
   /* 未定时行高 = 这一屏上 1 小时定时卡的高；zone 高度按 visibleRows 自适应，
      迭代收敛（panelH 稳定，不随 zone 反馈）—— 避免把时间轴压成 0。 */
@@ -160,7 +160,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
             style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
           >
             <div className="tl-gutter">
-              <TimeGutter hours={hours} win={win} />
+              <TimeGutter hours={hours} win={win} hourPx={hourPx} />
               {/* 绿球在刻度列里（见 timeline.tsx 的 NowBall）——
                   它有一半本来就在这一列，放进这层才不会被窄屏的 sticky 盖住 */}
               {isToday && state.ui.showNowLine && <NowBall pct={nowPct} win={win} />}
@@ -171,6 +171,8 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
               data-date={iso} data-from={win.from} data-to={win.to} data-timeline=""
               onPointerDown={drag.onPointerDown}
             >
+              {/* 横向小时线：真元素、整数像素定位（见 timeline.tsx HourLines 的注释） */}
+              <HourLines hours={hours} win={win} hourPx={hourPx} />
               <div className="tl-layer">
                 {events.map((e) => {
                   const w = 100 / e.cols;
