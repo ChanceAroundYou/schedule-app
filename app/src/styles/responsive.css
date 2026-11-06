@@ -385,8 +385,14 @@ body.sheet-open .tab:active { background: none; }
     position: sticky; left: 0; z-index: 5; background: var(--panel);
   }
   /* 表头窄屏档（与桌面**同步收小**，2026-10-24 五项反馈④）：
-     日期数字 15 → 12、圆圈 24 → 20、上下留白 7/5 → 4/3。 */
-  .week-head-cell { padding: 4px 1px 3px; }
+     日期数字 15 → 12、圆圈 24 → 20、上下留白 7/5 → 4/3。
+     ⚠️ 2026-11-06 加了「还有没做完的」小圆点：留白 4/3 → 2/5，**总数 7 不变**、
+     只是把 2px 挪到下面给那颗点落脚（点绝对定位、不进流）。表头总高一分不能长 ——
+     card-geometry 在这里钉着 48px 上限（第一版把点做成流内一行时
+     43.25 → 49.25 当场撞破，被吃掉的是时间网格）。 */
+  .week-head-cell { padding: 2px 1px 5px; }
+  /* 窄屏圆圈只有 20px、留白也少，那颗点贴到最底（间隙靠 padding-bottom 5 给） */
+  .wh-dot { bottom: 0; }
   .wh-day { font-size: 12px; width: 20px; height: 20px; min-width: 20px; }
   /* 日视图未定时区：列数交给 DayView（窄屏 = 1 列），这里只管样式。
      **不再单独给 padding** —— 两种卡的左右留白同源到一个 --card-pad-x（见上面的 :root）。 */

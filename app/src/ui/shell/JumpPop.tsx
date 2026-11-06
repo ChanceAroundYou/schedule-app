@@ -5,19 +5,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
+import { undoneLoadOf } from '../../domain/model.ts';
 import { useAnchoredPosition, useOutsideClose } from '../hooks.ts';
 import { Input } from '../kit.tsx';
 import { MiniCalendar } from '../overlays/MiniCalendar.tsx';
-
-/** 某天**还没做完**的任务数 —— 面板用它表示「哪天忙」 */
-function jumpLoad(state: LocalState, isoDay: string): number {
-  let n = 0;
-  for (const k in state.tasks) {
-    const t = state.tasks[k];
-    if (t.date === isoDay && !t.deleted && !t.done) n++;
-  }
-  return n;
-}
 
 function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
   open: boolean; cursor: string; state: LocalState;
@@ -77,12 +68,13 @@ function JumpPop({ open, cursor, state, onPick, onClose, triggerRef }: {
         <button className="jp-go" onClick={() => go(text)}>跳转</button>
       </div>
 
-      {/* 月历格子与快速添加那个「日期 + 时间」面板共用同一份 —— 见 ui/WhenPop.tsx */}
+      {/* 月历格子与快速添加那个「日期 + 时间」面板共用同一份 —— 见 ui/WhenPop.tsx。
+          密度口径 = domain 里唯一的「这天还有几条没做完」（含今天没打的卡）。 */}
       <MiniCalendar
         month={month}
         value={cursor}
         todayIso={D.today()}
-        loadOf={(iso) => jumpLoad(state, iso)}
+        loadOf={undoneLoadOf(state)}
         onMonth={setMonth}
         onPick={onPick}
       />

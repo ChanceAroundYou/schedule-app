@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
-import { quickDefaults } from '../../domain/model.ts';
+import { quickDefaults, undoneLoadOf } from '../../domain/model.ts';
 import { useIsNarrow } from '../hooks.ts';
 import { Textarea } from '../kit.tsx';
 import { useOverlayScrollbar } from '../scroll.ts';
@@ -280,7 +280,7 @@ export function QuickAdd({ state, onSubmit }: {
           date={effDate}
           time={effTime}
           todayIso={D.today()}
-          loadOf={(iso) => jumpLoad(state, iso)}
+          loadOf={undoneLoadOf(state)}
           onDate={setPendingDate}
           onTime={setPendingTime}
           onClose={() => setWhenOpen(false)}
@@ -307,14 +307,4 @@ export function QuickAdd({ state, onSubmit }: {
       </div>
     </>
   );
-}
-
-/** 供 QuickAdd 内部用的「某天任务数」—— 从 JumpPop 复制过来避免循环依赖 */
-function jumpLoad(state: LocalState, isoDay: string): number {
-  let n = 0;
-  for (const k in state.tasks) {
-    const t = state.tasks[k];
-    if (t.date === isoDay && !t.deleted && !t.done) n++;
-  }
-  return n;
 }

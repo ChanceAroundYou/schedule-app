@@ -26,7 +26,7 @@ import {
   dayTimeline, coverWindow, minToPct, spanOf, untimedBlanks, untimedRowPx, windowOf,
   type DayWindow,
 } from '../../domain/layout.ts';
-import { tasksOn, untimedOn, openFirst } from '../../domain/model.ts';
+import { tasksOn, untimedOn, openFirst, undoneDates } from '../../domain/model.ts';
 import { colorOf, creatorOf } from '../../domain/people.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine } from './timeline.tsx';
@@ -154,6 +154,8 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const days = Array.from({ length: dayCount }, (_, i) => D.addDays(start, i));
   const today = D.today();
   const nowMin = D.nowMin();
+  /* 「这天还有没做完的」—— 日 / 周 / 小组件共用 domain 里那一份口径 */
+  const undone = undoneDates(state);
   /* 来源 tag 的**唯一**判据（用户 2026-10-28 定）：只在**三日视图**、
      **标准以上宽度**（窄屏根本不画这个元素）、且设置里那个开关开着时画。
      周视图（7 列）一列只有 ~78px，一枚 12px 的圆圈加上去就是抢标题的字。 */
@@ -194,13 +196,21 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         <div className="week-head-cols">
           {days.map((d, i) => (
             <button
-              className={'week-head-cell' + (d === today ? ' today' : '') + (i >= 5 ? ' weekend' : '')}
+              className={'week-head-cell' + (d === today ? ' today' : '') + (i >= 5 ? ' weekend' : '')
+                + (undone.has(d) ? ' has-undone' : '')}
               key={d}
               data-jump={d}
-              title={'跳到 ' + D.fmtMD(d)}
+              title={'跳到 ' + D.fmtMD(d) + (undone.has(d) ? ' · 这天还有没做完的' : '')}
             >
               <span className="wh-week">周{D.weekdayShort(d)}</span>
               <span className="wh-day">{D.parseISO(d).getDate()}</span>
+              {/* 「这天还有没做完的」小圆点（2026-11-06 用户：日/周/小组件统一）。
+                  **绝对定位**在日期数字正下方（见 calendar.css 的 `.wh-dot`）：
+                  不进流 → 每一格的高度跟加它之前一模一样，所以**不需要**
+                  `visibility: hidden` 占位。那是 `.wh-day` 圆圈的老坑法
+                  （2026-10-19，圆圈靠它居中是对的），套在这一颗上会把整行抬高
+                  6px、窄屏表头当场撞破 48px 上限（card-geometry 抓到过）。 */}
+              {undone.has(d) && <i className="wh-dot" aria-hidden="true" />}
             </button>
           ))}
         </div>

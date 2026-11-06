@@ -31,6 +31,7 @@
 import { connect } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { execSync } from 'node:child_process';
+import { ensureProbeCal, dropProbeCal } from './lib/probe-cal.mjs';
 
 /* 基址要跟**装机包实际用的那个**一致 —— 家用局域网直连包（Cloudflare 被丢包的
    绕开方案，见 docs/踩坑-环境.md 第 4 条）是用
@@ -195,11 +196,22 @@ async function apiPush(ops) {
       body:JSON.stringify({cursor:1,ops:${JSON.stringify(ops)}})});
     return {status:r.status,body:await r.json().catch(()=>null)};})()`);
 }
+/* 任意接口（探针专用集要建要删，光有 push 不够）。同样带 Bearer。
+   ⚠️ 路径在这里就要拼成完整 URL —— evalIn 那段是**本文件求值出来的字符串**，
+   把 path 当变量传进页面上下文是拿不到的（页面里没有任何我们的变量）。 */
+async function apiCall(method, path, body) {
+  const url = `${BASE}${path}`;
+  return evalIn(`(async()=>{var t=localStorage.getItem('schedule-app-token');
+    var r=await fetch(${JSON.stringify(url)},{method:${JSON.stringify(method)},
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},
+      ${body === undefined ? '' : `body:JSON.stringify(${JSON.stringify(body)}),`}});
+    return {status:r.status,body:await r.json().catch(()=>null)};})()`);
+}
 
 /* ------------------------------------------------------------ 各项检查 */
 
 const ctx = {
-  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, apiMe, apiPush },
+  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, apiMe, apiPush, apiCall, ensureProbeCal },
   state: {},
   features: FEATURES,
 };
@@ -223,6 +235,7 @@ if (typeof globalThis.fail === 'number') fail = globalThis.fail;
 if (Array.isArray(globalThis.lines)) lines = globalThis.lines;
 
 console.log(`\n== 安卓真机实测 ${device}（features: ${[...FEATURES].join(', ')}）`);
+let probeCalId = null;
 try {
   // 登录后默认落在「今天」列表；视图切换在日程页副 header → 先进日程页
   await openCalendar();
@@ -230,11 +243,19 @@ try {
   const shell = await evalIn(`!!document.querySelector('.timeline') || !!document.querySelector('.week-cols')`);
   assert(shell, '应用外壳就绪（时间轴/周视图出现）');
 
+  /* 凡是要**往库里写东西**的检查（溢出探针、重复系列），一律写进这个一次性
+     专用集，绝不碰手机上登录着的那个账号自己的日程集；收尾在 finally 里
+     删掉整个集。见 tests/lib/probe-cal.mjs 的说明。 */
+  if (FEATURES.has('month') || FEATURES.has('repeat')) {
+    probeCalId = await ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, pullSync, ok, bad });
+    globalThis.probeCalId = probeCalId;
+  }
+
   if (FEATURES.has('core')) await checkCore();
   if (FEATURES.has('now-line')) await checkNowLine();
   if (FEATURES.has('month')) {
     await checkMonth();
-    await checkMonthOverflow();
+    await checkMonthOverflow();   // 自己负责删集（finally），失败也删
     await checkMonthTap();
     await checkLook();
   }
@@ -248,6 +269,11 @@ try {
 } catch (e) {
   bad('脚本执行中断', e && e.message);
 } finally {
+  /* 兜底再删一次：checkMonthOverflow 自己删掉了会把 globalThis.probeCalId
+     置空，所以这里只在「它没能自己删」（脚本被硬杀 / repeat 那一节建了集）
+     时动手。探针数据留在用户日历里是 2026-11-06 那次报障的根因，宁可多删一次。 */
+  if (probeCalId) { try { await dropProbeCal({ apiCall }, probeCalId); } catch {} }
+  if (globalThis.probeCalId) { try { await dropProbeCal({ apiCall }, globalThis.probeCalId); } catch {} }
   try { adb('shell svc power stayon false', { stdio: 'ignore' }); } catch {}
   console.log(lines.join('\n'));
   console.log(`\n== 结果：${pass}/${pass + fail} 通过`);

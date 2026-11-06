@@ -86,12 +86,13 @@ async function checkMonth() {
 }
 
 /* 溢出那一行必须被**真正触发**才算测到（光靠真实数据对账是空跑：当月最多两三条，
-   还没超过格子容量）。这里在当月挑一天造一批超容量任务，跑完清干净。 */
+   还没超过格子容量）。这里造一批超容量任务 —— 但一律造进**探针专用日程集**
+   （见 lib/probe-cal.mjs），并且收尾是「删掉整个集」，跟成功失败都无关。
+   以前直接用登录账号自己的第一个集，测试一失败脏数据就留在用户日历里
+   （2026-11-06 用户报「11 月 7 日一堆 e2e溢出探针」，就是这个）。 */
 async function checkMonthOverflow() {
-  const me = await apiMe();
-  if (!me) { bad('能取到登录 token'); return; }
-  const calId = me.cals?.[0]?.id;
-  if (!calId) { bad('能取到日程集'); return; }
+  const calId = globalThis.probeCalId;
+  if (!calId) { bad('探针专用日程集已建好（不建就不造任何数据，绝不写用户那个集）'); return; }
 
   /* 挑当月中**本来任务最少**的一天，容量最可控；造 8 条（窄屏容量 4 行，
      见 layout.ts 的 monthCellCapacity：格高 108 → 4 行）。 */
@@ -126,51 +127,74 @@ async function checkMonthOverflow() {
     bad('探针任务能写进服务端', r.body?.rejected?.length ? JSON.stringify(r.body.rejected[0]) : JSON.stringify(r));
     return;
   }
-  ok('探针：在 ' + target + ' 造 8 条任务（原有 ' + existing + ' 条）');
+  ok('探针：在 ' + target + ' 造 8 条任务（探针专用集，原有 ' + existing + ' 条）');
 
-  await pullSync();
-  await openCalendar();
-  await tap('button[data-view="month"]'); await wait(900);
-  const cell = await evalIn(`(function(){
-    var c=document.querySelector('.month-cell[data-date=${JSON.stringify(target)}]'); if(!c) return null;
-    var pills=c.querySelectorAll('.task-pill').length;
-    var badge=c.querySelector('.pill-more');
-    var bt=(badge&&badge.textContent)||'';
-    var last=c.querySelector('.task-pill:last-of-type');
-    var lr=last?last.getBoundingClientRect():null;
-    var br=badge?badge.getBoundingClientRect():null;
-    var cr=c.getBoundingClientRect();
-    var cs=badge?getComputedStyle(badge):null;
-    return {
-      pills, more: bt?Number(bt.replace('+','')):0,
-      hasBadge: !!badge,
-      /* +N 必须挂在**最后一条**胶囊里面，而不是单独一行 */
-      badgeInsideLast: !!badge && !!last && last.contains(badge),
-      badgeVisible: !!br && br.width>0 && br.height>0,
-      badgeRightInside: !!br && br.right <= cr.right + 1,
-      badgeColor: cs?cs.color:'',
-      cellH: Math.round(cr.height),
-      lastRowBottom: lr?Math.round(lr.bottom):0,
-      cellScrolls: c.scrollHeight > c.clientHeight + 1,
-    };
-  })()`);
-  if (!cell) { bad('探针那天在月视图里有格子', target); return; }
-  const shownTotal = cell.pills + cell.more;
-  const expect = existing + 8;
-  console.log(`       ${target}: 显示 ${cell.pills} 行文字，最后一条尾巴上 +${cell.more}（当天应有 ${expect} 条），格高 ${cell.cellH}px`);
-  assert(shownTotal === expect, '溢出真的被触发且数得上（显示行数 + +N = 当天任务数）', `显示 ${cell.pills}，+${cell.more}，应为 ${expect}`);
-  assert(cell.hasBadge && cell.more > 0, '最后一条文字尾巴上确实挂了 +N（参考图那样）');
-  assert(cell.badgeInsideLast, '+N 挂在最后一条胶囊里，不是单独占一行');
-  assert(cell.badgeVisible && cell.badgeRightInside, '+N 看得见且在格子内（没被裁掉）');
-  assert(!cell.cellScrolls, '格子本身不滚（内容靠省略，不靠滚动）');
+  try {
+    await pullSync();
+    await openCalendar();
+    await tap('button[data-view="month"]'); await wait(900);
+    const cell = await evalIn(`(function(){
+      var c=document.querySelector('.month-cell[data-date=${JSON.stringify(target)}]'); if(!c) return null;
+      var pills=c.querySelectorAll('.task-pill').length;
+      var badge=c.querySelector('.pill-more');
+      var bt=(badge&&badge.textContent)||'';
+      var last=c.querySelector('.task-pill:last-of-type');
+      var lr=last?last.getBoundingClientRect():null;
+      var br=badge?badge.getBoundingClientRect():null;
+      var cr=c.getBoundingClientRect();
+      var cs=badge?getComputedStyle(badge):null;
+      return {
+        pills, more: bt?Number(bt.replace('+','')):0,
+        hasBadge: !!badge,
+        /* +N 必须挂在**最后一条**胶囊里面，而不是单独一行 */
+        badgeInsideLast: !!badge && !!last && last.contains(badge),
+        badgeVisible: !!br && br.width>0 && br.height>0,
+        badgeRightInside: !!br && br.right <= cr.right + 1,
+        badgeColor: cs?cs.color:'',
+        cellH: Math.round(cr.height),
+        lastRowBottom: lr?Math.round(lr.bottom):0,
+        cellScrolls: c.scrollHeight > c.clientHeight + 1,
+      };
+    })()`);
+    if (!cell) { bad('探针那天在月视图里有格子', target); return; }
+    const shownTotal = cell.pills + cell.more;
+    const expect = existing + 8;
+    console.log(`       ${target}: 显示 ${cell.pills} 行文字，最后一条尾巴上 +${cell.more}（当天应有 ${expect} 条），格高 ${cell.cellH}px`);
+    assert(shownTotal === expect, '溢出真的被触发且数得上（显示行数 + +N = 当天任务数）', `显示 ${cell.pills}，+${cell.more}，应为 ${expect}`);
+    assert(cell.hasBadge && cell.more > 0, '最后一条文字尾巴上确实挂了 +N（参考图那样）');
+    assert(cell.badgeInsideLast, '+N 挂在最后一条胶囊里，不是单独占一行');
+    assert(cell.badgeVisible && cell.badgeRightInside, '+N 看得见且在格子内（没被裁掉）');
+    assert(!cell.cellScrolls, '格子本身不滚（内容靠省略，不靠滚动）');
 
-  /* 收尾：逐条打删除标记，别让探针留在生产库里 */
-  const del = Date.now();
-  const done = await apiPush(ids.map((id, i) => ({
-    opId: 'e2e-ovf-del-' + id, deviceId: 'e2e-android', ts: del + i, entity: 'task',
-    entityId: id, calId, fields: { deleted: true, deletedAt: del + i },
-  })));
-  assert(done.status === 200, '收尾：探针已清干净');
+    /* 「这天还有没做完的」小圆点（2026-11-06 用户：电脑端 / 手机端 / 小组件统一）。
+       探针这 8 条都没打勾，所以切到周视图后**那一天必须有**。
+       并且七格高度必须一致 —— 那颗点是**绝对定位**、不进流（Web 端第一版做成
+       流内一行，把窄屏表头从 43.25 撑到 49.25、撞破 card-geometry 的 48px 上限，
+       被吃掉的是时间网格）。这里量的就是「点亮之后格子没变高」。 */
+    await tap('button[data-view="week"]'); await wait(700);
+    const dots = await evalIn(`(function(){
+      var cells=Array.from(document.querySelectorAll('.week-head-cell'));
+      var lit=cells.filter(function(c){return !!c.querySelector('.wh-dot')})
+        .map(function(c){return c.getAttribute('data-jump')});
+      var hs=cells.map(function(c){return Math.round(c.getBoundingClientRect().height)});
+      var dot=cells.map(function(c){return c.querySelector('.wh-dot')}).filter(Boolean)
+        .map(function(d){var r=d.getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),pos:getComputedStyle(d).position};});
+      return {cells:cells.length, lit:lit, heights:hs, dots:dot};
+    })()`);
+    assert(dots.cells === 7, '周视图日期头七格都在', `${dots.cells} 格`);
+    assert(dots.lit.includes(target), '有没做完任务的那天，日期数字下方有小圆点', `点亮的是 ${dots.lit.join(', ') || '(没有)'}，应为 ${target}`);
+    assert(new Set(dots.heights).size === 1, '每格高度一致（小圆点绝对定位、不进流，撑不高格子）', JSON.stringify(dots.heights));
+    assert(dots.dots.length > 0 && dots.dots.every((d) => d.w === 4 && d.h === 4 && d.pos === 'absolute'),
+      '点亮的那些颗都是 4×4 的绝对定位圆点', JSON.stringify(dots.dots));
+    await tap('button[data-view="month"]'); await wait(600);
+  } finally {
+    /* 收尾**无条件**执行。以前删除写在成功路径的最后一步，中途任何一条断言
+       红了就跑不到，脏数据留在库里 —— 这正是 11 月 7 日那批残留的来源。
+       这里不逐条删任务，而是删掉整个专用集：一次调用，所有端一起消失。 */
+    const done = await apiCall('DELETE', '/api/cals/' + calId);
+    assert(done.status === 200, '收尾：探针专用集已删除（无论前面成败）', 'status ' + done.status);
+    globalThis.probeCalId = null;   // 已删，别让后面的节再往它里面写
+  }
 }
 
 /* 月视图两种点击（2026-10-19 用户明确要求）：

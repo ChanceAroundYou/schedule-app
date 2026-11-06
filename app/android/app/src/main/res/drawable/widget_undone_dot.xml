@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日期 chip 下方那颗「这天还有没做完的」小圆点（2026-11-06 用户：电脑端 / 手机端 /
+  桌面小组件三端统一）。用 App 标识的主绿，和选中日期那个圆底同一个颜色语言。
+
+  直径 4dp：日期圆圈才 20dp，再大就抢数字。判据在
+  ScheduleWidgetProvider.dayHasUndone，与 App 端 domain/model/undone.ts 同一份。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#27795A" />
+</shape>

@@ -19,6 +19,7 @@ export {
 export {
   liveHabits, trashedHabits, habitById, habitsTodayRemaining, habitStreak,
 } from './habits.ts';
+export { undoneLoads, undoneLoadOf, undoneDates, hasUndone } from './undone.ts';
 export {
   UNGROUPED, DEFAULT_GROUPS, liveGroups, groupById, habitsOfGroup, groupOfHabit,
   bucketsOf, groupTodayCount, type HabitBucket,

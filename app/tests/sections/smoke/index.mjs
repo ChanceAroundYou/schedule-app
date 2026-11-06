@@ -30,5 +30,6 @@ export const sectionFiles = [
      一个永远不来的回包，整趟探针就那么挂住）。新加的节一律插在这行之上。 */
   './sections/smoke/27.mjs',
   './sections/smoke/28.mjs',
+  './sections/smoke/29.mjs',
   './sections/smoke/26.mjs',
 ];

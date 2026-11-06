@@ -22,8 +22,9 @@ import {
   counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
   quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
+  undoneLoads, undoneLoadOf, undoneDates, hasUndone, makeHabit,
 } from './model.ts';
-import type { Change, LocalState, Op, RepeatRule, Task } from './types.ts';
+import type { Change, Habit, LocalState, Op, RepeatRule, Task } from './types.ts';
 
 const T = '2026-10-06';   // 固定「今天」，否则用例会随真实日期漂移
 
@@ -493,6 +494,77 @@ test('某一天的负载只算没完成、有时间的任务', () => {
     makeTask({ id: 'd', title: 'd', date: T, time: '13:00', duration: 60, done: true }),
   ]);
   assert.deepEqual(dayLoad(s, T), { mins: 90, count: 3 });
+});
+
+/* ============ 「这天还有没做完的」三端共用的那颗小圆点 ============ */
+
+function habit(id: string, log: Record<string, true> = {}): Habit {
+  return { ...makeHabit('卡' + id, 0, 'hcal', id), log };
+}
+
+test('日期小点：当天没做完的都算，做完了的不亮', () => {
+  const s = stateWith([
+    makeTask({ id: 'a', title: 'a', date: T }),
+    makeTask({ id: 'b', title: 'b', date: T, done: true }),
+    makeTask({ id: 'c', title: 'c', date: D.addDays(T, 3) }),
+    makeTask({ id: 'd', title: 'd', date: D.addDays(T, 3), done: true }),
+    makeTask({ id: 'e', title: 'e', date: D.addDays(T, 3), done: true }),
+  ]);
+
+  const lit = [...undoneDates(s)].sort();
+  assert.deepEqual(lit, [T, D.addDays(T, 3)], '各有一条没打勾的，两天都亮');
+  assert.equal(hasUndone(s, T), true);
+  assert.equal(hasUndone(s, D.addDays(T, 1)), false, '一条任务都没有的那天不亮');
+
+  // 圆点要「有没有」，月历短横要「几条」—— 两者必须同源，不能各扫一遍
+  assert.deepEqual(undoneLoadOf(s)(D.addDays(T, 3)), 1, '完成两条不计数');
+  assert.deepEqual([...undoneLoads(s).entries()].sort(), lit.map((d) => [d, 1]));
+});
+
+test('日期小点：逾期那天亮，没日期的任务不算任何一天', () => {
+  const past = D.addDays(T, -4);
+  const s = stateWith([
+    makeTask({ id: 'o', title: '逾期', date: past }),
+    makeTask({ id: 'n', title: '没排日期', date: null }),
+  ]);
+  assert.deepEqual([...undoneDates(s)], [past], '逾期就是「那天的任务没打勾」，不用特殊判据');
+  assert.equal(undoneDates(s).size, 1, 'date 为 null 的任务不点亮任何一格');
+});
+
+test('日期小点：垃圾箱与彻底删除的墓碑不点亮', () => {
+  const s = stateWith([
+    makeTask({ id: 'x', title: '在垃圾箱', date: T, deleted: true }),
+    makeTask({ id: 'y', title: '已彻底删除', date: T, purged: true }),
+  ]);
+  assert.deepEqual([...undoneDates(s)], [], '墓碑不该跑到日期头上');
+});
+
+test('日期小点：打卡只点亮今天，不回溯过去', () => {
+  const today = D.today();
+  const s = stateWith([], {
+    habits: { h1: habit('1'), h2: habit('2', { [today]: true }) },
+    habitsCal: 'hcal',
+  });
+
+  assert.deepEqual([...undoneDates(s)], [today], '今天还有一张卡没打 → 今天亮，已打的不再计数');
+
+  // 打过很多天的那张卡，不能让建号以来的每一天都亮：log 是「打过才有键」的
+  // 稀疏表，没有任何地方记录「那天本来该打」。
+  const logged = { [D.addDays(today, -1)]: true as const, [D.addDays(today, -2)]: true as const };
+  const s2 = stateWith([], {
+    habits: { h1: habit('1', logged) },
+    habitsCal: 'hcal',
+  });
+  assert.deepEqual([...undoneDates(s2)], [today], '今天没打所以今天亮；打过的那几天不倒着点亮');
+});
+
+test('日期小点：普通任务和打卡同一天叠加，不互相顶掉', () => {
+  const today = D.today();
+  const s = stateWith([makeTask({ id: 'a', title: 'a', date: today })], {
+    habits: { h1: habit('1') },
+    habitsCal: 'hcal',
+  });
+  assert.equal(undoneLoadOf(s)(today), 2, '一条任务 + 一张没打的卡 = 2');
 });
 
 test('侧栏顺序：区分「从未设置」与「用户有意清空」', () => {

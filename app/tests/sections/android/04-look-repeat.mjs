@@ -318,9 +318,14 @@ async function checkRepeat() {
   const me = await apiMe();
   if (!me) { bad('能取到登录 token'); return; }
   ok('能从页面取到登录 token');
-  const calId = me.cals && me.cals[0] && me.cals[0].id;
-  if (!calId) { bad('能取到机器人自己的日程集'); return; }
-  ok('能取到日程集', calId);
+  /* 一律写进探针专用集（月视图那一节收尾已经把它删掉了，所以这里重新建一个）。
+     **绝不用 me.cals[0]** —— 那是手机上登录着的那个账号自己每天在用的日程集，
+     以前就是这么把「e2e安卓重复…」留在用户日历里的。 */
+  let calId = globalThis.probeCalId;
+  if (!calId) calId = await ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, ok, bad });
+  globalThis.probeCalId = calId;
+  if (!calId) { bad('能取到探针专用日程集（没有就一条都不写）'); return; }
+  ok('重复系列写进探针专用集', calId);
 
   const title = 'e2e安卓重复-' + Date.now().toString(36);
   const rootId = 't_e2e_and_' + Date.now().toString(36);

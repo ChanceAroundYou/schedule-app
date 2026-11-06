@@ -153,7 +153,17 @@
 }
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; }
 .topbar-right { position: relative; }
-.view-title { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.2px; }
+.view-title { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.2px; position: relative; }
+/* 日视图「这天还有没做完的」小圆点（2026-11-06 用户：电脑端 / 手机端 / 桌面小组件统一）。
+   日视图没有自己的日期头 —— 屏幕上唯一的「哪天」就是顶栏这一行标题，所以这一端
+   只能挂在标题正下方。**绝对定位**：不撑高标题、不推顶栏（顶栏本身不许加
+   position / sticky / z-index，见 Topbar 文件头注释；给标题自己加 position:relative
+   是安全的，它不在浮层定位链上）。尺寸与周视图 `.wh-dot` 同一个。 */
+.vt-dot {
+  position: absolute; left: 1px; bottom: -1px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--primary); opacity: .85;
+}
 .date-nav { display: flex; align-items: center; gap: 4px; }
 /* 顶栏空间不够时，别把按钮里的字挤成竖排 —— 宁可先藏日期文字 */
 .date-nav .date-range { flex: 0 0 auto; white-space: nowrap; }

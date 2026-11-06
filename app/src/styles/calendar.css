@@ -674,9 +674,14 @@
      日期数字 16 → 13、圆圈 26 → 22、上下留白 8/6 → 5/4、两行之间 3 → 2。
      实测表头总高 58.75 → 46（省 12.75px 给时间网格）。
      ⚠️ 这一处只管表头自己的呼吸，不动 `.week-grid` 的 8/10 —— 那两段是给
-        小时线和数字落笔留的地方。 */
+        小时线和数字落笔留的地方。
+     ⚠️ 2026-11-06 加了「还有没做完的」小圆点：上下留白 5/4 → 2/7，**总数 9 不变**、
+     只是把 3px 挪到下面给那颗点落脚。表头总高一分不能长 —— 周视图锁单屏，
+     表头长一像素时间网格就短一像素，card-geometry 的 48 / 56px 上限量的就是
+     这件事（第一版把点做成流内一行时窄屏 43.25 → 49.25，当场撞破）。 */
+  position: relative;   /* 小圆点的定位锚（只在这一格内部，不外溢） */
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 5px 0 4px; border: none; background: none; border-radius: var(--r-md);
+  padding: 2px 0 7px; border: none; background: none; border-radius: var(--r-md);
   color: var(--text-2); font-size: 12px;
   transition: background .14s, color .14s;
 }
@@ -694,6 +699,18 @@
 /* 今天：和月视图同一个方式 —— 深绿实心圆把**日期数字**圈起来。
    注意**只圈日期**，不圈上面那行「周四」（2026-10-22 用户明确要求）。 */
 .week-head-cell.today .wh-day { background: var(--primary); color: var(--on-primary); }
+/* 「这天还有没做完的」小圆点（2026-11-06 用户：电脑端 / 手机端 / 桌面小组件统一）。
+   **绝对定位**在日期数字正下方：不进流 = 每一格的高度天生跟加它之前一模一样，
+   不需要 `visibility: hidden` 占位（那是 `.wh-day` 圆圈 2026-10-19 的坑法，
+   流内一行就算占着也会把整行抬高 6px，窄屏表头当场撞破 48px 上限）。
+   尺寸比圆圈小得多，纯是非题，不写条数（用户选的档）。
+   口径在 domain/model/undone.ts，日视图顶栏那颗点是同一个。 */
+.wh-dot {
+  position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--primary); opacity: .85;
+}
+.wh-dot.invisible { visibility: hidden; }
 
 /* 时间网格本体：左刻度 + 右 7 列。**高度全部交给 flex** ——
    `.week-grid` 是 `.week-view` 的 flex 子项、`flex:1 + min-height:0`，

@@ -63,5 +63,18 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
         </FrameLayout>
+
+        <!-- 「这天还有没做完的」小圆点（2026-11-06 用户：三端统一，纯圆点不带条数）。
+             **每天都占着这一格**、没得点时只把底色清成 0（和上面 chip_circle
+             选中/未选中同一套做法）—— 这样日期条的高度恒定；只在该有的那天
+             冒出来会把整条撑高几 dp，同一行里别的日期看着就是没对齐
+             （App 端 `.wh-dot` 同一条教训）。TextView + 圆底是这个组件里
+             已验证可用的画法（chip_circle 就是这么画的）。 -->
+        <TextView
+            android:id="@+id/chip_dot"
+            android:layout_width="4dp"
+            android:layout_height="4dp"
+            android:layout_marginTop="2dp"
+            android:text="" />
     </LinearLayout>
 </FrameLayout>

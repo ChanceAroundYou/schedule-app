@@ -447,6 +447,14 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
             // 必然被拉成椭圆 —— 这正是用户看到的「选中的日期变成了椭圆」。
             chip.setInt(R.id.chip_circle, "setBackgroundResource",
                     sel ? R.drawable.widget_chip_bg_sel : 0);
+            /* 「这天还有没做完的」小圆点（2026-11-06 用户：电脑端 / 手机端 /
+               桌面小组件三端统一，纯圆点、不写条数）。
+               **每天都占着这一格**，没有的日期只是把底色清成 0（和上面 chip_circle
+               选中/未选中同一套做法）—— 日期条的高度因此恒定。只在该有的那天
+               才挂上去会把那一格撑高，整条日期条就会高低不齐。 */
+            chip.setInt(R.id.chip_dot, "setBackgroundResource",
+                    dayHasUndone(snap, iso, today) ? R.drawable.widget_undone_dot : 0);
+            scaleView(chip, R.id.chip_dot, 4, k);
             // 星期是固定的，**不用白色**（白字在没有底的星期上会看不见）；
             // 选中时只把它染成主绿做轻微提示（用户 2026-10-14 第八轮）。
             chip.setTextColor(R.id.chip_wd, sel ? 0xFF27795A : 0xFF6B8574);
@@ -499,6 +507,34 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
                 WidgetIntent.of(c, ACTION_TODAY, "today").build(c));
 
         mgr.updateAppWidget(widgetId, v);
+    }
+
+    /* ============ 「这天还有没做完的」（与 App 端 domain/model/undone.ts 同一判据）============ */
+
+    /**
+     * 某一天有没有还没做完的事。三端（电脑 / 手机 / 桌面小组件）必须是同一个答案，
+     * 所以判据只在这里写一份，和 App 那边逐条对齐：
+     *   · 那天的普通任务没打勾 → 有（含过去某天没做完的，也就是 App 里的「逾期」）
+     *   · 打卡：只点亮**今天** —— App 端同理。打卡记录是「打过才有键」的稀疏表，
+     *     没有任何地方记录「那天本来该打」，按它回溯等于把建号以来每一天都点亮。
+     *
+     * 快照窗口 = App 推送的 9 周 / 服务端兜底的 ±45 天，窗口外的日期算不出来，
+     * 而日期条本来也只画这一周，够用。
+     */
+    static boolean dayHasUndone(WidgetSnapshot snap, String iso, String today) {
+        for (WTask t : snap.tasks) {
+            if (iso.equals(t.date) && !t.done) return true;
+        }
+        if (iso.equals(today)) {
+            for (WHabit h : snap.habits) {
+                // 和 habitChip 完全同一句完成态判定（没有 log 表的老快照只能拿 done 兜底）
+                boolean done = h.log != null
+                        ? h.log.optBoolean(iso, false)
+                        : (h.done && iso.equals(today));
+                if (!done) return true;
+            }
+        }
+        return false;
     }
 
     /* ============ 打卡 chip 三件套（2026-11-04 起供 HabitWidgetProvider 复用） ============
@@ -590,8 +626,12 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
      * 日期条占高。2026-10-14 第八轮：高亮圈只包日期数字后，结构变成
      * 「星期（9sp）在上 + 日期圆（22dp）在下」，条高 29 → **35dp**。
      * 2026-10-25：字号各小 1sp、圆 22 → 20dp，条高收到 **33dp**。
+     * 2026-11-06：日期下方多了一颗「这天还有没做完的」小圆点（4dp + 2dp 缝），
+     * 每一格都占着这一行（没点亮时只是不挂底色），所以这 6dp **恒定要留** ——
+     * 不留就等于日期条实际比预算高 6dp，时间轴画得比可用空间高、底部被裁
+     * （2026-10-25 那条老坑就是这么来的）。
      */
-    private static final int DATE_STRIP_DP = 33;
+    private static final int DATE_STRIP_DP = 39;
     /** 十字面板顶行（左空白角 + 右未定时区）的最小高度。常驻，不随有无任务变。
      *  2026-10-25：15 → 14dp（整体缩一号） */
     private static final int PANEL_BAR_DP = 14;
