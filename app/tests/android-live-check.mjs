@@ -161,11 +161,14 @@ await send('Network.enable').catch(() => {});
   const locked = /deviceLocked=1/.test(trust);
   const vis = await evalIn(`document.visibilityState`).catch(() => '读不到');
   if (dozing || locked || vis !== 'visible') {
-    console.log(`\n⛔ 真机实测没跑：手机现在处于「${dozing ? '息屏' : '亮屏'} / ${locked ? '锁屏' : '已解锁'}」，
-   WebView 里 document.visibilityState = ${JSON.stringify(vis)}。
-   这个状态下浏览器一帧 rAF 都不跑、同步也不发起，跑出来的几何断言全是假红。
-   解法：把手机解锁、让屏幕一直亮着（插电时 `svc power stayon true` 才真的生效），
-   再重跑本脚本。`);
+    /* ⚠️ 这段是模板字符串，正文里不许再出现反引号（上一版把 `svc power stayon true`
+       包在反引号里，直接把模板提前截断 → 整个脚本 SyntaxError）。 */
+    console.log('\n⛔ 真机实测没跑：手机现在处于「' + (dozing ? '息屏' : '亮屏')
+      + ' / ' + (locked ? '锁屏' : '已解锁') + '」，'
+      + 'WebView 里 document.visibilityState = ' + JSON.stringify(vis) + '。\n'
+      + '   这个状态下浏览器一帧 rAF 都不跑、同步也不发起，跑出来的几何断言全是假红。\n'
+      + '   解法：把手机解锁、让屏幕一直亮着（插电时 svc power stayon true 才真的生效），\n'
+      + '   再重跑本脚本。');
     for (const [, p] of pending) clearTimeout(p.timer);
     pending.clear();
     ws.close();
