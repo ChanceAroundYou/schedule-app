@@ -273,8 +273,14 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
                 && undoneDates(scoped).has(state.ui.cursor)}
             />
             {state.ui.nav === 'calendar' && (
+              /* 传 `scoped`：这个副header 里的「找日期」面板那本小月历要画的
+                 负载，和下面日程页日期头那几颗小圆点是**同一道题** —— 必须用
+                 同一份 state（按侧栏勾选过滤的那份），否则勾掉某个集之后，
+                 月历上还标着「有负载」、日期头的点已经不亮了。
+                 这里只读 ui / cals（CalMenu 读的是 `state.cals`，useScopedState
+                 原样带过去），不读 tasks 的归属。 */
               <CalSubheader
-                state={state}
+                state={scoped}
                 jump={jumpOpen}
                 setJump={setJumpOpen}
                 onView={(v) => store.setUi({ view: v })}
@@ -307,8 +313,11 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
           </>
         }
         quickAdd={
+          /* 同上：快速添加里那个日期面板的小月历，负载判据要和日程页那几颗
+             小圆点同源同口径。QuickAdd 只读 state.ui（见 ui/shell/QuickAdd.tsx），
+             过滤过的 tasks 只影响那本小月历画不画短横。 */
           <QuickAdd
-            state={state}
+            state={scoped}
             onSubmit={(d, openDetail) => createTask(d, openDetail)}
           />
         }
