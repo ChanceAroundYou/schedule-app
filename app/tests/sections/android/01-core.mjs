@@ -31,15 +31,22 @@ async function checkCore() {
       n: cell.querySelectorAll('.task-el--untimed').length,
       more: !!cell.querySelector('.wun-more'),
       blank: !!blank,
-      maxH: getComputedStyle(cell).maxHeight,
-      scrollable: cell.scrollHeight > cell.clientHeight + 1,
+      /* 判据本身修掉（2026-11-06）：这条以前读 maxHeight，而 .wun-cell
+         压根没有 max-height —— 它的「有上限」是写死的 height
+         （--un-visible 行 × --row + 间距 + 自身留白）配 overflow-y: auto
+         （calendar.css 的 .wun-cell），所以旧断言 maxH !== none 恒为假、
+         天天报红，报的还是一个不存在的问题。改成断真起作用的那一套。 */
+      overflowY: getComputedStyle(cell).overflowY,
+      cellH: Math.round(cell.getBoundingClientRect().height),
+      scrollH: cell.scrollHeight, clientH: cell.clientHeight,
       at: r ? { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) } : null,
     };
   })()`);
   if (wun) {
     assert(!wun.more, '周视图不再把未定时任务折成「+N」');
     assert(wun.blank, '周视图未定时格末尾有多一整行空白');
-    assert(wun.maxH !== 'none', '周视图未定时格有高度上限（超了自己滚）', `max-h ${wun.maxH}`);
+    assert(wun.overflowY === 'auto', '周视图未定时格高度写死、超出部分在格子里自己滚（时间轴高度不受影响）',
+      `overflow-y=${wun.overflowY} / 格高 ${wun.cellH} 内容 ${wun.scrollH}`);
     if (wun.n > 0 && wun.at) {
       const before = await evalIn(`document.querySelectorAll('.wun-cell .new-cell').length`);
       await tapAt(wun.at.x, wun.at.y); await wait(400);

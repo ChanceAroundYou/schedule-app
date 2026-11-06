@@ -94,14 +94,35 @@ if (!page0) { console.error('没有可调试页面:', JSON.stringify(list)); pro
 const ws = await openWs(page0.webSocketDebuggerUrl);
 let id = 0; const pending = new Map();
 const consoleErrors = [];
+/* 网络不通（息屏 / Wi-Fi 省电 / DNS 走公网被丢包）造成的失败单独一堆。
+   它们是真的要看见，但不该混进「产品代码零报错」那条断言里 —— 上一轮就是这么
+   把「手机连不上服务器」报成「应用有控制台报错」的。 */
+const netErrors = [];
+const NET_NOISE = /net::ERR_|Failed to connect|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_INTERNET|NetworkError|Failed to fetch/i;
+/* CDP 的 RemoteObject：字符串才有 `value`，对象只有 `className` / `description` /
+   `preview`。以前只取 `value ?? description`，于是对象参数全变成空串，
+   最后断言只能报出一个没用的「Object」。这里把它真正描出来。 */
+function describeArg(a) {
+  if (!a) return '';
+  if (a.value !== undefined && a.value !== null) return String(a.value);
+  const bits = [];
+  if (a.subtype) bits.push(a.subtype);
+  if (a.className) bits.push(a.className);
+  if (a.description) bits.push(a.description);
+  const props = ((a.preview && a.preview.properties) || []).slice(0, 4)
+    .map((p) => p.name + '=' + (p.value ?? ''));
+  if (props.length) bits.push('{' + props.join(', ') + '}');
+  return bits.join(' ').trim();
+}
 ws.onMessage = (raw) => {
   const m = JSON.parse(raw);
   if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning')) {
-    const txt = (m.params.args || []).map((a) => a.value ?? a.description ?? '').join(' ');
-    if (txt) consoleErrors.push(txt.slice(0, 160));
+    const txt = (m.params.args || []).map(describeArg).filter(Boolean).join(' ');
+    if (txt) (NET_NOISE.test(txt) ? netErrors : consoleErrors).push(txt.slice(0, 200));
   } else if (m.method === 'Runtime.exceptionThrown') {
     const d = m.params.exceptionDetails;
-    consoleErrors.push('exception: ' + (d.exception?.description || d.text || ''));
+    const txt = 'exception: ' + ((d.exception && (d.exception.description || describeArg(d.exception))) || d.text || '');
+    if (txt) (NET_NOISE.test(txt) ? netErrors : consoleErrors).push(txt.slice(0, 200));
   }
   if (m.id && pending.has(m.id)) {
     const { resolve, reject } = pending.get(m.id); pending.delete(m.id);
@@ -211,7 +232,7 @@ async function apiCall(method, path, body) {
 /* ------------------------------------------------------------ 各项检查 */
 
 const ctx = {
-  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, apiMe, apiPush, apiCall, ensureProbeCal },
+  helpers: { evalIn, tap, tapAt, reload, pullSync, openCalendar, wait, adb, assert, bad, ok, device, FEATURES, consoleErrors, netErrors, apiMe, apiPush, apiCall, ensureProbeCal },
   state: {},
   features: FEATURES,
 };

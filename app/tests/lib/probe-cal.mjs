@@ -53,8 +53,24 @@ export async function ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, pullSy
   ok('探针数据专用集已建好（用户自己那个集一条都不写）', calId);
 
   /* 服务端刚建的集要等一轮同步才会出现在 App 的集列表里（轮询 / focus 触发），
-     不先拉一次的话下面那一行根本不存在。 */
-  if (pullSync) await pullSync(4000);
+     不先拉一次的话下面那一行根本不存在。
+     ⚠️ 查的是 `state.cals`（**有没有这个集**），不是 `ui.cals`（勾没勾）——
+     第一次跑就是查错了那份：集已经同步进来了、只是没勾，于是下面照着
+     一个还不存在的行去点，红成「多选里找不到那一行」。 */
+  const hasCal = async () => evalIn(`(function(){
+    var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+    return (s.cals||[]).some(function(c){return c.id===${JSON.stringify(calId)}});
+  })()`);
+  if (!await hasCal()) {
+    /* 还不进来就轮着多拉几轮（每轮就是一次 focus → syncNow，页面事件触发，
+       **不用 Page.reload** —— reload 会换掉执行上下文、把这条裸 WS 甩断。
+       上一轮跑红就是栽在这里：查错了状态 + 只拉一轮，那一行根本不存在。 */
+    for (let i = 0; i < 5 && !(await hasCal()); i++) await pullSync(2500);
+  }
+  if (!await hasCal()) {
+    bad('刚建的探针专用集能同步进 App（连拉五轮仍然没有它）', calId);
+    return null;
+  }
 
   const shown = await evalIn(`(function(){var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;return (s.ui&&s.ui.cals)||[]})()`);
   if (Array.isArray(shown) && shown.includes(calId)) return calId;
@@ -71,12 +87,36 @@ export async function ensureProbeCal({ apiMe, apiCall, evalIn, tap, wait, pullSy
   if (more === 'clicked') {
     await wait(700);
     await tap('[data-cal-sheet-open]');
-    await wait(700);
+    /* 等的是**那个多选面板本身**，不是固定 700ms：Sheet 有开启动画，
+       动画没落地就去点行，行还不存在。 */
+    for (let i = 0; i < 8; i++) {
+      const ready = await evalIn(`(function(){
+        var d=document.querySelector('[role="dialog"]');
+        return d && d.querySelector('[data-cal-row]') ? 1 : 0;
+      })()`);
+      if (ready) break;
+      await wait(400);
+    }
   }
   const row = await tap(`[data-cal-row="${calId}"]`);
-  if (row === 'no-sel') bad('能把探针集勾成显示（日程集多选里找不到那一行）', calId);
-  else ok('探针集已勾成显示（日程页能看见造的数据）');
-  await wait(500);
+  if (row === 'no-sel') {
+    bad('能把探针集勾成显示（日程集多选里找不到那一行）',
+      calId + ' / 抽屉=' + more + ' / 界面上有的行=' + JSON.stringify(await evalIn(
+        `(function(){return Array.from(document.querySelectorAll('[data-cal-row]')).map(function(b){return b.dataset.calRow})})()`)));
+    return null;
+  }
+  /* 勾完要**确认真的勾上了** —— 只点一下不核对，后面所有断言都会
+     以「那天没有任务」的形式红，而根因是这一步。 */
+  let picked = false;
+  for (let i = 0; i < 6 && !picked; i++) {
+    picked = !!(await evalIn(`(function(){
+      var j=JSON.parse(localStorage.getItem('schedule-app-v4')||'{}');var s=j.state||j;
+      return (s.ui&&s.ui.cals||[]).indexOf(${JSON.stringify(calId)})>=0;
+    })()`));
+    if (!picked) await wait(500);
+  }
+  if (!picked) { bad('勾上探针集后 ui.cals 真的有它', calId); return null; }
+  ok('探针集已勾成显示（日程页能看见造的数据）');
   /* 关掉多选弹窗，别让它一直盖着界面（后面还要点视图切换）。
      更多抽屉也顺手收掉 —— 它俩是叠着的。 */
   await tap('[role="dialog"] [aria-label="关闭"]').catch(() => {});
