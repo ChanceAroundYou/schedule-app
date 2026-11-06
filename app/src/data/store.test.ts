@@ -248,6 +248,25 @@ test('打卡是同一天一次的状态切换，不是自增', () => {
   assert.equal(counts(store.get()).habits, 1);
 });
 
+test('补打 / 预打：toggleHabit 带日期就只写那一天，今天的计数不动', () => {
+  fresh();
+  const h = store.addHabit('学英语');
+  const back = D.addDays(TODAY, -3);
+  const ahead = D.addDays(TODAY, 2);
+
+  store.toggleHabit(h, back);
+  assert.equal(store.get().habits[h].log[back], true, '补打到指定的那天');
+  assert.equal(store.get().habits[h].log[TODAY], undefined, '今天不受影响');
+  assert.equal(counts(store.get()).habits, 1, '今天没打，仍算「还剩几项」');
+
+  store.toggleHabit(h, ahead);
+  assert.equal(store.get().habits[h].log[ahead], true, '预打也落在那一天');
+
+  store.toggleHabit(h, back);
+  assert.equal(store.get().habits[h].log[back], undefined, '再点一次只取消那一天');
+  assert.equal(store.get().habits[h].log[ahead], true, '别的日期不受牵连');
+});
+
 /* ==================== 日程集与权限 ==================== */
 
 test('新任务落在当前选中的集里', () => {
