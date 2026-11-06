@@ -177,27 +177,24 @@ export async function run(ctx) {
     /* ---------- 4. 日视图：判据落到顶栏标题下方 ---------- */
     await clickEl(page, `document.querySelector('.week-view .week-head-cell[data-jump="${dayA}"]')`);
     await waitFor(page, `!!document.querySelector('[data-view="day"].on')`, '点日期头跳到那天的日视图', 8000);
+    /* 2026-11-06 用户：「日视图下不需要小圆点」。这一端**反过来锁**：
+       标题上不许再出现 `.vt-dot`，也不许再挂「这天还有没做完的」的 title。
+       周 / 三日视图的日期头、月格子、桌面小组件照旧亮（本节前半段已经验过周视图）。 */
     const day = await evalJs(page, `return (() => {
       const h = document.querySelector('.topbar .view-title');
       const d = h && h.querySelector('.vt-dot');
-      const cs = d ? getComputedStyle(d) : null;
-      const r = d ? d.getBoundingClientRect() : null;
       const hr = h ? h.getBoundingClientRect() : null;
       return { title: h ? h.textContent.trim() : null, titleTip: h ? h.getAttribute('title') : null,
-        has: !!d, w: r ? Math.round(r.width) : null, hgt: r ? Math.round(r.height) : null,
-        pos: cs ? cs.position : null, bg: cs ? cs.backgroundColor : null,
-        belowTitle: !!(r && hr && r.top >= hr.bottom - 3),
-        titleH: hr ? Math.round(hr.height) : null,
+        has: !!d, titleH: hr ? Math.round(hr.height) : null,
         topbarPos: (() => { const t = document.querySelector('.topbar'); return t ? getComputedStyle(t).position : null; })() };
     })()`);
-    ok(!!day && day.has && day.w === 4 && day.hgt === 4,
-      '日视图那一天顶栏标题下方也有小圆点（这一端没有日期头，只有标题）', JSON.stringify(day));
-    ok(!!day && day.belowTitle, '圆点在标题**正下方**，不是压在字上', JSON.stringify(day));
-    ok(!!day && day.pos === 'absolute' && day.topbarPos === 'static',
-      '圆点绝对定位在标题自己那一块里（顶栏本体不许加 position / sticky / z-index）',
-      JSON.stringify({ dot: day && day.pos, topbar: day && day.topbarPos }));
-    ok(!!day && !!day.titleTip && day.titleTip.includes('没做完'),
-      '标题的 title 说明了这颗点是什么意思', JSON.stringify(day && day.titleTip));
+    ok(!!day && !day.has,
+      '日视图顶栏标题上**不再有**小圆点（用户 2026-11-06 定）', JSON.stringify(day));
+    ok(!!day && !day.titleTip,
+      '标题也不再挂「这天还有没做完的」的 title（点没了，说明也该走）', JSON.stringify(day));
+    ok(!!day && day.topbarPos === 'static',
+      '顶栏本体仍然是 static（不许加 position / sticky / z-index）',
+      JSON.stringify({ topbar: day && day.topbarPos }));
 
     /* ---------- 5a. 找日期面板那本小月历：与圆点同一份口径 ---------- */
     await clickEl(page, `document.querySelector('.jump-wrap .btn, .jump-wrap button')`);

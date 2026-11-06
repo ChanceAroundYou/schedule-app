@@ -231,6 +231,15 @@ try {
       openCalMenu: null, waitCalMenu: null, closeCalMenu: null, withCals: (fn) => fn(), shown: null,
       clickCal: null, waitShownCount: null, focusCal: null, inbox: null, a11y: null, collect: null,
       fmt: null, apiPort: API_PORT, api: null,
+      apiCall: async (port, method, path, opts) => {
+        const headers = {};
+        if (opts && opts.token) headers.Authorization = 'Bearer ' + opts.token;
+        if (opts && opts.body !== undefined) headers['Content-Type'] = 'application/json';
+        const r = await fetch(`http://127.0.0.1:${port}/api${path}`, {
+          method, headers, body: opts && opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        });
+        return { status: r.status, body: await r.json().catch(() => null) };
+      },
     },
   };
 
@@ -245,6 +254,7 @@ try {
     './sections/geom/07-user-select.mjs',
     './sections/geom/08-corner-tags.mjs',
     './sections/geom/09-card-font-scale.mjs',
+    './sections/geom/10-month-cols.mjs',
   ];
   for (const f of sectionFiles) {
     const mod = await import(f);
