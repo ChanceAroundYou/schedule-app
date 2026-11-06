@@ -156,12 +156,12 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const nowMin = D.nowMin();
   /* 「这天还有没做完的」—— 日 / 周 / 小组件共用 domain 里那一份口径 */
   const undone = undoneDates(state);
-  /* 来源 tag 的**唯一**判据（2026-11-06 放宽）。
-     以前只在三日视图 + 宽屏画：周视图一列只有 ~78px，一枚 11px 的圈是抢标题的字。
-     用户实测后要求「所有视图都显示」—— 这枚圈是**绝对定位**在卡片右上角、
-     不占文字位（标题可以从它底下穿过去，见 calendar.css 那段），所以窄列也装得下。
-     仍然只在**宽屏**画：手机上一列不到 50px，圈就是半个格子。 */
-  const tag = !isNarrowNow() && state.ui.showCreatorTag;
+  /* 来源 tag 的**唯一**判据（2026-11-06 第二次放宽）。
+     本来只在三日视图 + 宽屏画；用户先要求「所有视图都显示」，第二天又报
+     「移动端完全没有」—— 所以窄屏这一道闸也撤了。这枚圈是**绝对定位**在卡片右上角、
+     不占文字位（标题可以从它底下穿过去），窄列装得下；尺寸跟着卡片字号缩小。
+     现在唯一开关就是设置里那一项。 */
+  const tag = state.ui.showCreatorTag;
 
   /* 七天的事件先算出来 —— 时间窗要按它们自动往外让（coverWindow） */
   const perDay = days.map((d) => dayEvents(state, d));

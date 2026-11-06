@@ -111,8 +111,10 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
           <TaskPill
             key={t.id} task={t} moreJumpDay={d}
             calColor={colorOf(state.cals, t.calId)}
-            /* 来源 tag：窄屏不画（格子 48px，圈就占去四分之一），宽屏照画 */
-            creator={!narrow && state.ui.showCreatorTag
+            /* 来源 tag：窄屏也画（用户 2026-11-06：移动端完全没有）。
+               胶囊只有一行高，圈绝对定位在右上角、尺寸跟着卡片字号缩，
+               48px 的格子里也不会压过任务名。 */
+            creator={state.ui.showCreatorTag
               ? creatorOf(state.users, t.createdBy, state.meId) : null}
             showRepeatMark={state.ui.showRepeatMark}
             moreSuffix={narrow && i === shown.length - 1 && more > 0 ? more : undefined}

@@ -313,6 +313,11 @@ export async function run(ctx) {
         titleClip: title ? Math.round(title.scrollWidth - title.clientWidth) : null,
         titleFs: title ? +parseFloat(getComputedStyle(title).fontSize).toFixed(2) : null,
         tagW: tr ? tr.w : null,
+        /* 卡片自己的圆角半径：角标「能不能落进圆弧」完全由它决定（见 08 节那条几何判据） */
+        cardR: (function () {
+          const v = parseFloat(getComputedStyle(el).borderTopLeftRadius);
+          return isNaN(v) ? 0 : +v.toFixed(2);
+        })(),
         /* 圆里的字落在哪：padding-top / 字形那 0.3px / 字形**行盒**中心离圆心的距离。
            ⚠️ 行盒不是墨迹：creator-tag 里那一层 span 的矩形是行盒，汉字墨迹在这个盒里
            还自带一个固定偏移（6.25px 这一档实测盒中心比墨迹质心高 1.51px @DSF2 /

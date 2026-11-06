@@ -110,8 +110,10 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
    *  最自然的入口，而且它走的还是「点区域空白处开草稿」那条老路。 */
   const narrow = isNarrowNow();
   /* 来源 tag：与周视图**同一口径**（2026-11-06 用户要求所有视图都显示）。
-     宽屏才画 —— 手机上卡片整宽也就三百来像素，圈会和标题抢字。 */
-  const tag = !narrow && state.ui.showCreatorTag;
+     不再按「宽屏/窄屏」判 —— 手机上也要画（用户第二天就报了「移动端完全没有」）。
+     圈是绝对定位、不占文字位，尺寸跟着卡片字号走，窄卡上它自己会小。
+     唯一的闸门是设置里那个开关。 */
+  const tag = state.ui.showCreatorTag;
   const cols = narrow ? 1 : 3;
   /* **一条都不截断**（2026-10-22 用户：要全部显示，不要「还有 N 个」）。
      区域高度由 CSS 的 max-height 兜住，超出在那区里自己滚 —— 时间轴高度不受影响。 */
