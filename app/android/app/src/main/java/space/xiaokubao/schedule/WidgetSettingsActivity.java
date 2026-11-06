@@ -18,8 +18,9 @@ import java.util.Locale;
  * 小组件设置弹框。
  *
  * **日程模式**（默认）：时间轴范围 / 底板透明度 / 字体大小 / 立即刷新。
- * **打卡模式**（MODE_HABIT）：只有底板透明度 + 字体大小（打卡没有时间轴，
- *   用户明确不要立即刷新）。用 dialog_habit_settings.xml，视觉语言同一套。
+ * **打卡模式**（MODE_HABIT）：底板透明度 / 字体大小 / 立即刷新（打卡没有
+ *   时间轴）。用 dialog_habit_settings.xml，视觉语言同一套。
+ *   2026-11-06 用户：刷新两个组件必须统一，打卡的三点菜单也加了「数据」段。
  *
  * 透明度/字体是**全局共享**的（WidgetPrefs 里只有一份），改了之后两个组件
  * 都要 refresh —— 日程调 ScheduleWidgetProvider.refresh，打卡调
@@ -89,9 +90,10 @@ public class WidgetSettingsActivity extends Activity {
                 WidgetPrefs.setRange(this, WidgetPrefs.startHour(this), h);
                 afterChange();
             }));
-
-            findViewById(R.id.s_refresh).setOnClickListener(v -> doRefresh());
         }
+
+        // 刷新**两个模式都有**（2026-11-06 用户：打卡组件也要能刷新，跟日程统一）
+        findViewById(R.id.s_refresh).setOnClickListener(v -> doRefresh());
 
         alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override

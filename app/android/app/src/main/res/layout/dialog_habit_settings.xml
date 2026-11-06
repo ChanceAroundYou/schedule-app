@@ -92,4 +92,34 @@
         android:progress="1"
         android:progressTint="#27795A"
         android:thumbTint="#27795A" />
+
+    <!-- ============ 数据（2026-11-06 用户：打卡组件也要有刷新，跟日程组件统一） ============ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="数据"
+        android:textColor="#6B8574"
+        android:textSize="11sp" />
+
+    <Button
+        android:id="@+id/s_refresh"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/dialog_field"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:text="立即刷新（拉服务器最新）"
+        android:textColor="#27795A"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/s_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#8AA294"
+        android:textSize="10sp" />
 </LinearLayout>
