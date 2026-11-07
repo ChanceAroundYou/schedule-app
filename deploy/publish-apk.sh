@@ -110,7 +110,13 @@ printf '  包名校验通过：%s\n' "$PKG_NAME"
 # 签名：apksigner 与 aapt 在同一个 build-tools 目录里。没有就只警告 ——
 # 不同机器上 build-tools 的布局不完全一样，不能因为缺工具就阻断发版。
 APKSIGNER="$(dirname "$AAPT")/apksigner"
-if [ -x "$APKSIGNER" ] || [ -f "$APKSIGNER.bat" ]; then
+# ⚠️ Windows 的 build-tools 里只有 apksigner.bat，没有无扩展名的那个。
+# 以前这里只判断了 `.bat` 存不存在，却仍然去执行不带后缀的路径 → 命令找不到 →
+# SIGN_OUT 为空 → 当成「签名校验没过」直接拒绝发版。要执行谁就指向谁（2026-11-07）。
+if [ ! -x "$APKSIGNER" ] && [ -f "$APKSIGNER.bat" ]; then
+  APKSIGNER="$APKSIGNER.bat"
+fi
+if [ -x "$APKSIGNER" ] || [ -f "$APKSIGNER" ]; then
   SIGN_OUT="$("$APKSIGNER" verify --print-certs "$APK_REL" 2>&1 || true)"
   printf '%s' "$SIGN_OUT" | grep -qi "certificate DN\|Signer #1" \
     || die "APK 签名校验没过（apksigner 输出：$(printf '%s' "$SIGN_OUT" | head -c 200)）"
