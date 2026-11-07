@@ -215,7 +215,16 @@
       底部缺一截，还会和按百分比定位的卡片累积错位。
    改成真元素后，线 / 刻度 / 卡片全走 `时间 × hourPx` 这一套整数坐标，
    不存在两套坐标系。线的位置由 `HourLines` 按 `Math.round(...)` 写成 px。 */
-.tl-hours { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+/* ⚠️ z-index 必须是 0，不能是 1（2026-11-07）。
+   小时线和卡片是同一堆叠上下文里的兄弟（日视图 `.tl-axis`、周视图 `.week-cols`），
+   卡片层 `.tl-events` / `.week-col` 是 z-index:auto。写 1 就等于让整排横线
+   浮到所有卡片之上 —— 用户看到「时间轴横线盖在卡片上面」，10:00/11:00 的线
+   把任务卡切成两半。改成 0 后，线（DOM 在前）和内容层同档按树序绘制，
+   后渲染的卡片自然盖住线，而 hover(z4) / 绿线(z3) / 草稿框(z6) 的既有层级
+   一个都不动 —— 比把卡片层抬到 z2 更省：抬卡片层会新建一个堆叠上下文，
+   卡片内部的 hover / resizing 就再也高不过绿线了。
+   也不能写负数：轴容器自己没建堆叠上下文，负 z 的线会掉到背景后面直接消失。 */
+.tl-hours { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .tl-hline {
   position: absolute; left: 0; right: 0; height: 0;
   border-top: 1px solid var(--border);

@@ -28,6 +28,47 @@ export async function run(ctx) {
       .filter((e) => e.textContent.includes('层叠')).length >= 3 ? 1 : null
   `, '周视图今天列出现 3 件层叠样例', 12000);
 
+  /* ---- 时间轴横线不许盖在卡片上（2026-11-07）----
+     `.tl-hours` 曾经写 z-index:1，而普通单卡是 z:auto —— 只有单卡会被
+     整点线切成两半（层叠卡自带 z 2/3/8，反而看不出问题，所以这个 bug
+     时隐时现）。这里必须拿一张 **z:auto 的探针卡** 去问浏览器绘制顺序，
+     拿层叠卡测会假绿。判据用「线的层 <= 卡片层」而不是写死 0：
+     以后改成把卡片层抬上去也对，只要顺序不反。 */
+  const layer = await evalJs(page, `
+    const ev = document.querySelector('.week-col.today .tl-events')
+            || document.querySelector('.week-col .tl-events');
+    const hours = document.querySelector('.week-cols .tl-hours') || document.querySelector('.tl-hours');
+    if (!ev || !hours) return null;
+    const zNum = (el) => { const v = getComputedStyle(el).zIndex; return v === 'auto' ? 0 : Number(v); };
+    const probe = document.createElement('div');
+    probe.className = 'layer-probe task-el--timed';
+    probe.style.cssText = 'position:absolute;left:4px;right:4px;top:80px;height:120px;';
+    ev.appendChild(probe);
+    const pb = probe.getBoundingClientRect();
+    const lines = [...document.querySelectorAll('.tl-hline')];
+    const hit = lines.find((l) => {
+      const t = l.getBoundingClientRect().top;
+      return t > pb.top + 8 && t < pb.bottom - 8;
+    });
+    let stack = [];
+    if (hit && pb.top >= 0 && pb.top < window.innerHeight) {
+      const old = lines.map((l) => l.style.pointerEvents);
+      lines.forEach((l) => { l.style.pointerEvents = 'auto'; });
+      stack = document.elementsFromPoint(pb.left + pb.width / 2, hit.getBoundingClientRect().top + 0.5)
+        .slice(0, 8).map((e) => (typeof e.className === 'string' ? e.className : e.tagName));
+      lines.forEach((l, i) => { l.style.pointerEvents = old[i]; });
+    }
+    probe.remove();
+    return {
+      zHours: zNum(hours), zEvents: zNum(ev), probed: stack.length > 0,
+      lineIdx: stack.findIndex((c) => c.includes('tl-hline')),
+      cardIdx: stack.findIndex((c) => c.includes('layer-probe')),
+    };
+  `);
+  ok(layer && layer.zHours <= layer.zEvents
+      && (!layer.probed || (layer.cardIdx >= 0 && (layer.lineIdx < 0 || layer.lineIdx > layer.cardIdx))),
+    '时间轴横线画在卡片**下面**（普通单卡不会被整点线切两半）', JSON.stringify(layer));
+
   const stk = await evalJs(page, `
     const cards = [...document.querySelectorAll('.week-col.today .task-el--timed')]
       .filter((e) => e.textContent.includes('层叠'))
