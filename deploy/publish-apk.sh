@@ -94,6 +94,44 @@ VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\([
 SHA="$(sha256sum "$APK_REL" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
 printf '  versionCode=%s  versionName=%s\n  sha256=%s\n' "$VERSION_CODE" "$VERSION_NAME" "$SHA"
 
+# ---------------------------------------------------------------------------
+# 发布前身份校验（2026-11-07）。
+#
+# 为什么要有这一段：客户端只按「清单 versionCode 大于本机」提示更新，然后交给
+# Android 系统安装器覆盖安装。包名不同、签名不同、versionCode 没递增，客户端
+# 全都发现不了 —— 表现是「提示更新 → 下载完 → 安装器拒绝 / 装完还是旧版」，
+# 也就是用户说的「更新时好时坏」。这些错误在**发布这一刻**就能挡住。
+# ---------------------------------------------------------------------------
+PKG_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
+[ "$PKG_NAME" = "space.xiaokubao.schedule" ] \
+  || die "APK 包名是 '${PKG_NAME}'，必须是 space.xiaokubao.schedule（否则装不上，只能卸载重装）"
+printf '  包名校验通过：%s\n' "$PKG_NAME"
+
+# 签名：apksigner 与 aapt 在同一个 build-tools 目录里。没有就只警告 ——
+# 不同机器上 build-tools 的布局不完全一样，不能因为缺工具就阻断发版。
+APKSIGNER="$(dirname "$AAPT")/apksigner"
+if [ -x "$APKSIGNER" ] || [ -f "$APKSIGNER.bat" ]; then
+  SIGN_OUT="$("$APKSIGNER" verify --print-certs "$APK_REL" 2>&1 || true)"
+  printf '%s' "$SIGN_OUT" | grep -qi "certificate DN\|Signer #1" \
+    || die "APK 签名校验没过（apksigner 输出：$(printf '%s' "$SIGN_OUT" | head -c 200)）"
+  printf '  签名校验通过\n'
+else
+  printf '\033[1;33m!! 没找到 apksigner，跳过签名校验（签名不一致时安装器会拒绝）\033[0m\n'
+fi
+
+# versionCode 必须比线上大 —— 客户端只认「大于才更新」。
+# 拉不到线上清单（断网 / 代理）只警告：此时仍允许发，但会说出来。
+PUBLISHED="$(curl -s --noproxy '*' "$BASE_URL/version.json" || true)"
+PUBLISHED_CODE="$(printf '%s' "$PUBLISHED" | sed -n 's/.*"versionCode" *: *\([0-9]*\).*/\1/p' | head -1)"
+if [ -n "$PUBLISHED_CODE" ]; then
+  if [ "$VERSION_CODE" -le "$PUBLISHED_CODE" ]; then
+    die "线上已经是 versionCode $PUBLISHED_CODE，这次是 $VERSION_CODE —— 必须严格递增，否则客户端永远不会提示更新"
+  fi
+  printf '  版本递增校验通过：线上 %s → 本次 %s\n' "$PUBLISHED_CODE" "$VERSION_CODE"
+else
+  printf '\033[1;33m!! 没读到线上 version.json，跳过「版本必须递增」校验\033[0m\n'
+fi
+
 say "3/4 上传到 $SSH_HOST:$REMOTE_DIR"
 APK_NAME="schedule-$VERSION_CODE.apk"
 # 用 ssh 管道而不是 scp —— 这台 Windows 上的 scp 报 "pipe: Unknown error"

@@ -121,6 +121,28 @@ class AppUpdate {
      */
     private static volatile boolean sWaitingForPermission = false;
 
+    // ------------------------------------------------------------ 检查结果回执
+
+    /**
+     * 一次「检查」的真实结局（2026-11-07）。
+     *
+     * 为什么需要它：以前网页点「检查更新」只能知道**原生接住了调用**，
+     * 不知道后面是查到了新版、已是最新、还是网络挂了。用户看到按钮转一下就
+     * 恢复，却不知道到底查没查 —— 于是「更新时好时坏」永远说不清卡在哪一步。
+     * 现在检查结束（无论成败）都会把结局回执给调用方。
+     */
+    static final int R_LATEST = 0;        // 已是最新
+    static final int R_FOUND = 1;         // 发现新版本（弹窗已出）
+    static final int R_MANIFEST_BAD = 2;  // 清单拿到了但内容不对
+    static final int R_NETWORK = 3;       // 网络不通 / 服务端没响应
+    static final int R_INSTALLING = 4;    // 已有下载好的包，正在唤起安装器
+    static final int R_BAD_APK = 5;       // 包已下载，但包名/版本号和当前 App 不符
+
+    interface CheckResult {
+        /** @param message 给人看的一句话（可能与 toast 相同）；成功时可为空 */
+        void done(int status, Manifest m, String message);
+    }
+
     // ---------------------------------------------------------------- 对外入口
 
     /**
@@ -133,7 +155,7 @@ class AppUpdate {
         activity.getWindow().getDecorView().postDelayed(new Runnable() {
             @Override
             public void run() {
-                checkAndPrompt(activity, false);
+                checkAndPrompt(activity, false, null);
             }
         }, 3000L);
     }
@@ -150,7 +172,15 @@ class AppUpdate {
      * 「已是最新」也要给个回执（toast），否则按钮点了没反应，跟没做一样。
      */
     static void checkForced(final Activity activity) {
-        checkAndPrompt(activity, true);
+        checkAndPrompt(activity, true, null);
+    }
+
+    /**
+     * 带回执的强制检查：给「关于」页的按钮用。检查**真的结束**（含失败）
+     * 才回调，网页据此显示「已是最新 / 发现 vX / 网络不通」，而不是靠定时器猜。
+     */
+    static void checkForced(final Activity activity, CheckResult cb) {
+        checkAndPrompt(activity, true, cb);
     }
 
     /**
@@ -176,9 +206,15 @@ class AppUpdate {
         checkForced(activity);
     }
 
-    /** 检查更新。{@code force} = 跳过冷却 + 「已是最新」也给 toast */
-    private static void checkAndPrompt(final Activity activity, final boolean force) {
+    /**
+     * 检查更新。{@code force} = 跳过冷却 + 「已是最新」也给 toast。
+     *
+     * {@code cb} 是「这次检查的结局」，**每条返回路径都必须调一次**（见 finish）。
+     * 漏一条路的后果是网页那边的「检查中」永远不结束 —— 比不给回执更糟。
+     */
+    private static void checkAndPrompt(final Activity activity, final boolean force, final CheckResult cb) {
         final Context c = activity.getApplicationContext();
+        final boolean[] once = new boolean[1];
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -191,6 +227,7 @@ class AppUpdate {
                         if (force) {
                             toast(c, "检查失败：版本清单异常，请稍后再试");
                         }
+                        report(once, cb, R_MANIFEST_BAD, null, "版本清单异常，请稍后再试");
                         return;
                     }
                     long self = selfVersionCode(c);
@@ -199,6 +236,7 @@ class AppUpdate {
                         if (force) {
                             toast(c, "已是最新版本（versionCode " + self + "）");
                         }
+                        report(once, cb, R_LATEST, m, "已是最新版本");
                         return;
                     }
                     // 有 pending 的包还没装（用户上次在安装器点了取消/直接打开）→
@@ -210,7 +248,12 @@ class AppUpdate {
                         if (pending.exists() && pending.length() > 0) {
                             Log.i(TAG, "pending 包还在，直接重装 " + pending.length() + " 字节");
                             sInstallStarted = false;
-                            installApk(c, pending);
+                            boolean opened = installApk(c, pending);
+                            report(once, cb, opened ? R_INSTALLING : R_BAD_APK,
+                                    opened ? m : null,
+                                    opened
+                                            ? "已下载好新版本，正在打开安装程序"
+                                            : "下载好的安装包和当前 App 不匹配，已删除，请重新检查更新");
                             return;
                         }
                         // 文件不在了（用户清数据/系统清了）→ 落到下面正常下载
@@ -218,9 +261,11 @@ class AppUpdate {
                     }
                     if (!force && !shouldPrompt(c, m.versionCode)) {
                         Log.i(TAG, "有新版 " + m.versionCode + " 但 24h 内提示过了，跳过");
+                        report(once, cb, R_FOUND, m, "有新版本，24 小时内已提示过");
                         return;
                     }
                     showPrompt(activity, m);
+                    report(once, cb, R_FOUND, m, "发现新版本 " + m.versionName);
                 } catch (Exception e) {
                     Log.w(TAG, "检查更新失败: " + e);
                     // 网络不通 / 域名解析不了 / TLS 出错 —— force 时给回执，
@@ -228,9 +273,27 @@ class AppUpdate {
                     if (force) {
                         toast(c, "检查失败：网络不通或服务端没响应，请稍后再试");
                     }
+                    report(once, cb, R_NETWORK, null, "网络不通或服务端没响应，请稍后再试");
                 }
             }
         }).start();
+    }
+
+    /**
+     * 发回执，**只发一次**。
+     *
+     * 用布尔数组而不是布尔变量：Java 的匿名内部类只能捕获 final 的局部变量，
+     * 而这里要在多个 return 分支里改它。
+     */
+    private static void report(boolean[] once, CheckResult cb, int status, Manifest m, String message) {
+        if (cb == null || once[0]) return;
+        once[0] = true;
+        try {
+            cb.done(status, m, message);
+        } catch (Exception e) {
+            // 回执是网页那边的 UI 更新，抛错不该把更新流程带停
+            Log.w(TAG, "回执抛错: " + e);
+        }
     }
 
     // ---------------------------------------------------------------- 版本清单
@@ -824,7 +887,65 @@ class AppUpdate {
         }
     }
 
-    private static void installApk(Context c, File apk) {
+    /**
+     * 安装前核对 APK 的「身份」（2026-11-07）。
+     *
+     * 为什么必须查：客户端只按清单里的 versionCode 决定「要不要更新」，
+     * 而真正能不能装上，取决于这个包**包名是否一致、versionCode 是否等于清单
+     * 所写、签名是否和已装的相同**。这三样对不上时，系统安装器只会回一句
+     * 「应用未安装」，用户得到的信息量是零 —— 也就是「更新时好时坏」里最难查的
+     * 那一类。SHA-256 只能证明「下载到的字节和清单一致」，证明不了「这个包
+     * 就是我要装的那个版本」。
+     *
+     * 这里查前两样（包名 + versionCode）。签名交给系统安装器做 —— 客户端校验
+     * 自己的签名没有额外安全收益（能被换包的人也能换校验），但包名/版本查错
+     * 能在拉起安装器**之前**给出可读的原因。
+     */
+    private static boolean apkIdentityOk(Context c, File apk) {
+        try {
+            int flags = android.os.Build.VERSION.SDK_INT >= 28
+                    ? PackageManager.GET_META_DATA | 0x00000080   // GET_SIGNING_CERTIFICATES
+                    : PackageManager.GET_META_DATA;
+            PackageInfo pi = c.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+            if (pi == null) {
+                Log.w(TAG, "读不出 APK 的包信息：" + apk);
+                return false;
+            }
+            if (!c.getPackageName().equals(pi.packageName)) {
+                Log.w(TAG, "包名不符：期望 " + c.getPackageName() + " 实际 " + pi.packageName);
+                return false;
+            }
+            long vc = android.os.Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+            if (sPendingVersionCode > 0 && vc != sPendingVersionCode) {
+                Log.w(TAG, "versionCode 不符：清单说 " + sPendingVersionCode + " 包里是 " + vc);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "核对 APK 身份失败: " + e);
+            return false;
+        }
+    }
+
+    /**
+     * 唤起系统安装器。
+     *
+     * @return true = 安装器真的被拉起来了；false = 没拉起（包身份不对 / 唤起异常）。
+     *         调用方靠它决定给用户说什么，而不是一律「正在打开安装程序」。
+     */
+    private static boolean installApk(Context c, File apk) {
+        /* 身份不对就**不要**拉起安装器：让它弹一句「应用未安装」，用户只会
+           反复点、反复失败，然后认为更新是坏的。这里说清是哪一步不对。 */
+        if (!apkIdentityOk(c, apk)) {
+            toast(c, "安装包和当前 App 不匹配（包名或版本号不对），已删除。请稍后重新更新");
+            //noinspection ResultOfMethodCallIgnored
+            apk.delete();
+            clearPending(c);
+            clearPromptCooldown(c);   // 否则 24 小时内不再提示，等于把功能关掉
+            sInstallStarted = false;
+            sDownloadId = -1L;
+            return false;
+        }
         try {
             Uri uri = FileProvider.getUriForFile(c, c.getPackageName() + ".fileprovider", apk);
             Intent i = new Intent(Intent.ACTION_VIEW);
@@ -833,9 +954,11 @@ class AppUpdate {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             c.startActivity(i);
             Log.i(TAG, "已唤起系统安装器 " + uri);
+            return true;
         } catch (Exception e) {
             Log.w(TAG, "唤起安装器失败: " + e);
             toast(c, "无法唤起安装器：" + e.getClass().getSimpleName());
+            return false;
         }
     }
 

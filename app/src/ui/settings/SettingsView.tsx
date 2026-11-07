@@ -60,6 +60,11 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
   const [apkName, setApkName] = useState<string | null>(null);
   /** 检查更新的进行中态 —— 点了立刻有反馈，不让用户怀疑自己没点到 */
   const [checking, setChecking] = useState(false);
+  /**
+   * 上一次检查的结论。**由原生回执决定内容**（2026-11-07）：
+   * 已是最新 / 发现新版本 / 清单异常 / 网络不通，各说各的 ——
+   * 以前只有「按钮转一下」，用户根本分不清是查了没新版，还是压根没查成。
+   */
   const [updateHint, setUpdateHint] = useState('');
   const native = Capacitor.isNativePlatform();
 
@@ -148,15 +153,26 @@ export function SettingsView({ state, user, theme, onExport, onImport, onLogout,
                 disabled={checking}
                 onClick={async () => {
                   setChecking(true);
+                  setUpdateHint('');
                   try {
-                    const ok = await checkAppUpdate();
-                    // 原生侧没接住（App 版本太旧 / 原生异常）才轮到网页说话 ——
-                    // 检查成功了（含「已是最新」「发现新版本」）都由原生回执
-                    setUpdateHint(ok ? '' : '这台 App 的版本太旧，检查不了更新 —— 请先用下方「下载 App」装一次最新版');
+                    const r = await checkAppUpdate();
+                    if (!r.ok) {
+                      // 这个 APK 太旧，没有新的检查方法（或原生异常）
+                      setUpdateHint('这台 App 的版本太旧，检查不了更新 —— 请先用下方「下载 App」装一次最新版');
+                      return;
+                    }
+                    /* 原生已经给出**真实结局**，这里只负责把它说成人话。
+                       found / installing 时原生自己会弹框或拉起安装器，
+                       这行文字是给「我没看到弹框」的用户一个确认。 */
+                    if (r.status === 'latest') setUpdateHint('已是最新版本');
+                    else if (r.status === 'found') setUpdateHint(`发现新版本${r.versionName ? ' ' + r.versionName : ''}，正在为你打开更新提示`);
+                    else if (r.status === 'installing') setUpdateHint('新版本已下载好，正在打开安装程序');
+                    else if (r.status === 'manifest') setUpdateHint('版本清单异常，请稍后再试');
+                    else if (r.status === 'network') setUpdateHint('网络不通或服务端没响应，请稍后再试');
+                    else if (r.status === 'badapk') setUpdateHint('下载到的安装包和这台 App 对不上（包名或版本号不对），已删除，请重新检查更新');
+                    else setUpdateHint(r.message || '检查完成，但没有拿到结果');
                   } finally {
-                    // 延迟一小会儿再解除进行中态：原生是异步拉版本清单的，
-                    // 立刻恢复会让按钮看起来「点了没反应」
-                    window.setTimeout(() => setChecking(false), 800);
+                    setChecking(false);
                   }
                 }}
               >

@@ -162,16 +162,35 @@ public class WidgetBridge extends Plugin {
    * 「已是最新」会给一句 toast 回执 —— 按钮点了没反应跟没做一样。
    */
   @PluginMethod
-  public void checkUpdate(PluginCall call) {
-    Activity activity = getActivity();
+  public void checkUpdate(final PluginCall call) {
+    final Activity activity = getActivity();
     if (activity == null) {
       call.reject("拿不到当前 Activity");
       return;
     }
-    AppUpdate.checkForced(activity);
-    JSObject ret = new JSObject();
-    ret.put("ok", true);
-    call.resolve(ret);
+    /* 回执在**检查真的结束**之后才 resolve（2026-11-07）。
+       以前这里调完 checkForced 立刻回 ok —— 网页只能知道「原生接住了」，
+       查到了新版 / 已是最新 / 网络挂了，它一概不知道，按钮转一下就没下文。
+       现在把结局带回去，网页能显示准确状态，排障也有落点。 */
+    AppUpdate.checkForced(activity, new AppUpdate.CheckResult() {
+      @Override
+      public void done(final int status, final AppUpdate.Manifest m, final String message) {
+        activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            ret.put("status", status);
+            ret.put("message", message == null ? "" : message);
+            if (m != null) {
+              ret.put("versionCode", m.versionCode);
+              ret.put("versionName", m.versionName);
+            }
+            call.resolve(ret);
+          }
+        });
+      }
+    });
   }
 
   /**

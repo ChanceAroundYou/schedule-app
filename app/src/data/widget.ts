@@ -195,16 +195,53 @@ export async function applySafeAreaInsets(): Promise<void> {
 /* ---------------------------------------------------------------- 检查更新 */
 
 /**
- * 让原生侧立刻检查一次 App 更新（关于页「检查更新」按钮）。
+ * 检查更新的真实结局。数字与原生 `AppUpdate.R_*` 一一对应，**改一边必须改两边**。
  *
- * 只在 App 里有意义（网页版没有原生那一层）。返回**是否真的检查了**：
- * 旧版 APK 没有这个插件方法时调用会 reject —— 2026-10-24 用户报「点了没反应」，
- * 静默是病，所以把失败交回给调用方显示（见 SettingsView 的更新提示）。
- * 有更新时会由原生弹框，走的是和启动时同一条下载 + 校验 + 安装链路。
+ * 0 已是最新 · 1 发现新版本 · 2 版本清单异常 · 3 网络不通 · 4 正在安装 ·
+ * 5 安装包与当前 App 不匹配（已删）
  */
-export async function checkAppUpdate(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
-  try { await WidgetBridge.checkUpdate(); return true; }
-  catch (_) { return false; }   // 旧版没有这个方法 / 原生侧异常
+export type UpdateStatus = 'latest' | 'found' | 'manifest' | 'network' | 'installing' | 'badapk';
+
+const STATUS_MAP: Record<number, UpdateStatus> = {
+  0: 'latest', 1: 'found', 2: 'manifest', 3: 'network', 4: 'installing', 5: 'badapk',
+};
+
+export interface UpdateCheck {
+  /** 原生有没有真的完成一次检查。false = 这个 APK 太旧，没有这个方法 */
+  ok: boolean;
+  status: UpdateStatus | null;
+  message: string;
+  versionName?: string;
+}
+
+/**
+ * 让原生侧查一次 App 更新（关于页「检查更新」按钮）。
+ *
+ * 只在 App 里有意义（网页版没有原生那一层）。
+ *
+ * **等到检查真的结束才返回**（2026-11-07）：以前原生一接住调用就回 ok，
+ * 网页只能看到按钮转一圈，查没查、查到什么都不知道 —— 这正是「更新时好时坏」
+ * 说不清的地方。现在把原生那一边的结局带回来，由调用方显示准确状态。
+ *
+ * 注意：它**不代表下载或安装成功**。发现新版本时原生会弹框，后续下载 / 授权 /
+ * 安装各有各的结果，那些不在这条调用里回报。
+ */
+export async function checkAppUpdate(): Promise<UpdateCheck> {
+  if (!Capacitor.isNativePlatform()) return { ok: false, status: null, message: '' };
+  try {
+    const r = await WidgetBridge.checkUpdate() as {
+      status?: number; message?: string; versionName?: string;
+    } | undefined;
+    const raw = typeof r?.status === 'number' ? r.status : -1;
+    return {
+      ok: true,
+      status: STATUS_MAP[raw] ?? null,
+      message: typeof r?.message === 'string' ? r.message : '',
+      versionName: typeof r?.versionName === 'string' ? r.versionName : undefined,
+    };
+  } catch (_) {
+    // 旧版 APK 没有这个方法 / 原生侧异常
+    return { ok: false, status: null, message: '' };
+  }
 }
 
