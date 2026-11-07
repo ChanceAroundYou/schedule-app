@@ -42,6 +42,7 @@ import { useNav } from './useNav.ts';
 import { useTaskActions } from './useTaskActions.ts';
 import { useContentEvents } from './useContentEvents.ts';
 import { useDeniedToast } from './useDeniedToast.ts';
+import { useCreatorFilter } from './useCreatorFilter.ts';
 import { useResizeTimeline } from './resizeTimeline.ts';
 import { useKeyboard } from './keyboard.ts';
 import { useBackup } from './backup.tsx';
@@ -224,6 +225,9 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
   /* -------- 被权限挡下的改动要说出来 -------- */
   useDeniedToast(state);
 
+  /* -------- 日程页创建者筛选：失效收回 / 换集重置 -------- */
+  useCreatorFilter(state);
+
   /* -------- 内容分发 -------- */
   const body = contentDispatch(state, scoped, user, theme, {
     onExport,
@@ -285,6 +289,7 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
                   setJumpOpen(false);
                 }}
                 onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
+                onCreator={(v) => store.setUi({ creator: v })}
               />
             )}
             {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对

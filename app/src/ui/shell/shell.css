@@ -183,6 +183,13 @@
 }
 .date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
 
+/* 日程页「按创建者筛选」（2026-11-07）。
+   和左边那四个 30px 方按钮同排，所以高度必须一样（Dropdown 的 sm 也是 30px）。
+   宽度给上限、允许收缩：成员名是用户数据，长的能到十几个字 —— 不收就会把
+   视图切换挤出这一行（窄屏上尤其明显，那一行本来就会 wrap）。 */
+.creator-filter { display: flex; min-width: 0; }
+.creator-filter > div { min-width: 0; max-width: 132px; }
+
 /* 四个控件（上一/下一个 · 今 · 找日期）**同宽 30px、同间距 4px**
    （用户 2026-10-11：「四个项的宽度和间距都不一样 需要统一」）。
    原先是 30 / 30 / ~28 / ~33 四种宽度，找日期前还多一道 margin-left:4px。

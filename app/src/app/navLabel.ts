@@ -5,7 +5,8 @@
 function navLabel(nav: string): string {
   const m: Record<string, string> = {
     inbox: '待办箱', today: '今天', overdue: '逾期',
-    calendar: '日程', habits: '打卡', done: '已完成', trash: '垃圾箱', ai: 'AI',
+    calendar: '日程', habits: '打卡', flow: '每日流程', counter: '+1', projects: '项目',
+    done: '已完成', trash: '垃圾箱', ai: 'AI',
   };
   return m[nav] || '任务列表';
 }

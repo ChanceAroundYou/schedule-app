@@ -15,6 +15,7 @@ export {
   liveTasks, trashedTasks, taskById, tasksOn, untimedOn, openFirst,
   inboxTasks, todayTasks, todayDoneTasks, overdueTasks, overdueCount,
   doneTasks, dayLoad, orderCmp, taskCmp, sortTasks, ordCmp, nextOrder,
+  ownerOf, creatorPass,
 } from './tasks.ts';
 export {
   liveHabits, trashedHabits, habitById, habitsTodayRemaining, habitStreak,

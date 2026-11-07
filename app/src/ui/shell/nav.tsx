@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import {
-  AlarmClock, CalendarDays, CheckCircle2, Flame,
+  AlarmClock, CalendarDays, CheckCircle2, Flame, ListOrdered,
   FolderKanban, Inbox, Plus, Settings, Sparkles, Sun, Trash2,
 } from 'lucide-react';
 import { CUSTOMIZABLE } from '../../domain/model.ts';
@@ -25,6 +25,10 @@ export const NAV: NavDef[] = [
   { key: 'calendar', label: '日程', icon: <CalendarDays size={16} /> },
   { key: 'projects', label: '项目', icon: <FolderKanban size={16} /> },
   { key: 'habits', label: '打卡', icon: <Flame size={16} />, count: 'habits' },
+  // 每日流程（2026-11-07）：今天按顺序推进的一串事，个人私有。
+  // 排在打卡后面 —— 两个都是「每天要做」的东西，放一起找得着；
+  // 名字用「流程」而不是「日程」，是为了和真正的日程（有固定时段、可共享）分开。
+  { key: 'flow', label: '每日流程', icon: <ListOrdered size={16} /> },
   // 「+1」= 计数器页（naonao / Kutai，每天自动 +N）。排在打卡后面：
   // 两个都是「每天记一笔」的东西，放一起用户找得着。
   { key: 'counter', label: '+1', icon: <Plus size={16} /> },

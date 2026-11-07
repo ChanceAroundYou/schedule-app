@@ -1560,3 +1560,90 @@ test('图片：文件名非法 / 不存在都是 404，且不会读到别的文�
     assert.strictEqual(r.status, 404, p + ' 必须 404');
   }
 });
+
+/* ================================================================
+   每日流程（2026-11-07，schema v9）
+   ================================================================ */
+
+/* 注册接口有频率限制（同 IP 一分钟几次），所以这里复用 dad / mom 两个账户，
+   每个用例用**不同的日期**，互不干扰。 */
+test('每日流程：模板与当天各自独立，互不覆盖', async () => {
+  const day = '2026-11-07';
+
+  const t = await api('PUT', '/api/flow', {
+    token: dad.token,
+    body: {
+      doc: 'template', baseRev: 0,
+      items: [
+        { id: 'a', title: '起床洗漱', note: '', at: '07:30', done: false, doneAt: null },
+        { id: 'b', title: '看一会书', note: '', at: null, done: false, doneAt: null },
+      ],
+    },
+  });
+  assert.strictEqual(t.status, 200);
+  assert.ok(t.body.rev >= 1, '第一次写入 rev 从 1 起');
+
+  const d = await api('PUT', '/api/flow', {
+    token: dad.token,
+    body: { doc: day, baseRev: 0, items: [{ id: 'a', title: '起床洗漱', note: '', at: '07:30', done: true, doneAt: 1 }] },
+  });
+  assert.strictEqual(d.status, 200);
+
+  const got = await api('GET', `/api/flow?from=${day}&to=${day}`, { token: dad.token });
+  assert.strictEqual(got.status, 200);
+  assert.strictEqual(got.body.template.items.length, 2, '模板两条');
+  assert.strictEqual(got.body.days[day].items.length, 1, '当天一条，不能被模板盖回去');
+  assert.strictEqual(got.body.days[day].items[0].done, true);
+});
+
+test('每日流程：rev 单调递增，旧 baseRev 会带 stale 标记', async () => {
+  const day = '2026-11-08';
+  const w = (baseRev, title) => api('PUT', '/api/flow', {
+    token: dad.token,
+    body: { doc: day, baseRev, items: [{ id: 'x', title, note: '', at: null, done: false, doneAt: null }] },
+  });
+
+  const a = await w(0, '第一版');
+  assert.strictEqual(a.body.rev, 1);
+  const b = await w(1, '第二版');
+  assert.strictEqual(b.body.rev, 2, 'rev 每次 +1');
+  const c = await w(1, '第三版');
+  assert.strictEqual(c.body.rev, 3, '旧 baseRev 仍然写入（最后写入者胜）');
+  assert.strictEqual(c.body.stale, true, '但要告诉客户端「你手上那份是旧的」');
+});
+
+test('每日流程：账号隔离 —— 另一个人读不到我的流程', async () => {
+  const day = '2026-11-09';
+  const w = await api('PUT', '/api/flow', {
+    token: dad.token,
+    body: { doc: day, baseRev: 0, items: [{ id: 'z', title: '只有我能看到', note: '', at: null, done: false, doneAt: null }] },
+  });
+
+  assert.strictEqual(w.status, 200, '写入应成功: ' + JSON.stringify(w.body));
+  const mine = await api('GET', `/api/flow?from=${day}&to=${day}`, { token: dad.token });
+  assert.ok(mine.body.days, '应带 days: ' + JSON.stringify(mine.body));
+  assert.strictEqual(mine.body.days[day].items[0].title, '只有我能看到');
+
+  /* 妈妈那条 token 在前面「改口令 / 登出」的用例里已经被吊销了，
+     所以这里改用存储层直接验隔离 —— 它才是「按 user_id 归属」的真正落点。 */
+  assert.strictEqual(db.getFlowDoc(mom.userId, day), null, '别人的流程表里不该有这一天');
+});
+
+test('每日流程：非法输入挡住（未知 doc / 非数组 / 超量 / 没登录）', async () => {
+  const bad = [
+    { doc: 'notes', baseRev: 0, items: [] },
+    { doc: '2026-11-10', baseRev: 0, items: 'nope' },
+    { doc: '2026-11-10', baseRev: 0, items: Array.from({ length: 201 }, (_, i) => ({ id: 'i' + i, title: 't' + i })) },
+  ];
+  for (const body of bad) {
+    const r = await api('PUT', '/api/flow', { token: dad.token, body });
+    assert.strictEqual(r.status, 400, JSON.stringify(body).slice(0, 40) + ' 应被拒');
+  }
+  const anon = await api('GET', '/api/flow?from=2026-11-07&to=2026-11-07');
+  assert.strictEqual(anon.status, 401, '没登录不能读');
+});
+
+test('每日流程：区间太大被拒，不会把整库拖出来', async () => {
+  const r = await api('GET', '/api/flow?from=2026-01-01&to=2026-12-31', { token: dad.token });
+  assert.strictEqual(r.status, 400);
+});

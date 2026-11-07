@@ -175,6 +175,9 @@ body.sheet-open .tab:active { background: none; }
      只改高度 —— 宽度由内容撑，写死会和「今」这种单字按钮打架。
      选择器要落在 `.btn` 上：这排按钮由 Btn 渲染，没有 round-btn / text-btn 那些类。 */
   .cal-subhead .date-nav .btn { height: 34px; }
+  /* 创建者筛选也在这排里（2026-11-07）：高度跟着 34px 走，否则整行歪一截 */
+  .cal-subhead .creator-filter > div { max-width: 116px; }
+  .cal-subhead .creator-filter button { height: 34px; }
   .view-switch button { height: 34px; }
 
   /* 找日期面板：手机上按钮靠屏幕右侧，面板 268px 宽会溢出，

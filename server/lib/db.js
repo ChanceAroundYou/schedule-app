@@ -54,6 +54,7 @@ const revoked = require('./db/revoked.js');
 const ai = require('./db/ai.js');
 const memory = require('./db/memory.js');
 const counters = require('./db/counters.js');
+const flow = require('./db/flow.js');
 
 module.exports = {
   // schema
@@ -145,4 +146,10 @@ module.exports = {
   COUNTER_DEFAULTS: counters.DEFAULTS,
   COUNTER_MIN: counters.MIN_VALUE,
   COUNTER_MAX: counters.MAX_VALUE,
+  // flow（每日流程，v9）
+  getFlowDoc: flow.getDoc,
+  listFlowDocs: flow.listDocs,
+  putFlowDoc: flow.putDoc,
+  isFlowDocName: flow.isDocName,
+  FLOW_MAX_ITEMS: flow.MAX_ITEMS,
 };

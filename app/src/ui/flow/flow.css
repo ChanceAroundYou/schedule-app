@@ -1,0 +1,158 @@
+/* 每日流程（views/Flow.tsx）
+   一条竖着的顺序表：序号 + 勾选圈 + 标题 + 可选参考时间 + 上下移 / 删除。
+   视觉语言沿用任务行与计数器页：勾选圈、卡片底、令牌配色，不另起一套。 */
+
+.flow-page {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 16px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- 页头：今日流程 / 常用模板 ---- */
+
+.flow-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+
+.flow-modes {
+  display: flex; border: var(--border-w) solid var(--input);
+  border-radius: var(--r-md); overflow: hidden;
+}
+.flow-modes button {
+  height: 32px; padding: 0 12px; border: 0; background: var(--panel-2);
+  color: var(--text-2); font-size: 12.5px; cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.flow-modes button + button { border-left: var(--border-w) solid var(--input); }
+.flow-modes button.on { background: var(--primary-pale); color: var(--primary); font-weight: 600; }
+
+.flow-date { display: flex; align-items: center; gap: 4px; }
+.flow-date .flow-date-label {
+  min-width: 92px; text-align: center; font-size: 12.5px; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.flow-date button {
+  width: 30px; height: 32px; display: grid; place-items: center;
+  border: var(--border-w) solid var(--input); border-radius: var(--r-sm);
+  background: var(--panel-2); color: var(--text-2); cursor: pointer;
+}
+.flow-date button:hover { color: var(--text); border-color: var(--text-3); }
+.flow-date button.flow-today {
+  width: auto; padding: 0 8px; font-size: 12px;
+}
+
+/* ---- 进度小结 ---- */
+
+.flow-sum {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: var(--r-md);
+  background: var(--panel-2); border: var(--border-w) solid var(--border);
+  font-size: 12.5px; color: var(--text-2);
+}
+.flow-sum b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.flow-sum .flow-next { color: var(--primary); font-weight: 500; }
+
+/* ---- 列表 ---- */
+
+.flow-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+
+.flow-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px 9px 8px;
+  background: var(--panel-2); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-md);
+}
+.flow-row.done { background: var(--panel); }
+.flow-row.done .flow-title { color: var(--text-3); text-decoration: line-through; }
+
+.flow-idx {
+  flex: 0 0 auto; width: 20px; text-align: right;
+  font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+
+/* 勾选圈：与列表页同一档尺寸（视觉 16px，点击面 24px 由 ::before 撑） */
+.flow-check {
+  position: relative; flex: 0 0 auto; width: 20px; height: 20px;
+  display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.flow-check::before { content: ''; position: absolute; inset: -4px; }
+.flow-check i {
+  width: 16px; height: 16px; display: grid; place-items: center;
+  border: var(--border-w) solid var(--input); border-radius: 50%;
+  transition: background .14s, border-color .14s;
+}
+.flow-check[aria-pressed="true"] i { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+.flow-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+
+.flow-title {
+  flex: 1; min-width: 0; padding: 1px 2px; border: 0; background: none;
+  text-align: left; font-size: 14px; color: var(--text); cursor: text;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flow-title-input {
+  flex: 1; min-width: 0; padding: 3px 6px; border: 0; border-radius: var(--r-sm);
+  background: var(--panel-3); color: var(--text); font-size: 14px;
+  outline: 2px solid var(--primary);
+}
+
+/* 参考时间：可选。窄一点，不抢标题的位置 */
+.flow-at {
+  flex: 0 0 auto; width: 74px; padding: 2px 4px;
+  border: var(--border-w) solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text-3); font-size: 11.5px;
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.flow-at:hover { border-color: var(--input); }
+.flow-at:focus { outline: 2px solid var(--primary); background: var(--panel-3); color: var(--text); }
+
+.flow-acts { flex: 0 0 auto; display: flex; align-items: center; gap: 1px; }
+.flow-acts button {
+  width: 26px; height: 26px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-3); cursor: pointer;
+}
+.flow-acts button:hover { background: var(--panel-3); color: var(--text); }
+.flow-acts button:disabled { opacity: .3; cursor: default; }
+.flow-acts button.flow-del:hover { color: var(--danger); background: var(--danger-soft); }
+
+/* ---- 添加 ---- */
+
+.flow-add {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border-radius: var(--r-md);
+  border: var(--border-w) dashed var(--input); background: transparent;
+}
+.flow-add input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  color: var(--text); font-size: 14px;
+}
+.flow-add input::placeholder { color: var(--text-3); }
+.flow-add button {
+  flex: 0 0 auto; height: 28px; padding: 0 12px; border: 0; border-radius: var(--r-sm);
+  background: var(--primary); color: var(--on-primary); font-size: 12.5px; cursor: pointer;
+}
+.flow-add button:disabled { opacity: .45; cursor: default; }
+
+/* ---- 空状态 / 提示 ---- */
+
+.flow-empty {
+  padding: 28px 16px; text-align: center; color: var(--text-3); font-size: 13px;
+  border: var(--border-w) dashed var(--border); border-radius: var(--r-lg);
+}
+
+.flow-tip { font-size: 11.5px; color: var(--text-3); line-height: 1.7; }
+.flow-err { font-size: 12px; color: var(--danger); }
+
+/* 手机：行内动作收窄，时间换到第二行 —— 一行放不下「标题 + 时间 + 三颗按钮」 */
+@media (max-width: 640px) {
+  .flow-page { padding: 12px 12px 28px; }
+  .flow-row { flex-wrap: wrap; row-gap: 4px; }
+  .flow-main { flex-basis: calc(100% - 76px); }
+  .flow-at { width: 68px; margin-left: auto; }
+  .flow-acts button { width: 30px; height: 30px; }
+}

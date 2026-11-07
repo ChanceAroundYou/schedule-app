@@ -19,7 +19,7 @@ import {
 import { coverWindow, dayTimeline, layoutOverlap, minToPct, pctRange, spanOf, timeRange, timeRangeCompact, windowOf, yToMin, placePanel, dragRange, DRAG_MIN, untimedBlanks, untimedRowPx, CARD_SEAM, FULL_DAY } from './layout.ts';
 import { findConflicts, lwwWins, mergeChange, writeFields } from './merge.ts';
 import {
-  counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad,
+  counts, overdueTasks, sortTasks, ordCmp, orderCmp, dayLoad, tasksOn,
   normalizeUi, migrateV3, makeTask, liveTasks, isTrashed, habitStreak,
   habitBestStreak, habitDaySummary, defaultAddGroup, UNGROUPED,
   quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
@@ -566,6 +566,61 @@ test('某一天的负载只算没完成、有时间的任务', () => {  const s 
     makeTask({ id: 'd', title: 'd', date: T, time: '13:00', duration: 60, done: true }),
   ]);
   assert.deepEqual(dayLoad(s, T), { mins: 90, count: 3 });
+});
+
+/* ================================================================
+   日程页「按创建者筛选」（2026-11-07）
+   ================================================================ */
+
+test('创建者筛选：全部 / 我建的 / 某个人，三种值各自放行谁', () => {
+  /* `createdBy` 是**服务端字段**（见 server/lib/sync.js 那段：客户端传什么都不认），
+     所以这里直接补在实体上，而不是走 makeTask 的入参。 */
+  const s = stateWith([
+    makeTask({ id: 'mine', title: '我建的', date: T }),
+    { ...makeTask({ id: 'other', title: '他建的', date: T }), createdBy: 'u2' },
+    { ...makeTask({ id: 'legacy', title: '老数据没 createdBy', date: T }), createdBy: null },
+  ], { meId: 'u1' });
+
+  const ids = () => tasksOn(s, T).map((t) => t.id);
+
+  // 全部：三条都在（老数据没有被筛掉）
+  s.ui = { ...s.ui, creator: 'all' };
+  assert.deepEqual(ids().sort(), ['legacy', 'mine', 'other']);
+
+  // 我建的：老数据（缺失 createdBy）算我
+  s.ui = { ...s.ui, creator: 'me' };
+  assert.deepEqual(ids().sort(), ['legacy', 'mine']);
+
+  // 指定成员
+  s.ui = { ...s.ui, creator: 'u2' };
+  assert.deepEqual(ids(), ['other']);
+});
+
+test('创建者筛选：AI 代我建的算「我建的」，不是别人', () => {
+  const s = stateWith([
+    { ...makeTask({ id: 'ai', title: 'AI 建的', date: T }), createdBy: 'ai' },
+  ], { meId: 'u1' });  s.ui = { ...s.ui, creator: 'me' };
+  assert.equal(tasksOn(s, T).length, 1);
+  s.ui = { ...s.ui, creator: 'u2' };
+  assert.equal(tasksOn(s, T).length, 0);
+});
+
+test('创建者筛选：不知道我是谁时一律放行（离线首启不清空日历）', () => {
+  const s = stateWith([
+    makeTask({ id: 'x', title: 'x', date: T, createdBy: 'u2' }),
+  ], { meId: null });
+  s.ui = { ...s.ui, creator: 'me' };
+  assert.equal(tasksOn(s, T).length, 1);
+});
+
+test('创建者筛选：负载条与格子同一口径（筛掉的人不产生负载）', () => {
+  const s = stateWith([
+    makeTask({ id: 'a', title: 'a', date: T, time: '09:00', duration: 60 }),
+    { ...makeTask({ id: 'b', title: 'b', date: T, time: '10:00', duration: 60 }), createdBy: 'u2' },
+  ], { meId: 'u1' });
+  s.ui = { ...s.ui, creator: 'me' };
+  assert.deepEqual(dayLoad(s, T), { mins: 60, count: 1 });
+  assert.equal(tasksOn(s, T).length, 1);
 });
 
 /* ============ 「这天还有没做完的」三端共用的那颗小圆点 ============ */

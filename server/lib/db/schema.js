@@ -13,7 +13,40 @@
 const crypto = require('node:crypto');
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
+
+/* --------------------------------------------------------------- v9 新增 */
+
+/**
+ * 每日流程（2026-11-07）。
+ *
+ * **按 user_id 归属，不进 field_state / changes**，理由与 counters 那两张表相同：
+ * 每日流程是「我自己的顺序表」，个人私有，不共享、不参与日程集那套角色权限。
+ *
+ * 存的是一份**整文档 JSON**，不是逐字段实体：
+ *   doc = 'template'  常用模板（全用户一份，每天共用）
+ *   doc = 'YYYY-MM-DD' 当天清单（首次打开那天时由模板生成，之后独立）
+ *
+ * 为什么整文档而不是逐项字段：
+ *   · 一项流程只有「标题 / 参考时间 / 顺序 / 完成」，没有并发分字段改的场景；
+ *   · 顺序是一个整体（拖一下会动一串），逐字段 LWW 反而会把顺序拆散；
+ *   · 个人私有，不存在两个人同时编辑同一份 —— 冲突只可能来自同一个人的两台设备，
+ *     用「整文档最后写入者胜」就够，配合 rev 让客户端能看出自己是不是落后了。
+ *
+ * body 是 JSON 字符串而不是 JSON 列：SQLite 没有原生 JSON 类型，
+ * 存文本、由 lib/db/flow.js 统一 parse/stringify，别在路由里各写一遍。
+ */
+const FLOW_TABLES = [
+  `CREATE TABLE IF NOT EXISTS flow_docs (
+     user_id    TEXT    NOT NULL,
+     doc        TEXT    NOT NULL,
+     -- 单调递增。每次成功写入 +1，客户端拿它判断「我手上这份是不是旧的」
+     rev        INTEGER NOT NULL,
+     body       TEXT    NOT NULL,
+     updated_at INTEGER NOT NULL,
+     PRIMARY KEY (user_id, doc)
+   )`,
+];
 
 /* --------------------------------------------------------------- v5 新增 */
 
@@ -287,6 +320,9 @@ const MIGRATIONS = {
     (handle) => addColumnIfMissing(handle, 'calendars', 'kind', "TEXT NOT NULL DEFAULT 'normal'"),
     (handle) => migrateHabitsToPersonal(handle),
   ],
+  // v8 → v9：每日流程（2026-11-07）。只加一张表，不动任何已有表 ——
+  // 老账号打开新版本时这张表是空的，第一次打开「每日流程」就按模板生成当天清单。
+  8: FLOW_TABLES,
 };
 
 const SCHEMA = `
@@ -372,7 +408,8 @@ CREATE INDEX IF NOT EXISTS idx_revoked_exp ON revoked(expires_at);
 `;
 
 /** 建库语句 = v2 那七张 + v3 追加的三张 + v5 的计数器 */
-const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n' + COUNTER_TABLES.join(';\n\n') + ';\n';
+const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n' + COUNTER_TABLES.join(';\n\n') + ';\n'
+  + FLOW_TABLES.join(';\n\n') + ';\n';
 
 /** 旧 schema 的全部表名 —— 库是空的时候用来推倒重建 */
 const ALL_TABLES = [
@@ -380,7 +417,7 @@ const ALL_TABLES = [
   'field_state', 'changes', 'revoked',
   'ai_settings', 'ai_sessions', 'ai_messages',
   'ai_memory', 'ai_authorizations',
-  'counters',
+  'counters', 'flow_docs',
 ];
 
 module.exports = {

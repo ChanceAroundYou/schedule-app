@@ -95,7 +95,7 @@ const V2_TABLES = [
   'field_state', 'changes', 'revoked',
 ];
 
-const NEW_TABLES = ['ai_settings', 'ai_sessions', 'ai_messages', 'ai_memory', 'ai_authorizations', 'counters'];
+const NEW_TABLES = ['ai_settings', 'ai_sessions', 'ai_messages', 'ai_memory', 'ai_authorizations', 'counters', 'flow_docs'];
 
 /* ------------------------------------------------------------------ 工具 */
 
@@ -178,7 +178,7 @@ test('空目录：直接建到当前版本，各张表齐全', (t) => {
 
   const got = inspect(dir);
   assert.strictEqual(got.userVersion, db.SCHEMA_VERSION, '新库的版本号就是当前版本');
-  assert.strictEqual(db.SCHEMA_VERSION, 8, 'v8 是这次改动引入的版本');
+  assert.strictEqual(db.SCHEMA_VERSION, 9, 'v9（每日流程）是这次改动引入的版本');
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `新库里应该有 ${name}`);
   }
@@ -197,7 +197,7 @@ test('v2 库带真实数据：升级后一个用户、一条字段都不少', (t
   db.close();
 
   const after = inspect(dir);
-  assert.strictEqual(after.userVersion, 8, '版本号要升上去');
+  assert.strictEqual(after.userVersion, 9, '版本号要升上去');
   assert.deepStrictEqual(after.users, before.users, '账户必须原样还在');
   assert.deepStrictEqual(after.fields, before.fields, '逐字段状态必须原样还在');
   assert.deepStrictEqual(after.changes, before.changes, '变更流水必须原样还在');
@@ -246,7 +246,7 @@ test('升级后新表真的能用（不是建了个空壳）', (t) => {
 
   assert.strictEqual(handle, 1);
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 8);
+  assert.strictEqual(got.userVersion, 9);
   assert.deepStrictEqual(got.users, [{ id: 'u-dad', name: '爸爸' }], '老数据仍要完好');
 });
 
@@ -258,7 +258,7 @@ test('v2 空库（还没人注册）：推倒重建，不报错', (t) => {
   db.close();
 
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 8);
+  assert.strictEqual(got.userVersion, 9);
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `重建后应该有 ${name}`);
   }

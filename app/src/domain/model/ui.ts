@@ -11,7 +11,7 @@ import { MIN_SPAN } from '../layout.ts';
 // 另外 navOrder 也是照着这张表补全的，老用户本地存的那份顺序里没有新页 ——
 // 补在这里，他们不用清 localStorage 就能看见它。
 const NAV_ALL = [
-  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'counter', 'done', 'ai', 'trash', 'settings',
+  'inbox', 'today', 'overdue', 'calendar', 'projects', 'habits', 'flow', 'counter', 'done', 'ai', 'trash', 'settings',
 ];
 
 /**
@@ -82,6 +82,7 @@ export function defaultUi(): UiPrefs {
     tabs: DEFAULT_TABS.slice(),
     tdoneOpen: false,
     showCreatorTag: true,
+    creator: 'all',
     cardFontSize: 'md',
     showRepeatMark: true,
     showNowLine: true,
@@ -126,6 +127,10 @@ export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   // `ui.cals` —— 上面已用默认值把 cals 补成 []，再问 ui.cals 永远是数组，老数据走不到。
   const rawCals = raw?.cals;
   if (ui.showCreatorTag == null) ui.showCreatorTag = true;
+  /* 日程页的创建者筛选（2026-11-07）：只认非空字符串。
+     这里**不校验这个人还在不在**（normalizeUi 是纯函数，看不到成员表）——
+     人离开集之后由 Workbench 那边把失效的值收回 'all'，见 useCreatorFilter.ts。 */
+  if (typeof ui.creator !== 'string' || !ui.creator) ui.creator = 'all';
   if (!['sm', 'md', 'lg'].includes(ui.cardFontSize)) ui.cardFontSize = 'md';
   if (ui.showRepeatMark == null) ui.showRepeatMark = true;
   if (ui.showNowLine == null) ui.showNowLine = true;

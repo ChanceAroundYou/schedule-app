@@ -17,6 +17,7 @@ const sync = require('./sync');
 const ai = require('./ai');
 const widget = require('./widget');
 const media = require('./media');
+const flow = require('./flow');
 
 const handlers = {};
 
@@ -26,7 +27,7 @@ const handlers = {};
 //
 // media 是详细内容里的图片（2026-10-26），请求体是裸二进制而不是 JSON ——
 // router.js 里有一张 `RAW_KEYS` 表专门标这类路由，加新的记得同步过去。
-for (const [group, mod] of [['auth', auth], ['cals', cals], ['sync', sync], ['ai', ai], ['widget', widget], ['media', media]]) {
+for (const [group, mod] of [['auth', auth], ['cals', cals], ['sync', sync], ['ai', ai], ['widget', widget], ['media', media], ['flow', flow]]) {
   for (const key of Object.keys(mod)) {
     if (handlers[key]) {
       throw new Error(`路由重复：${key}（${group} 组与前面某一组撞了）`);

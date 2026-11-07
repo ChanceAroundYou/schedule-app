@@ -3,14 +3,15 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, CloudOff, Loader2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, CloudOff, Loader2, Users } from 'lucide-react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import { useOutsideClose, useOnline } from '../hooks.ts';
 import { CalMenu } from '../Calendars.tsx';
-import { Btn } from '../kit.tsx';
+import { Btn, Dropdown } from '../kit.tsx';
 import { JumpPop } from './JumpPop.tsx';
 import { SearchInput, useSearchValue } from './SearchInput.tsx';
+import { creatorOptions } from './creatorOptions.ts';
 
 /* ============================ 副header ============================ */
 
@@ -20,13 +21,15 @@ import { SearchInput, useSearchValue } from './SearchInput.tsx';
  * 从Topbar抽出来，让顶栏只留标题 + 搜索 + 状态。
  * 日程页内容多，需要专门的副header来放这些控件。
  */
-export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor }: {
+export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor, onCreator }: {
   state: LocalState;
   jump: boolean; setJump: (v: boolean) => void;
   onView: (v: LocalState['ui']['view']) => void;
   onShift: (n: number) => void;
   onToday: () => void;
   onCursor: (iso: string) => void;
+  /** 改「按创建者筛选」的值。走回调和 onView 同一条路 —— 这一层不直接碰 store */
+  onCreator: (v: string) => void;
 }) {
   const ui = state.ui;
   const t0 = D.today();
@@ -83,6 +86,26 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
             triggerRef={jumpBtn}
           />
         </div>
+        {/* 按创建者筛选（2026-11-07）。放在日期导航这一排：它是「看哪些任务」的
+            过滤，和「看哪一天」是同一类；放视图切换那边会被误当成一种视图。
+            选项由 creatorOptions 从真实数据里推，人离开集之后由 Workbench 收回
+            「全部成员」—— 这里只负责展示与写入，不做判断。 */}
+        <div className="creator-filter">
+          <Dropdown
+            value={ui.creator || 'all'}
+            options={creatorOptions(state)}
+            onPick={(v) => onCreator(v)}
+            label="按创建者筛选"
+            size="sm"
+            className="max-w-[132px]"
+            renderValue={(o) => (
+              <span className="flex min-w-0 items-center gap-1">
+                <Users size={13} className="shrink-0 opacity-60" />
+                <span className="truncate">{o?.label ?? '全部成员'}</span>
+              </span>
+            )}
+          />
+        </div>
       </div>
       <div className="view-switch">
         <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
@@ -130,6 +153,7 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
   else if (ui.nav === 'habits') { title = '打卡'; range = '坚持每天的小事'; }
   else if (ui.nav === 'ai') { title = 'AI'; range = '问它排期上的事'; }
   else if (ui.nav === 'counter') { title = '+1'; range = '每天 0 点自己往上加'; }
+  else if (ui.nav === 'flow') { title = '每日流程'; range = '按顺序推进今天的事'; }
   // 页名归**顶栏**（用户 2026-10-09：「设置页的 header 的左上角没有设置字样」，
   // 要求就是写进 header 里）。设置页那张 tab 栏是**页内的分段开关**，不是 header，
   // 所以页名只此一处 —— 顶栏写、页面里就别再写一遍，否则两行都是「设置」。

@@ -38,6 +38,7 @@ const HIDDEN_NAVS = [
   'trash',
   'settings',
   'counter',   // 「+1」是计数器页，没有"加一条任务"这回事
+  'flow',      // 每日流程：页内自己那条「加一项」就是它唯一的新建入口
 ];
 
 export function QuickAdd({ state, onSubmit }: {

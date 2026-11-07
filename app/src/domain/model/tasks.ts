@@ -6,6 +6,37 @@ import type { LocalState, Task } from '../types/types.ts';
 import * as D from '../date.ts';
 import { isGone, isTrashed } from './visibility.ts';
 import { plain } from './richText.ts';
+import { AI_ACTOR } from '../people.ts';
+
+/**
+ * 这条任务算「谁创建的」。
+ *
+ * `createdBy` 缺失 = 老数据 / 本机建的 → 算我；`'ai'` 是 AI **代我**建的
+ * （见 people.ts 的 AI_ACTOR），也算我 —— 它不是「别人」。
+ * 不知道我是谁（`meId` 为 null）时返回 null，筛选器一律让这条通过：
+ * 宁可多显示，也不要因为「不知道我是谁」把整张日历清空。
+ */
+export function ownerOf(s: LocalState, t: Task): string | null {
+  if (t.createdBy && t.createdBy !== AI_ACTOR) return t.createdBy;
+  return s.meId;
+}
+
+/**
+ * 日程页「按创建者筛选」是否放行这条任务。
+ *
+ * **只作用于日程视图**（`tasksOn` / `dayLoad` 的入口），跨集页面（今天 / 逾期 /
+ * 待办箱）不看 `ui.creator` —— 用户在日程页筛了某个人，切到「今天」不该
+ * 以为自己的任务丢了。判据放在这里而不是各视图里，是为了让日 / 三日 / 周 / 月
+ * 四种视图天然同一口径。
+ */
+export function creatorPass(s: LocalState, t: Task): boolean {
+  const f = s.ui.creator;
+  if (!f || f === 'all') return true;
+  if (!s.meId) return true;
+  const who = ownerOf(s, t);
+  if (who == null) return true;
+  return f === 'me' ? who === s.meId : who === f;
+}
 
 export function liveTasks(s: LocalState): Task[] { return Object.values(s.tasks).filter((t) => !isGone(t)); }
 
@@ -27,10 +58,10 @@ function matches(t: { title: string; note?: string }, kw: string): boolean {
   return t.title.toLowerCase().includes(k) || plain(t.note || '').toLowerCase().includes(k);
 }
 
-/** 某一天的任务（按时间/位次排好序） */
+/** 某一天的任务（按时间/位次排好序）。日历四种视图共用，**创建者筛选在这里** */
 export function tasksOn(s: LocalState, isoDate: string): Task[] {
   const kw = s.ui.search || '';
-  return sortTasks(liveTasks(s).filter((t) => t.date === isoDate && matches(t, kw)));
+  return sortTasks(liveTasks(s).filter((t) => t.date === isoDate && matches(t, kw) && creatorPass(s, t)));
 }
 
 /**
@@ -108,12 +139,14 @@ export function doneTasks(s: LocalState): Task[] {
     .slice(0, 200);
 }
 
-/** 某一天的负载：已排分钟数 + 任务数（周/月视图的负载感知用） */
+/** 某一天的负载：已排分钟数 + 任务数（周/月视图的负载感知用）。
+ *  **口径必须和 tasksOn 一致** —— 否则月视图会「格子里没任务、底下却有负载条」。 */
 export function dayLoad(s: LocalState, isoDate: string): { mins: number; count: number } {
   let mins = 0;
   let count = 0;
   for (const x of Object.values(s.tasks)) {
     if (isGone(x) || x.done || x.date !== isoDate) continue;
+    if (!creatorPass(s, x)) continue;
     count++;
     if (x.time) mins += D.durOf(x.duration);
   }
