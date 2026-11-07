@@ -7,7 +7,7 @@ export type { NavDef } from './nav.tsx';
 export { Pulse } from './Pulse.tsx';
 export { Sidebar } from './Sidebar.tsx';
 export { JumpPop } from './JumpPop.tsx';
-export { CalSubheader, Topbar } from './Topbar.tsx';
+export { CalSubheader, CreatorFilter, Topbar } from './Topbar.tsx';
 export { Tabbar, MoreSheet } from './Tabbar.tsx';
 export { QuickAdd } from './QuickAdd.tsx';
 export { Shell } from './Shell.tsx';

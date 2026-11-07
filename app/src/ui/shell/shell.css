@@ -184,11 +184,16 @@
 .date-nav [aria-pressed="true"]:hover { background: var(--primary-soft); }
 
 /* 日程页「按创建者筛选」（2026-11-07）。
-   和左边那四个 30px 方按钮同排，所以高度必须一样（Dropdown 的 sm 也是 30px）。
+   宽屏在副header：和左边那四个 30px 方按钮同排，高度必须一样（Dropdown 的 sm 也是 30px）。
    宽度给上限、允许收缩：成员名是用户数据，长的能到十几个字 —— 不收就会把
-   视图切换挤出这一行（窄屏上尤其明显，那一行本来就会 wrap）。 */
+   视图切换挤出这一行（窄屏上尤其明显，那一行本来就会 wrap）。
+   窄屏在顶栏标题右边（原因见 Topbar.tsx），那边高度按顶栏的 30px 走。 */
 .creator-filter { display: flex; min-width: 0; }
 .creator-filter > div { min-width: 0; max-width: 132px; }
+/* 顶栏那一档：跟搜索框、图标钮一样是 30px 高，并给标题让出 12px（父级 gap 已有） */
+.topbar-left .creator-filter { align-items: center; }
+.topbar-left .creator-filter > div { max-width: 116px; }
+.topbar-left .creator-filter button { height: 30px; }
 
 /* 四个控件（上一/下一个 · 今 · 找日期）**同宽 30px、同间距 4px**
    （用户 2026-10-11：「四个项的宽度和间距都不一样 需要统一」）。

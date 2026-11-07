@@ -198,6 +198,35 @@ export async function run(ctx) {
     '没有 --wk-hour-h 了（撤销 6504386 后的原状，不会再按 48px/小时撑高）',
     '变量值「' + wkLockN.hourVar + '」');
 
+  /* ---- 真窄屏 · 创建者筛选必须待在顶栏，不能把副header 顶成两行（2026-11-07）----
+     390px 上副header 那一排的账：四个日期钮 174 + 视图切换 178 = 352，可用 364，
+     只剩 12px，而筛选项要 107px。它一旦塞进来，视图切换就被挤到第二行，
+     副header 从 53px 变成 93px —— 周视图本来靠「锁单屏」才装得下，少 40px
+     就直接把时间轴压扁（当时深测报的就是上面那条 3px 溢出）。
+     所以它搬到顶栏标题右边。这三条守着别有人又把它挪回去。
+
+     ⚠️ 判据只用**高度**，不要数「有几行」：date-nav 34px 与 view-switch 36px
+     在 align-items:center 下顶边本来就差 1px，按 top 去重会数出 2 行（假红，第一版就是）。 */
+  const shN = await evalJs(page, `
+    return (() => {
+      const sh = document.querySelector('.cal-subhead');
+      const cf = document.querySelector('.creator-filter');
+      return {
+        h: sh ? Math.round(sh.getBoundingClientRect().height) : null,
+        hasCf: !!cf,
+        inTopbar: cf ? !!cf.closest('.topbar-left') : false,
+        cfH: cf ? Math.round(cf.getBoundingClientRect().height) : null,
+      };
+    })()
+  `);
+  ok(shN.hasCf, '窄屏也看得见「按创建者筛选」（是搬家，不是藏起来）', JSON.stringify(shN));
+  ok(shN.inTopbar, '窄屏的筛选器在**顶栏那一行**（不在副header 里）', JSON.stringify(shN));
+  ok(shN.cfH != null && shN.cfH <= 34,
+    '筛选器高度跟顶栏那一排走（30px 档，不把顶栏撑高）', String(shN.cfH) + 'px');
+  /* 一行 ≈ 53px（34 控件 + 上下 padding）；两行是 93px。中间没有别的可能。 */
+  ok(shN.h != null && shN.h <= 60,
+    '副header 在窄屏只有一行（塞进筛选器会变两行、把日历压矮 40px）', String(shN.h) + 'px');
+
   /* ---- 真窄屏 · 列宽 78px + 三日视图不横滑（2026-10-25）---- */
   const colsN = await evalJs(page, `
     return getComputedStyle(document.querySelector('.week-cols')).gridTemplateColumns;

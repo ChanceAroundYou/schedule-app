@@ -9,7 +9,7 @@ export type { NavDef } from './shell/shell.ts';
 export { Pulse } from './shell/shell.ts';
 export { Sidebar } from './shell/shell.ts';
 export { JumpPop } from './shell/shell.ts';
-export { CalSubheader, Topbar } from './shell/shell.ts';
+export { CalSubheader, CreatorFilter, Topbar } from './shell/shell.ts';
 export { Tabbar, MoreSheet } from './shell/shell.ts';
 export { QuickAdd } from './shell/shell.ts';
 export { Shell } from './shell/shell.ts';

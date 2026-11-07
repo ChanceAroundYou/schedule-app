@@ -13,6 +13,42 @@ import { JumpPop } from './JumpPop.tsx';
 import { SearchInput, useSearchValue } from './SearchInput.tsx';
 import { creatorOptions } from './creatorOptions.ts';
 
+/* ============================ 筛选器 ============================ */
+
+/**
+ * 「按创建者筛选」（2026-11-07）。
+ *
+ * 选项由 creatorOptions 从真实数据里推；人离开集之后由 Workbench 收回
+ * 「全部成员」—— 这里只负责展示与写入，不做判断。
+ *
+ * **为什么单独抽一个组件**：它有两个落脚点。宽屏在副header 的日期导航那一排；
+ * 窄屏在**顶栏那一行的标题右边**（见下面的 CalSubheader 注释）。
+ */
+export function CreatorFilter({ state, onCreator }: {
+  state: LocalState;
+  onCreator: (v: string) => void;
+}) {
+  const ui = state.ui;
+  return (
+    <div className="creator-filter">
+      <Dropdown
+        value={ui.creator || 'all'}
+        options={creatorOptions(state)}
+        onPick={(v) => onCreator(v)}
+        label="按创建者筛选"
+        size="sm"
+        className="max-w-[132px]"
+        renderValue={(o) => (
+          <span className="flex min-w-0 items-center gap-1">
+            <Users size={13} className="shrink-0 opacity-60" />
+            <span className="truncate">{o?.label ?? '全部成员'}</span>
+          </span>
+        )}
+      />
+    </div>
+  );
+}
+
 /* ============================ 副header ============================ */
 
 /**
@@ -21,7 +57,7 @@ import { creatorOptions } from './creatorOptions.ts';
  * 从Topbar抽出来，让顶栏只留标题 + 搜索 + 状态。
  * 日程页内容多，需要专门的副header来放这些控件。
  */
-export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor, onCreator }: {
+export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, onCursor, onCreator, narrow }: {
   state: LocalState;
   jump: boolean; setJump: (v: boolean) => void;
   onView: (v: LocalState['ui']['view']) => void;
@@ -30,6 +66,8 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
   onCursor: (iso: string) => void;
   /** 改「按创建者筛选」的值。走回调和 onView 同一条路 —— 这一层不直接碰 store */
   onCreator: (v: string) => void;
+  /** 窄屏：这里**不画**筛选器（它搬去顶栏了，见下面那段注释） */
+  narrow: boolean;
 }) {
   const ui = state.ui;
   const t0 = D.today();
@@ -86,26 +124,15 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
             triggerRef={jumpBtn}
           />
         </div>
-        {/* 按创建者筛选（2026-11-07）。放在日期导航这一排：它是「看哪些任务」的
-            过滤，和「看哪一天」是同一类；放视图切换那边会被误当成一种视图。
-            选项由 creatorOptions 从真实数据里推，人离开集之后由 Workbench 收回
-            「全部成员」—— 这里只负责展示与写入，不做判断。 */}
-        <div className="creator-filter">
-          <Dropdown
-            value={ui.creator || 'all'}
-            options={creatorOptions(state)}
-            onPick={(v) => onCreator(v)}
-            label="按创建者筛选"
-            size="sm"
-            className="max-w-[132px]"
-            renderValue={(o) => (
-              <span className="flex min-w-0 items-center gap-1">
-                <Users size={13} className="shrink-0 opacity-60" />
-                <span className="truncate">{o?.label ?? '全部成员'}</span>
-              </span>
-            )}
-          />
-        </div>
+        {/* 按创建者筛选（2026-11-07）。宽屏放这一排：它是「看哪些任务」的过滤，
+            和「看哪一天」是同一类；放视图切换那边会被误当成一种视图。
+            **窄屏不在这儿画** —— 这一排在 390px 上的账是这样的（实测）：
+            四个日期钮 174 + 视图切换 178 = 352，可用 364，只剩 12px。
+            筛选项要 107px，放进来必然把视图切换挤到第二行，副header 从 53px
+            变成 93px —— 手机上周视图本来就靠「锁单屏」才装得下，一下少 40px
+            会直接把时间轴压扁（这正是 2026-11-07 深测里那条 3px 溢出的来源）。
+            所以窄屏它搬到顶栏标题右边，那边有 277px 空着。 */}
+        {!narrow && <CreatorFilter state={state} onCreator={onCreator} />}
       </div>
       <div className="view-switch">
         <button data-view="day" className={ui.view === 'day' ? 'on' : ''} onClick={() => onView('day')}>日</button>
@@ -119,10 +146,18 @@ export function CalSubheader({ state, jump, setJump, onView, onShift, onToday, o
 
 /* ============================== 顶栏 ============================== */
 
-export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
+export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch, creatorFilter }: {
   state: LocalState; narrow: boolean;
   searchOpen: boolean; setSearchOpen: (v: boolean) => void;
   onSearch: (kw: string) => void;
+  /**
+   * 窄屏才有的槽：日程页「按创建者筛选」。
+   *
+   * 由 Workbench 传进来（它手里有 `scoped` 那份 state —— 成员清单得跟
+   * 侧栏勾选的日程集一致，传未过滤的那份会列出已取消勾选集里的人）。
+   * 顶栏自己不知道 creator 这回事，只负责在这一行给它腾个位子。
+   */
+  creatorFilter?: React.ReactNode;
 }) {
   const ui = state.ui;
   const online = useOnline();
@@ -182,6 +217,12 @@ export function Topbar({ state, narrow, searchOpen, setSearchOpen, onSearch }: {
           <h1 className="view-title">{title}</h1>
         )}
         {!narrow && !!range && <span className="date-range">{range}</span>}
+        {/* 窄屏的「按创建者筛选」落在这儿（2026-11-07）。挪上来的原因见
+            CalSubheader 里那段账：副header 在 390px 上塞不进这一项，
+            硬塞会让它变两行、把日历压矮 40px。这一行左边标题只占 59px，
+            右边搜索在 349 之后，中间 277px 是空的 —— 放在这儿既不挤，
+            又离「正在看哪天」最近（筛选和日期是同一类问题）。 */}
+        {narrow && creatorFilter}
       </div>
 
       <div className="topbar-right">

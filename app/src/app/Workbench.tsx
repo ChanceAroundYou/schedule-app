@@ -29,7 +29,7 @@ import { useStoreState, useScopedState, useIsNarrow, useKeyboardInset } from '..
 import * as T from '../ui/theme.ts';
 import { useConfirm } from '../ui/kit.tsx';
 import { DndProvider, useTimelineDrag } from '../ui/dndkit.tsx';
-import { Shell, Topbar, CalSubheader, QuickAdd } from '../ui/Shell.tsx';
+import { Shell, Topbar, CalSubheader, CreatorFilter, QuickAdd } from '../ui/Shell.tsx';
 import { InviteSheet } from '../ui/Calendars.tsx';
 import { ProjectSheet } from '../ui/overlays/ProjectSheet.tsx';
 import { DeleteRepeatSheet, type DeleteRepeatChoice } from '../ui/kit/DeleteRepeatSheet.tsx';
@@ -269,6 +269,12 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
               searchOpen={searchOpen}
               setSearchOpen={setSearchOpen}
               onSearch={onSearch}
+              /* 窄屏的「按创建者筛选」挂在顶栏标题右边 —— 副header 在手机宽度上
+                 塞不进它（塞了会把视图切换挤到第二行、日历少 40px）。
+                 传 `scoped`：成员清单要和侧栏勾选的日程集一致。 */
+              creatorFilter={narrow && state.ui.nav === 'calendar' ? (
+                <CreatorFilter state={scoped} onCreator={(v) => store.setUi({ creator: v })} />
+              ) : null}
             />
             {state.ui.nav === 'calendar' && (
               /* 传 `scoped`：这个副header 里的「找日期」面板那本小月历要画的
@@ -290,6 +296,7 @@ function Workbench({ user, onLogout, onUserChange }: { user: PublicUser | null; 
                 }}
                 onCursor={(iso) => { store.setUi({ cursor: iso, nav: 'calendar' }); setJumpOpen(false); }}
                 onCreator={(v) => store.setUi({ creator: v })}
+                narrow={narrow}
               />
             )}
             {/* 同步报错原来只写进 state 没人渲染，等于没有 —— 断网 / 时钟不对
