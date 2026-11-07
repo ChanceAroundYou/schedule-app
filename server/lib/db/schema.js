@@ -13,7 +13,36 @@
 const crypto = require('node:crypto');
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
+
+/* -------------------------------------------------------------- v10 新增 */
+
+/**
+ * 计数器「这一次点击已经处理过」的凭据（2026-11-07）。
+ *
+ * ## 为什么必须有一张去重表
+ *
+ * 桌面小组件的队列是 **at-least-once**：请求发出去了、服务端也加成功了，
+ * 但响应在弱网下丢了 —— 客户端只能把它放回队首重发。没有去重表时，
+ * 这一下就真的加了两次，用户看到「点了一下涨了两下」。
+ *
+ * 表很小：只留最近 7 天的 op_id（见 db/counters.js 的 pruneOps）。
+ * op_id 由客户端生成（桌面组件用 UUID，网页用随机串），**同一账号内唯一**。
+ *
+ * value_after 存下来是为了重放时能回一份「那次处理完之后的值」，
+ * 而不是把当前值当成那次的结果返回。
+ */
+const COUNTER_OPS_TABLES = [
+  `CREATE TABLE IF NOT EXISTS counter_ops (
+     user_id     TEXT    NOT NULL,
+     op_id       TEXT    NOT NULL,
+     counter_id  TEXT    NOT NULL,
+     value_after INTEGER NOT NULL,
+     created_at  INTEGER NOT NULL,
+     PRIMARY KEY (user_id, op_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_counter_ops_age ON counter_ops(created_at)`,
+];
 
 /* --------------------------------------------------------------- v9 新增 */
 
@@ -323,6 +352,8 @@ const MIGRATIONS = {
   // v8 → v9：每日流程（2026-11-07）。只加一张表，不动任何已有表 ——
   // 老账号打开新版本时这张表是空的，第一次打开「每日流程」就按模板生成当天清单。
   8: FLOW_TABLES,
+  // v9 → v10：计数器点击去重（2026-11-07）。只加一张表 + 一个索引。
+  9: COUNTER_OPS_TABLES,
 };
 
 const SCHEMA = `
@@ -409,7 +440,8 @@ CREATE INDEX IF NOT EXISTS idx_revoked_exp ON revoked(expires_at);
 
 /** 建库语句 = v2 那七张 + v3 追加的三张 + v5 的计数器 */
 const FULL_SCHEMA = SCHEMA + AI_TABLES.join(';\n\n') + ';\n' + COUNTER_TABLES.join(';\n\n') + ';\n'
-  + FLOW_TABLES.join(';\n\n') + ';\n';
+  + FLOW_TABLES.join(';\n\n') + ';\n'
+  + COUNTER_OPS_TABLES.join(';\n\n') + ';\n';
 
 /** 旧 schema 的全部表名 —— 库是空的时候用来推倒重建 */
 const ALL_TABLES = [
@@ -417,7 +449,7 @@ const ALL_TABLES = [
   'field_state', 'changes', 'revoked',
   'ai_settings', 'ai_sessions', 'ai_messages',
   'ai_memory', 'ai_authorizations',
-  'counters', 'flow_docs',
+  'counters', 'flow_docs', 'counter_ops',
 ];
 
 module.exports = {

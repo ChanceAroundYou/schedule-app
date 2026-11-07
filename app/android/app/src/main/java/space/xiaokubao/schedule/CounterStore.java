@@ -35,7 +35,14 @@ class CounterStore {
 
     /** 本地缓存：[{id,name,value}]。与服务端同形，省掉两套解析 */
     private static final String KEY_LIST = "schedule_widget_counters";
-    /** 未发出的改动：[{id, delta}] 或 [{id, value}] */
+    /**
+     * 未发出的改动：[{id, delta, op}] 或 [{id, value, op}]。
+     *
+     * `op` 是这一次点击的凭据（2026-11-07）。服务端按 (user_id, op) 去重，
+     * 所以「发出去、服务端加成功、响应丢了、再发一次」只会加一次。
+     * **合并队列条目时必须保留原来的 op** —— 合并的是同一次还没确认的点击，
+     * 换一个新 op 等于告诉服务端「这是新的一下」，去重就白做了。
+     */
     private static final String KEY_QUEUE = "schedule_widget_counter_queue";
 
     /** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 保持一致 */
@@ -232,6 +239,7 @@ class CounterStore {
             JSONObject o = new JSONObject();
             o.put("id", id);
             o.put("delta", delta);
+            o.put("op", newOpId());
             q.put(o);
             writeQueue(c, q);
         } catch (Exception ignored) {
@@ -251,6 +259,7 @@ class CounterStore {
             JSONObject o = new JSONObject();
             o.put("id", id);
             o.put("value", clamp(value));
+            o.put("op", newOpId());
             next.put(o);
         } catch (Exception ignored) {
         }
@@ -331,6 +340,14 @@ class CounterStore {
             }
             if (list.isEmpty()) sInflight.remove(id);
         }
+    }
+
+    /**
+     * 一次点击的凭据。UUID 足够（同一账号内几乎不可能撞），
+     * 而 op 只在「未确认」这段时间里有意义。
+     */
+    private static String newOpId() {
+        return java.util.UUID.randomUUID().toString();
     }
 
     /* -------------------------------------------------------------- 同步 */
@@ -424,11 +441,19 @@ class CounterStore {
         }
         final Integer delta = one.has("delta") ? Integer.valueOf(one.optInt("delta", 0)) : null;
         final Integer value = one.has("value") ? Integer.valueOf(one.optInt("value", 0)) : null;
+        /* 老队列里可能没有 op（升级前入队的条目）：在这里补一个并写回 `one`，
+           失败重排时它会跟着回队列 —— 这一次点击因此也具备去重能力。 */
+        String op = one.optString("op", "");
+        if (op.isEmpty()) {
+            op = newOpId();
+            try { one.put("op", op); } catch (Exception ignored) { }
+        }
+        final String opId = op;
 
         writeQueue(c, tail(q, 1));   // 先摘
         addInflight(id, delta, value);  // 记在途：请求飞行期间 applyServer 能看到它
 
-        WidgetApi.counterWrite(c, id, delta, value, new WidgetApi.Callback() {
+        WidgetApi.counterWrite(c, id, delta, value, opId, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
                 // 先清在途：这条的响应已经到了，服务端值已经包含这次改动
@@ -465,8 +490,8 @@ class CounterStore {
      * **必须回队首而不是队尾**：这一条在用户意图里排在前面，「+5」失败留在队列
      * 而后面的「=3」先发出去的话，最终值会变成 8 而不是 3。
      *
-     * 已知取舍：如果请求其实到了服务端、只是响应丢了，重发会多记一次。
-     * 计数器的语义下「多点一下」比「点了不算」轻，所以选 at-least-once。
+     * 重发不会多记：条目带着自己的 `op`，服务端按 (user_id, op) 去重
+     * （2026-11-07）。所以这里的语义是「至少一次投递、恰好一次生效」。
      */
     private static void requeueFront(Context c, JSONObject item) {
         if (item == null) return;

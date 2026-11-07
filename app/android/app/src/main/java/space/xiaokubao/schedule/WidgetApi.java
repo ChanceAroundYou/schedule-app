@@ -101,7 +101,15 @@ class WidgetApi {
      * 注意服务端做的是原子自增，不是整值替换 —— 所以这里可以放心地只发增量，
      * 两台设备同时点也不会互相盖掉。
      */
-    static void counterWrite(Context c, String id, Integer delta, Integer value, Callback cb) {
+    /**
+     * 写一次计数器。
+     *
+     * @param opId 这一次点击的凭据（2026-11-07）。**必须带**：队列是
+     *             at-least-once，服务端加成功了但响应在弱网下丢了时，客户端
+     *             只能重发；带同一个 opId 重发，服务端认得出来、不再加一次。
+     *             传 null 会退回老行为（没有去重）。
+     */
+    static void counterWrite(Context c, String id, Integer delta, Integer value, String opId, Callback cb) {
         String token = WidgetPrefs.token(c);
         if (token == null || token.isEmpty()) {
             Log.w(TAG, "counterWrite 跳过：本地还没有票（App 没登录过？）");
@@ -113,6 +121,7 @@ class WidgetApi {
             body.put("id", id);
             if (delta != null) body.put("delta", delta.intValue());
             if (value != null) body.put("value", value.intValue());
+            if (opId != null && !opId.isEmpty()) body.put("opId", opId);
             request(c, "POST", "/api/widget/counter", body, token, cb);
         } catch (Exception e) {
             cb.onFail("build-body: " + e.getMessage());

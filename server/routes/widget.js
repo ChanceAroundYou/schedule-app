@@ -209,6 +209,11 @@ module.exports = {
    *   { id, name }            改名（id 不动 —— 桌面组件按 id 找记录）
    *   { id, dailyIncrement }  每天自动加多少（0 = 关掉）
    *
+   * **可选 `opId`（2026-11-07）**：这一次点击的凭据。桌面组件的队列是
+   * at-least-once —— 服务端加成功了、响应在弱网下丢了，它只能重发。
+   * 带上 opId 之后，同一个 opId 第二次到达只返回结果、不再增量，
+   * 把「点一下涨两下」从协议层掐掉。网页端不带也能用（它没有重发队列）。
+   *
    * **为什么不走 /api/widget/op 的 applyOps**：那条通道是逐字段整值替换，
    * 用它在服务端算好再写会把并发 +1 丢掉（两条请求都读到 5，都写 6）。
    * 这里交给 db.addCounter 的 `value = value + ?` 原子语句。
@@ -224,6 +229,7 @@ module.exports = {
     const name = typeof body.name === 'string' ? body.name : null;
     const daily = typeof body.dailyIncrement === 'number' && Number.isFinite(body.dailyIncrement)
       ? body.dailyIncrement : null;
+    const opId = typeof body.opId === 'string' && body.opId.trim() ? body.opId : null;
 
     if (delta == null && value == null && name == null && daily == null) {
       return { status: 400, body: { error: 'delta / value / name / dailyIncrement 至少给一个' } };
@@ -239,15 +245,26 @@ module.exports = {
     }
 
     let out = db.getCounter(me.user.id, id);
-    if (delta != null) {
-      // 一次最多一万，挡掉手滑传个 1e9 把数字顶到上限
-      out = db.addCounter(me.user.id, id, Math.max(-10000, Math.min(10000, Math.round(delta))));
-    } else if (value != null) {
-      out = db.setCounter(me.user.id, id, value);
+    let duplicate = false;
+    if (delta != null || value != null) {
+      if (opId) {
+        /* 带凭据：去重 + 改值在同一个事务里完成，重发不会加两次 */
+        const r = db.applyCounterOp(me.user.id, id, { delta, value }, opId);
+        out = r ? r.counter : null;
+        duplicate = !!(r && r.duplicate);
+      } else if (delta != null) {
+        // 一次最多一万，挡掉手滑传个 1e9 把数字顶到上限
+        out = db.addCounter(me.user.id, id, Math.max(-10000, Math.min(10000, Math.round(delta))));
+      } else if (value != null) {
+        out = db.setCounter(me.user.id, id, value);
+      }
     }
 
     if (!out) return { status: 404, body: { error: '没有这个计数器' } };
-    return { status: 200, body: { counter: out, counters: db.listCounters(me.user.id) } };
+    return {
+      status: 200,
+      body: { counter: out, duplicate, counters: db.listCounters(me.user.id) },
+    };
   },
 
   /**

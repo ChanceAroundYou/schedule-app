@@ -1647,3 +1647,97 @@ test('每日流程：区间太大被拒，不会把整库拖出来', async () =>
   const r = await api('GET', '/api/flow?from=2026-01-01&to=2026-12-31', { token: dad.token });
   assert.strictEqual(r.status, 400);
 });
+
+/* ================================================================
+   计数器点击去重（2026-11-07，schema v10）
+   ================================================================ */
+
+test('计数器：同一个 opId 重发只加一次（响应丢失后的重试场景）', async () => {
+  const id = 'naonao';
+  const before = await api('GET', '/api/widget/counters', { token: dad.token });
+  const v0 = before.body.counters.find((c) => c.id === id).value;
+
+  const opId = 'op-test-' + Date.now();
+  const a = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1, opId },
+  });
+  assert.strictEqual(a.status, 200);
+  assert.strictEqual(a.body.counter.value, v0 + 1);
+  assert.strictEqual(a.body.duplicate, false);
+
+  // 同一条重发（服务端可能已经加过、只是响应丢了）
+  const b = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1, opId },
+  });
+  assert.strictEqual(b.status, 200);
+  assert.strictEqual(b.body.duplicate, true, '要告诉客户端「这条已经处理过」');
+  assert.strictEqual(b.body.counter.value, v0 + 1, '数字不能再涨一格');
+
+  // 换个 opId 就是新的一次点击，照常加
+  const c = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1, opId: opId + '-b' },
+  });
+  assert.strictEqual(c.body.counter.value, v0 + 2);
+});
+
+test('计数器：不带 opId 仍然可用（网页端没有重发队列）', async () => {
+  const r = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id: 'kutai', delta: 1 },
+  });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.duplicate, false);
+});
+
+test('计数器：opId 重放不会跨账号生效', async () => {
+  const opId = 'op-shared-' + Date.now();
+  const a = await api('POST', '/api/widget/counter', { token: dad.token, body: { id: 'naonao', delta: 1, opId } });
+  assert.strictEqual(a.body.duplicate, false);
+
+  /* 换人：同一串 opId 在他那里是全新的点击（凭据按 (user_id, op_id) 唯一）。
+     这里直接走存储层 —— HTTP 那条路要另一个有效 token，而本文件里的
+     第二个账户在后面「改口令」用例里已经被吊销了。 */
+  const before = db.getCounter(mom.userId, 'naonao');
+  const r = db.applyCounterOp(mom.userId, 'naonao', { delta: 1 }, opId);
+  assert.strictEqual(r.duplicate, false, '别人的凭据不该挡我的点击');
+  assert.strictEqual(r.counter.value, before.value + 1);
+});
+
+test('计数器：整值写入（小组件里手改数字）同样按 opId 去重', async () => {
+  const id = 'kutai';
+  const opId = 'op-set-' + Date.now();
+
+  const a = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, value: 42, opId },
+  });
+  assert.strictEqual(a.status, 200);
+  assert.strictEqual(a.body.counter.value, 42);
+  assert.strictEqual(a.body.duplicate, false);
+
+  /* 同一条重发。`value` 是整值替换，重放本来就幂等 —— 但这里要确认它
+     同样被记账，不会因为「值没变」而绕过凭据表（绕过就意味着下次真实
+     点击可能撞进同一格）。 */
+  const b = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, value: 42, opId },
+  });
+  assert.strictEqual(b.body.duplicate, true);
+  assert.strictEqual(b.body.counter.value, 42);
+
+  // 之后的真实点击不受影响
+  const c = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1 },
+  });
+  assert.strictEqual(c.body.counter.value, 43);
+});
+
+test('计数器：不带 opId 的并发自增不会互相覆盖（协议层的原子性仍在）', async () => {
+  const id = 'naonao';
+  const before = db.getCounter(dad.userId, id);
+
+  /* 五条并发 +1，都没有 opId。断言的是 addCounter 的 `value = value + ?`
+     这条原子语句没有被「事务化去重」改坏 —— 这是网页端走的路径。 */
+  await Promise.all(Array.from({ length: 5 }, () => api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1 },
+  })));
+  const after = db.getCounter(dad.userId, id);
+  assert.strictEqual(after.value, before.value + 5);
+});

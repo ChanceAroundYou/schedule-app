@@ -16,7 +16,7 @@
  */
 'use strict';
 
-const { run, get, all } = require('./connection.js');
+const { run, get, all, tx } = require('./connection.js');
 
 /**
  * 默认的两个计数器。**只在用户第一次碰它们时落库**（ensureDefaults），
@@ -218,8 +218,82 @@ function setDailyIncrement(userId, id, n) {
   return getCounter(userId, id);
 }
 
+/** 去重凭据保留多久。桌面组件的重试窗口是几分钟，7 天足够宽松 */
+const OP_TTL_MS = 7 * 24 * 3600 * 1000;
+
+/** 清掉过期的去重凭据。每次写入顺手做，成本是一条带索引的 DELETE */
+function pruneOps(now) {
+  run('DELETE FROM counter_ops WHERE created_at < ?', (now == null ? Date.now() : now) - OP_TTL_MS);
+}
+
+/**
+ * 应用一次「带凭据的点击」。
+ *
+ * 这是桌面组件唯一该用的写入口（2026-11-07）。语义：
+ *   · `opId` 已经处理过 → **不再增量**，直接把当前值回回去（duplicate=true）
+ *   · 没处理过 → 在一个事务里「查重 + 改值 + 记账」，要么都成要么都不成
+ *
+ * 为什么必须同事务：先改值再记账，中间崩掉就是「加了但没记账」—— 重试又会加一次，
+ * 等于白做；先记账再改值，崩掉就是「记了账但没加」，重试被当成重复而永远补不回来。
+ * 只有同一个事务能保证「恰好一次」。
+ *
+ * **查重也必须在事务里**：挪到事务外的话，同一个 opId 的两条并发请求会双双看到
+ * 「没见过」，然后各加一次 —— 去重就只在串行重发时有效，弱网并发下依旧多记。
+ *
+ * @returns {{counter: object|null, duplicate: boolean}}
+ */
+function applyCounterOp(userId, id, op, opId) {
+  const uid = String(userId);
+  const cid = String(id);
+  const opKey = typeof opId === 'string' && opId.trim() ? opId.trim().slice(0, 64) : null;
+
+  return tx(() => {
+    if (opKey) {
+      const seen = get(
+        'SELECT counter_id FROM counter_ops WHERE user_id = ? AND op_id = ?',
+        uid, opKey,
+      );
+      if (seen) {
+        // 已经处理过：回**当前值**而不是当时的 value_after —— 这之后可能还有别的点击。
+        // duplicate=true 只是告诉调用方「这一次没有真的加」，便于日志与测试区分。
+        return { counter: getCounter(uid, seen.counter_id || cid), duplicate: true };
+      }
+    }
+
+    let out = null;
+    if (op.delta != null) {
+      const n = Math.round(Number(op.delta));
+      if (Number.isFinite(n) && n !== 0) {
+        run(
+          `UPDATE counters
+              SET value = MAX(?, MIN(?, value + ?)),
+                  updated_at = ?
+            WHERE user_id = ? AND id = ?`,
+          MIN_VALUE, MAX_VALUE, Math.max(-10000, Math.min(10000, n)), Date.now(), uid, cid,
+        );
+      }
+      out = getCounter(uid, cid);
+    } else if (op.value != null) {
+      out = setCounter(uid, cid, op.value);
+    }
+    if (!out) return { counter: null, duplicate: false };
+
+    if (opKey) {
+      // INSERT OR REPLACE 而不是 INSERT：即使有一天查重被绕过，也不会因为主键冲突
+      // 把整个事务炸掉 —— 记账失败比「多记一次」更难排查。
+      run(
+        'INSERT OR REPLACE INTO counter_ops (user_id, op_id, counter_id, value_after, created_at) VALUES (?,?,?,?,?)',
+        uid, opKey, cid, out.value, Date.now(),
+      );
+      pruneOps();
+    }
+    return { counter: out, duplicate: false };
+  });
+}
+
 module.exports = {
   DEFAULTS, MIN_VALUE, MAX_VALUE, MIN_DAILY, MAX_DAILY, isDefaultId, todayStr,
   ensureDefaults, creditDaily, listCounters, getCounter,
   addCounter, setCounter, renameCounter, setDailyIncrement,
+  applyCounterOp, pruneOps,
 };
