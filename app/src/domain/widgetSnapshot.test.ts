@@ -15,6 +15,11 @@ import type { Habit, LocalState, Task } from './types.ts';
 
 const T = '2026-10-06';   // 周二
 
+/** T 对应的本地固定时刻（中午 12:00，避开时区边界）。node:test 的 mock.timers
+ *  用它把系统 Date 钉在 T，让 serializeWidgetSnapshot 默认路径里的 D.today()
+ *  恒等于 T —— 日期稳定、又不绕开真实 serializer。 */
+const T_NOW = D.parseISO(T).getTime() + 12 * 60 * 60 * 1000;
+
 function state(tasks: Task[] = [], habits: Record<string, Habit> = {}): LocalState {
   return {
     tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
@@ -151,22 +156,36 @@ test('没有打卡记录的打卡，log 是空对象而不是缺字段', () => {
   assert.deepEqual(snap.habits[0].log, {}, '缺字段等于「老服务端」，原生要能区分');
 });
 
-test('每条都带 calId，快照带 today —— 原生直连写服务器缺了这两样就写不进去', () => {
+test('每条都带 calId，快照带 today —— 原生直连写服务器缺了这两样就写不进去', (ctx) => {
   // 这条是给 B 方案兜底的。原生的 WidgetApi 发 op 时要 calId 去查权限，
   // 服务端那边只做 `if (!calId) continue`（不报错），所以缺了的表现是
   // 「桌面点了半天，服务器没变」—— 静默失败，最难查。
-  const task = makeTask({ title: '交房租', date: T, calId: 'c1', time: '09:00' });
-  const habit = makeHabit('学英语', 0, 'c2');
-  const s = state([task], { h1: habit });
-  const snap = buildWidgetSnapshot(s, T);
-
+  // ① 固定基准日 T 的窗口功能继续单独钉住：today 必须是传入的那个基准日。
+  const fixed = makeTask({ title: '交房租', date: T, calId: 'c1', time: '09:00' });
+  const snap = buildWidgetSnapshot(state([fixed], { h1: makeHabit('学英语', 0, 'c2') }), T);
   assert.equal(snap.today, T, 'today 必须是传入的那个基准日');
   assert.equal(snap.tasks[0].calId, 'c1');
   assert.equal(snap.habits[0].calId, 'c2');
-  // 序列化后也得在 —— 原生读的是 JSON 不是对象
-  const raw = JSON.parse(serializeWidgetSnapshot(s));
-  assert.equal(raw.tasks[0].calId, 'c1');
-  assert.ok(raw.today, '序列化里也要有 today');
+
+  /* ② 必须真的调用 serializeWidgetSnapshot(s)（默认按 D.today() 取窗口）。
+     用 node:test 的 mock.timers 把系统 Date 钉在基准日 T 的本地中午：默认路径的
+     D.today() 恒等于 T，样本任务 date 也固定为 T，于是序列化输出与真实运行日无关，
+     又不绕开 serializer（上一版改按固定 T 显式 JSON.stringify 会把这条覆盖率丢掉）。 */
+  ctx.mock.timers.enable({ apis: ['Date'], now: T_NOW });
+  try {
+    assert.equal(D.today(), T, 'mock 生效：默认窗口的今天必须是 T');
+    const task = makeTask({ title: '交房租', date: T, calId: 'c1', time: '09:00' });
+    const s = state([task], { h1: makeHabit('学英语', 0, 'c2') });
+    const raw = JSON.parse(serializeWidgetSnapshot(s));
+    assert.equal(raw.today, T, 'serializer 默认窗口的 today 必须是 T');
+    assert.equal(raw.tasks.length, 1, '真实序列化输出里必须真有这 1 条任务');
+    assert.equal(raw.tasks[0].calId, 'c1', '真实序列化输出里 calId 必须还在');
+    assert.equal(raw.tasks[0].id, task.id);
+    assert.equal(raw.tasks[0].note, '', '真实序列化输出里 note 必须是空串');
+    assert.equal(raw.habits[0].calId, 'c2');
+  } finally {
+    ctx.mock.timers.reset();   // mock 只影响本测试，测试结束前显式恢复
+  }
 });
 
 test('打卡：今天还没打但昨天打过，streak 仍从昨天起算且 done=false', () => {
@@ -203,7 +222,8 @@ test('快照带版本号与生成时刻', () => {
   assert.equal(snap.to, '2026-11-08');
 });
 
-test('详细内容随任务一起发给小组件 —— 桌面靠它在标题下多出一行', () => {
+test('详细内容随任务一起发给小组件 —— 桌面靠它在标题下多出一行', (ctx) => {
+  // 固定基准日 T 的窗口功能继续验证（与 serializer 默认路径分开）。
   const t = makeTask({ title: '交房租', date: T, time: '09:00', calId: 'c1' });
   t.note = '房东说转账备注里要写门牌号，别写昵称';
   const snap = buildWidgetSnapshot(state([t]), T);
@@ -211,10 +231,30 @@ test('详细内容随任务一起发给小组件 —— 桌面靠它在标题下
 
   /* 原生侧 `WTask` 对这个键做的是 `optString`（没有就 ""），所以序列化出去的
      那一份必须**真的是空串**，不能是 undefined —— 后者会被 JSON.stringify
-     整个丢掉，虽然结果一样是「读不到」，但那是靠巧合通过，换了写法就断。 */
-  const bare = makeTask({ title: '买牛奶', date: T, calId: 'c1' });
-  const raw = JSON.parse(serializeWidgetSnapshot(state([bare])));
-  assert.equal(raw.tasks[0].note, '', '没有详细内容时必须是空串');
+     整个丢掉，虽然结果一样是「读不到」，但那是靠巧合通过，换了写法就断。
+     这两条断言都走真实 serializeWidgetSnapshot(s)：同上一测试，用 mock.timers
+     把系统 Date 钉在 T，样本任务 date 固定为 T，默认窗口必然包含它，
+     与真实运行日无关，也不绕开 serializer 覆盖率。 */
+  ctx.mock.timers.enable({ apis: ['Date'], now: T_NOW });
+  try {
+    assert.equal(D.today(), T, 'mock 生效：默认窗口的今天必须是 T');
+    const withNote = makeTask({ title: '交房租', date: T, time: '09:00', calId: 'c1' });
+    withNote.note = '房东说转账备注里要写门牌号，别写昵称';
+    const raw = JSON.parse(serializeWidgetSnapshot(state([withNote])));
+    assert.equal(raw.today, T, 'serializer 默认窗口的 today 必须是 T');
+    assert.equal(raw.tasks.length, 1, '真实序列化输出里必须真有这 1 条任务');
+    assert.equal(raw.tasks[0].id, withNote.id);
+    assert.equal(raw.tasks[0].calId, 'c1');
+    assert.equal(raw.tasks[0].note, '房东说转账备注里要写门牌号，别写昵称',
+      '真实序列化输出里 note 必须是 plain() 后的纯文本');
+
+    const bare = makeTask({ title: '买牛奶', date: T, calId: 'c1' });
+    const bareRaw = JSON.parse(serializeWidgetSnapshot(state([bare])));
+    assert.equal(bareRaw.tasks.length, 1, '真实序列化输出里必须真有这 1 条任务');
+    assert.equal(bareRaw.tasks[0].note, '', '没有详细内容时必须是空串');
+  } finally {
+    ctx.mock.timers.reset();   // mock 只影响本测试，测试结束前显式恢复
+  }
 });
 
 test('每条任务都带 id —— 小组件要靠它勾选 / 改期', () => {

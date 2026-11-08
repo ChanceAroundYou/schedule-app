@@ -5,7 +5,7 @@ export async function run(ctx) {
   const ok = ctx.ok;
   const state = ctx.state;
   const { RADIUS_K, RADIUS_MIN, TOL_RATIO, TOL_PAD, CHECK_K, CHECK_MIN, CHECK_MAX, WEEK_HEAD, DUR, table, detail, VIEWPORTS, VIEWS } = state;
-  console.log('\n一、卡片几何（radius = 短边 × ' + RADIUS_K + '，下限 ' + RADIUS_MIN + 'px）');
+  console.log('\n一、卡片几何（界面规则第 4 条：radius = min(--r-xl, max(' + RADIUS_MIN + 'px, 短边 × ' + RADIUS_K + '))），短边 = min(宽, 高)');
   for (const [key, m] of Object.entries(table)) {
     console.log('\n  ' + key);
     for (const kind of ['timed', 'untimed', 'pill']) {
@@ -28,5 +28,21 @@ export async function run(ctx) {
     }
   }
 
-  /* ---- 断言：三视图同值 + 圆角走短边 ---- */
+  /* 契约矩阵（00 采集）：逐格打印契约输入（短边 / --r-xl / --card-h / want）与
+     computed radius；不适用组合只写原因、不当样本。覆盖风格 × 视图 × 卡型 × 视口。 */
+  console.log('\n  圆角契约矩阵（风格 × 视图 × 卡型 × 视口；不适用按常量/UI能力、违规单列）');
+  for (const r of (state.radiusMatrix || [])) {
+    const tag = r.vp + ' / ' + r.view + ' / ' + r.style + ' / ' + r.kind;
+    if (!r.applicable) {
+      console.log('    [' + (r.violation ? '违规' : '不适用') + '] ' + tag + '：' + r.reason);
+      continue;
+    }
+    console.log('    ' + tag.padEnd(38)
+      + ' 高=' + num(r.h) + ' 宽=' + num(r.w) + ' 短边=' + num(r.short)
+      + (r.shortIsHeight ? '(=高)' : '(=宽!)')
+      + ' 样本=' + num(r.sampleCount) + ' --r-xl=' + num(r.rXl) + ' --card-h=' + num(r.cardH) + ' k=' + num(r.rK)
+      + ' 圆角=' + num(r.radius) + ' want=' + num(r.want));
+  }
+
+  /* ---- 断言：三视图同值 + 圆角走短边（见 02 节；01 只打印读数） ---- */
 }
