@@ -27,7 +27,7 @@ C:/Users/小哭包/.workbuddy/skills/devflow/runs/
 - 分支：dev
 - 提交：<commit 短哈希>  <提交说明>
 - 改动文件：<文件1>、<文件2> …（或贴 `git diff --stat` 摘要）
-- 代码审查：<引用 trio 独立 Reviewer 结论：通过 / 有条件通过 / 未通过>（本流程不自行审查）
+- 自测：typecheck / 单测 / 线上实测结论（本流程只记录结果，不自行判定审查结论）
 
 ## 同步
 - GitHub dev：<已推送 / 未推送（原因）>
