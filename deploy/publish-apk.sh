@@ -340,6 +340,23 @@ if [ -f "$ROOT/dist/index.html" ] && [ -f "$ANDROID/app/src/main/assets/public/i
     die "内置网页资源过期，拒绝发布"
   fi
 fi
+
+# ---- APK 内置资源必须带 VITE_API_BASE（2026-11-09 真机回归）----
+# 网页版 dist 是「同源版」：API_BASE='.'，靠 /schedule/ 相对路径打后端。
+# Capacitor 壳里的页面源是 https://localhost，相对路径会打到 App 自己的
+# 本地服务器，返回 index.html（HTTP 200 的 HTML），前端就弹
+# 「服务器返回了非 JSON 内容」红条、同步全断 —— 界面照常显示，极难察觉。
+# 只有 APK 用的那份网页资源要用 VITE_API_BASE 重新构建后 cap copy 进去。
+# index.html 的 md5 比不出这件事（内容一样时更易漏），所以单独查 JS。
+APK_WEB="$ANDROID/app/src/main/assets/public"
+EXPECT_HOST="${API_BASE#https://}"
+EXPECT_HOST="${EXPECT_HOST#http://}"
+if ! grep -rq -- "$EXPECT_HOST" "$APK_WEB/assets" 2>/dev/null; then
+  printf '\033[1;33m!! APK 内置网页资源没注入 VITE_API_BASE（找不到 %s）\033[0m\n' "$EXPECT_HOST"
+  printf '   先跑：cd app && VITE_API_BASE="%s" npx vite build && npx cap copy android\n' "$API_BASE"
+  die "APK 内置资源是同源版，装上会连不上后端，拒绝发布"
+fi
+echo "    ok  APK 内置资源已注入接口基址 $API_BASE"
 cd "$ANDROID"
 # 走 deploy/gradle.sh 而不是 env.sh 的 $GRADLE：后者默认是仓库 wrapper（gradlew），
 # 本机没配 .env 时会去下 230MB 发行版，表现为「卡半小时且没有任何输出」。
