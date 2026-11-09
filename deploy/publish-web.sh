@@ -115,6 +115,16 @@ cd "$ROOT"
 [ -f dist/index.html ] || die "没有 dist/index.html —— 先构建"
 [ -d dist/assets ] || die "dist/assets 不存在"
 
+# ---- 别把 APK 专用的「注基址版」发到网页（2026-11-09）----
+# 发 APK 前会用 VITE_API_BASE 重建一次 dist 再 cap copy，那份 JS 里带绝对域名。
+# 网页版必须是同源版（API_BASE='.'），否则从内网/其它入口访问会跨域打不通后端。
+# 正常构建天然是同源版；只有 --skip-build 复用现有 dist 时才可能踩到，故在此挡住。
+WEB_HOST="${BASE_URL#https://}"
+WEB_HOST="${WEB_HOST#http://}"
+if grep -rq -- "$WEB_HOST" dist/assets 2>/dev/null; then
+  die "dist/ 是 APK 专用注基址版（含 $WEB_HOST），不能发网页；去掉 --skip-build 重新构建同源版"
+fi
+
 # 版本写进备份名，便于「回滚到哪个版本」有据可依。
 # 用 grep 而不是 `node -p require(...)`：这里是 Windows 的 node，
 # require('/c/Users/...') 这种 Git Bash 路径它解析不了。
