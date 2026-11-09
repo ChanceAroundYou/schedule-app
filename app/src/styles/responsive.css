@@ -368,7 +368,10 @@ body.sheet-open .tab:active { background: none; }
     min-width: calc(7 * var(--week-col-w, 78px));
   }
   /* 三日视图：3 列一屏放得下（44 + 3×96 = 332px < 360px），
-     **不需要横滑** —— 列宽上限放开，铺满整屏 */
+     **不需要横滑** —— 列宽上限放开，铺满整屏。
+     2026-11-09：横向滚动直接关掉，切 7 列 → 3 列时不会因旧宽度残留
+     闪出一条滚动条（WeekView 同时在 useLayoutEffect 里把 scrollLeft 归零）。 */
+  .week-view.three-day { overflow-x: hidden; }
   .week-view.three-day .week-cols,
   .week-view.three-day .week-head-cols,
   .week-view.three-day .week-un-cols {

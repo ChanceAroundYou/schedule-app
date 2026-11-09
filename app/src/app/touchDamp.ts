@@ -27,8 +27,11 @@ import { isDragging } from '../ui/dragState.ts';
 /** 橡皮筋（拉到边界的阻尼）只给这两处 —— 改选择器记得同步 styles/calendar.css 的 `> *` 规则 */
 const DAMP_TARGETS = '.allday-zone, .wun-cell';
 
-/** 浮条（滚动指示条）多给月视图格子 `.cell-tasks`（宽屏格内滚动，2026-10-22） */
-const THUMB_TARGETS = '.allday-zone, .wun-cell, .cell-tasks';
+/** 浮条（滚动指示条）覆盖所有会滚的容器：日视图未定时区、周视图未定时格、
+ *  月视图格子（2026-10-22 宽屏格内滚动）、AI 面板两处（2026-11-09 全局原生条
+ *  归零后补上，否则这些区域滚动时完全没有指示）。
+ *  ⚠️ 改这里必须同步 styles/calendar.css 的 `::after` / `[data-thumb]::after` 选择器。 */
+const THUMB_TARGETS = '.allday-zone, .wun-cell, .cell-tasks, .ai-scroll, .ai-sessions-list';
 
 /** 最多能拉开多少（CSS px）。再大就成"把格子扯掉"了。
  *  56 → 96（2026-10-22 用户反馈「太硬」）：上限太近会让手指很快就拉不动，

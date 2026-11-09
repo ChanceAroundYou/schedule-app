@@ -199,10 +199,11 @@
 
 /* 轴体（日 `.tl-axis` / 周·3日 `.week-cols`）：**同一条小时线规则**。
    一格 = 一小时，`--wk-hours` 是这一屏实际覆盖的小时数（两视图都由渲染时内联设）。
-   最底下那根结束线用**第二层背景**补，不用 `border-bottom`：用 border 会让轴体的
-   内高比刻度列少 1px，而「现在」线和绿球分别落在两个元素里、都按百分比定位 ——
-   那 1px 就是同一个时刻却画在两个高度上的来源（球在线下 1px）。
-   ⚠️ 渐变自己画不到 100%，所以收尾那一根必须单独补，别删。 */
+   小时线是 `HourLines` 渲染的真元素（见下面），不用 `border-bottom`：用 border
+   会让轴体的内高比刻度列少 1px，而「现在」线和绿球分别落在两个元素里、
+   都按百分比定位 —— 那 1px 就是同一个时刻却画在两个高度上的来源。
+   ⚠️ 窗口末端**只画一条线**：`hours` 用 `<= win.to` 过滤，最后一项就是末端整点线。
+   2026-11-09 前还额外补过一条 `.tl-hline--end` 钉底，两条并排 = 用户报的双线。 */
 .tl-axis, .week-cols {
   position: relative; min-width: 0;
 }
@@ -229,9 +230,9 @@
   position: absolute; left: 0; right: 0; height: 0;
   border-top: 1px solid var(--border);
 }
-/* 收尾线钉在容器底部：整天的最后一条（24:00）在容器里的位置由 hourPx 算出，
-   但它和容器底不一定严丝合缝（取整的余数都落在这一格），所以这一条单独钉底。 */
-.tl-hline--end { top: auto; bottom: 0; }
+/* `.tl-hline--end` 于 2026-11-09 移除：末端整点线已由 `hours` 最后一项画出，
+   再钉一条底线只会重复（用户报「20:00 那里有两条横线」）。hourPx 取整的
+   余数留在底部空白里，不再补线。 */
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -933,14 +934,18 @@
 .wun-blank { min-height: var(--row, 16px); flex: 1 1 auto; }
 
 /* -------- 滚动条浮条（九条第 1 条，touchDamp.ts 写 --thumb-y / --thumb-h）--------
-   系统滚动条已被藏掉（scrollbar-width:none + ::-webkit-scrollbar），占位为 0；
-   这里用 ::after 画一根 3px 半透明浮条，**绝对定位压在卡片上**，不占任何布局
-   空间。滚动时 data-thumb="on" 淡入，0.8s 没动静自动淡出（计时在 JS 侧）。
-   三处容器：日视图未定时区 / 周视图未定时格 / **月视图格子**（.cell-tasks，
-   2026-10-22 宽屏格内滚动）。 */
+   系统滚动条已被藏掉（2026-11-09 起 tokens.css 全局 ::-webkit-scrollbar 宽高归零），
+   占位为 0；这里用 ::after 画一根 3px 半透明浮条，**绝对定位压在卡片上**，
+   不占任何布局空间。滚动时 data-thumb="on" 淡入，0.8s 没动静自动淡出（JS 侧计时）。
+   容器清单与 touchDamp.ts 的 THUMB_TARGETS **必须逐字同源**：日视图未定时区 /
+   周视图未定时格 / 月视图格子 / AI 对话滚动区 / AI 会话列表。
+   ⚠️ 这些容器的 ::after 是绝对定位，容器自身必须已建立定位语境（.ai-sessions-list
+   本来就是 absolute，.ai-scroll 在 tailwind.css 里补了 relative）。 */
 .allday-zone::after,
 .wun-cell::after,
-.cell-tasks::after {
+.cell-tasks::after,
+.ai-scroll::after,
+.ai-sessions-list::after {
   content: ''; position: absolute; right: 1px; top: 0;
   width: 3px; height: var(--thumb-h, 0px);
   transform: translateY(var(--thumb-y, 0px));
@@ -951,7 +956,9 @@
 }
 .allday-zone[data-thumb="on"]::after,
 .wun-cell[data-thumb="on"]::after,
-.cell-tasks[data-thumb="on"]::after { opacity: 1; }
+.cell-tasks[data-thumb="on"]::after,
+.ai-scroll[data-thumb="on"]::after,
+.ai-sessions-list[data-thumb="on"]::after { opacity: 1; }
 
 /* -------- 滚到边界时的橡皮筋（app/touchDamp.ts 写 --pull） --------
    位移挂在**内容**上而不是容器上：容器有边框和底色，挪容器等于把格子扯走。

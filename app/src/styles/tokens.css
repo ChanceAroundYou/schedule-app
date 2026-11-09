@@ -448,9 +448,14 @@ button { font-family: inherit; cursor: pointer; }
 
 b, strong { font-variant-numeric: tabular-nums; }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--input); border-radius: var(--r-sm); border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+/* 2026-11-09 用户裁决：全站滚动条**默认不主动显示、不占位**。
+   以前这里给所有容器留了 10px 原生条，Linux / Windows 上既常显又挤内容；
+   现在一律归零，滚动时的短暂指示交给两套自绘浮条：
+     · `.osb` 容器（周 / 三日视图等）→ ui/scroll.ts 的 `.osb-track`；
+     · `.allday-zone` / `.wun-cell` / `.cell-tasks` / AI 面板 → touchDamp.ts 的 ::after。
+   两套都是「滚动才淡入、停 800ms 淡出」，不占布局宽度。 */
+::-webkit-scrollbar { width: 0; height: 0; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--r-sm); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---- 浮条：滚动条不占位（用户 2026-10-09 报「滚动条不要占位置，不要挤现有元素」）----
@@ -464,6 +469,7 @@ b, strong { font-variant-numeric: tabular-nums; }
 .osb-track {
   position: absolute; top: 0; bottom: 0; right: 0; width: 4px; z-index: 2;
   opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;   /* 滚动才淡入、停手淡出（ui/scroll.ts） */
 }
 .osb-thumb {
   width: 100%; border-radius: var(--r-pill);

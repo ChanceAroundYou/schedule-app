@@ -14,7 +14,9 @@
  * `时间 × hourPx` 这一套坐标。这一节把三件事锁死：
  *   · 线是元素，不是背景渐变（渐变就一定会用相对步长，问题会复发）
  *   · 相邻两条线的间距恒定，且是整数像素
- *   · 收尾线钉在容器底部
+ *   · 窗口末端**只画一根线**（2026-11-09 用户报「20:00 那里有两条横线」：
+ *     `hours` 末项本来就是末端整点线，以前又补一条 `.tl-hline--end` 钉底，
+ *     两条并排；现已删掉后者，本探针改为查「有没有位置重复的线」）
  */
 export async function run(ctx) {
   const { page } = ctx;
@@ -29,18 +31,17 @@ export async function run(ctx) {
     if (!box) return { none: true };
     const br = box.getBoundingClientRect();
     const cs = getComputedStyle(box);
-    /* 收尾线是 bottom:0 钉底的，位置由容器高决定，不参与「等距」判据 */
-    const lines = [...document.querySelectorAll('.tl-hline')]
-      .filter((e) => !e.classList.contains('tl-hline--end'));
+    /* 末端线由 hours 最后一项画出，不再另补 .tl-hline--end；
+       全部线都该等距，且没有两根落在同一位置（双线回归的硬断言） */
+    const lines = [...document.querySelectorAll('.tl-hline')];
     const tops = lines.map((e) => +(e.getBoundingClientRect().top - br.top).toFixed(2));
     const gaps = tops.slice(1).map((t, i) => +(t - tops[i]).toFixed(2));
-    const end = document.querySelector('.tl-hline--end');
     return {
       n: lines.length,
+      dupTops: tops.length - new Set(tops).size,
       uniqGaps: [...new Set(gaps)],
       intTops: tops.every((t) => Number.isInteger(t)),
       hasGradient: cs.backgroundImage.includes('repeating-linear-gradient'),
-      endAtBottom: end ? Math.abs(end.getBoundingClientRect().bottom - br.bottom) < 1.2 : null,
       boxH: +br.height.toFixed(2),
       gaps: gaps.slice(0, 3),
     };
@@ -67,7 +68,8 @@ export async function run(ctx) {
     ok(r.uniqGaps.length === 1,
       `${v} 视图相邻线间距恒定（${r.uniqGaps.length} 种：${JSON.stringify(r.uniqGaps)}）`);
     ok(r.intTops, `${v} 视图每条线落在整数像素上（半像素 = 抖动根源）`);
-    ok(r.endAtBottom === true, `${v} 视图收尾线钉在容器底部（不缺一截）`);
-    console.log(`    ${v}: ${r.n} 条 · 间距 ${JSON.stringify(r.uniqGaps)} · 容器高 ${r.boxH}px`);
+    ok(r.dupTops === 0,
+      `${v} 视图每个整点只画一根线（重复 ${r.dupTops} 处 = 20:00 双线回归）`);
+    console.log(`    ${v}: ${r.n} 条 · 重复 ${r.dupTops} · 间距 ${JSON.stringify(r.uniqGaps)} · 容器高 ${r.boxH}px`);
   }
 }

@@ -49,11 +49,12 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
      以前这里写的是 `!t.time && !t.done`，勾完就看不见了。 */
   const allday = openFirst(untimedOn(state, iso));
 
-  /* 时间窗由设置决定（默认整天）。**再按内容自动往外让一圈**（coverWindow）——
-     设置在 8–20 点、却有任务排在窗外时，宁可格子矮一点也不让那条任务消失。 */
+  /* 时间窗就是设置窗，**硬边界**（2026-11-09 用户裁决）：窗外任务不撑开窗口、
+     也不渲染。以前 coverWindow 会按任务往外让，设了「最晚 20:00」却被
+     21–22 点的任务撑到 22:00，窗外任务照常显示 —— 设置等于没设。 */
   const winSetting = windowOf(state.ui);
   const events = dayTimeline(timed);
-  const win = coverWindow(winSetting, events);
+  const win = coverWindow(winSetting);
 
   const isToday = iso === D.today();
   const nowMin = D.nowMin();

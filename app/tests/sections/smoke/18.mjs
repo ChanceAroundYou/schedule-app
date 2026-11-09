@@ -100,9 +100,10 @@ export async function run(ctx) {
     return h * 60 + m;
   };
 
-  /* 渲染窗的**合同**（domain/layout.ts 的 coverWindow）：设置窗 ∪ 当天定时任务
-     占的时间范围，任务一条不裁不丢。可视面上的不变量：每条定时卡的
-     top/height(%) 必须完整落在 [0,100] 里 —— 有任何一条越出窗沿就是破了合同。
+  /* 渲染窗的**合同**（domain/layout.ts 的 coverWindow，2026-11-09 用户裁决）：
+     设置窗是**硬边界**，窗外任务既不撑开窗口、也不渲染；跨窗沿的按窗沿截断。
+     可视面上的不变量：每条画出来的定时卡 top/height(%) 必须完整落在 [0,100] 里
+     —— 有任何一条越出窗沿就是破了合同。
      （不从 localStorage 反推期望值：那是延迟落盘的，读到的是上一刻的世界。） */
   const worstCard = () => evalJs(page, `
     return (() => {
@@ -323,25 +324,25 @@ export async function run(ctx) {
     + '，width ' + beforeH.width.toFixed(1) + ' → ' + afterH.width.toFixed(1) + '），实际差 '
     + (afterH.left - beforeH.left).toFixed(1) + 'px');
 
-  // ④ 收窄到 10 点起 —— 2026-10-17 起「窗外不画」改成「窗外让窗」：
-  //    渲染窗 = 设置窗 ∪ 当天任务的范围。窗至少盖住设置那段，
-  //    且每条任务都完整落在窗内（不裁半截、不整条消失）。
+  // ④ 硬边界：收窄到 10 点起，窗口必须**恰好**是 10:00–14:00，
+  //    不再被窗外任务撑开（2026-11-09 取代旧的「窗外让窗」）。
   await setWindow(10, 14);
   const w2 = await readTl();
-  ok(Number(w2.from) <= 600 && Number(w2.to) >= 840,
-    '窗至少完整盖住设置的那段 10:00–14:00（实际 ' + w2.from + '/' + w2.to
-    + '，有任务在外面会自动让出去）');
+  ok(Number(w2.from) === 600 && Number(w2.to) === 840,
+    '时间窗严格等于设置 10:00–14:00（硬边界，实际 ' + w2.from + '/' + w2.to + '）');
   ok(w2.n >= 2 && w2.first !== undefined,
     '小时线跟着窗走（' + w2.n + ' 条，起 ' + w2.first + '）');
   const cut2 = await worstCard();
   ok(cut2 === null, '窗内每条任务都完整画出（不裁不丢）', cut2 ? JSON.stringify(cut2) : '无越界');
 
-  // ⑤ 窗外的东西**不再消失**：把窗设到 23 点起，上午那条任务要照画 ——
-  //    窗口自动让到装下它为止（用户拍板「显示」，见 coverWindow）。
+  // ⑤ 窗外的任务**不渲染**：设到 23 点起，上午那条整条落在窗外 →
+  //    时间轴只画 23:00–24:00、那张卡不存在（数据没删，放宽设置就回来）。
   await setWindow(23, 24);
   const w3 = await readTl();
-  ok(w3.top !== null && Number(w3.from) < 1380,
-    '23:00 起的窗自动让到上午那条之前（窗起 ' + w3.from + '，top=' + w3.top + '）');
+  ok(Number(w3.from) === 1380 && Number(w3.to) === 1440,
+    '23:00 起的窗不因上午任务往前让（硬边界 ' + w3.from + '/' + w3.to + '）');
+  ok(w3.top === null && w3.evH === null,
+    '窗外的定时卡不渲染（上午那条此刻查无此卡，数据未删）');
   const cut3 = await worstCard();
   ok(cut3 === null, '窗内每条任务都完整画出（不裁不丢）', cut3 ? JSON.stringify(cut3) : '无越界');
 

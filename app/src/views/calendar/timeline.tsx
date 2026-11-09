@@ -88,8 +88,11 @@ export function HourLines({ hours, win, hourPx }: {
           style={{ top: Math.round(((h * 60 - win.from) / 60) * hourPx) + 'px' }}
         />
       ))}
-      {/* 收尾线：窗口末端的整条底线（渐变时代靠第二层背景补，现在照旧单独画） */}
-      <i className="tl-hline tl-hline--end" />
+      {/* 2026-11-09 用户报「20:00 那里有两条横线，只显示一条」：
+          `hours` 用 `<= win.to` 过滤，最后一项本来就是窗口末端的整点线；
+          这里以前又补了一条 `.tl-hline--end` 钉底（渐变时代的遗产），
+          两条线隔着 hourPx 取整的那几像素并排出现。末端线就此删掉，
+          只留整点线 —— 刻度标签也还是由同一份 `hours` 驱动，不会少数字。 */}
     </div>
   );
 }

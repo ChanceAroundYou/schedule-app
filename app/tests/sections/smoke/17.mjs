@@ -682,8 +682,8 @@ export async function run(ctx) {
     '没设时长的任务，把手也常显可拖（opacity ' + nodur.op.toFixed(2) + '，cursor ' + nodur.cursor + '）');
   /* 收尾：这条验证用的任务删掉，别影响后面的节。
      **必须等它真从界面上消失**再往下走 —— 同步是轮询的，删完立刻翻页的话
-     下一节「时间窗」还会把它算进 coverWindow（11:00 + 默认 60 分钟 = 12:00
-     结束，把一个 11 点截止的窗顶到 12 点）。 */
+     下一节「时间窗」会读同一天的任务数据，留着会干扰窗口读数。
+     （2026-11-09 起 coverWindow 是硬边界，不再按任务往外让。） */
   await evalJs(page, `
     (async () => {
       const token = localStorage.getItem('schedule-app-token');

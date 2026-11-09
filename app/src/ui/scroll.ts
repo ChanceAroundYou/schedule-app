@@ -16,7 +16,14 @@ import { useCallback, useEffect, useRef } from 'react';
  * 容器必须是 `position: relative` —— 钩子会自己补上，卸载时还原成原样。
  * 已经拿了一个 ref 的话把它传进来，钩子会一起写：
  *   useOverlayScrollbar<HTMLDivElement>(contentRef)。
+ *
+ * **2026-11-09 显示时机**：默认不主动显示，只有真的滚动（或拖动浮条）时淡入，
+ * 停下来 800ms 淡出 —— 与 touchDamp.ts 的 THUMB_IDLE 同一口径。
+ * 以前 paint() 里写 `opacity = can ? 1 : 0`：只要内容溢出就常显，而且
+ * ResizeObserver / MutationObserver 每次重画都把它重新点亮，永远不淡出。
  */
+const OSB_IDLE = 800;
+
 export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T | null }) {
   const ref = useRef<T | null>(null);
 
@@ -35,11 +42,16 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
     el.appendChild(track);
 
     let raf = 0;
+    let idle = 0;
+    let dragging = false;
+
+    /** 只更新几何，**绝不**碰显隐 —— 内容长高 / 容器缩放不该把浮条点亮 */
     const paint = () => {
       raf = 0;
       const view = el.clientHeight;
       const full = el.scrollHeight;
       const can = full > view + 1;
+      if (!can) track.style.opacity = '0';
       /* 最短 26px —— 再短就没法点了 */
       const h = can ? Math.max(26, Math.round((view * view) / full)) : 0;
       thumb.style.height = h + 'px';
@@ -49,14 +61,23 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
       thumb.style.transform = can && full > view
         ? `translateY(${Math.round(el.scrollTop + (el.scrollTop / (full - view)) * (view - h))}px)`
         : 'none';
-      track.style.opacity = can ? '1' : '0';
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(paint); };
 
-    el.addEventListener('scroll', schedule, { passive: true });
+    /** 只有真实滚动 / 拖动才调用：淡入，停手后计时淡出。拖着不放时不计时。 */
+    const reveal = () => {
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      track.style.opacity = '1';
+      window.clearTimeout(idle);
+      if (!dragging) idle = window.setTimeout(() => { track.style.opacity = '0'; }, OSB_IDLE);
+    };
+    const onScroll = () => { schedule(); reveal(); };
+
+    el.addEventListener('scroll', onScroll, { passive: true });
     const ro = new ResizeObserver(schedule);
     ro.observe(el);
-    /* 内容自己会长高（任务落地、抽屉展开）—— 那时候一个 scroll 事件都没有 */
+    /* 内容自己会长高（任务落地、抽屉展开）—— 那时候一个 scroll 事件都没有，
+       但只该重算几何，不该让浮条平白冒出来 */
     const mo = new MutationObserver(schedule);
     mo.observe(el, { childList: true, subtree: true });
 
@@ -64,6 +85,8 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
     let y0 = 0;
     let top0 = 0;
     const down = (e: PointerEvent) => {
+      dragging = true;
+      reveal();
       y0 = e.clientY;
       top0 = el.scrollTop;
       try { thumb.setPointerCapture(e.pointerId); } catch { /* 指针已经走了 */ }
@@ -76,6 +99,8 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
       el.scrollTop = top0 + (e.clientY - y0) * ((full - view) / Math.max(1, view - h));
     };
     const up = (e: PointerEvent) => {
+      dragging = false;
+      reveal();
       try { thumb.releasePointerCapture(e.pointerId); } catch { /* 同上 */ }
     };
     thumb.addEventListener('pointerdown', down);
@@ -86,7 +111,8 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
     paint();
     return () => {
       cancelAnimationFrame(raf);
-      el.removeEventListener('scroll', schedule);
+      window.clearTimeout(idle);
+      el.removeEventListener('scroll', onScroll);
       ro.disconnect();
       mo.disconnect();
       thumb.removeEventListener('pointerdown', down);

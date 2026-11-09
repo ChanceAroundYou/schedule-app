@@ -19,7 +19,7 @@
  * 用户说的「不要让我滚动」指的是纵向 —— 一天的时间不该藏在屏幕底下。
  */
 
-import { useRef, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties } from 'react';
 import type { LocalState } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
 import {
@@ -143,6 +143,13 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const start = dayCount === 3 ? iso : D.weekStart(iso);
   const osbWeek = useOverlayScrollbar<HTMLDivElement>();
   const weekRootRef = useRef<HTMLDivElement | null>(null);
+  /* 三日 / 周视图切换时，旧 7 列布局的横向 scrollLeft 会残留一帧：
+     `.week-view` 仍是 overflow-x:auto，列宽重排那一瞬间会闪出横向滚动条、
+     落点也不对。切换即归零（2026-11-09 用户报的「三日视图切换后滚动条异常」）。 */
+  useLayoutEffect(() => {
+    const el = weekRootRef.current;
+    if (el) el.scrollLeft = 0;
+  }, [dayCount, start]);
   const gutterRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);
   /* 刻度列宽**量出来**，不写第二份魔法数 —— 它是 `--tl-gutter-w`
@@ -164,9 +171,9 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
        · 设置里那个开关是总闸，关了就全不画。 */
   const tag = state.ui.showCreatorTag && !isNarrowNow();
 
-  /* 七天的事件先算出来 —— 时间窗要按它们自动往外让（coverWindow） */
+  /* 七天的事件先算出来（卡片层用）；时间窗只由设置决定，硬边界，不被任务撑开 */
   const perDay = days.map((d) => dayEvents(state, d));
-  const win = coverWindow(windowOf(state.ui), perDay.flat());
+  const win = coverWindow(windowOf(state.ui));
   /* 「现在」线 / 球的纵向位置。**三件事一起判**（与日视图同口径）：
      今天不在这一屏、或者当前时刻落在窗外 → null，线球都不画
      （画出来是贴边的一条假线）。以前这里不看日期，翻到下周照样有一条绿线。 */
