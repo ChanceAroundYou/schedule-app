@@ -422,10 +422,18 @@ class AppUpdate {
             if (m.sha256 != null && !m.sha256.isEmpty() && !m.sha256.equalsIgnoreCase(actual)) {
                 throw new IOException("sha256 不符 期望=" + m.sha256 + " 实际=" + actual);
             }
-            sweepOldApks(c, dst);
+            // 目标位置可能有上一次没装成的同版本包，renameTo 不会覆盖已存在的文件
+            if (dst.exists() && !dst.delete()) {
+                throw new IOException("删不掉旧的 " + dst);
+            }
             if (!part.renameTo(dst)) {
                 throw new IOException("重命名失败 " + part);
             }
+            /* ⚠️ 必须放在 rename **之后**：sweepOldApks 会清掉 update 目录里所有
+               .apk / .apk.part，提前调用会把刚写完的 part 一起删掉 —— 2026-11-09
+               真机上 3.65MB 已经 100% 下完、sha 也过了，最后一步却报
+               「重命名失败 schedule-128.apk.part」，就是这么来的。 */
+            sweepOldApks(c, dst);
             Log.i(TAG, "下载完成 " + dst.length() + " 字节，唤起安装器");
             sPendingSha256 = m.sha256;
             sPendingVersionCode = m.versionCode;
