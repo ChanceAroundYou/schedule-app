@@ -116,6 +116,7 @@ function CalsTab({ state, onInvites }: { state: LocalState; onInvites: () => voi
           <CalItem
             key={c.id}
             cal={c}
+            state={state}
             active={c.id === active}
             isDefault={c.id === defaultId}
             open={openId === c.id}

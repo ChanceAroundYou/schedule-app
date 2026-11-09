@@ -541,6 +541,17 @@
   color: var(--text-2);
 }
 
+/* 创建者昵称（CalIdentity：桌面下拉 / 移动弹窗 / 设置页标题行共用）。
+   次级文字色，不抢集名；只显示昵称，不显示「我建的 / 创建者」这类角色词。 */
+.ci-owner {
+  color: var(--text-3);
+}
+/* 昵称由属性生成：屏幕上看得见，但不进 `textContent` —— 下拉行的文本仍然
+   只有集名（探针与读屏都靠这一点认集）。 */
+.ci-owner::after {
+  content: attr(data-owner);
+}
+
 /* 角色徽标：圆角 + 底色 + 文字色（原 rounded-[var(--r-xs)] bg-[var(--panel)] text-[var(--text-3)]） */
 .ci-role {
   border-radius: var(--r-xs);

@@ -19,7 +19,7 @@ export function CalSheet({ state, open, onClose }: {
   return (
     <Sheet open={open} onClose={onClose} title="显示的日程集">
       <div className="flex flex-col gap-[2px]">
-        {state.cals.map((c) => <CalRow key={c.id} c={c} on={shown.includes(c.id)} />)}
+        {state.cals.map((c) => <CalRow key={c.id} state={state} c={c} on={shown.includes(c.id)} />)}
       </div>
     </Sheet>
   );

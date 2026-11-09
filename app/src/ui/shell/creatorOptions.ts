@@ -24,10 +24,14 @@ export interface CreatorOption {
   label: string;
 }
 
-/** 全部选项。第一项恒为「全部成员」，第二项恒为「我建的」（不知道我是谁时不放它） */
+/** 全部选项。第一项恒为「全部成员」，第二项是**我自己的昵称**（不是「我建的」，
+ *  用户 2026-11-09：显示人就写名字，别写角色词）。不知道我是谁时不放它。 */
 export function creatorOptions(s: LocalState): CreatorOption[] {
   const out: CreatorOption[] = [{ value: 'all', label: '全部成员' }];
-  if (s.meId) out.push({ value: 'me', label: '我建的' });
+  if (s.meId) {
+    const mine = displayName(s.users?.[s.meId]);
+    out.push({ value: 'me', label: mine || '我' });
+  }
 
   const ids = new Set<string>();
   for (const t of Object.values(s.tasks)) {

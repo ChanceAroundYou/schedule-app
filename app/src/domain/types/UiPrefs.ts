@@ -2,6 +2,8 @@
  * UiPrefs —— 设备本地偏好
  */
 
+import type { CalColorKey } from './Cal.ts';
+
 /** 深浅。`auto` = 跟随系统，实际生效的那一档由 ui/theme.ts 解析 */
 export type ThemeMode = 'auto' | 'light' | 'dark';
 
@@ -196,4 +198,16 @@ export interface UiPrefs {
    */
   dayFrom: number;
   dayTo: number;
+  /**
+   * 日程集颜色的**本地覆盖**：`calId → 颜色`。
+   *
+   * 2026-11-09 用户拍板：颜色是「**我**看着是什么色」的显示效果，不是创建者
+   * 定给全员的集属性。以前走 `PATCH /api/cals/:id` 落库，创建者一改，所有成员
+   * 屏幕上的颜色跟着变 —— 那其实是拿别人的偏好覆盖了我的。现在只写这份本地
+   * 偏好，不进同步、不上服务器；没覆盖的集仍读 `cal.color` 当默认。
+   *
+   * 任务卡、月视图小圆点、今天/待办箱那几处全都走 `colorOf(..., 这份覆盖)`，
+   * 所以「我自己改的颜色」在每一个显示日程集的地方都一致。
+   */
+  calColors: Record<string, CalColorKey>;
 }

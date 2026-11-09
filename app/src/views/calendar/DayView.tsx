@@ -133,7 +133,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
         >
           <div className="allday-items" data-cols={cols} style={{ '--cols': cols } as CSSProperties}>
             {shown.map((t) => (
-              <UntimedCard key={t.id} t={t} title={t.title} calColor={colorOf(state.cals, t.calId)}
+              <UntimedCard key={t.id} t={t} title={t.title} calColor={colorOf(state.cals, t.calId, state.ui.calColors)}
                 creator={tag ? creatorOf(state.users, t.createdBy, state.meId) : null}
                 showRepeatMark={state.ui.showRepeatMark} />
             ))}
@@ -205,7 +205,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
               <div className="tl-events">
                 {events.map((e) => (
                   <TimedCard key={e.item.id} e={e} isToday={isToday} nowMin={nowMin} win={win} boxH={tlH}
-                    calColor={colorOf(state.cals, e.item.calId)}
+                    calColor={colorOf(state.cals, e.item.calId, state.ui.calColors)}
                     creator={tag ? creatorOf(state.users, e.item.createdBy, state.meId) : null}
                     showRepeatMark={state.ui.showRepeatMark} />
                 ))}

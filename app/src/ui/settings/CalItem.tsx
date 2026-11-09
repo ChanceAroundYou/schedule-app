@@ -13,9 +13,10 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, LogOut, Star, Trash2 } from 'lucide-react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
-import type { Cal, CalColorKey, Invite, Member } from '../../domain/types.ts';
-import { canManage, CAL_COLORS, CAL_COLOR_LABEL, DEFAULT_CAL_COLOR } from '../../domain/types.ts';
+import type { Cal, CalColorKey, Invite, LocalState, Member } from '../../domain/types.ts';
+import { canManage, CAL_COLORS, CAL_COLOR_LABEL } from '../../domain/types.ts';
 import { Btn, Field, InlineRename, MiniIconBtn, Row, useConfirm, toast } from '../kit.tsx';
+import { CalIdentity, displayColor } from '../calendars/CalIdentity.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../../data/api.ts';
 import { cx } from '../cx.ts';
@@ -33,8 +34,10 @@ export async function refreshCals(): Promise<void> {
 }
 
 /** 一个日程集：收起是一行，展开是它的全部设置 */
-export function CalItem({ cal, active, isDefault, open, onToggle }: {
+export function CalItem({ cal, state, active, isDefault, open, onToggle }: {
   cal: Cal;
+  /** 本地显示偏好（颜色覆盖）与用户目录（创建者昵称）都从这一份读 */
+  state: LocalState;
   active: boolean;
   /** 是不是默认日程集。由 CalsTab 用 `resolveDefaultCal()` 算好传进来 */
   isDefault: boolean;
@@ -77,10 +80,13 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
     toast('已改名');
   });
 
-  const saveColor = (next: CalColorKey) => run(async () => {
-    await api.setColorCal(calId, next);
-    toast('已改颜色');
-  });
+  /* 颜色是「**我**看着是什么色」的本地显示效果，不是创建者设给全员的集属性
+     （用户 2026-11-09）。以前走 PATCH /api/cals/:id 落库，创建者一改，
+     所有成员屏幕上的颜色跟着变。现在只写 ui.calColors，不进同步、不上服务器。 */
+  const saveColor = (next: CalColorKey) => {
+    store.setUi({ calColors: { ...store.get().ui.calColors, [calId]: next } });
+    toast('颜色已改（只影响你这台设备）');
+  };
 
   const leave = async () => {
     const ok = await confirm({
@@ -159,10 +165,9 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
                换掉，星标和角色徽标自动隐藏，不用在外面再判一次 `editing`，
                也就不会出现「名字已经是输入框了，星标还杵在旁边」的错位。 */
             <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
-              <span className="calrow-dot" data-cal-color={cal.color ?? DEFAULT_CAL_COLOR} aria-hidden="true" />
-              <span className={cx('min-w-0 flex-1 truncate', active ? 'font-medium ci-name-active' : 'ci-name-idle')}>
-                {cal.name}
-              </span>
+              {/* 与下拉栏 / 移动弹窗**同一份**身份行：圆点 + 集名 + 创建者昵称。
+                  圆点读的是我自己的本地颜色覆盖，不是创建者设给全员的那个值。 */}
+              <CalIdentity state={state} cal={cal} active={active} />
               {/* 星标 = 默认日程集。传 `aria-pressed` 不传 `disabled`：它是显示状态
                   的标记，禁用了键盘就 Tab 不过去，也读不到「已经是默认了」。
                   「选中变主色」走 `tone="primary"` **prop** —— 叠 `className` 会被
@@ -212,25 +217,28 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
         // （456.48 → 473.98），纸飞机右缘与折叠箭头右缘重合。
         // 注意是**齐平**，不是超出 —— 上一轮那条「不许超过 header」仍然成立。
         <div data-cal-body="1" className="flex flex-col gap-3.5 pt-3.5">
-          {/* 颜色：只有创建者能改（与改名同一条 `canManage`）。八支色板，
-              点了立刻落库并刷新集列表 —— 颜色是集的属性，不是任务的，
-              所以不走 LWW 那套 op 通道，走 `PATCH /api/cals/:id`。 */}
-          {manage && (
-            <Field label="颜色">
+          {/* 颜色：**所有成员**都能改，且只改自己这台设备的显示（2026-11-09）。
+              以前只有创建者能改、还落库同步给全员 —— 那等于拿别人的偏好覆盖了
+              我的屏幕。现在写本地 `ui.calColors`，改名/删集那套 canManage 不管它。 */}
+          <Field label="颜色">
+            <div className="flex flex-col gap-1.5">
               <Row>
                 {CAL_COLORS.map((k) => (
                   <button
                     key={k} type="button" className="cal-swatch"
                     data-cal-color={k}
-                    aria-pressed={(cal.color ?? DEFAULT_CAL_COLOR) === k}
+                    aria-pressed={displayColor(state, cal.id) === k}
                     aria-label={CAL_COLOR_LABEL[k]} title={CAL_COLOR_LABEL[k]}
                     disabled={busy}
-                    onClick={() => void saveColor(k)}
+                    onClick={() => saveColor(k)}
                   />
                 ))}
               </Row>
-            </Field>
-          )}
+              <div className="ci-hint text-[11.5px]">
+                只是你自己的显示颜色，别人看到的不会跟着变。
+              </div>
+            </div>
+          </Field>
 
           {/* 成员 / 邀请：走和「管理日程集」浮层**同一份** MembersSection。
               这里原先自己抄了一遍成员行、角色选择器、邀请行、撤回按钮，

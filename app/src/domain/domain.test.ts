@@ -25,7 +25,8 @@ import {
   quickDefaults, defaultUi, resolveDefaultCal, setDefaultCal,
   undoneLoads, undoneLoadOf, undoneDates, hasUndone, makeHabit,
 } from './model.ts';
-import type { Change, Habit, LocalState, Op, RepeatRule, Task } from './types.ts';
+import type { CalColorKey, Change, Habit, LocalState, Op, RepeatRule, Task } from './types.ts';
+import { creatorOptions } from '../ui/shell/creatorOptions.ts';
 
 const T = '2026-10-06';   // 固定「今天」，否则用例会随真实日期漂移
 
@@ -701,6 +702,33 @@ test('侧栏顺序：区分「从未设置」与「用户有意清空」', () =>
     '空数组是用户把垃圾箱拖出底部后的合法状态，不能又塞回去',
   );
   assert.equal(normalizeUi({ nav: 'notes' }).nav, 'today', '已删除的模块要兜回今天');
+});
+
+/* 2026-11-09：日程集颜色改成「只属于我的显示偏好」。落盘那份可能来自手改 /
+   旧版本，坏值必须挡在 normalizeUi 这一层，界面上不许出现没有颜色令牌的集。 */
+test('日程集颜色覆盖：合法值保留，坏键坏值一律挡掉', () => {
+  const own: Record<string, CalColorKey> = { a: 'rose', b: 'jade' };
+  assert.deepEqual(normalizeUi(undefined).calColors, {}, '老数据没有这一项 → 空');
+  assert.deepEqual(normalizeUi({ calColors: own }).calColors, own);
+  const dirty = { a: 'rose', b: '不存在的色', c: 7, d: null } as unknown as Record<string, CalColorKey>;
+  assert.deepEqual(normalizeUi({ calColors: dirty }).calColors, { a: 'rose' });
+  assert.deepEqual(normalizeUi({ calColors: [] as unknown as Record<string, CalColorKey> }).calColors, {},
+    '数组/非对象不能混进来');
+});
+
+test('创建者筛选：显示我自己的昵称，不写「我建的」', () => {
+  const s = stateWith([], {
+    meId: 'u1',
+    users: {
+      u1: { name: 'alex', nickname: '小星' },
+      u2: { name: 'bao', nickname: '阿包' },
+    },
+  });
+  const opts = creatorOptions(s);
+  assert.equal(opts[0].label, '全部成员');
+  assert.equal(opts[1].value, 'me', '值仍是 me，筛选语义没变');
+  assert.equal(opts[1].label, '小星', '写昵称，不写角色词');
+  assert.ok(!opts.some((o) => o.label === '我建的'));
 });
 
 /* ================= 侧栏多选（ui.cals 的迁移） ================= */

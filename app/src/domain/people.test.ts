@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { AI_ACTOR, colorOf, creatorOf, displayName, initialOf } from './people.ts';
+import { AI_ACTOR, colorOf, creatorOf, displayName, initialOf, ownerDisplayName } from './people.ts';
 import { CAL_COLORS, DEFAULT_CAL_COLOR } from './types.ts';
 import type { Cal, CalColorKey } from './types.ts';
 
@@ -65,6 +65,29 @@ test('集颜色按 calId 取；找不到集 / 集上没颜色都退回默认色'
 
 test('默认色本身在候选表里（不然色板画不出「当前」那一格）', () => {
   assert.ok(CAL_COLORS.includes(DEFAULT_CAL_COLOR));
+});
+
+/* 2026-11-09：颜色是「我自己的显示效果」，不是创建者设给全员的集属性。
+   覆盖必须优先，且集已经不在列表里时也不能把覆盖弄丢。 */
+test('集颜色：本地覆盖优先于集默认值，不传覆盖时行为不变', () => {
+  const cals = [cal('a', 'plum'), cal('b')];
+  const own: Record<string, CalColorKey> = { a: 'rose', ghost: 'gold' };
+  assert.equal(colorOf(cals, 'a', own), 'rose', '本地覆盖盖住集默认值');
+  assert.equal(colorOf(cals, 'b', own), DEFAULT_CAL_COLOR, '没覆盖的仍按集默认值回落');
+  assert.equal(colorOf([], 'ghost', own), 'gold', '集已不在列表里，覆盖照样生效');
+  assert.equal(colorOf(cals, 'a'), 'plum', '不传覆盖 = 原来的行为');
+  assert.equal(colorOf(cals, 'a', null), 'plum', 'null 等同不覆盖');
+});
+
+test('创建者显示名：昵称优先，查不到就空（不写「我建的」这类角色词）', () => {
+  const users = {
+    u1: { name: 'alex', nickname: '小星' as string | null },
+    u2: { name: 'bao', nickname: null },
+  };
+  assert.equal(ownerDisplayName(users, 'u1'), '小星');
+  assert.equal(ownerDisplayName(users, 'u2'), 'bao', '没昵称回落用户名');
+  assert.equal(ownerDisplayName(users, 'u3', { name: '星星包', nickname: '包' }), '包', '缓存里的自己兜底');
+  assert.equal(ownerDisplayName(users, 'u3'), '', '谁都查不到就不画');
 });
 
 /* ============================== 来源标记 ============================== */

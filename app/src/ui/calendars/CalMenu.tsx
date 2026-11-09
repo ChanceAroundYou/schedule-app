@@ -58,7 +58,7 @@ export function CalMenu({ state }: { state: LocalState }) {
       </button>
       {open && (
         <div className="cal-menu-pop" role="group" aria-label="显示的日程集">
-          {visible.map((c) => <CalRow key={c.id} c={c} on={shown.includes(c.id)} />)}
+          {visible.map((c) => <CalRow key={c.id} state={state} c={c} on={shown.includes(c.id)} />)}
         </div>
       )}
     </div>

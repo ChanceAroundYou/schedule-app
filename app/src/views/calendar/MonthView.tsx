@@ -110,7 +110,7 @@ function MonthCell({ state, d, curMonth, today, anchorIso, narrow, shown, more }
         {shown.map((t, i) => (
           <TaskPill
             key={t.id} task={t} moreJumpDay={d}
-            calColor={colorOf(state.cals, t.calId)}
+            calColor={colorOf(state.cals, t.calId, state.ui.calColors)}
             /* 来源 tag：**窄屏不画**（2026-11-06 用户第二版口径：
                「移动端的月视图和周视图不显示归属标记」）。
                手机上一格只有 48px，胶囊里只剩 4 个字的位置，一枚圈就要吃掉两个 ——
@@ -161,7 +161,7 @@ function MonthGhost({ state, iso }: { state: LocalState; iso: string }) {
               </div>
               <div className="cell-tasks">
                 {ts.map((t) => (
-                  <div className="task-pill" key={t.id} data-cal-color={colorOf(state.cals, t.calId)}>
+                  <div className="task-pill" key={t.id} data-cal-color={colorOf(state.cals, t.calId, state.ui.calColors)}>
                     <span className="pill-title">{t.title}</span>
                   </div>
                 ))}

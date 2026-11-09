@@ -76,7 +76,7 @@ function WeekColumn({
           <TimedCard
             key={e.item.id} e={e} isToday={d === today} nowMin={nowMin}
             win={win} boxH={boxH} lockX={false}
-            calColor={colorOf(state.cals, e.item.calId)}
+            calColor={colorOf(state.cals, e.item.calId, state.ui.calColors)}
             creator={tag ? creatorOf(state.users, e.item.createdBy, state.meId) : null}
             showRepeatMark={state.ui.showRepeatMark}
           />
@@ -125,7 +125,7 @@ function WunCell({ state, d, today, rowH, tag }: { state: LocalState; d: string;
       {un.map((t) => (
         <UntimedCard
           key={t.id} t={t} title={t.title} lockX={false}
-          calColor={colorOf(state.cals, t.calId)}
+          calColor={colorOf(state.cals, t.calId, state.ui.calColors)}
           creator={tag ? creatorOf(state.users, t.createdBy, state.meId) : null}
           showRepeatMark={state.ui.showRepeatMark}
         />

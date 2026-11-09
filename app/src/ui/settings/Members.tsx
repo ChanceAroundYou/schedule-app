@@ -22,6 +22,7 @@ import {
 } from '../../domain/types.ts';
 import { Dropdown, Field, Input, MiniIconBtn, toast, useConfirm } from '../kit.tsx';
 import type { DropdownOption } from '../kit.tsx';
+import { displayName } from '../../domain/people.ts';
 
 interface MembersSectionProps {
   calId: string;
@@ -52,7 +53,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
 
   const kick = (m: Member) => run(async () => {
     const ok = await confirm({
-      title: `把「${m.name}」移出？`,
+      title: `把「${displayName(m)}」移出？`,
       body: '他马上就会看不到这个日程集，之后可以重新邀请。',
       confirmText: '移出', danger: true,
     });
@@ -78,7 +79,9 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                   : m.role === 'viewer' ? <Eye size={14} className="mem-eye" />
                     : <Pencil size={14} className="mem-pencil" />}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[13px]">{m.name}</span>
+              {/* 昵称优先、没昵称才回落用户名 —— 全站只走 displayName 这一处口径。
+                  以前直接写 m.name，用户设了昵称也看不见（2026-11-09）。 */}
+              <span className="min-w-0 flex-1 truncate text-[13px]">{displayName(m)}</span>
 
               {/* 创建者这一行两个控件都禁用：他的权限改不了（不变量 2 里
                   每个集必须留着 owner），也不能把自己移出。禁用而不是隐藏 ——
@@ -88,7 +91,7 @@ export function MembersSection({ calId, members, sent, manage, busy, run }: Memb
                   <Dropdown
                     value={m.role}
                     disabled={busy || canManage(m.role)}
-                    label={`「${m.name}」的权限`}
+                    label={`「${displayName(m)}」的权限`}
                     size="sm"
                     options={ROLE_OPTIONS}
                     /* 创建者的 role='owner' **不在** ROLE_OPTIONS 里（owner 不是能分下去

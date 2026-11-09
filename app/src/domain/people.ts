@@ -33,9 +33,33 @@ export function initialOf(u: Person | null | undefined): string {
   return first.toUpperCase();
 }
 
-/** 集 → 颜色。缺字段一律回落默认色，界面上永远不会出现「这个集没颜色」 */
-export function colorOf(cals: readonly { id: string; color?: CalColorKey }[], calId: string): CalColorKey {
+/**
+ * 集 → 颜色。
+ *
+ * `overrides` 是**当前用户自己的**本地显示色（2026-11-09：颜色不是创建者设给
+ * 全员的集属性，只是「我看着是什么色」）。有覆盖先读覆盖，没覆盖才读集上那份
+ * 默认值，最后回落 DEFAULT。任务卡、圆点、月视图小格都走这一处，不会各画各的。
+ */
+export function colorOf(
+  cals: readonly { id: string; color?: CalColorKey }[],
+  calId: string,
+  overrides?: Record<string, CalColorKey> | null,
+): CalColorKey {
+  const own = overrides?.[calId];
+  if (own) return own;
   return cals.find((c) => c.id === calId)?.color ?? DEFAULT_CAL_COLOR;
+}
+
+/**
+ * 日程集的创建者该显示成什么名字。**昵称优先**，查不到再退到缓存里的自己，
+ * 再查不到就返回空串（不显示「我建的」「创建者」这类角色词）。
+ */
+export function ownerDisplayName(
+  users: Record<string, Person> | undefined,
+  ownerId: string,
+  fallback?: Person | null,
+): string {
+  return displayName(users?.[ownerId]) || displayName(fallback) || '';
 }
 
 /** AI 落库时写进 `createdBy` 的固定值（见 `server/lib/sync.js`）。它不是「别人」 */

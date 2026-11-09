@@ -458,6 +458,13 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' "$BASE_URL/$APK_NAM
 [ "$CODE" = "200" ] || die "APK 下载返回 $CODE"
 printf '  %s -> HTTP %s\n' "$APK_NAME" "$CODE"
 
+# 自更新链路守护（2026-11-09）：站在客户端那一侧把线上包真的下下来、算 sha、
+# 解包看内置资源。回读只看 versionCode + HTTP 200 是不够的 —— 127~129 那次
+# 就是「全绿但装上是坏包」。守护不过 = 本次发布判定失败，不发版本记录。
+say "4.5/5 自更新链路守护（线上端到端体检）"
+bash "$ROOT/deploy/update-guard.sh" \
+  || die "自更新守护未通过：线上包与清单不一致或内置资源有问题，本次发布判定失败"
+
 say "5/5 写版本记录（~/.local/schedule/state/app.version）"
 # pf_gather 会自己 cd 回仓库根采集 git 状态；上面 cd 到 android 目录不影响它。
 pf_gather

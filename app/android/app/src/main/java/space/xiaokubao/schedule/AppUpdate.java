@@ -83,6 +83,22 @@ class AppUpdate {
     /** 同一个版本 24 小时内不重复弹 */
     private static final long PROMPT_COOLDOWN_MS = 24 * 3600 * 1000L;
 
+    /* ---- 守护（watchdog，2026-11-09）----
+       只在启动那 3 秒查一次是不够的：用户可能几天不重启 App，就永远收不到新版。
+       再加三道：回前台超 6h 补查、下载总时长看门狗、检查/下载互斥防叠框空转。 */
+    /** 回前台距上次成功检查超过这么久就静默补一次 */
+    private static final long RECHECK_INTERVAL_MS = 6 * 3600 * 1000L;
+    /** readTimeout 只管「两次读之间」，防不住极慢但一直有数据的流 */
+    private static final long DOWNLOAD_TOTAL_TIMEOUT_MS = 5 * 60 * 1000L;
+    private static final String KEY_LAST_CHECK_AT = "lastCheckAt";
+    private static final Object CHECK_LOCK = new Object();
+    /** 自动检查互斥：启动延时那次与前台守护那次会撞在同一帧 */
+    private static volatile boolean sAutoCheckInFlight = false;
+    /** 下载互斥：连点「立即更新」/ 重装路径与下载线程并发时只跑一条 */
+    private static volatile boolean sDownloadInFlight = false;
+    /** 正在显示的更新弹窗，防叠两个框 */
+    private static volatile AlertDialog sPrompt = null;
+
     /** 本次要装的版本与它的 sha256。冷启动时字段会丢，从 {@link #PREFS} 捞回来 */
     static volatile String sPendingSha256;
     static volatile int sPendingVersionCode;
@@ -155,10 +171,24 @@ class AppUpdate {
     static void onResume(final Activity activity) {
         confirmInstalled(activity.getApplicationContext());
         recoverPending(activity);
-        if (!sWaitingForPermission) return;
-        sWaitingForPermission = false;
-        Log.i(TAG, "授权回来，补一次更新检查");
-        checkForced(activity);
+        if (sWaitingForPermission) {
+            sWaitingForPermission = false;
+            Log.i(TAG, "授权回来，补一次更新检查");
+            checkForced(activity);
+        }
+        /* 前台守护：只在 onCreate 延时查一次的话，几天不重启的用户永远收不到新版。
+           回前台且距上次**成功**检查超过 6 小时，静默补一次（force=false，失败不打扰）。
+           注意不能在这里直接查完事 —— 启动那次延时检查也排在 3 秒后，两者由
+           sAutoCheckInFlight 互斥，只会跑一条。 */
+        final Context c = activity.getApplicationContext();
+        long last = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getLong(KEY_LAST_CHECK_AT, 0L);
+        if (System.currentTimeMillis() - last >= RECHECK_INTERVAL_MS) {
+            Log.i(TAG, "前台守护：距上次检查超过 6 小时，补一次");
+            activity.getWindow().getDecorView().postDelayed(new Runnable() {
+                @Override public void run() { checkAndPrompt(activity, false, null); }
+            }, 3000L);
+        }
     }
 
     /**
@@ -168,6 +198,17 @@ class AppUpdate {
      * 漏一条路的后果是网页那边的「检查中」永远不结束 —— 比不给回执更糟。
      */
     private static void checkAndPrompt(final Activity activity, final boolean force, final CheckResult cb) {
+        /* 自动检查互斥（force 的用户主动检查不挡）：启动延时那次与前台守护那次
+           会同时排到 3 秒后，不互斥就会起两条线程、叠两个弹窗。 */
+        if (!force) {
+            synchronized (CHECK_LOCK) {
+                if (sAutoCheckInFlight) {
+                    Log.i(TAG, "已有自动检查在跑，跳过这次");
+                    return;
+                }
+                sAutoCheckInFlight = true;
+            }
+        }
         final Context c = activity.getApplicationContext();
         final boolean[] once = new boolean[1];
         new Thread(new Runnable() {
@@ -182,6 +223,9 @@ class AppUpdate {
                         report(once, cb, R_MANIFEST_BAD, null, "版本清单异常，请稍后再试");
                         return;
                     }
+                    /* 清单真的拿到了才算「检查过」。网络挂了不清这个时间戳，
+                       下次回前台守护会接着试，不会静默停摆一整天。 */
+                    markChecked(c);
                     long self = selfVersionCode(c);
                     if (m.versionCode <= self) {
                         Log.i(TAG, "已是最新 versionCode=" + self);
@@ -224,9 +268,17 @@ class AppUpdate {
                         toast(c, "检查失败：网络不通或服务端没响应，请稍后再试");
                     }
                     report(once, cb, R_NETWORK, null, "网络不通或服务端没响应，请稍后再试");
+                } finally {
+                    if (!force) sAutoCheckInFlight = false;
                 }
             }
         }).start();
+    }
+
+    /** 记一次「检查真的完成」，供前台守护算 6 小时间隔 */
+    private static void markChecked(Context c) {
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putLong(KEY_LAST_CHECK_AT, System.currentTimeMillis()).apply();
     }
 
     /** 发回执，**只发一次**。布尔数组是因为匿名内部类只能捕获 final 局部变量。 */
@@ -252,7 +304,25 @@ class AppUpdate {
         String notes = "";
     }
 
+    /** 清单拉取守护：一次瞬断不该让用户白等 6 小时（或以为功能坏了）。重试一次、短退避。 */
     private static Manifest fetchManifest() throws Exception {
+        Exception last = null;
+        for (int i = 0; i < 2; i++) {
+            try {
+                return fetchManifestOnce();
+            } catch (Exception e) {
+                last = e;
+                Log.w(TAG, "拉清单第 " + (i + 1) + " 次失败: " + e);
+                if (i == 0) {
+                    try { Thread.sleep(600L); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
+            }
+        }
+        throw last == null ? new java.io.IOException("拉取版本清单失败") : last;
+    }
+
+    private static Manifest fetchManifestOnce() throws Exception {
         String url = BuildConfig.UPDATE_BASE.replaceAll("/+$", "") + MANIFEST_PATH;
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
@@ -305,17 +375,24 @@ class AppUpdate {
                 if (activity.isFinishing() || activity.isDestroyed()) {
                     return;
                 }
+                /* 守护：授权回来补查 + 前台守护 + 启动检查三条路可能同时到达，
+                   不挡就会叠两个「发现新版本」框，用户点一次其实发两次下载。 */
+                if (sPrompt != null && sPrompt.isShowing()) {
+                    Log.i(TAG, "更新弹窗已在显示，不叠框");
+                    return;
+                }
                 String cur = selfVersionName(activity);
                 Log.i(TAG, "弹更新提示: 新 " + m.versionCode + "(" + m.versionName
                         + ") / 当前 " + selfVersionCode(activity) + "(" + cur + ")");
                 String msg = "新版本 " + m.versionName + "（versionCode " + m.versionCode + "）"
                         + "\n当前 " + cur
                         + (m.notes.isEmpty() ? "" : "\n\n" + m.notes);
-                new AlertDialog.Builder(activity)
+                sPrompt = new AlertDialog.Builder(activity)
                         .setTitle("发现新版本")
                         .setMessage(msg)
                         .setNegativeButton("稍后", null)
                         .setPositiveButton("立即更新", (d, w) -> startDownload(activity, m))
+                        .setOnDismissListener(dlg -> sPrompt = null)
                         .show();
             }
         });
@@ -339,6 +416,15 @@ class AppUpdate {
             activity.startActivity(i);
             return;
         }
+        /* 下载互斥守护：连点弹窗 / 强制重装路径与下载线程并发时，只跑一条。
+           两条线程同时写同一个 .part 会把彼此的字节搅在一起，sha 必然不过。 */
+        synchronized (INSTALL_LOCK) {
+            if (sDownloadInFlight) {
+                Log.i(TAG, "已有下载在跑，忽略重复触发");
+                return;
+            }
+            sDownloadInFlight = true;
+        }
         Context c = activity.getApplicationContext();
         sPendingSha256 = m.sha256;
         sPendingVersionCode = m.versionCode;
@@ -353,10 +439,14 @@ class AppUpdate {
             if (claimInstall()) {
                 installApk(c, dst);
             }
+            sDownloadInFlight = false;
             return;
         }
         Toast.makeText(activity, "正在下载新版本，下好会提示安装", Toast.LENGTH_SHORT).show();
-        new Thread(() -> downloadAndInstall(c, m), "app-update-download").start();
+        new Thread(() -> {
+            try { downloadAndInstall(c, m); }
+            finally { sDownloadInFlight = false; }
+        }, "app-update-download").start();
     }
 
     /**
@@ -399,7 +489,15 @@ class AppUpdate {
                  FileOutputStream out = new FileOutputStream(part)) {
                 byte[] buf = new byte[16384];
                 int n;
+                /* 看门狗：readTimeout 只保证「两次读之间不超过 20 秒」，
+                   极慢但一直有数据的流能无限拖下去 —— 用户看到的就是
+                   「点了更新一直在下」。超过 5 分钟一律中断并回滚（failDownload
+                   会清 pending / 冷却，允许立刻重试）。 */
+                final long startedAt = System.currentTimeMillis();
                 while ((n = in.read(buf)) > 0) {
+                    if (System.currentTimeMillis() - startedAt > DOWNLOAD_TOTAL_TIMEOUT_MS) {
+                        throw new IOException("下载超过 5 分钟，看门狗已中断");
+                    }
                     out.write(buf, 0, n);
                     done += n;
                     if (total > 0) {

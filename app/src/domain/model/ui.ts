@@ -3,6 +3,7 @@
  */
 
 import type { UiPrefs, AccentKey, StyleKey, ThemeMode } from '../types/types.ts';
+import { isCalColor } from '../types/types.ts';
 import * as D from '../date.ts';
 import { MIN_SPAN } from '../layout.ts';
 
@@ -99,6 +100,8 @@ export function defaultUi(): UiPrefs {
     cals: [],
     dayFrom: 0,
     dayTo: 24,
+    // 没覆盖过任何集 → 全部读 cal.color（服务端那份默认值）
+    calColors: {},
   };
 }
 
@@ -113,6 +116,19 @@ export function setDefaultCal(ui: UiPrefs, calId: string | null): void {
 export function normalizeUi(raw: Partial<UiPrefs> | undefined): UiPrefs {
   const d = defaultUi();
   const ui: UiPrefs = { ...d, ...(raw || {}) };
+
+  /* 日程集颜色覆盖是本地偏好。手改过的 localStorage / 别的版本写进来的值可能
+     是数组、null、或者一个早就不在色板里的颜色 —— 全部挡在这里，界面上不许
+     出现「一个没有颜色令牌的集」。逐键过滤，不整块丢弃好数据。 */
+  const bag0 = ui as unknown as Record<string, unknown>;
+  const rawColors = bag0.calColors;
+  const colors: UiPrefs['calColors'] = {};
+  if (rawColors && typeof rawColors === 'object' && !Array.isArray(rawColors)) {
+    for (const [id, v] of Object.entries(rawColors as Record<string, unknown>)) {
+      if (id && isCalColor(v)) colors[id] = v;
+    }
+  }
+  ui.calColors = colors;
 
   // 三档都要认。写成 `!== 'dark' ? 'light'` 会把用户选的「跟随系统」每次刷新打回
   // 常亮 —— 而 auto 是合法值，不是「没选」。
