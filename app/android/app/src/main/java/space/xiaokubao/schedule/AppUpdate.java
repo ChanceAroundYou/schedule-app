@@ -1,33 +1,26 @@
 package space.xiaokubao.schedule;
 
-import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.DownloadManager;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
-import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -38,10 +31,6 @@ import java.security.MessageDigest;
 /**
  * AppUpdate —— APK 自更新。
  *
- * 为什么需要它：这个 App 是「网页打包 + 原生小组件」，改界面只要换 {@code dist/}，
- * 但**改小组件、改权限、改图标都得重打 APK**。每次都得 adb / 手动拷文件的体验
- * 太差，所以让 App 自己去服务器拉新包、唤起系统安装器。
- *
  * 分两层，别混：
  *   · 网页层（dist/）—— 不在这一管，刷新页面就好（nginx 直读）。
  *   · 原生层（本类）—— 只能靠换 APK。
@@ -49,21 +38,32 @@ import java.security.MessageDigest;
  * 流程：
  *   1. 启动 3 秒后拉 {@code /schedule/dl/version.json}，比 versionCode。
  *   2. 有新版且没在 24h 内提示过 → 弹框「立即更新 / 稍后」。
- *   3. DownloadManager 下载到 app 专属外部目录（不需要任何存储权限）。
- *   4. 收到 DOWNLOAD_COMPLETE → 校验 sha256 → 拷进内部存储 → FileProvider
- *      唤起系统安装器。用户点一下「安装」，数据保留（同签名覆盖安装）。
+ *   3. **本进程自己**用 HttpURLConnection 把 APK 下到内部 {@code filesDir/update/}，
+ *      边下边记进度，写完校验 Content-Length 与 sha256。
+ *   4. 校验通过 → 核对包名/versionCode → FileProvider 唤起系统安装器。
  *
- * 三个坑，都是这套流程里的硬约束：
+ * 2026-11-09 真机实锤的根因（OPPO PLJ110 / Android 17）：
+ *   以前用系统 DownloadManager + {@code setDestinationInExternalFilesDir()}，
+ *   把包写进 {@code Android/data/<pkg>/files/Download/}。新系统上
+ *   DownloadProvider 会往 MediaProvider 插入这条记录，直接被拒：
+ *     E DownloadManager: Error inserting into mediaProvider:
+ *       java.lang.IllegalArgumentException: Inserting private file:
+ *       Android/data/space.xiaokubao.schedule/files/Download/ is not allowed.
+ *   于是下载任务当场作废（my_downloads 里查不到），磁盘上只留一个 0 字节的
+ *   {@code schedule-<vc>.apk.oplusdownload}。而客户端的轮询把「任务查不到」
+ *   当成「还在下」，一路打印「下载中 -1%」直到超时，既不重试、不提示、也不清
+ *   24h 冷却 —— 用户看到的就是「点了更新永远没反应」，且此后一整天不再弹。
  *
- * 1. **必须校验收敛的 sha256。** 公网下载的包不做校验 = 谁改得到那个文件谁就能
- *    往你手机里装任意代码。version.json 和 apk 在同一个目录，被篡改会一起改，
- *    所以这条只是兜底（防传输损坏、防 CDN 出错），不是威胁模型的全部。
+ *   修法：**不再把下载交给系统下载服务**。清单能拉到说明本进程的 HTTPS 栈
+ *   是通的，用同一条栈下 APK 即可；顺带把「外部目录 → 拷贝 → FileProvider」
+ *   和「静态广播 + 动态接收器 + 轮询 + 烂尾接手」四套兜底一起删掉 ——
+ *   它们全是在给 DownloadManager 的不可靠擦屁股，现在没有那个前提了。
  *
- * 2. **不能直接用外部目录里的文件安装。** 部分 OEM 的 Package Installer 读不了
- *    {@code /Android/data/<pkg>/files/…} 下的 uri（即使走了 FileProvider）。
- *    所以下完先拷到 {@code filesDir/update/} 再装 —— 内部存储一定读得到。
- *
- * 3. **安装未知应用权限要用户手动授。** Android 8 起 {@code REQUEST_INSTALL_PACKAGES}
+ * 两个保留的硬约束：
+ * 1. **必须校验收敛的 sha256，且要核对 APK 身份。** sha256 证明字节没损坏，
+ *    {@link #apkIdentityOk} 证明包里装的就是清单说的那个版本（包名 + versionCode）。
+ *    两样都不对时不拉安装器，否则用户只会反复看到「应用未安装」。
+ * 2. **安装未知应用权限要用户手动授。** Android 8 起 {@code REQUEST_INSTALL_PACKAGES}
  *    是特殊权限，装不了时先把用户送去设置页，别硬 startActivity（会崩）。
  *
  * 版本号约定：{@code versionCode} 必须**严格递增**，服务端 version.json 里的
@@ -79,47 +79,26 @@ class AppUpdate {
     /** 自己的偏好文件，不掺和 CapacitorStorage（那份是网页侧和小组件共用的） */
     private static final String PREFS = "app_update";
     private static final String KEY_LAST_PROMPT_CODE = "lastPromptCode";
-    private static final String KEY_LAST_PROMP_AT = "lastPromptAt";
+    private static final String KEY_LAST_PROMPT_AT = "lastPromptAt";
     /** 同一个版本 24 小时内不重复弹 */
     private static final long PROMPT_COOLDOWN_MS = 24 * 3600 * 1000L;
 
-    /** 下载完成后等这个 id。{@link #DownloadReceiver} 里用 */
-    static volatile long sDownloadId = -1L;
+    /** 本次要装的版本与它的 sha256。冷启动时字段会丢，从 {@link #PREFS} 捞回来 */
     static volatile String sPendingSha256;
     static volatile int sPendingVersionCode;
 
-    /** 「已经进了安装流程」防重入：广播和轮询可能同时报到，只许一个进 */
+    /** 「已经进了安装流程」防重入：下载线程与回前台接手可能同时报到 */
     private static volatile boolean sInstallStarted = false;
-    /** 抢 {@link #sInstallStarted} 用的锁，见 verifyAndInstall 开头 */
     private static final Object INSTALL_LOCK = new Object();
-    /** 「接手烂尾」同一时刻只跑一份：checkOnLaunch 与 onResume 会同时叫它 */
-    private static volatile boolean sRecovering = false;
-    private static final Object RECOVER_LOCK = new Object();
-
-    /**
-     * 2026-10-23 用户实锤：点「立即更新」后包下到了手机里，安装界面却永远
-     * 不弹。根因是 {@code DOWNLOAD_COMPLETE} 这条广播会被 OEM 系统拦掉
-     * （Android 12 起对清单里的静态接收器管得更严，ColorOS 尤甚）——
-     * 广播一丢，包就静静躺着，没人去弹安装。三重保险：
-     *   ① {@link #registerLiveReceiver} 前台动态接收器（App 活着时不会被拦）；
-     *   ② {@link #startPolling} 主动轮询状态（不依赖任何广播）；
-     *   ③ 下载任务记进 {@link #PREFS}，冷启动 {@link #recoverPending} 接着装
-     *      —— 下到一半划掉 App 也不浪费那一次下载。
-     */
-    private static final Handler sUi = new Handler(Looper.getMainLooper());
-    private static Context sPollContext;
-    private static int sPollStep;
-    private static BroadcastReceiver sLiveReceiver;
-
-    private static final String KEY_PENDING_ID = "pendingId";
-    private static final String KEY_PENDING_SHA = "pendingSha";
-    private static final String KEY_PENDING_VC = "pendingVc";
 
     /**
      * 已把用户送去「安装未知应用」设置页，等他回来补一次检查。
      * 见 {@link #onResume} —— 这是那类「点了却没做成」的自动补救。
      */
     private static volatile boolean sWaitingForPermission = false;
+
+    private static final String KEY_PENDING_SHA = "pendingSha";
+    private static final String KEY_PENDING_VC = "pendingVc";
 
     // ------------------------------------------------------------ 检查结果回执
 
@@ -129,7 +108,6 @@ class AppUpdate {
      * 为什么需要它：以前网页点「检查更新」只能知道**原生接住了调用**，
      * 不知道后面是查到了新版、已是最新、还是网络挂了。用户看到按钮转一下就
      * 恢复，却不知道到底查没查 —— 于是「更新时好时坏」永远说不清卡在哪一步。
-     * 现在检查结束（无论成败）都会把结局回执给调用方。
      */
     static final int R_LATEST = 0;        // 已是最新
     static final int R_FOUND = 1;         // 发现新版本（弹窗已出）
@@ -150,7 +128,7 @@ class AppUpdate {
      * 失败一律静默：没网、服务端没这文件、版本号写错，都不该打扰用户。
      */
     static void checkOnLaunch(final Activity activity) {
-        // 上次有没有「包下完了却没装上」的烂尾（广播被拦/中途划掉）—— 先接手
+        // 上次有没有「下到一半 / 下完没装」的烂尾 —— 先接手
         recoverPending(activity);
         activity.getWindow().getDecorView().postDelayed(new Runnable() {
             @Override
@@ -160,44 +138,21 @@ class AppUpdate {
         }, 3000L);
     }
 
-    /**
-     * 检查一次并弹框。{@code force} 为 true 时**跳过 24 小时冷却**。
-     *
-     * 为什么要这个开关（用户 2026-10-17 报障）：以前点「立即更新」时是先
-     * {@link #markPrompted} 再 {@link #startDownload}，而没授「安装未知应用」
-     * 权限时后者直接送用户去设置页、**什么也不做**。标记已经写下 → 授权回来
-     * 按钮消失，24 小时内再也不提示，等于那次更新**彻底丢了**。
-     *
-     * 关于页的「检查更新」按钮走 force = true —— 用户主动点的，不该被冷却挡着；
-     * 「已是最新」也要给个回执（toast），否则按钮点了没反应，跟没做一样。
-     */
+    /** 关于页「检查更新」按钮走 force = true：用户主动点的，不该被冷却挡着。 */
     static void checkForced(final Activity activity) {
         checkAndPrompt(activity, true, null);
     }
 
-    /**
-     * 带回执的强制检查：给「关于」页的按钮用。检查**真的结束**（含失败）
-     * 才回调，网页据此显示「已是最新 / 发现 vX / 网络不通」，而不是靠定时器猜。
-     */
+    /** 带回执的强制检查：网页据此显示「已是最新 / 发现 vX / 网络不通」。 */
     static void checkForced(final Activity activity, CheckResult cb) {
         checkAndPrompt(activity, true, cb);
     }
 
     /**
      * 从「安装未知应用」设置页回来时调一次。
-     *
-     * 用户去授权前我们什么都没做成（见 {@link #startDownload} 的早退），
-     * 所以回来得自动补上 —— 不然他会以为 App 坏了。
-     * {@code sWaitingForPermission} 只有那一条路径会置 true。
-     *
-     * 另外每次回前台都接手一次烂尾下载（{@link #recoverPending}）：后台下载
-     * 期间进程被杀的话，静态字段全没了，只有这里能把记录里的 id 捞回来。
+     * 顺序不能反：**先确认上一轮到底装上没有**，再谈接手烂尾。
      */
     static void onResume(final Activity activity) {
-        /* 顺序不能反：**先确认上一轮到底装上没有**，再谈接手烂尾。
-           反过来的话，装完的那一刻（安装器把进程杀了重启，内存字段全空）会先被
-           「接手烂尾」看见包还在内部目录 → 照着重装一遍 → OPPO 弹「已安装相同版本」
-           （2026-10-26 真机，2.4.3→2.4.4 装成功后立刻复现）。 */
         confirmInstalled(activity.getApplicationContext());
         recoverPending(activity);
         if (!sWaitingForPermission) return;
@@ -221,9 +176,6 @@ class AppUpdate {
                 try {
                     Manifest m = fetchManifest();
                     if (m == null) {
-                        // 拉到了但内容不对（多半是服务端文件写坏了）。用户主动点的
-                        // 必须给个回执 —— 2026-10-24 用户报「点了没任何反应」，
-                        // 静默是病：网络/清单哪一层挂了都该说一声。
                         if (force) {
                             toast(c, "检查失败：版本清单异常，请稍后再试");
                         }
@@ -239,15 +191,16 @@ class AppUpdate {
                         report(once, cb, R_LATEST, m, "已是最新版本");
                         return;
                     }
-                    // 有 pending 的包还没装（用户上次在安装器点了取消/直接打开）→
-                    // 不重新下载，直接用内部存储那份再唤起一次安装器。
-                    // 之前是无条件走下载，filename 又是 schedule-<vc>.apk 固定名，
-                    // DownloadManager 去重/覆盖行为各家不同，就会出现「下了却装旧包」。
+                    // 同一版本的包已经下好但没装（用户上次在安装器点了取消）——
+                    // 不重下，直接再唤起一次安装器。
                     if (force && m.versionCode == sPendingVersionCode) {
                         File pending = pendingApkFile(c, m.versionCode);
-                        if (pending.exists() && pending.length() > 0) {
+                        if (pending.exists() && pending.length() > 0 && matchesPendingSha(pending)) {
                             Log.i(TAG, "pending 包还在，直接重装 " + pending.length() + " 字节");
-                            sInstallStarted = false;
+                            if (!claimInstall()) {
+                                report(once, cb, R_INSTALLING, m, "正在打开安装程序");
+                                return;
+                            }
                             boolean opened = installApk(c, pending);
                             report(once, cb, opened ? R_INSTALLING : R_BAD_APK,
                                     opened ? m : null,
@@ -256,7 +209,6 @@ class AppUpdate {
                                             : "下载好的安装包和当前 App 不匹配，已删除，请重新检查更新");
                             return;
                         }
-                        // 文件不在了（用户清数据/系统清了）→ 落到下面正常下载
                         Log.i(TAG, "pending 记录在但文件没了，重新下载");
                     }
                     if (!force && !shouldPrompt(c, m.versionCode)) {
@@ -268,8 +220,6 @@ class AppUpdate {
                     report(once, cb, R_FOUND, m, "发现新版本 " + m.versionName);
                 } catch (Exception e) {
                     Log.w(TAG, "检查更新失败: " + e);
-                    // 网络不通 / 域名解析不了 / TLS 出错 —— force 时给回执，
-                    // 否则按钮点了毫无动静，用户只能当它坏了
                     if (force) {
                         toast(c, "检查失败：网络不通或服务端没响应，请稍后再试");
                     }
@@ -279,19 +229,13 @@ class AppUpdate {
         }).start();
     }
 
-    /**
-     * 发回执，**只发一次**。
-     *
-     * 用布尔数组而不是布尔变量：Java 的匿名内部类只能捕获 final 的局部变量，
-     * 而这里要在多个 return 分支里改它。
-     */
+    /** 发回执，**只发一次**。布尔数组是因为匿名内部类只能捕获 final 局部变量。 */
     private static void report(boolean[] once, CheckResult cb, int status, Manifest m, String message) {
         if (cb == null || once[0]) return;
         once[0] = true;
         try {
             cb.done(status, m, message);
         } catch (Exception e) {
-            // 回执是网页那边的 UI 更新，抛错不该把更新流程带停
             Log.w(TAG, "回执抛错: " + e);
         }
     }
@@ -343,17 +287,14 @@ class AppUpdate {
     private static boolean shouldPrompt(Context c, int versionCode) {
         SharedPreferences sp = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         int last = sp.getInt(KEY_LAST_PROMPT_CODE, -1);
-        long at = sp.getLong(KEY_LAST_PROMP_AT, 0L);
-        if (last == versionCode && System.currentTimeMillis() - at < PROMPT_COOLDOWN_MS) {
-            return false;
-        }
-        return true;
+        long at = sp.getLong(KEY_LAST_PROMPT_AT, 0L);
+        return !(last == versionCode && System.currentTimeMillis() - at < PROMPT_COOLDOWN_MS);
     }
 
     private static void markPrompted(Context c, int versionCode) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putInt(KEY_LAST_PROMPT_CODE, versionCode)
-                .putLong(KEY_LAST_PROMP_AT, System.currentTimeMillis())
+                .putLong(KEY_LAST_PROMPT_AT, System.currentTimeMillis())
                 .apply();
     }
 
@@ -374,13 +315,7 @@ class AppUpdate {
                         .setTitle("发现新版本")
                         .setMessage(msg)
                         .setNegativeButton("稍后", null)
-                        .setPositiveButton("立即更新", (d, w) -> {
-                            // **先启动、后标记**（2026-10-17 修）：以前是
-                            // markPrompted 在前、startDownload 在后，没权限时
-                            // startDownload 早退去设置页，标记却已写下 ——
-                            // 授权回来按钮消失，24h 内也不再提示。
-                            startDownload(activity, m);
-                        })
+                        .setPositiveButton("立即更新", (d, w) -> startDownload(activity, m))
                         .show();
             }
         });
@@ -388,301 +323,207 @@ class AppUpdate {
 
     // ---------------------------------------------------------------- 下载与安装
 
+    /**
+     * 点「立即更新」后的入口。**权限检查在前**，没权限时早退去设置页、不写冷却，
+     * 交给 {@link #onResume} 补刀（2026-10-17 修的老问题：先标记后早退 = 那次更新
+     * 彻底丢了，24h 内再也不提示）。
+     */
     private static void startDownload(final Activity activity, final Manifest m) {
-        // Android 8+ 的「安装未知应用」是特殊权限，弹不了系统安装器就先送设置页
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
             Log.i(TAG, "没有「安装未知应用」权限 → 先送设置页");
             Toast.makeText(activity, "请先允许本应用「安装未知应用」，回来会自动继续", Toast.LENGTH_LONG).show();
-            sWaitingForPermission = true;      // 交给 onResume 补刀
+            sWaitingForPermission = true;
             Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + activity.getPackageName()));
             activity.startActivity(i);
             return;
         }
-        // 到这里才算「这次提示真的转化成了下载」，可以标记冷却了
-        markPrompted(activity, m.versionCode);
-        String apkUrl = BuildConfig.UPDATE_BASE.replaceAll("/+$", "") + "/dl/" + m.url;
         Context c = activity.getApplicationContext();
-        // **同版本去重**（2026-10-23）：连续点「立即更新」不再叠着下好几份 ——
-        // 每次覆盖 sDownloadId，旧的那份下完了也会因为对不上号被扔掉
-        if (sDownloadId >= 0 && sPendingVersionCode == m.versionCode) {
-            int st = statusOf(c, sDownloadId);
-            if (st == DownloadManager.STATUS_RUNNING || st == DownloadManager.STATUS_PENDING) {
-                Toast.makeText(activity, "已经在下载了，下好会提示安装", Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
-        DownloadManager dm = (DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (dm == null) {
-            Toast.makeText(activity, "取不到下载服务", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        DownloadManager.Request req = new DownloadManager.Request(Uri.parse(apkUrl));
-        // app 专属外部目录 —— 不需要 WRITE_EXTERNAL_STORAGE，卸载跟着走
-        req.setDestinationInExternalFilesDir(c, Environment.DIRECTORY_DOWNLOADS,
-                "schedule-" + m.versionCode + ".apk");
-        req.setTitle("日程清单 " + m.versionName);
-        req.setDescription("正在下载新版本…");
-        req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
-        sInstallStarted = false;
-        sDownloadId = dm.enqueue(req);
         sPendingSha256 = m.sha256;
         sPendingVersionCode = m.versionCode;
-        savePending(c, sDownloadId, m.sha256, m.versionCode);
-        Log.i(TAG, "开始下载 id=" + sDownloadId + " " + apkUrl);
-        Toast.makeText(activity, "正在后台下载，下好会提示安装", Toast.LENGTH_SHORT).show();
-        // 三重保险（见类注释）：广播会被 OEM 拦，所以 ①前台动态接收器 ②主动轮询
-        registerLiveReceiver(c);
-        startPolling(c);
-    }
+        sInstallStarted = false;
+        savePending(c, m.sha256, m.versionCode);
+        markPrompted(activity, m.versionCode);
 
-    /**
-     * 下载完成。**在清单里注册**，不是动态注册 —— 用户下到一半退出 App
-     * 也得能收到，不然那个包就白下了。
-     *
-     * ⚠️ 2026-10-23 实锤：这条广播在新系统上会被 OEM 拦掉（用户点了「立即更新」
-     * 包下到了手机里，安装界面永远不弹）—— 所以它只是三重保险之一，
-     * 前台动态接收器和轮询才是主力，见类注释。
-     */
-    public static class DownloadReceiver extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
-            boolean ours = (id == sDownloadId && sDownloadId >= 0)
-                    || id == pendingId(context.getApplicationContext());
-            if (!ours) {
-                return;
+        // 同版本已经有完好包（上次在安装器点了取消）—— 不重下
+        File dst = pendingApkFile(c, m.versionCode);
+        if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
+            Log.i(TAG, "同版本包已在，直接重装 " + dst.length() + " 字节");
+            if (claimInstall()) {
+                installApk(c, dst);
             }
-            Log.i(TAG, "下载完成（清单广播） id=" + id);
-            stopWatching(context.getApplicationContext());
-            new Thread(() -> verifyAndInstall(context)).start();
-        }
-    }
-
-    // ------------------------------------------------- 三重保险：前台接收 + 轮询 + 烂尾接手
-
-    /**
-     * 前台动态接收器。动态注册的不受「静态接收器被 OEM 拦广播」影响，
-     * App 活着期间 DOWNLOAD_COMPLETE 一定送到。
-     */
-    private static void registerLiveReceiver(Context c) {
-        if (sLiveReceiver != null) {
-            return;   // 已经挂着
-        }
-        BroadcastReceiver r = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
-                if (id != sDownloadId || sDownloadId < 0) {
-                    return;
-                }
-                Log.i(TAG, "下载完成（前台直收） id=" + id);
-                stopWatching(context.getApplicationContext());
-                new Thread(() -> verifyAndInstall(context)).start();
-            }
-        };
-        IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                c.registerReceiver(r, f, Context.RECEIVER_NOT_EXPORTED);
-            } else {
-                c.registerReceiver(r, f);
-            }
-            sLiveReceiver = r;
-            Log.i(TAG, "已挂前台接收器");
-        } catch (Exception e) {
-            Log.w(TAG, "挂前台接收器失败: " + e);
-        }
-    }
-
-    /**
-     * 轮询间隔（ms）：3s 起、逐步放长。2026-11-03 加长尾（30s/60s/120s）：
-     * 以前约 1 分钟就收摊，下载慢一点 + 广播被 OEM 拦 + App 一直开着 =
-     * 彻底静默，用户看到的就是「点了没反应」（报障原话）。长尾多盯几分钟，
-     * 期间每 tick 都记进度日志，远程排查时能看出「在下但慢」还是「压根没下」。
-     */
-    private static final long[] POLL_STEPS = {
-            3000L, 5000L, 8000L, 10000L, 15000L, 15000L,
-            30000L, 30000L, 60000L, 60000L, 120000L, 120000L,
-    };
-
-    /** 用 id 主动问 DownloadManager「下完没有」—— 不依赖任何广播 */
-    private static void startPolling(Context c) {
-        stopPolling();
-        sPollContext = c.getApplicationContext();
-        sPollStep = 0;
-        sUi.postDelayed(sPollTick, POLL_STEPS[0]);
-        Log.i(TAG, "开始轮询下载状态");
-    }
-
-    private static void stopPolling() {
-        sUi.removeCallbacks(sPollTick);
-    }
-
-    private final static Runnable sPollTick = new Runnable() {
-        @Override
-        public void run() {
-            Context c = sPollContext;
-            if (c == null || sDownloadId < 0 || sInstallStarted) {
-                return;
-            }
-            int st = statusOf(c, sDownloadId);
-            if (st == DownloadManager.STATUS_SUCCESSFUL) {
-                Log.i(TAG, "轮询逮到下载完成 id=" + sDownloadId);
-                stopWatching(c);
-                new Thread(() -> verifyAndInstall(c)).start();
-                return;
-            }
-            if (st == DownloadManager.STATUS_FAILED) {
-                Log.w(TAG, "轮询发现下载失败 id=" + sDownloadId);
-                stopWatching(c);
-                clearPending(c);
-                sDownloadId = -1L;
-                toast(c, "下载失败，请在「设置 → 关于」重试");
-                return;
-            }
-            // 还在下（PENDING / RUNNING / PAUSED 等网络）—— 记一行进度（远程
-            // 排查的关键证据），按 POLL_STEPS 放长间隔继续等
-            Log.i(TAG, "下载中 " + progressOf(c, sDownloadId) + "%（step " + sPollStep + "）");
-            sPollStep++;
-            if (sPollStep >= POLL_STEPS.length) {
-                Log.w(TAG, "轮询超时（约 8 分钟还没下完），交给广播或下次启动接手");
-                return;
-            }
-            sUi.postDelayed(sPollTick, POLL_STEPS[sPollStep]);
-        }
-    };
-
-    /** 下载进度百分比（查不到 / 总量未知 → -1）。日志与将来「进度条」共用 */
-    private static int progressOf(Context c, long id) {
-        DownloadManager dm = (DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (dm == null || id < 0) return -1;
-        Cursor cur = dm.query(new DownloadManager.Query().setFilterById(id));
-        if (cur == null) return -1;
-        try {
-            if (!cur.moveToFirst()) return -1;
-            long total = cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-            long done = cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-            if (total <= 0) return -1;
-            return (int) (done * 100 / total);
-        } catch (Exception e) {
-            return -1;
-        } finally {
-            cur.close();
-        }
-    }
-
-    /** 收摊：轮询停掉、前台接收器摘掉。三种「下载完成」来源只许第一个进安装 */
-    private static void stopWatching(Context c) {
-        stopPolling();
-        if (sLiveReceiver != null) {
-            try {
-                c.unregisterReceiver(sLiveReceiver);
-            } catch (Exception ignored) {
-            }
-            sLiveReceiver = null;
-        }
-    }
-
-    /**
-     * 冷启动 / 回前台时接手烂尾：上次「点过立即更新」但没装上的，按记录的 id
-     * 问 DownloadManager —— 下完了直接接着装，还在下就把接收器和轮询挂回去，
-     * 失败了清掉记录。用户不用再点一次、也不再白下载一份。
-     */
-    private static void recoverPending(Activity activity) {
-        /* checkOnLaunch 与 onResume 都会叫这里，早前实测同一次启动起了两条线程、
-           各唤起一次安装器（日志里两条一模一样的「接手烂尾」）。串行 + 标志挡掉。 */
-        synchronized (RECOVER_LOCK) {
-            if (sRecovering) {
-                Log.i(TAG, "接手烂尾已在进行，跳过重入");
-                return;
-            }
-            sRecovering = true;
-        }
-        try {
-            recoverPendingLocked(activity);
-        } finally {
-            sRecovering = false;
-        }
-    }
-
-    private static void recoverPendingLocked(Activity activity) {
-        Context c = activity.getApplicationContext();
-        long id = pendingId(c);
-        if (id < 0) {
             return;
         }
-        int st = statusOf(c, id);
-        if (st == DownloadManager.STATUS_SUCCESSFUL) {
-            sDownloadId = id;
-            sPendingSha256 = pendingSha(c);
-            sPendingVersionCode = pendingVc(c);
-            Log.i(TAG, "接手烂尾：包其实下完了 id=" + id + "，继续安装");
-            new Thread(() -> verifyAndInstall(c)).start();
-        } else if (st == DownloadManager.STATUS_FAILED) {
-            Log.w(TAG, "接手烂尾：上次下载失败 id=" + id + "，清掉记录");
-            clearPending(c);
-        } else if (st > 0 && sDownloadId < 0) {
-            // 还在下：把上下文捡回来，接收器 + 轮询重新挂上
-            sDownloadId = id;
-            sPendingSha256 = pendingSha(c);
-            sPendingVersionCode = pendingVc(c);
-            sInstallStarted = false;
-            registerLiveReceiver(c);
-            startPolling(c);
+        Toast.makeText(activity, "正在下载新版本，下好会提示安装", Toast.LENGTH_SHORT).show();
+        new Thread(() -> downloadAndInstall(c, m), "app-update-download").start();
+    }
+
+    /**
+     * 用本进程的 HTTPS 栈把 APK 直接下到内部目录。
+     *
+     * 为什么不再用 DownloadManager：见类注释 2026-11-09 根因。顺带说明这里
+     * 「直接写内部目录」是刻意的 —— 系统安装器读得到 filesDir，且下载过程
+     * 不经过外部存储 / MediaProvider，绕开了 OEM 的私有文件限制。
+     *
+     * 先写 {@code .part}，全部校验通过才 rename 成正式文件：中途被杀 / 断网
+     * 只会留下一个不完整的 .part，{@link #recoverPending} 看见就会清记录重来，
+     * 绝不会把一个坏包递给安装器。
+     */
+    private static void downloadAndInstall(Context c, Manifest m) {
+        c = c.getApplicationContext();
+        String apkUrl = BuildConfig.UPDATE_BASE.replaceAll("/+$", "") + "/dl/" + m.url;
+        File dst = pendingApkFile(c, m.versionCode);
+        File dir = dst.getParentFile();
+        if (dir != null && !dir.exists() && !dir.mkdirs()) {
+            failDownload(c, "建不了下载目录 " + dir);
+            return;
         }
-        // st <= 0（id 查不到，多半被系统清了任务）：缓存被清过一条下载记录就没了，
-        // 但**内部那份安装包可能还在** —— 直接装它，别让用户白下一次。
-        if (st <= 0) {
-            sPendingVersionCode = pendingVc(c);
-            File dst = pendingApkFile(c, sPendingVersionCode);
-            sPendingSha256 = pendingSha(c);
-            if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
-                Log.i(TAG, "下载记录没了，但内部包还在（" + dst.length() + " 字节），直接装");
-                sInstallStarted = false;
-                installApk(c, dst);
-                return;
+        File part = new File(dir, dst.getName() + ".part");
+        HttpURLConnection conn = null;
+        try {
+            Log.i(TAG, "开始下载 " + apkUrl);
+            conn = (HttpURLConnection) new URL(apkUrl).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(20000);
+            conn.setInstanceFollowRedirects(true);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("HTTP " + code);
             }
+            long total = conn.getContentLengthLong();
+            long done = 0;
+            int nextLog = 10;
+            try (InputStream in = conn.getInputStream();
+                 FileOutputStream out = new FileOutputStream(part)) {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    done += n;
+                    if (total > 0) {
+                        int pct = (int) (done * 100 / total);
+                        if (pct >= nextLog) {
+                            Log.i(TAG, "下载 " + pct + "%（" + done + "/" + total + "）");
+                            nextLog = pct + 10;
+                        }
+                    }
+                }
+                out.flush();
+            }
+            if (total > 0 && done != total) {
+                throw new IOException("长度不符 " + done + "/" + total);
+            }
+            if (done <= 0) {
+                throw new IOException("下载到 0 字节");
+            }
+            String actual = sha256(part);
+            if (m.sha256 != null && !m.sha256.isEmpty() && !m.sha256.equalsIgnoreCase(actual)) {
+                throw new IOException("sha256 不符 期望=" + m.sha256 + " 实际=" + actual);
+            }
+            sweepOldApks(c, dst);
+            if (!part.renameTo(dst)) {
+                throw new IOException("重命名失败 " + part);
+            }
+            Log.i(TAG, "下载完成 " + dst.length() + " 字节，唤起安装器");
+            sPendingSha256 = m.sha256;
+            sPendingVersionCode = m.versionCode;
+            if (claimInstall()) {
+                installApk(c, dst);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "下载安装包失败: " + e);
+            failDownload(c, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    /** 下载失败：删半成品、清 pending 与冷却，给一句人能看懂的原因。 */
+    private static void failDownload(Context c, String why) {
+        File dst = pendingApkFile(c, sPendingVersionCode);
+        //noinspection ResultOfMethodCallIgnored
+        new File(dst.getParentFile(), dst.getName() + ".part").delete();
+        clearPending(c);
+        clearPromptCooldown(c);   // 不清的话 24h 内不再提示，等于把功能关掉
+        sInstallStarted = false;
+        toast(c, "下载安装包失败：" + why + "，请稍后重试");
+    }
+
+    /**
+     * 冷启动 / 回前台时接手烂尾：上次点了更新但没装上的，看内部那份完整包还在不在。
+     * 不在（进程被杀 / 断网）就清记录 + 冷却，3 秒后的自动检查会重新弹窗下载。
+     */
+    private static void recoverPending(Activity activity) {
+        Context c = activity.getApplicationContext();
+        int vc = pendingVc(c);
+        if (vc <= 0) {
+            return;
+        }
+        if (selfVersionCode(c) >= vc) {
+            Log.i(TAG, "已经装上 versionCode=" + vc + "，清掉 pending");
+            clearPending(c);
+            return;
+        }
+        sPendingVersionCode = vc;
+        sPendingSha256 = pendingSha(c);
+        File dst = pendingApkFile(c, vc);
+        if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
+            Log.i(TAG, "接手烂尾：包其实下完了（" + dst.length() + " 字节），继续安装");
+            if (claimInstall()) {
+                installApk(c, dst);
+            }
+            return;
+        }
+        Log.i(TAG, "接手烂尾：包不完整，清记录等自动重检");
+        clearPending(c);
+        clearPromptCooldown(c);
+    }
+
+    /**
+     * 安装器回来后的确认：pending 的包到底装上没有。
+     * 装上了 → 清记录 + toast；包还在 → 提示继续装；包没了 → 别误导用户，
+     * 清记录和冷却让自动检查重来（旧版这里一律说「已下载」，下载失败时也这么说）。
+     */
+    private static void confirmInstalled(Context c) {
+        if (sPendingVersionCode <= 0) {
+            sPendingVersionCode = pendingVc(c);
+        }
+        if (sPendingSha256 == null || sPendingSha256.isEmpty()) {
+            sPendingSha256 = pendingSha(c);
+        }
+        if (sPendingVersionCode <= 0) {
+            return;
+        }
+        long self = selfVersionCode(c);
+        if (self >= sPendingVersionCode) {
+            Log.i(TAG, "确认已装上 versionCode=" + self + "，清掉 pending");
+            clearPending(c);
+            sInstallStarted = false;
+            toast(c, "已更新到最新版本");
+            return;
+        }
+        File dst = pendingApkFile(c, sPendingVersionCode);
+        if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
+            sInstallStarted = false;
+            Log.i(TAG, "还没装上（self=" + self + " pending=" + sPendingVersionCode + "）");
+            toast(c, "新版本已下载，点「检查更新」继续安装");
+        } else {
             clearPending(c);
             clearPromptCooldown(c);
         }
     }
 
-    private static int statusOf(Context c, long id) {
-        if (id < 0) {
-            return -1;
-        }
-        DownloadManager dm = (DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (dm == null) {
-            return -1;
-        }
-        Cursor cur = dm.query(new DownloadManager.Query().setFilterById(id));
-        if (cur == null) {
-            return -1;
-        }
-        try {
-            if (cur.moveToFirst()) {
-                return cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
-            }
-            return -1;
-        } finally {
-            cur.close();
-        }
-    }
-
     // ------------------------------------------------- 烂尾记录（SharedPreferences）
 
-    private static void savePending(Context c, long id, String sha, int vc) {
+    private static void savePending(Context c, String sha, int vc) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putLong(KEY_PENDING_ID, id)
                 .putString(KEY_PENDING_SHA, sha)
                 .putInt(KEY_PENDING_VC, vc)
                 .apply();
-    }
-
-    private static long pendingId(Context c) {
-        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_PENDING_ID, -1L);
     }
 
     private static String pendingSha(Context c) {
@@ -694,25 +535,18 @@ class AppUpdate {
     }
 
     /**
-     * 内部那份是不是「就是要装的这一版」。
-     *
-     * 没记 sha 的老记录一律放过：宁可让安装器去报签名/版本不对，也不要
-     * 因为缺个校验值就把一份完好的包丢掉（丢了的代价是重下 3.5MB 还不一定成功）。
-     */
-    /**
      * 内部那一份安装包的路径。**文件名必须带版本号**。
      *
      * ⚠️ 2026-10-26 实锤的坑：FileProvider 给出的 URI 是
      * `…/fileprovider/app_update/<文件名>`，文件名固定成 `schedule.apk` 时
-     * **每次升级都是同一个 URI**。OPPO 的安装器（appdetail）按 URI 缓存解析结果 ——
-     * 装 2.4.2 的时候它弹「已安装更高版本「日程清单(2.4.1)」」，因为它读到的
-     * 还是上一次那份包的解析缓存，于是**死活不让装**。换文件名 = 换 URI = 不吃旧缓存。
+     * **每次升级都是同一个 URI**。OPPO 的安装器（appdetail）按 URI 缓存解析结果，
+     * 会拿上一份包的缓存来判版本，死活不让装。换文件名 = 换 URI = 不吃旧缓存。
      */
     private static File pendingApkFile(Context c, int versionCode) {
         return new File(c.getFilesDir(), "update/schedule-" + versionCode + ".apk");
     }
 
-    /** 清掉内部目录里其它版本的包，别每升一次就白留 3.5MB（也顺手清掉旧的固定名那份） */
+    /** 清掉内部目录里其它版本的包，别每升一次就白留 3.5MB */
     private static void sweepOldApks(Context c, File keep) {
         File[] fs = new File(c.getFilesDir(), "update").listFiles();
         if (fs == null) {
@@ -722,13 +556,14 @@ class AppUpdate {
             if (keep != null && f.getAbsolutePath().equals(keep.getAbsolutePath())) {
                 continue;
             }
-            if (f.getName().endsWith(".apk")) {
+            if (f.getName().endsWith(".apk") || f.getName().endsWith(".apk.part")) {
                 //noinspection ResultOfMethodCallIgnored
                 f.delete();
             }
         }
     }
 
+    /** 没记 sha 的老记录一律放过：宁可让安装器报错，也别把一份好包丢掉。 */
     private static boolean matchesPendingSha(File f) {
         String want = sPendingSha256;
         if (want == null || want.isEmpty()) {
@@ -742,164 +577,32 @@ class AppUpdate {
         }
     }
 
-    /**
-     * 清掉「这个版本 24 小时内别再弹」的冷却。
-     *
-     * 只在**这次更新彻底没成**时调（包没了 / 换了新版本号重来）。不清的话，
-     * 用户会陷入「提示过一次 → 装不上 → 之后 24 小时静默」的死角，
-     * 表现就是「更新功能坏了」。
-     */
+    /** 清掉「这个版本 24 小时内别再弹」的冷却，只在这次更新彻底没成时调。 */
     private static void clearPromptCooldown(Context c) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove(KEY_LAST_PROMPT_CODE).remove(KEY_LAST_PROMP_AT).apply();
+                .remove(KEY_LAST_PROMPT_CODE).remove(KEY_LAST_PROMPT_AT).apply();
     }
 
     private static void clearPending(Context c) {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove(KEY_PENDING_ID).remove(KEY_PENDING_SHA).remove(KEY_PENDING_VC)
-                .apply();
+                .remove(KEY_PENDING_SHA).remove(KEY_PENDING_VC).apply();
     }
 
-    /** 校验 sha256 → 拷进内部存储 → 唤起系统安装器。
-     *  三种来源（清单广播 / 前台接收器 / 轮询）都可能叫它，{@code sInstallStarted} 挡重入。 */
-    private static void verifyAndInstall(Context c) {
-        c = c.getApplicationContext();
-        /* 必须**原子地**抢这个标记：冷启动时 checkOnLaunch 和 onResume 会各起一个
-           线程调进来，先 check 后 set 的写法两边都能通过 → 同一份包唤起两次安装器
-           （2026-10-26 真机上抓到过两条「已唤起系统安装器」）。 */
+    /** 原子地抢「安装流程」标记，防止下载线程与回前台接手同时唤起安装器。 */
+    private static boolean claimInstall() {
         synchronized (INSTALL_LOCK) {
             if (sInstallStarted) {
-                Log.i(TAG, "安装流程已在进行，跳过重入");
-                return;
+                return false;
             }
             sInstallStarted = true;
-        }
-        /* 兜底：走到这里说明有人在催「装一下」，但可能**其实已经装上了** ——
-           装完之后进程被杀、内部那份包还没来得及清，接手逻辑会把同一个包再唤起一次，
-           系统安装器就弹「已安装相同版本」让人白点一遍（2026-10-26 真机抓到）。
-           已装上的唯一正确动作是结清记录、回家。 */
-        long selfNow = selfVersionCode(c);
-        if (sPendingVersionCode > 0 && selfNow >= sPendingVersionCode) {
-            Log.i(TAG, "已经装上 versionCode=" + selfNow + "（pending=" + sPendingVersionCode + "），不再重装");
-            clearPending(c);
-            sDownloadId = -1L;
-            sInstallStarted = false;
-            return;
-        }
-        File tmp = new File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-                "schedule-" + sPendingVersionCode + ".apk");
-        /* 内部目录那一份：**拷完外部那份就删掉了**（见下面拷贝那段）。
-           所以「外部文件不在」根本不能推出「没下载成功」—— 上一次装到一半
-           被用户取消 / 安装器自己退了，下次进来外部早没了，这里却当失败处理，
-           把 pending 记录和内部那份好包一起扔掉。
-           2026-10-26 用户实锤：连着几次更新都卡死在这儿，而且 cooldown 已经被
-           标过，24 小时内连提示都不再弹，看起来就是「App 更新功能坏了」。 */
-        File dst = pendingApkFile(c, sPendingVersionCode);
-        if (!tmp.exists()) {
-            if (dst.exists() && dst.length() > 0 && matchesPendingSha(dst)) {
-                Log.i(TAG, "外部包已删、内部那份还在（" + dst.length() + " 字节），直接重装");
-                installApk(c, dst);
-                return;
-            }
-            Log.w(TAG, "下载的文件不在（内部目录也没有）: " + tmp);
-            toast(c, "安装包不见了，稍后会重新提示更新");
-            sInstallStarted = false;
-            clearPending(c);
-            clearPromptCooldown(c);   // 否则 24h 内不再提示，用户只能以为它坏了
-            sDownloadId = -1L;
-            return;
-        }
-        String actual = sha256(tmp);
-        if (sPendingSha256 != null && !sPendingSha256.isEmpty()
-                && !sPendingSha256.equals(actual)) {
-            Log.w(TAG, "sha256 不符：期望 " + sPendingSha256 + " 实际 " + actual);
-            //noinspection ResultOfMethodCallIgnored
-            tmp.delete();
-            toast(c, "安装包校验失败，已删除。请重新更新");
-            sInstallStarted = false;
-            clearPending(c);
-            sDownloadId = -1L;
-            return;
-        }
-        // 拷进内部存储再装 —— 见类注释第 2 条
-        sweepOldApks(c, dst);
-        try {
-            File dir = dst.getParentFile();
-            if (dir != null && !dir.exists() && !dir.mkdirs()) {
-                Log.w(TAG, "建不了 " + dir);
-            }
-            try (InputStream in = new FileInputStream(tmp)) {
-                byte[] buf = new byte[8192];
-                int n;
-                java.io.OutputStream out = new java.io.FileOutputStream(dst);
-                try {
-                    while ((n = in.read(buf)) > 0) {
-                        out.write(buf, 0, n);
-                    }
-                    out.flush();
-                } finally {
-                    out.close();
-                }
-            }
-            //noinspection ResultOfMethodCallIgnored
-            tmp.delete();
-        } catch (Exception e) {
-            Log.w(TAG, "拷贝安装包失败: " + e);
-            toast(c, "准备安装包失败");
-            sInstallStarted = false;   // 包还在外部目录，下次启动还能接手重试
-            return;
-        }
-        // 交给系统安装器了：这单结清。用户点「安装」是同签名覆盖安装。
-        // 等安装器真正装上再清下载记录 —— 点「取消 / 直接打开」不算装完，
-        // 保留 pendingId/pendingSha/pendingVc，下次自动提示安装而不是重新下载。
-        // 之前是这里就 clearPending，旧包删了、新包没装，等于白下一次。
-        // 装完的确认靠 selfVersionCode >= sPendingVersionCode（见 onResume）。
-        installApk(c, dst);
-    }
-
-    /**
-     * 安装器回来后的确认：pending 的包到底装上没有。
-     *
-     * 调用点：{@link #onResume}（每次回前台）。装上了 → 清记录 + toast 版本号；
-     * 没装上（用户点了取消 / 直接打开）→ 留着记录和文件，toast 提示还有包没装。
-     * 之前没有这一步：verifyAndInstall 里下完就清记录，用户取消一次就得重下。
-     */
-    private static void confirmInstalled(Context c) {
-        /* 冷启动时静态字段全是 0（安装器装完会把进程杀掉），只靠内存值判断就等于
-           「什么都没装过」→ 上一步的接手逻辑会把内部那份包再装一遍。从记录里捞回来。 */
-        if (sPendingVersionCode <= 0) {
-            sPendingVersionCode = pendingVc(c);
-        }
-        if (sPendingVersionCode <= 0) {
-            return;
-        }
-        long self = selfVersionCode(c);
-        if (self >= sPendingVersionCode) {
-            Log.i(TAG, "确认已装上 versionCode=" + self + "，清掉 pending");
-            clearPending(c);
-            sDownloadId = -1L;
-            sInstallStarted = false;
-            toast(c, "已更新到最新版本");
-        } else {
-            sInstallStarted = false;   // 允许下次重新唤起安装器
-            Log.i(TAG, "还没装上（self=" + self + " pending=" + sPendingVersionCode + "）");
-            toast(c, "新版本已下载，点「检查更新」继续安装");
+            return true;
         }
     }
 
     /**
      * 安装前核对 APK 的「身份」（2026-11-07）。
-     *
-     * 为什么必须查：客户端只按清单里的 versionCode 决定「要不要更新」，
-     * 而真正能不能装上，取决于这个包**包名是否一致、versionCode 是否等于清单
-     * 所写、签名是否和已装的相同**。这三样对不上时，系统安装器只会回一句
-     * 「应用未安装」，用户得到的信息量是零 —— 也就是「更新时好时坏」里最难查的
-     * 那一类。SHA-256 只能证明「下载到的字节和清单一致」，证明不了「这个包
-     * 就是我要装的那个版本」。
-     *
-     * 这里查前两样（包名 + versionCode）。签名交给系统安装器做 —— 客户端校验
-     * 自己的签名没有额外安全收益（能被换包的人也能换校验），但包名/版本查错
-     * 能在拉起安装器**之前**给出可读的原因。
+     * sha256 只能证明字节和清单一致，证明不了「这个包就是我要装的那个版本」。
+     * 这里查包名 + versionCode；签名交给系统安装器（客户端校验自己没有额外收益）。
      */
     private static boolean apkIdentityOk(Context c, File apk) {
         try {
@@ -931,19 +634,15 @@ class AppUpdate {
      * 唤起系统安装器。
      *
      * @return true = 安装器真的被拉起来了；false = 没拉起（包身份不对 / 唤起异常）。
-     *         调用方靠它决定给用户说什么，而不是一律「正在打开安装程序」。
      */
     private static boolean installApk(Context c, File apk) {
-        /* 身份不对就**不要**拉起安装器：让它弹一句「应用未安装」，用户只会
-           反复点、反复失败，然后认为更新是坏的。这里说清是哪一步不对。 */
         if (!apkIdentityOk(c, apk)) {
             toast(c, "安装包和当前 App 不匹配（包名或版本号不对），已删除。请稍后重新更新");
             //noinspection ResultOfMethodCallIgnored
             apk.delete();
             clearPending(c);
-            clearPromptCooldown(c);   // 否则 24 小时内不再提示，等于把功能关掉
+            clearPromptCooldown(c);
             sInstallStarted = false;
-            sDownloadId = -1L;
             return false;
         }
         try {
@@ -958,6 +657,7 @@ class AppUpdate {
         } catch (Exception e) {
             Log.w(TAG, "唤起安装器失败: " + e);
             toast(c, "无法唤起安装器：" + e.getClass().getSimpleName());
+            sInstallStarted = false;
             return false;
         }
     }
@@ -1013,7 +713,7 @@ class AppUpdate {
     }
 
     private static void toast(final Context c, final String s) {
-        // 从广播接收器的线程来，不一定有 Looper —— 主线程一定在，交给它
+        // 从下载线程来，不一定有 Looper —— 主线程一定在，交给它
         new android.os.Handler(android.os.Looper.getMainLooper()).post(
                 () -> Toast.makeText(c.getApplicationContext(), s, Toast.LENGTH_LONG).show());
     }

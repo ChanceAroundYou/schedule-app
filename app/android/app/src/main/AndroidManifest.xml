@@ -173,15 +173,11 @@
         </provider>
 
         <!--
-          APK 自更新：下载完成的广播。...
+          APK 自更新不再注册下载广播：2026-11-09 起改由 AppUpdate 自己用
+          HttpURLConnection 下载（系统 DownloadProvider 会拒绝写 App 私有外部
+          目录，见 AppUpdate.java 类注释）。这里留空，别再加 DOWNLOAD_COMPLETE
+          接收器 —— 那个类已经删了，注册了只会 ClassNotFound。
         -->
-        <receiver
-            android:name=".AppUpdate$DownloadReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
-            </intent-filter>
-        </receiver>
 
         <!--
           提醒。两个职责（见 ReminderReceiver）：
