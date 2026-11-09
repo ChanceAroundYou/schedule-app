@@ -25,6 +25,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { CalColorKey, DraftSeed, Task } from '../../domain/types.ts';
 import * as D from '../../domain/date.ts';
+import { plain } from '../../domain/model/richText.ts';
 import {
   minToPct, pctRange, spanOf, timeRange, timeRangeCompact, CARD_SEAM,
   type DayWindow,
@@ -583,8 +584,11 @@ export function TimedCard({
       mustShowTime={mustShowTime}
       /* 详细内容也只在块够高时才露一行 —— 判据与时间行共用同一个 `roomy`：
          同一张卡要不要多出一行是**按空间算的**，写第二行会把标题挤没，
-         那不如不写。完整内容仍在抽屉里。 */
-      noteText={roomy && t.note ? t.note : null}
+         那不如不写。完整内容仍在抽屉里。
+         note 存的是富文本 HTML（Tiptap），摘要必须先过 plain() 去标签 ——
+         原 HTML 直接当文本会把 <p> / <a> 的字面标签画在卡片上。
+         只换摘要输入，不改存储字段。 */
+      noteText={roomy && t.note ? plain(t.note) : null}
       title={`${t.title}　${timeRange(e.start, e.end - e.start)}　${D.fmtDuration(e.end - e.start)}`}
       /* **每条定时卡都带把手**（2026-10-19 用户报「没地方拖动改时长」）：
          以前 `resizable={hasEnd}` —— 没显式设过时长的任务一个把手都没有，

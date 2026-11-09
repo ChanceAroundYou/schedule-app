@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, LogOut, Star, Trash2 } from 'lucide-react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
 import type { Cal, CalColorKey, Invite, Member } from '../../domain/types.ts';
-import { ROLE_LABEL, canManage, CAL_COLORS, CAL_COLOR_LABEL, DEFAULT_CAL_COLOR } from '../../domain/types.ts';
+import { canManage, CAL_COLORS, CAL_COLOR_LABEL, DEFAULT_CAL_COLOR } from '../../domain/types.ts';
 import { Btn, Field, InlineRename, MiniIconBtn, Row, useConfirm, toast } from '../kit.tsx';
 import { MembersSection } from './Members.tsx';
 import { api, ApiError } from '../../data/api.ts';
@@ -139,19 +139,21 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
           inputProps={{ 'data-cal-name': '1' } as InputHTMLAttributes<HTMLInputElement>}
           confirmProps={{ 'data-cal-save': '1' } as ButtonHTMLAttributes<HTMLButtonElement>}
           /* 删除挂在操作区第二格，原先在下面「危险区」里 —— 用户要求搬到标题行上。
-             `manage` 之外不渲染：只读成员没有「删除日程集」这个动作，那一格留空
-             （槽宽不变，所以箭头不挪窝）。禁用的只有「默认日程集」——
-             删了它，下次新建的东西就没地方落。 */
-          extraAction={manage ? (
+             **入口常驻**：只读成员也保留这一格，只是禁用（用户 2026-11-08：
+             「不隐藏删除入口，而是保留入口并按权限禁用」）。槽位固定后，
+             自己创建的集与加入他人的集两行摆法才一致，不会因权限塌一格。
+             禁用的三种情况：没管理权限（非 owner）、默认日程集（删了下次新建
+             没地方落）、操作进行中。禁用态仍带可访问名字，读屏念得出「删除日程集」。 */
+          extraAction={(
             <MiniIconBtn
               tone="danger"
               label="删除日程集"
-              disabled={busy || isDefault}
+              disabled={busy || isDefault || !manage}
               onClick={() => void remove()}
             >
               <Trash2 size={13} />
             </MiniIconBtn>
-          ) : null}
+          )}
           display={(
             /* 星标**紧跟着名字**。放在 `display` 里 → 编辑态整个 display 被输入框
                换掉，星标和角色徽标自动隐藏，不用在外面再判一次 `editing`，
@@ -177,11 +179,9 @@ export function CalItem({ cal, active, isDefault, open, onToggle }: {
               >
                 <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
               </MiniIconBtn>
-              {cal.role !== 'owner' && (
-                <span className="ci-role shrink-0 px-1.5 py-px text-[10.5px]">
-                  {ROLE_LABEL[cal.role]}
-                </span>
-              )}
+              {/* 角色徽标**不插在标题行**（用户 2026-11-08）：那枚「可编辑」小标
+                  只在非 owner 的集上冒出来，两行摆法因此不一致。角色由成员区
+                  （MembersSection）与可访问状态表达，不在名称旁重复插入。 */}
             </span>
           )}
         />

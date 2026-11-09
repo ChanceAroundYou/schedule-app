@@ -19,23 +19,29 @@ async function checkLook() {
     var qa=function(s){return Array.from(document.querySelectorAll(s))};
     /* 圆角/已完成这两条**用探针元素量**，不依赖真实数据里恰好有没有已完成的任务：
        类名一样 → 样式一样，插进 body 量完就拆。
-       圆角要**按高度收**（2026-10-19 用户：矮框太圆、高框还行），所以造一高一矮两个。 */
-    /* 圆角要**按高度收**（2026-10-19 用户：矮框太圆、高框还行），所以造一高一矮两个。
-       半径 = clamp(3px, 卡高 × 30%, --r-lg)，卡高 = --card-h% × --tl-h。 */
-    function probe(hPx, tlPx){
+       圆角走界面规则第 4 条的**短边契约**（2026-11-08）：
+         radius = min(--r-xl, max(2px, 短边 × --card-r-k))，短边 = min(宽, 高)。
+       定时卡宽远大于高，短边就是卡高；造一高一矮两个，高的撞 --r-xl 上限、
+       矮的落在比例段。输入只给 --card-h（生产同一入口），不另造圆角参数。
+       不适用组合（按真实 DOM 写出）：月视图只画 .task-pill、没有定时/未定时卡；
+       日 / 三日 / 周只画定时/未定时卡、没有月胶囊；flat 档 --r-* 全 0，
+       比例段与上限段都不适用、圆角恒 0。旧口径 clamp(3px, 30%, --r-lg) 已废。 */
+    function probe(hPx){
       var d=document.createElement('div');
       d.className='task-el task-el--timed done';
       d.style.height=hPx+'px';
-      d.style.setProperty('--tl-h', tlPx);
-      d.style.setProperty('--card-h', hPx/tlPx*100);
+      d.style.setProperty('--card-h', hPx+'px');
       d.innerHTML='<div class="ev-text"><span class="ev-title">测</span><span class="ev-time">00:00</span></div>';
       document.body.appendChild(d);
       var cs=getComputedStyle(d);
       var out={r:parseFloat(cs.borderTopLeftRadius), bg:cs.backgroundColor,
-        line:getComputedStyle(d.querySelector('.ev-title')).textDecorationLine};
+        line:getComputedStyle(d.querySelector('.ev-title')).textDecorationLine,
+        cap:parseFloat(cs.getPropertyValue('--r-xl'))||0,
+        k:parseFloat(cs.getPropertyValue('--card-r-k'))||0};
       d.remove(); return out;
     }
-    var tall=probe(80, 600), short=probe(20, 600);
+    var tall=probe(80), short=probe(20);
+    var wantR=function(h,cap,k){return Math.min(cap, Math.max(2, h*k));};
     var todayCol=document.querySelector('.week-col.today');
     var todayBg=todayCol?getComputedStyle(todayCol).backgroundColor:'';
     /* 今天该由**表头那个深绿圆圈**标出来，且只圈日期数字、不圈「周四」那行 */
@@ -56,15 +62,20 @@ async function checkLook() {
         if(g>=0 && (minGap===null||g<minGap)) minGap=g;
       }
     });
-    return {tallR: tall.r, shortR: short.r, doneBg: tall.bg, doneLine: tall.line,
+    return {tallR: tall.r, shortR: short.r,
+      tallWant: wantR(80, tall.cap, tall.k), shortWant: wantR(20, short.cap, short.k),
+      doneBg: tall.bg, doneLine: tall.line,
       todayBg: todayBg, minGap: minGap, realCards: qa('.task-el--timed').length,
       circleBg: ccs?ccs.backgroundColor:'', circleRadius: ccs?ccs.borderTopLeftRadius:'',
       weekLabBg: weekLab?getComputedStyle(weekLab).backgroundColor:'',
       titleWrap: tcs?tcs.whiteSpace:'', titleSize: tcs?tcs.fontSize:''};
   })()`);
-  assert(w.tallR >= 10, '高卡圆角仍是圆的（≥10px）', `${w.tallR}px`);
-  assert(w.shortR < w.tallR && w.shortR <= 8, '矮卡的圆角跟着高度收（不再是个药丸）',
-    `80px 高的 ${w.tallR}px / 20px 高的 ${w.shortR}px`);
+  assert(Math.abs(w.tallR - w.tallWant) <= 0.6,
+    '高卡圆角符合短边契约（撞 --r-xl 上限段）',
+    `80px 高：${w.tallR}px / want ${w.tallWant}px`);
+  assert(Math.abs(w.shortR - w.shortWant) <= 0.6 && w.shortR < w.tallR,
+    '矮卡圆角符合短边契约（比例段），且比高卡小',
+    `20px 高：${w.shortR}px / want ${w.shortWant}px；高卡 ${w.tallR}px`);
   /* 缝在 2026-10-25 由 1.5px 收成 1px（用户：「卡片右边和底部都改为 1px 的空白」），
      所以这里的下限跟着改成 1 —— 判据还是「有缝、不是贴死」。 */
   assert(w.minGap === null || w.minGap >= 1, '首尾相接的两条任务之间留出了缝',
@@ -207,7 +218,7 @@ async function checkLook() {
     assert(Math.abs(p.th - p.uh) <= 1, '一小时卡与无定时卡同高', `定时 ${p.th.toFixed(2)} / 未定时 ${p.uh.toFixed(2)}`);
     assert(Math.abs(p.tw - p.uw) <= 1, '同一列里两种卡同宽', `定时 ${p.tw.toFixed(2)} / 未定时 ${p.uw.toFixed(2)}`);
     assert(Math.abs(p.tx - p.ux) <= 1, '两种卡左边界对齐', `定时 x=${p.tx.toFixed(2)} / 未定时 x=${p.ux.toFixed(2)}`);
-    assert(Math.abs(p.tbr - p.ubr) <= 0.1, '两种卡圆角同值（半径 = 自身高 × 30%）',
+    assert(Math.abs(p.tbr - p.ubr) <= 0.1, '两种卡圆角同值（同一条短边契约：min(--r-xl, max(2px, 短边 × k))）',
       `定时 ${p.tbr} / 未定时 ${p.ubr}`);
     assert(p.tpad === p.upad, '两种卡左右留白同一份', `定时 ${p.tpad} / 未定时 ${p.upad}`);
   }

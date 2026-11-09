@@ -6,7 +6,7 @@ export async function run(ctx) {
   const corner = state.corner;
 
   /* 这一节锁的是卡片右上角那一格。2026-10-28 定、2026-11-06 改过一次：
-     ① 两枚圈（来源 tag + 重复角标）之间要有**看得出来**的缝（≥ 4px；2px 在屏上读成一团）；
+     ① 两枚圈（来源 tag + 重复角标）紧挨着但留一丝缝（0.5~1.8px，2026-11-06 从 4px 收成 1px）；
      ② 内容层**不许**为角标让位 —— 标题长到顶右沿时从角标底下穿过去，与重复角标同一个规矩
         （用户 2026-10-25 对重复角标定的，2026-10-28 对来源 tag 追认「我们和重复记号一样」）；
      ③ 圆里的字要落在圆心上，且**尺寸跟着卡片字号档缩放**（2026-11-06 用户）。
@@ -25,16 +25,16 @@ export async function run(ctx) {
           线条图标，1px 就分得开）；
        ⑤「根据宽度适当调整右边距是指这些一起调整右边距」→ 内缩只管**整组**的位置。
        字形偏移用 em（−0.1em），padding-top 归 0 —— 原来那 3px 是靠整数栅格凑的。 */
-  const TAG_BOX = 11;            // md 档（--card-font-scale: 1，--fs-title: 12.5px）
-  const TAG_FONT = 7.04;         // 11 × 0.64，不出圈的上限
+  const TAG_BOX = 11;            // md 档：--fs-title 12.5 × --card-font-scale 1 × 0.88
+  const TAG_FONT = 7.04;         // = TAG_BOX × 0.64（--tag-box × 0.64，圆里的字不出圈）
   const LINE_BOX_DY = -0.70;     // 字形行盒中心 − 圆心（padding-top 0 + translateY(-0.1em)）
   const LINE_BOX_TOL = 0.35;
   const GLYPH_TY = -0.70;        // -0.1em × 7.04px
 
   console.log('\n八、断言：卡片右上角那一格（两枚角标 + 圆里的字）');
-  console.log('    ① 两枚圈之间 ≥ 4px 缝（2px 在屏上读成一团）');
+  console.log('    ① 两枚圈紧挨但留一丝缝（0.5~1.8px，2026-11-06 定的 1px；4px 是旧口径）');
   console.log('    ② 内容层不为角标让位：允许标题从角标底下穿过（与重复角标同一个规矩）');
-  console.log('    ③ 圆里的字落在圆心上：padding-top 3px + 字形单独挪 −0.3px');
+  console.log('    ③ 圆里的字落在圆心上：padding-top 0 + 字形单独挪 −0.1em（−0.70px）');
   console.log('    判墨迹用**看得见的墨迹右端**：不是 .ev-title 的矩形（grid item 永远撑满可用宽），');
   console.log('    也不是 Range 的右端（它不受 overflow:hidden 裁剪），取两者的较小值。');
 
@@ -95,12 +95,12 @@ export async function run(ctx) {
     }
     /* 角标与标题在同一行：不然「穿过」那条与下面的行盒判据都成了空判 */
     ok(c.bandTagY > 0, label + ' 角标与标题同一行（竖直重叠 ' + num(c.bandTagY) + 'px）');
-    /* tag 完整在卡里 + 直径是「11px × 1.10」（用户只允许放大一成） */
+    /* tag 完整在卡里 + 直径 = 主字号档 × 字号倍率 × 0.88（= 11px，与循环角标同一倍率） */
     ok(c.tag.r <= c.card.r + 0.5 && c.tag.l >= c.card.l - 0.5
       && c.tag.b <= c.card.b + 0.5 && c.tag.t >= c.card.t - 0.5,
       label + ' tag 完整在卡里（距右 ' + num(c.tagFromRight) + '、距上 ' + num(c.tagFromTop) + '）');
     ok(Math.abs(c.tag.w - TAG_BOX) <= 0.6,
-      label + ' tag 直径 ' + TAG_BOX + 'px（11 × 1.10），实际 ' + num(c.tag.w));
+      label + ' tag 直径 ' + TAG_BOX + 'px（12.5 × 1 × 0.88），实际 ' + num(c.tag.w));
 
     /* 2026-11-06 新增：**整枚圈要落在卡片的圆角之内**，不能被圆弧吃掉一角。
        判据是几何的：圆的右上角在 (卡右 − o, 卡上 + p)，圆角弧心在 (R, R)，
@@ -114,7 +114,7 @@ export async function run(ctx) {
       label + ' 圈整个落在卡片圆角内（距右 ' + num(c.tagFromRight) + ' ≥ ' + need.toFixed(2)
       + '，距上 ' + num(c.tagFromTop) + '、圆角 R=' + num(c.cardR) + '）');
 
-    /* ③ 字落在圆心上（档位判据）：padding-top 0 + 字形 −0.1em → 行盒中心离圆心 −0.75px。
+    /* ③ 字落在圆心上（档位判据）：padding-top 0 + 字形 −0.1em → 行盒中心离圆心 −0.70px。
        为什么不能直接断言「离圆心 0」：行盒 ≠ 墨迹，汉字墨迹在行盒里自带偏移，
        DOM 量不到墨迹（数值表在 calendar.css；那把尺子是逐像素扫墨迹质心，
        22 个常见首字的质心落在 −0.32 ~ +0.09px，均值 −0.14）。

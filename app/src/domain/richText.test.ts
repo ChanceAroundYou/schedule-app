@@ -46,6 +46,18 @@ test('plain：富文本里带图片时，图片不产生垃圾字符', () => {
   assert.equal(plain('<p>看图</p><img src="/api/media/x.webp" alt="现场"><p>说明</p>'), '看图\n说明');
 });
 
+test('plain：链接只留可读文字，href 等属性不漏进摘要', () => {
+  assert.equal(plain('<p>见 <a href="https://example.com/a?x=1&y=2">这份文档</a></p>'), '见 这份文档');
+  assert.equal(plain('<a href="/x">甲</a> 与 <a href="/y">乙</a>'), '甲 与 乙');
+});
+
+test('plain：用户字面输入的 <p> 不被当成标签吃掉', () => {
+  /* 编辑器把字面尖括号转义成实体存下来（toEditorHtml），plain 还原成 <p> 本身，
+     而不是把它当标签剥掉 —— 「用户真的输入了 <p> 这几个字」不能被清成空串。 */
+  assert.equal(plain('<p>用户真的写了 &lt;p&gt; 这几个字</p>'), '用户真的写了 <p> 这几个字');
+  assert.equal(plain('<p>标签字面量 &lt;div&gt; 与 &lt;a&gt;</p>'), '标签字面量 <div> 与 <a>');
+});
+
 test('toEditorHtml：纯文本按行切成段落，换行不丢', () => {
   assert.equal(toEditorHtml('第一行\n第二行'), '<p>第一行</p><p>第二行</p>');
   assert.equal(toEditorHtml('单行'), '<p>单行</p>');
