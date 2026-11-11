@@ -145,10 +145,20 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const weekRootRef = useRef<HTMLDivElement | null>(null);
   /* 三日 / 周视图切换时，旧 7 列布局的横向 scrollLeft 会残留一帧：
      `.week-view` 仍是 overflow-x:auto，列宽重排那一瞬间会闪出横向滚动条、
-     落点也不对。切换即归零（2026-11-09 用户报的「三日视图切换后滚动条异常」）。 */
+     落点也不对。切换即归零（2026-11-09 用户报的「三日视图切换后滚动条异常」）。
+     2026-11-11：归零本身会派发一次 scroll 事件，把浮条点亮约 800ms ——
+     短暂打上 data-switching，让 useOverlayScrollbar 的 reveal() 跳过这一下。 */
   useLayoutEffect(() => {
     const el = weekRootRef.current;
-    if (el) el.scrollLeft = 0;
+    if (!el) return;
+    el.dataset.switching = '1';
+    /* 切换前若刚好有滚动留下的浮条（800ms 淡出还没走完），它会把新视图
+       第一帧也点亮。这里主动灭掉：data-switching 只挡新事件，管不到旧状态。 */
+    const track = el.querySelector<HTMLElement>('.osb-track');
+    if (track) track.style.opacity = '0';
+    el.scrollLeft = 0;
+    const t = window.setTimeout(() => { delete el.dataset.switching; }, 160);
+    return () => window.clearTimeout(t);
   }, [dayCount, start]);
   const gutterRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);

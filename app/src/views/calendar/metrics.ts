@@ -47,8 +47,13 @@ export function useTimelineMetrics(win: DayWindow, ref: RefObject<HTMLElement | 
      浏览器逐帧抗锯齿时，同一条 1px 线的相位会左右漂 —— 看起来就是「线在抖、
      17:00 那个数字也在抖」，而全屏后高度正好凑整就消失了。
      取整之后线距恒定、落点全在整数像素上，抖动从源头消失。
-     代价：一天最多差不到 1px（用 boxH 做分母而不是反过来撑高容器，避免反馈循环）。 */
-  const hourPx = boxH > 0 ? Math.max(1, Math.round(boxH / spanH)) : 40;
+
+     ⚠️ 2026-11-11 改成**向下**取整：以前用 Math.round，实测 477.56px 的容器
+     算出 30px/h × 16h = 480px，末端整点线被推到容器外 2.44px —— 底部横线
+     和日列竖线接不上，最后一个刻度数字也被圆角裁掉半截（真机截图实证）。
+     floor 保证 `hourPx × spanH <= boxH`，所有中间线都落在容器内；
+     末端那一根由 HourLines / TimeGutter 单独钉到容器底，两者用同一个底边。 */
+  const hourPx = boxH > 0 ? Math.max(1, Math.floor(boxH / spanH)) : 40;
   const step = hourPx < 14 ? 3 : hourPx < 20 ? 2 : 1;
   /* `<=` 而非 `<`：把 dayTo 设成 22:00 时底部那条结束线得在 */
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 <= win.to && h % step === 0);

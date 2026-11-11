@@ -178,7 +178,7 @@ test('空目录：直接建到当前版本，各张表齐全', (t) => {
 
   const got = inspect(dir);
   assert.strictEqual(got.userVersion, db.SCHEMA_VERSION, '新库的版本号就是当前版本');
-  assert.strictEqual(db.SCHEMA_VERSION, 10, 'v10（计数器点击去重）是这次改动引入的版本');
+  assert.strictEqual(db.SCHEMA_VERSION, 11, 'v11（计数器值版本 rev）是这次改动引入的版本');
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `新库里应该有 ${name}`);
   }
@@ -197,7 +197,7 @@ test('v2 库带真实数据：升级后一个用户、一条字段都不少', (t
   db.close();
 
   const after = inspect(dir);
-  assert.strictEqual(after.userVersion, 10, '版本号要升上去');
+  assert.strictEqual(after.userVersion, db.SCHEMA_VERSION, '版本号要升上去');
   assert.deepStrictEqual(after.users, before.users, '账户必须原样还在');
   assert.deepStrictEqual(after.fields, before.fields, '逐字段状态必须原样还在');
   assert.deepStrictEqual(after.changes, before.changes, '变更流水必须原样还在');
@@ -246,7 +246,7 @@ test('升级后新表真的能用（不是建了个空壳）', (t) => {
 
   assert.strictEqual(handle, 1);
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 10);
+  assert.strictEqual(got.userVersion, db.SCHEMA_VERSION, '新表能用、老数据完好');
   assert.deepStrictEqual(got.users, [{ id: 'u-dad', name: '爸爸' }], '老数据仍要完好');
 });
 
@@ -258,7 +258,7 @@ test('v2 空库（还没人注册）：推倒重建，不报错', (t) => {
   db.close();
 
   const got = inspect(dir);
-  assert.strictEqual(got.userVersion, 10);
+  assert.strictEqual(got.userVersion, db.SCHEMA_VERSION, '新表能用、老数据完好');
   for (const name of [...V2_TABLES, ...NEW_TABLES]) {
     assert.ok(got.tables.includes(name), `重建后应该有 ${name}`);
   }
@@ -406,4 +406,39 @@ test('v8：再跑一次迁移什么都不做（可重入）', (t) => {
 
   assert.deepStrictEqual(second.fields, first.fields, '重放不得再搬一份出来');
   assert.deepStrictEqual(second.changes, first.changes, '重放不得再记一遍流水');
+});
+
+/* 2026-11-11：线上生产库是 v10（计数器表还没有 rev）。这一步是**唯一的
+   单步升级路径**，必须验：先按新结构建库、造一行真数据，再退回 v10 形状
+   （删掉 rev 列 + 版本号钉成 10），然后只跑 MIGRATIONS[10]。 */
+test('v10 → v11：老库补上 rev 列，计数器的值和每日设置一行不动', (t) => {
+  const dir = tmpDataDir('v10-to-v11');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  db.open(dir);
+  /* 必须有一个用户：initSchema 用 users 表有没有行来判断「这是老库」，
+     空库会走推倒重建分支 —— 生产库当然有用户，测试要照着真实形状造。 */
+  db.run('INSERT INTO users (id, name, salt, hash, created_at) VALUES (?,?,?,?,?)',
+    'u-v10', '老用户', 'salt', 'hash', 1000);
+  db.addCounter('u-v10', 'naonao', 7);
+  db.setDailyIncrement('u-v10', 'naonao', 3);
+  db.close();
+
+  const old = new DatabaseSync(path.join(dir, 'schedule.db'));
+  old.exec('ALTER TABLE counters DROP COLUMN rev');
+  old.exec('PRAGMA user_version = 10');
+  old.close();
+
+  db.open(dir);
+  const got = db.getCounter('u-v10', 'naonao');
+  assert.strictEqual(got.value, 7, '老数据不能动');
+  assert.strictEqual(got.dailyIncrement, 3, '每日增量不能动');
+  assert.strictEqual(got.rev, 0, '老行默认 rev=0，客户端不会误判成过期');
+  db.close();
+
+  const d = new DatabaseSync(path.join(dir, 'schedule.db'));
+  const cols = d.prepare('PRAGMA table_info(counters)').all().map((c) => c.name);
+  d.close();
+  assert.ok(cols.includes('rev'), '迁移后 counters 要有 rev 列');
+  assert.strictEqual(inspect(dir).userVersion, db.SCHEMA_VERSION, '版本号升到当前');
 });

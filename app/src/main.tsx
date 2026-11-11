@@ -18,7 +18,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/tailwind.css';
 import App from './App.tsx';
-import { applySafeAreaInsets } from './data/widget.ts';
+import { applySafeAreaInsets, installCounterPushListener } from './data/widget.ts';
 import { watchUpdates } from './data/update-guard.ts';
 
 const RELOAD_FLAG = 'schedule-sw-cleared';
@@ -128,6 +128,9 @@ async function boot(): Promise<void> {
 
   registerShell();
   watchSafeArea();          // 不 await：见上面那段，别挡首屏
+  /* 原生侧写完计数器的推送：装在入口而不是某个页面里，App 停在任意页面
+     都能收到并记下来，切到「+1」页立刻显示真值（2026-11-11）。 */
+  installCounterPushListener();
 
   /* 版本自检（2026-10-17）：线上换版后提示刷新，避免「发了新版还看到旧界面」。
      只在生产构建里做（dev 的 index.html 引的是 /src/main.tsx，比出来永远不一致）。

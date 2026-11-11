@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Build and publish the web app, then build and publish the Android APK.
+# Build and publish the web app, the Node server, and the Android APK (in that order).
+# The server step also verifies the /api/widget/bootstrap contract, because a
+# front-end/APK-only release leaves the widget member filter broken (2026-11-11).
 # Usage: ./deploy/release-both.sh --approve "release notes"
+# Optional: WIDGET_CHECK_TOKEN (or WIDGET_CHECK_USER + WIDGET_CHECK_PASS) enables
+# the live bootstrap contract probe; without credentials the static check still runs.
 # Add --allow-dirty / --allow-unpushed only when the caller explicitly authorizes it.
 set -euo pipefail
 
@@ -87,10 +91,68 @@ fi
 if [ "$ALLOW_DIRTY" = 1 ]; then DIRTY_FLAG=(--allow-dirty); else DIRTY_FLAG=(); fi
 if [ "$ALLOW_UNPUSHED" = 1 ]; then UNPUSHED_FLAG=(--allow-unpushed); else UNPUSHED_FLAG=(); fi
 
-printf '\n== 1/4 构建并发布 Web（同源 dist）\n'
+printf '\n== 1/5 构建并发布 Web（同源 dist）\n'
 bash deploy/publish-web.sh --approve "${DIRTY_FLAG[@]}" "${UNPUSHED_FLAG[@]}"
 
-printf '\n== 2/4 构建 APK 专用前端资源（注入 API 基址）\n'
+printf '\n== 2/5 发布并重启服务端 + 小组件接口契约自检\n'
+# 2026-11-11 的教训：2.5.43 只发了 Web 前端和 APK，服务端没跟着上线，
+# /api/widget/bootstrap 仍是旧结构（缺 meId / users），桌面小组件的成员筛选
+# 因此只剩「全部成员」。前后端同一次发版必须带上 server/，并且**发完要问线上
+# 真实接口**，不能只看脚本退出码。
+bash deploy/publish-server.sh --approve "${DIRTY_FLAG[@]}" "${UNPUSHED_FLAG[@]}"
+
+# (a) 静态：待发布的 bootstrap 实现必须带这两个字段。零凭据，永远跑。
+node - <<'NODE' || fail 'server/routes/widget.js 的 bootstrap 缺少 meId / users 字段'
+const fs = require('fs');
+const src = fs.readFileSync('server/routes/widget.js', 'utf8');
+const at = src.indexOf("'GET /api/widget/bootstrap'");
+if (at < 0) { console.error('找不到 bootstrap 路由'); process.exit(1); }
+const body = src.slice(at, src.indexOf("'GET /api/widget/counters'", at));
+for (const key of ['meId', 'users']) {
+  if (!new RegExp('\\b' + key + '\\s*:').test(body)) {
+    console.error('bootstrap 响应缺字段：' + key); process.exit(1);
+  }
+}
+console.log('  静态契约 ok：bootstrap 响应含 meId / users');
+NODE
+
+# (b) 动态：拿线上真值验一遍。凭据经环境变量给出（不写进仓库）；
+#     两者都没给时只打印提示，静态检查已经挡住了「源码里就漏了」这一类。
+if [ -n "${WIDGET_CHECK_TOKEN:-}" ] || { [ -n "${WIDGET_CHECK_USER:-}" ] && [ -n "${WIDGET_CHECK_PASS:-}" ]; }; then
+  WIDGET_CHECK_BASE="${BASE_URL%/}" WIDGET_CHECK_TOKEN="${WIDGET_CHECK_TOKEN:-}" \
+  WIDGET_CHECK_USER="${WIDGET_CHECK_USER:-}" WIDGET_CHECK_PASS="${WIDGET_CHECK_PASS:-}" \
+  node - <<'NODE' || fail '线上 /api/widget/bootstrap 契约不一致（缺 meId / users 或不可达）'
+const base = process.env.WIDGET_CHECK_BASE;
+const opts = { headers: { 'Content-Type': 'application/json' } };
+(async () => {
+  let token = process.env.WIDGET_CHECK_TOKEN;
+  if (!token) {
+    const r = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: process.env.WIDGET_CHECK_USER, password: process.env.WIDGET_CHECK_PASS }),
+    });
+    const j = await r.json();
+    token = j.token;
+    if (!token) throw new Error('登录失败：' + JSON.stringify(j).slice(0, 160));
+  }
+  const r = await fetch(base + '/api/widget/bootstrap', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const j = await r.json();
+  if (r.status !== 200) throw new Error('bootstrap HTTP ' + r.status);
+  if (!j.meId || !Array.isArray(j.users)) {
+    throw new Error('线上响应缺字段：meId=' + (j.meId === undefined ? 'MISSING' : j.meId)
+      + ' users=' + (Array.isArray(j.users) ? 'array(' + j.users.length + ')' : typeof j.users));
+  }
+  console.log('  线上契约 ok：meId=' + j.meId + ' users=' + j.users.length);
+})().catch((e) => { console.error('  !! ' + e.message); process.exit(1); });
+NODE
+else
+  printf '  ⚠️ 未给 WIDGET_CHECK_TOKEN（或 USER/PASS），跳过线上动态契约检查；静态检查已通过。\n'
+fi
+
+printf '\n== 3/5 构建 APK 专用前端资源（注入 API 基址）\n'
 source "$ROOT/deploy/env.sh"
 cd "$APP"
 VITE_API_BASE="$API_BASE" "${NODE:-node}" node_modules/vite/bin/vite.js build
@@ -100,9 +162,9 @@ fi
 "${NODE:-node}" node_modules/@capacitor/cli/bin/capacitor copy android
 cd "$ROOT"
 
-printf '\n== 3/4 发布 APK（发布器内 assembleRelease）\n'
+printf '\n== 4/5 发布 APK（发布器内 assembleRelease）\n'
 bash deploy/publish-apk.sh --approve "${DIRTY_FLAG[@]}" "${UNPUSHED_FLAG[@]}" "$NOTES"
 
-printf '\n== 4/4 发布结果\n'
-printf 'Web 与 APK 发布流程均已完成。线上功能实测与真机实测未执行；本脚本不会连接或安装设备。\n'
+printf '\n== 5/5 发布结果\n'
+printf 'Web、服务端与 APK 发布流程均已完成。线上功能实测与真机实测未执行；本脚本不会连接或安装设备。\n'
 printf '版本：%s（versionCode %s）\n' "$CURRENT" "$ANDROID_CODE"

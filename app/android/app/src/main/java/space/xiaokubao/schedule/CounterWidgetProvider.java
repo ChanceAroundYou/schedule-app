@@ -169,8 +169,9 @@ public class CounterWidgetProvider extends AppWidgetProvider {
         int delta = intent.getIntExtra(EXTRA_DELTA, 0);
         if (id == null || id.isEmpty() || delta == 0) return;
 
-        CounterStore.localDelta(c, id, delta);   // 先改本地：按下去就得有变化
-        CounterStore.queueDelta(c, id, delta);   // 再入队：断网也不丢
+        // 只入队：缓存里存的是服务端真值，显示值由 CounterStore.load()
+        // 叠上这条未确认意图现算，按下照样立刻有变化（2026-11-11）
+        CounterStore.queueDelta(c, id, delta);   // 断网也不丢
         refreshAll(c);                           // 立刻重绘
         scheduleFlush(c);                        // 攒一小会儿，合并成一次请求
     }

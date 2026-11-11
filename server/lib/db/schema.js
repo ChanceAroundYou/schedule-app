@@ -13,7 +13,7 @@
 const crypto = require('node:crypto');
 
 /** 当前 schema 版本，存在 PRAGMA user_version 里。加表 / 改列就 +1 */
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 /* -------------------------------------------------------------- v10 新增 */
 
@@ -103,6 +103,9 @@ const COUNTER_TABLES = [
      -- 第一次读到它时才设为当天并且**不加**（从那天开始算，不追历史）。
      last_credit_date TEXT,
      updated_at INTEGER NOT NULL,
+     -- 值版本（v11）。每次写 / 每日结算都 +1，客户端三份副本只认更大的号，
+     -- 不再靠「写后 2 秒内别信服务端」这种时间窗猜新旧。
+     rev        INTEGER NOT NULL DEFAULT 0,
      PRIMARY KEY (user_id, id)
    )`,
 ];
@@ -354,6 +357,12 @@ const MIGRATIONS = {
   8: FLOW_TABLES,
   // v9 → v10：计数器点击去重（2026-11-07）。只加一张表 + 一个索引。
   9: COUNTER_OPS_TABLES,
+  // v10 → v11：计数器的单调值版本（2026-11-11）。**函数条目**而不是裸 SQL：
+  // v4→v5 那一步用的 COUNTER_TABLES 已经是最新结构（自带 rev），新建库和
+  // 老库升级共用一份；若这里写 ALTER ADD 就会在刚建好的表上 duplicate column。
+  10: [
+    (handle) => addColumnIfMissing(handle, 'counters', 'rev', 'INTEGER NOT NULL DEFAULT 0'),
+  ],
 };
 
 const SCHEMA = `

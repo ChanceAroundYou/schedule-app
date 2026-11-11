@@ -44,14 +44,24 @@ export function TimeGutter({ hours, win, hourPx }: {
   hours: number[]; win: DayWindow; hourPx: number;
 }) {
   const span = spanOf(win);
+  /* 末端那根整点（win.to 正好是整点时）**钉到容器底**，不用整数坐标算：
+     hourPx 向下取整后 `hourPx × spanH` 会比容器矮几像素，按坐标算末端标签
+     会浮在空白上方、末端线又和日列竖线差一截。线（HourLines）和标签
+     （这里）同时钉底，两者与竖线共用同一个底边（2026-11-11 真机截图实证）。 */
+  const atEnd = hours.length > 0 && hours[hours.length - 1] * 60 === win.to;
   return (
     <>
-      {hours.map((h) => {
+      {hours.map((h, i) => {
+        const last = atEnd && i === hours.length - 1;
         const top = hourPx > 0
           ? Math.round((h * 60 - win.from) / 60 * hourPx)
           : ((h * 60 - win.from) / span) * 100 + '%';
         return (
-          <div className="tl-hour" key={h} style={{ top }}>
+          <div
+            className={last ? 'tl-hour tl-hour--last' : 'tl-hour'}
+            key={h}
+            style={last ? { top: 'auto', bottom: 0 } : { top }}
+          >
             <span className="tl-label">{pad2(h)}:00</span>
           </div>
         );
@@ -79,20 +89,28 @@ export function HourLines({ hours, win, hourPx }: {
   hours: number[]; win: DayWindow; hourPx: number;
 }) {
   if (!hourPx) return null;
+  const atEnd = hours.length > 0 && hours[hours.length - 1] * 60 === win.to;
   return (
     <div className="tl-hours" aria-hidden="true">
-      {hours.map((h) => (
-        <i
-          key={h}
-          className="tl-hline"
-          style={{ top: Math.round(((h * 60 - win.from) / 60) * hourPx) + 'px' }}
-        />
-      ))}
+      {hours.map((h, i) => {
+        const last = atEnd && i === hours.length - 1;
+        return (
+          <i
+            key={h}
+            className={last ? 'tl-hline tl-hline--last' : 'tl-hline'}
+            style={last
+              ? { top: 'auto', bottom: 0 }
+              : { top: Math.round(((h * 60 - win.from) / 60) * hourPx) + 'px' }}
+          />
+        );
+      })}
       {/* 2026-11-09 用户报「20:00 那里有两条横线，只显示一条」：
           `hours` 用 `<= win.to` 过滤，最后一项本来就是窗口末端的整点线；
           这里以前又补了一条 `.tl-hline--end` 钉底（渐变时代的遗产），
           两条线隔着 hourPx 取整的那几像素并排出现。末端线就此删掉，
-          只留整点线 —— 刻度标签也还是由同一份 `hours` 驱动，不会少数字。 */}
+          只留整点线 —— 刻度标签也还是由同一份 `hours` 驱动，不会少数字。
+          2026-11-11：改成把**最后一根整点线本身**钉底（不是另补一条），
+          既不会双线，又让它和日列竖线共用同一个底边。 */}
     </div>
   );
 }

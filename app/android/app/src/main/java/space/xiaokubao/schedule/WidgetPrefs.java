@@ -250,9 +250,35 @@ class WidgetPrefs {
         }
     }
 
-    /** 用服务端返回的新快照整体替换本地那份 */
+    /**
+     * 用服务端返回的新快照整体替换本地那份，但**保住成员目录**。
+     *
+     * 2026-11-11 线上事故：`/api/widget/bootstrap` 发的是旧版服务端，响应里
+     * 没有 `meId` / `users`。这份响应整表覆盖快照之后，App 推过来的成员清单
+     * 被抹掉，设置页的「日程成员」下拉就只剩「全部成员」，点刷新也只会再抹一次。
+     * 服务端现在会带这两个字段，这里再兜一层：旧响应缺字段时沿用本地已有的，
+     * 绝不因为一次刷新把 App 独有的数据清空（与 mergeEntities 同一个道理）。
+     */
     static void replaceSnapshot(Context c, JSONObject snap) {
-        sp(c).edit().putString(KEY_SNAPSHOT, snap.toString()).apply();
+        if (snap == null) return;
+        JSONObject merged = snap;
+        try {
+            String old = sp(c).getString(KEY_SNAPSHOT, null);
+            if (old != null && !old.isEmpty()) {
+                JSONObject prev = new JSONObject(old);
+                if (!snap.has("meId") && prev.has("meId")) {
+                    merged = new JSONObject(snap.toString());
+                    merged.put("meId", prev.get("meId"));
+                }
+                if (!snap.has("users") && prev.has("users")) {
+                    if (merged == snap) merged = new JSONObject(snap.toString());
+                    merged.put("users", prev.get("users"));
+                }
+            }
+        } catch (Exception ignored) {
+            // 旧快照坏了就按服务端那份照写，别为了保字段把刷新整个卡住
+        }
+        sp(c).edit().putString(KEY_SNAPSHOT, merged.toString()).apply();
     }
 
     /* ── 服务端视图的「局部合并」 ─────────────────────────────────────── */

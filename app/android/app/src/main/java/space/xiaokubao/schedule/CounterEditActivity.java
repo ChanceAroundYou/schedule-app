@@ -123,8 +123,7 @@ public class CounterEditActivity extends Activity {
         v = CounterStore.clamp(v);
 
         Context app = getApplicationContext();
-        CounterStore.localSet(app, counterId, v);   // 立刻生效
-        CounterStore.queueSet(app, counterId, v);   // 断网也不丢（并作废该 id 的旧增量）
+        CounterStore.queueSet(app, counterId, v);   // 入队即生效：load() 会把它投影到显示值
         CounterWidgetProvider.refreshAll(app);
 
         CounterStore.flush(app, new Runnable() {

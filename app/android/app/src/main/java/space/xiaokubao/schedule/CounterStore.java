@@ -19,9 +19,11 @@ import java.util.List;
  * 不参与 LWW），混进去会让那个文件的职责更糊。这里只借它的
  * SharedPreferences 文件名（同一个文件，才读得到同一张登录票）。
  *
- * ## 三条不变量
- * 1. **点一下先改本地、立刻重绘**，再谈网络。不然断网时按钮看起来是坏的。
- * 2. **服务端是权威**。请求成功就用它回的 counters 覆盖本地，本地算错了也能自愈。
+ * ## 三条不变量（2026-11-11 起按 rev 统一）
+ * 1. **缓存只存服务端真值**（value + rev），点一下先入队、由 load() 投影出
+ *    显示值，断网时按钮照样立刻动，而且不会把乐观值误当成真值写回缓存。
+ * 2. **服务端是权威**。只接受 rev 不小于本地的快照；比本地旧的响应整条作废
+ *    （弱网下 GET 比 POST 先到、连点的晚到中间值，都不会再把数字拉回去）。
  * 3. **失败不丢**。改动先落队列，每个 id 最多一条（delta 累加、set 覆盖），
  *    下次点击 / 组件刷新 / App 推刷新时补发。
  *
@@ -56,11 +58,18 @@ class CounterStore {
         final String id;
         String name;
         int value;
+        /** 服务端单调值版本（2026-11-11）。旧缓存没有这个字段时按 0 处理。 */
+        int rev;
 
         Item(String id, String name, int value) {
+            this(id, name, value, 0);
+        }
+
+        Item(String id, String name, int value, int rev) {
             this.id = id;
             this.name = name;
             this.value = value;
+            this.rev = rev;
         }
     }
 
@@ -70,7 +79,14 @@ class CounterStore {
 
     /* ------------------------------------------------------------ 本地缓存 */
 
-    static List<Item> load(Context c) {
+    /**
+     * 读缓存里的**服务端快照**，不做投影。
+     *
+     * 2026-11-11 起缓存只存真值（值 + rev）：App 推缓存、applyServer、
+     * 桌面点击三条路都往同一个 key 写，谁最后写都不会把别人的乐观值
+     * 当成服务端真值。屏幕上要显示的数由 {@link #load} 现算。
+     */
+    private static List<Item> loadRaw(Context c) {
         List<Item> out = new ArrayList<>();
         String raw = sp(c).getString(KEY_LIST, null);
         if (raw != null && !raw.isEmpty()) {
@@ -81,16 +97,63 @@ class CounterStore {
                     if (o == null) continue;
                     String id = o.optString("id", "");
                     if (id.isEmpty()) continue;
-                    out.add(new Item(id, o.optString("name", id), o.optInt("value", 0)));
+                    out.add(new Item(id, o.optString("name", id),
+                            o.optInt("value", 0), o.optInt("rev", 0)));
                 }
             } catch (Exception e) {
                 Log.w(TAG, "缓存解析失败，按默认值走: " + e);
             }
         }
         if (out.isEmpty()) {
-            for (String[] d : DEFAULTS) out.add(new Item(d[0], d[1], 0));
+            for (String[] d : DEFAULTS) out.add(new Item(d[0], d[1], 0, 0));
         }
         return out;
+    }
+
+    /**
+     * 屏幕上该显示的列表 = **服务端快照 + 还没确认的本地意图**。
+     *
+     * 两条意图都算：在途（已摘出队列、请求还没回）和队列里没发出的。
+     * 在途的先发生、队列的后发生，各自按内部顺序应用；「设成 X」会作废
+     * 之前的增量，之后的增量再叠到 X 上（与 queueSet 的语义一致）。
+     *
+     * 这样 App 每 5 秒推一次服务端真值、或 pull 回一份新快照，都只会换掉
+     * 真值那一层，桌面上刚点还没确认的几下不会被抹掉 —— 以前「+1 后跳回
+     * 旧值」和「网页一刷新桌面就闪一下」都是这两层混在一起造成的。
+     */
+    static List<Item> load(Context c) {
+        List<Item> items = loadRaw(c);
+        // 在途表是内存态，先拷一份出来再遍历，别在锁里改 Item
+        java.util.List<String[]> inflight = new ArrayList<>();
+        synchronized (sInflight) {
+            for (java.util.Map.Entry<String, java.util.List<int[]>> e : sInflight.entrySet()) {
+                for (int[] w : e.getValue()) {
+                    inflight.add(new String[]{e.getKey(), String.valueOf(w[0]), String.valueOf(w[1])});
+                }
+            }
+        }
+        for (String[] w : inflight) {
+            applyIntent(items, w[0], Integer.parseInt(w[1]), Integer.parseInt(w[2]));
+        }
+        JSONArray q = queue(c);
+        for (int i = 0; i < q.length(); i++) {
+            JSONObject o = q.optJSONObject(i);
+            if (o == null) continue;
+            String id = o.optString("id", "");
+            if (id.isEmpty()) continue;
+            boolean hasValue = o.has("value");
+            applyIntent(items, id, o.optInt("delta", 0),
+                    hasValue ? o.optInt("value", 0) : NO_VALUE);
+        }
+        return items;
+    }
+
+    /** 把一条未确认意图按时间顺序投到显示值上。只改 value，不动 rev。 */
+    private static void applyIntent(List<Item> items, String id, int delta, int value) {
+        Item it = find(items, id);
+        if (it == null) return;
+        long v = value == NO_VALUE ? (long) it.value + delta : value;
+        it.value = clamp(v);
     }
 
     static void save(Context c, List<Item> items) {
@@ -101,6 +164,7 @@ class CounterStore {
                 o.put("id", it.id);
                 o.put("name", it.name);
                 o.put("value", it.value);
+                o.put("rev", it.rev);
                 arr.put(o);
             } catch (Exception ignored) {
             }
@@ -119,97 +183,48 @@ class CounterStore {
         return (int) Math.max(MIN, Math.min(MAX, v));
     }
 
-    /** 点击时先本地加，界面立刻动 */
-    static void localDelta(Context c, String id, int delta) {
-        List<Item> items = load(c);
-        Item it = find(items, id);
-        if (it == null) return;
-        it.value = clamp((long) it.value + delta);
-        save(c, items);
-    }
-
-    /** 手动输入的值 */
-    static void localSet(Context c, String id, int value) {
-        List<Item> items = load(c);
-        Item it = find(items, id);
-        if (it == null) return;
-        it.value = clamp(value);
-        save(c, items);
-    }
+    /* 点击 / 手输只入队，不再直接改缓存里的值（2026-11-11）。
+       缓存是服务端真值，显示值由 load() 现算 —— 调用方 queueDelta/queueSet
+       之后 refreshAll 就能立刻看到变化，见 CounterWidgetProvider.onReceive
+       与 CounterEditActivity.save。 */
 
     /**
-     * 用服务端返回的 counters 校准本地。
+     * 用服务端返回的 counters 覆盖**真值那一层**。
      *
-     * ⚠️ **不能直接照抄服务端的值。** 服务端回的是「它已经收到的那些改动」的结果，
-     * 而队列里可能还躺着用户刚点、还没发出去的几下。直接覆盖的表现是：
-     * 连点三下 → 第一下的请求回来 → 数字从 23 掉回 21 → 第二个请求回来再变 22。
-     * 用户看到的是一次莫名其妙的回退。
+     * 2026-11-11 重写：缓存里只存服务端快照，显示值由 {@link #load} 叠上
+     * 队列 / 在途现算，所以这里不用再猜「哪些点击还没发出去」，也不用靠
+     * 时间窗。唯一要判的是 rev —— 比本地已知版本还旧的响应整条作废
+     * （GET 比 POST 先到服务端、连点时晚到的中间值，都在这里被挡住）。
      *
-     * 所以规则是：
-     *   · 队列里这个 id 还有「设置成 X」→ 本地就是 X，服务端的值作废（绝对值优先）
-     *   · 否则 → 用 服务端值 + 队列里剩余的 delta
-     *
-     * @param stillQueued 此刻**还没确认完成的意图** —— 包括队列里没发的
-     *                    **和在途（已发但还没收到响应）**的。调用方应传
-     *                    **和在途（已发但还没收到响应）**的。调用方直接传 queue(c)；
-     *                    在途判断由 applyServer 内部查 sInflight 完成。
+     * @param stillQueued 历史参数，保留签名兼容调用方；投影已在 load() 统一做
      */
     static void applyServer(Context c, JSONArray counters, JSONArray stillQueued) {
-        if (counters == null) return;
-
-        java.util.Map<String, Integer> pendDelta = new java.util.HashMap<>();
-        java.util.Set<String> pendingSet = new java.util.HashSet<>();
-        if (stillQueued != null) {
-            for (int i = 0; i < stillQueued.length(); i++) {
-                JSONObject o = stillQueued.optJSONObject(i);
-                if (o == null) continue;
-                String qid = o.optString("id", "");
-                if (qid.isEmpty()) continue;
-                if (o.has("value")) {
-                    pendingSet.add(qid);
-                } else {
-                    int prev = pendDelta.containsKey(qid) ? pendDelta.get(qid) : 0;
-                    pendDelta.put(qid, prev + o.optInt("delta", 0));
-                }
-            }
-        }
-
-        // 在途 id 集合：这些 id 的请求已发出但还没收到响应。
-        // 本地值已被 localDelta/localSet 改过，**直接保留本地值**，
-        // 不叠加 delta（否则服务端可能已经处理完 → 再加一次 = 多算）。
-        // 等在途响应回来时 removeInflight + applyServer 用服务端新值覆盖。
-        java.util.Set<String> inflightIds;
-        synchronized (sInflight) {
-            inflightIds = new java.util.HashSet<>(sInflight.keySet());
-        }
-
-        List<Item> local = load(c);
+        if (counters == null || counters.length() == 0) return;
+        List<Item> cached = loadRaw(c);
+        // 旧服务端（还没发到 v11）的响应里没有 rev：整份按 0 处理会误判成
+        // 「全都过期」，桌面反而卡在旧值不动。没有 rev 字段时不做版本判据。
+        boolean hasRev = counters.optJSONObject(0) != null
+                && counters.optJSONObject(0).has("rev");
         List<Item> next = new ArrayList<>();
         for (int i = 0; i < counters.length(); i++) {
             JSONObject o = counters.optJSONObject(i);
             if (o == null) continue;
             String id = o.optString("id", "");
             if (id.isEmpty()) continue;
-            String name = o.optString("name", id);
-            int serverValue = o.optInt("value", 0);
-
-            int v;
-            if (pendingSet.contains(id)) {
-                // 用户手输了一个绝对值还没发出去 —— 本地那个才是他想看到的
-                Item mine = find(local, id);
-                v = mine != null ? mine.value : clamp(serverValue);
-            } else if (inflightIds.contains(id)) {
-                // 在途：本地已被 localDelta 改过，直接保留，等服务端响应再覆盖。
-                // 不叠加 delta —— 服务端可能已经处理完了，再叠就是多算。
-                Item mine = find(local, id);
-                v = mine != null ? mine.value : clamp(serverValue);
-            } else {
-                Integer extra = pendDelta.get(id);
-                v = clamp((long) serverValue + (extra == null ? 0 : extra.intValue()));
+            int serverRev = o.optInt("rev", 0);
+            Item old = find(cached, id);
+            if (hasRev && old != null && serverRev < old.rev) {
+                next.add(old);
+                continue;
             }
-            next.add(new Item(id, name, v));
+            next.add(new Item(id, o.optString("name", id),
+                    clamp(o.optInt("value", 0)), serverRev));
         }
-        if (!next.isEmpty()) save(c, next);
+        // 服务端这次没提到的 id 保持原样（计数器没有删除接口，这里只是防御）
+        for (Item it : cached) {
+            if (find(next, it.id) == null) next.add(it);
+        }
+        save(c, next);
     }
 
     /* ------------------------------------------------------------ 离线队列 */
@@ -300,23 +315,14 @@ class CounterStore {
     /**
      * 已发出但还没收到响应的意图。
      *
-     * **为什么需要这个**（2026-11-05 修「+1 两三秒后跳回旧值」）：
-     * `next()` 把队首发出去时先从队列里摘掉，请求飞行期间队列是空的。
-     * 这时如果有别的路径调 {@link #applyServer}（`pull` / `resync` /
-     * App 推刷新），它会拿服务端**还没处理完的旧值**盖掉本地的新值 ——
-     * 用户看到的就是「+1 之后两三秒又跳回去了」。
+     * `next()` 发请求前先把队首从队列里摘掉，飞行期间这条既不在队列、
+     * 服务端也还没确认 —— 不记下来就会在屏幕上凭空消失一瞬。
      *
-     * 修法：applyServer 内部查 sInflight 的 id 集合，对在途 id **直接保留
-     * 本地值**（已被 localDelta 改过），不叠加 delta、不被服务端值覆盖。
-     * 等在途响应回来时 removeInflight + applyServer 用服务端新值覆盖。
+     * 2026-11-11 起 `applyServer` 只覆盖真值那一层，`load()` 把在途和队列
+     * 按顺序一起投影成显示值，所以这里不再需要「保留本地值」那套特判。
      *
-     * ⚠️ 不能把在途 delta **叠加**到服务端值上：服务端可能已经处理完了，
-     * 再叠一次就是多算（6 + 1 = 7）。保留本地值是唯一安全的做法：
-     *   · 服务端没处理 → local(6) vs server(5) → 保留 6 ✓
-     *   · 服务端已处理 → local(6) vs server(6) → 保留 6 ✓（一样）
-     *
-     * 进程死了在途表就丢了 —— 可接受：队列里的还在盘上，`resync` 会重发；
-     * 如果请求其实到了服务端，`pull` 拿到的是新值，不丢。
+     * 进程死了在途表就丢了 —— 可接受：那条已从队列摘掉，`resync` 里的 pull
+     * 会拿服务端真值；请求真到了服务端就是新值，没到就少一次点击。
      */
     private static final java.util.Map<String, java.util.List<int[]>> sInflight = new java.util.HashMap<>();
     // 每个 int[] = {delta_or_0, value_or_NO_VALUE}
@@ -464,8 +470,11 @@ class CounterStore {
                 // 先清在途：这条的响应已经到了，服务端值已经包含这次改动
                 removeInflight(id, delta, value);
                 // applyServer 内部会查 sInflight 剩下的在途 id，保留它们的本地值
-                applyServer(c, body.optJSONArray("counters"), queue(c));
-                WidgetBridge.notifyCountersChanged();   // App 开着就让它立刻对齐
+                JSONArray counters = body.optJSONArray("counters");
+                applyServer(c, counters, null);
+                // 把这份带 rev 的真值一起推给网页：任意页面都能立刻对齐，
+                // 不必再等一次 GET 或 5 秒轮询
+                WidgetBridge.notifyCountersChanged(counters == null ? null : counters.toString());
                 next(c);
             }
 
@@ -517,9 +526,10 @@ class CounterStore {
             public void onOk(JSONObject body) {
                 // applyServer 内部查 sInflight：在途 id 保留本地值，
                 // 不被服务端旧值盖掉（这就是修「+1 跳回」的关键）
-                applyServer(c, body.optJSONArray("counters"), queue(c));
-                // 另一台设备（或网页版）改过时，App 那边也该知道
-                WidgetBridge.notifyCountersChanged();
+                JSONArray counters = body.optJSONArray("counters");
+                applyServer(c, counters, null);
+                // 另一台设备（或网页版）改过时，App 那边也该知道（带数据）
+                WidgetBridge.notifyCountersChanged(counters == null ? null : counters.toString());
                 if (done != null) done.run();
             }
 

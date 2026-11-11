@@ -50,10 +50,18 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
       raf = 0;
       const view = el.clientHeight;
       const full = el.scrollHeight;
-      const can = full > view + 1;
-      if (!can) track.style.opacity = '0';
-      /* 最短 26px —— 再短就没法点了 */
-      const h = can ? Math.max(26, Math.round((view * view) / full)) : 0;
+      const canY = full > view + 1;
+      /* 2026-11-11：`.week-view` 是**横向**滚动容器，以前只判纵向，
+         横向溢出时这里会把刚淡入的浮条又按成 0。两个方向都要认。 */
+      const canX = el.scrollWidth > el.clientWidth + 1;
+      const can = canY || canX;
+      if (!can) {
+        track.style.opacity = '0';
+        thumb.style.height = '0px';
+        return;
+      }
+      /* 最短 26px —— 再短就没法点了。横向容器没有纵向比例可算，给最短一截 */
+      const h = canY ? Math.max(26, Math.round((view * view) / full)) : 26;
       thumb.style.height = h + 'px';
       /* ⚠️ **要加 el.scrollTop**：轨道是滚动容器里的绝对定位子元素，跟着内容
          一起滚；不补偿的话一滚浮条就跑到可视区上面（同一个病根，见
@@ -66,7 +74,15 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
 
     /** 只有真实滚动 / 拖动才调用：淡入，停手后计时淡出。拖着不放时不计时。 */
     const reveal = () => {
-      if (el.scrollHeight <= el.clientHeight + 1) return;
+      const canY = el.scrollHeight > el.clientHeight + 1;
+      const canX = el.scrollWidth > el.clientWidth + 1;
+      if (!canY && !canX) return;
+      /* 切换日 / 3 日 / 周视图时，useLayoutEffect 会把 scrollLeft 归零，
+         浏览器照样派发一次 scroll 事件 —— 那不是用户滚的，不该让浮条淡入
+         800ms（用户报「切视图闪一下深色条」）。入口会短暂打上这个标记。 */
+      if (el.dataset.switching === '1') return;
+      /* 停在原点 = 归零事件，或只是内容变高了还没真滚 */
+      if (!(canY && el.scrollTop > 0) && !(canX && el.scrollLeft > 0)) return;
       track.style.opacity = '1';
       window.clearTimeout(idle);
       if (!dragging) idle = window.setTimeout(() => { track.style.opacity = '0'; }, OSB_IDLE);

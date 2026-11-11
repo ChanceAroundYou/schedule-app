@@ -3,58 +3,40 @@
  *
  * 「+1」页与桌面小组件共用同一份服务端数据，这里管页面的读、写与对账。
  *
- * ## 为什么不存本地
- * 这个数字**会自己变**：服务端在每次读到它时结算「隔了几天 × 每日增量」。
- * 本地存一份副本，另一台设备或第二天打开就会对不上。所以一律以服务端返回的
- * `counters` 为准，点 `+` 只是先把界面改掉（免得等网络），拿到响应再覆盖。
+ * ## 唯一权威 + 单调版本号（2026-11-11 重写）
+ * 服务端每次真写都把 `rev` 加一，四个读入口（bootstrap / counters / 写响应 /
+ * 原生推送）都带这个号。页面只维护两样东西：
  *
- * ## 一致性：三条来源，一个真相
- * 有四个地方会改这个数字（这一页、桌面小组件、另一台设备、每天 0 点的结算），
- * 它们之间没有共享内存，**唯一权威是服务端**。页面靠四路信号去对齐：
+ *   · `base`   —— 已知**最高 rev 的服务端快照**（真值）
+ *   · `pending`—— 我发出去但还没收到响应的写（意图）
  *
- *   1. 自己写完 → 用响应里的 counters 覆盖（最快，也是主路径）
- *   2. 原生侧写完（桌面点了 +）→ 原生派发 `schedule:counters-changed`
- *      自定义事件，见 WidgetBridge.notifyCountersChanged。**同进程，零延迟**
- *   3. 窗口回到前台（focus / pageshow / visibilitychange / App resume）→ 重读
- *   4. 兜底轮询：页面可见时每 5s 读一次。给「另一台设备改了」「原生没通知到」
- *      这两类情况收尾
+ * 屏幕上显示的是 `base + pending` 的投影，绝不把乐观值写进 `base`。
+ * 于是这些老问题一起消失：
+ *   · GET 比 POST 先到服务端、读到写之前的旧快照 → rev 更小，直接丢弃；
+ *   · 连点两下，第一个响应晚到、带着中间值 → rev 更小，直接丢弃；
+ *   · 另一台设备同时改了 → rev 更大，采信新值，再叠上我还没确认的意图。
  *
- * 2026-10-27 之前只有「挂载时读一次 + focus」，而 Capacitor 的 WebView 里
- * visibilitychange 并不总触发，于是桌面点完再进 App 看到的还是旧值，
- * 得切一下页面（重新挂载）才更新 —— 就是用户报的那个现象。
+ * 以前那套「写后 2 秒冷却 + 写响应不采信 + 有写在飞就不轮询」全删了 ——
+ * 那是用时间猜新旧，弱网下必然忽快忽慢。现在**只比较 rev**。
  *
- * ## 轮询为什么不会把数字改回去
- * 一次轮询的响应可能在「用户刚点了 +」之后才回来，那份快照里没有这一下。
- * 两条保护：
- *   · 有写请求在飞时**不发起轮询**（`writes`）；
- *   · 只有最后一次请求的响应算数（`seq`），`load` 也占号。
+ * ## 四路对齐
+ *   1. 自己写完 → 用响应的 `counters`（rev 已推进）覆盖 base
+ *   2. 原生侧写完（桌面点了 +）→ 事件带数据进真值总线，这里订阅
+ *   3. 回到前台 / 切标签页 / App resume → 重读
+ *   4. 兜底轮询：页面可见时每 5s 读一次（另一台设备、原生没通知到）
  *
- * ## 连点为什么只认最后一个响应
- * 点两下 +，两个请求都在飞：第一个（+1）的响应若晚到，界面就从 2 掉回 1。
- * 桌面小组件那边为此专门改过（CounterStore.applyServer），这里是同一个坑。
- * 用递增序号丢弃过期响应；`load` 也占一个号，避免「刷新途中点了个 +」
- * 被旧快照盖回去。
- *
- * ## 三层保护（2026-11-05 三修：写冷却期）
- * 一修加了 inflight 登记表，二修让写响应不 apply 服务端值。但用户仍报
- * 「刚开始点时闪一下6再回到5」—— load 的 GET 在移动网络下可能比 POST
- * 先到达服务端（不同网络路径），读到写操作之前的旧值，覆盖了本地乐观值。
- *
- * 三修加**写冷却期**：send 时记时间戳，merge 在 2 秒内对该 id 保留本地值。
- * 三层叠加：
- *   1. inflight > 0 → 请求在飞，服务端值可能是中间值 → 保留本地
- *   2. 写冷却期内（2s）→ load 的 GET 可能读到旧值 → 保留本地
- *   3. 否则 → 用服务端值（此时服务端一定已处理完写请求）
- *
- * ## 为什么不每次 setList
- * 轮询每 5s 一次，若无条件 setList 就是每 5s 一次整页重渲染（还带着位图化的
- * 按钮）。所以先比对，值没变就返回原数组，React 会跳过渲染。
+ * ## 为什么先比对再 setList
+ * 轮询每 5s 一次，无条件 setList 就是每 5s 一次整页重渲染（还带着位图化的
+ * 按钮）。所以值没变就返回原数组，React 会跳过渲染。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
-import { fetchCounters, patchCounter, type Counter, type CounterPatch } from '../../data/api/counters.ts';
+import {
+  fetchCounters, patchCounter, currentCounters, subscribeCounters,
+  type Counter, type CounterPatch,
+} from '../../data/api/counters.ts';
 import { pushCounterCache, refreshCounterWidgets } from '../../data/widget.ts';
 
 /** 正在编辑哪一格的哪个字段。value / name / daily 三选一。 */
@@ -70,11 +52,18 @@ const POLL_MS = 5000;
 /** 写完通知桌面的合并窗口：连点五下只刷一次组件 */
 const WIDGET_REFRESH_MS = 250;
 
-/** 写冷却期：send 后 2 秒内，load 的 merge 对该 id 保留本地值 */
-const WRITE_COOLDOWN_MS = 2000;
+/** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 一致 */
+const MIN_VALUE = 0;
+const MAX_VALUE = 999999;
+const clamp = (v: number) => Math.max(MIN_VALUE, Math.min(MAX_VALUE, Math.round(v)));
 
-/** 原生侧派发的事件名。**改这里必须同步改 WidgetBridge.java** */
-const NATIVE_EVENT = 'schedule:counters-changed';
+/** 一次发出但还没收到响应的写。按数组顺序投影，所以「先设 300 再 +1」= 301。 */
+interface PendingWrite {
+  token: number;
+  id: string;
+  kind: 'delta' | 'set';
+  amount: number;
+}
 
 /** 两份列表是否表示同一个状态（用来跳过无意义的重渲染） */
 function sameCounters(a: Counter[], b: Counter[]): boolean {
@@ -84,7 +73,8 @@ function sameCounters(a: Counter[], b: Counter[]): boolean {
     const y = b[i];
     if (!x || !y) return false;
     if (x.id !== y.id || x.name !== y.name || x.value !== y.value
-      || x.dailyIncrement !== y.dailyIncrement) return false;
+      || x.dailyIncrement !== y.dailyIncrement
+      || (x.rev || 0) !== (y.rev || 0)) return false;
   }
   return true;
 }
@@ -94,66 +84,71 @@ export function useCounters() {
   const [editState, setEditState] = useState<Editing | null>(null);
   const [err, setErr] = useState('');
 
-  const seq = useRef(0);
-  /** 在飞的写请求数。非 0 时不发起轮询 —— 那份快照里还没有这一下点击 */
-  const writes = useRef(0);
-  /** 当前列表的镜像。`send` 的乐观更新与 `apply` 的比对都读它 */
+  /** 服务端权威快照（带 rev） */
+  const base = useRef<Counter[]>([]);
+  /** 未确认的写，按发生顺序排列 */
+  const pending = useRef<PendingWrite[]>([]);
+  /** 当前显示列表的镜像，用于跳过无意义重渲染 */
   const lastList = useRef<Counter[]>([]);
   /** 第一次成功读到之前的失败要显示；之后轮询失败就当没发生（别每 5s 闪一次错） */
   const everLoaded = useRef(false);
+  const writeToken = useRef(0);
 
-  /* 编辑态的镜像。`commit` 要读「当前编辑到一半的内容」，但它是由 blur / keydown
-     这类**渲染之外**的事件触发的；用 setState 的 updater 里去发请求又会在
-     StrictMode 下被执行两次（一次请求变两次）。所以留一份 ref。 */
+  /* 编辑态的镜像。`commit` 由 blur / keydown 这类渲染之外的事件触发；
+     用 setState 的 updater 发请求会在 StrictMode 下被执行两次（一次请求变两次）。 */
   const editRef = useRef<Editing | null>(null);
   const setEdit = useCallback((v: Editing | null) => {
     editRef.current = v;
     setEditState(v);
   }, []);
 
+  /** 把「服务端真值 + 未确认意图」投影成屏幕上该显示的列表 */
+  const project = useCallback((): Counter[] => {
+    const pend = pending.current;
+    return base.current.map((s) => {
+      let v = s.value;
+      for (const w of pend) {
+        if (w.id !== s.id) continue;
+        v = w.kind === 'set' ? w.amount : v + w.amount;
+      }
+      const value = clamp(v);
+      return value === s.value ? s : { ...s, value };
+    });
+  }, []);
+
   /** 落一份新快照。返回是否真的变了 —— 没变就不重渲染、也不推给桌面。 */
-  const apply = useCallback((next: Counter[]): boolean => {
+  const applyView = useCallback((): boolean => {
+    const next = project();
     const changed = !sameCounters(lastList.current, next);
     lastList.current = next;
     if (changed) setList(next);
     return changed;
-  }, []);
-
-  /** 在途登记：id → 在飞请求数。响应回来前，该 id 保留本地乐观值，不被服务端中间值覆盖 */
-  const inflight = useRef<Map<string, number>>(new Map());
-
-  /** 最近一次写操作的时间戳（id → ms）。冷却期内 load 读到的服务端值可能过期
-   *  （移动网络下 GET 可能比 POST 先到达服务端），对该 id 保留本地值。 */
-  const lastWriteAt = useRef<Map<string, number>>(new Map());
-
-  const decInflight = useCallback((id: string) => {
-    const cnt = (inflight.current.get(id) || 0) - 1;
-    if (cnt <= 0) inflight.current.delete(id);
-    else inflight.current.set(id, cnt);
-  }, []);
+  }, [project]);
 
   /**
-   * 把服务端快照与本地合并：在途 id 或写冷却期内的 id 保留本地值，其余用服务端。
-   *
-   * 三层保护（2026-11-05 三修）：
-   *   1. inflight > 0：请求在飞，服务端值可能是中间值 → 保留本地
-   *   2. 写冷却期内（2s）：load 的 GET 可能比 POST 先到达服务端 → 保留本地
-   *   3. 否则：用服务端值（此时服务端一定已处理完写请求）
+   * 收下一份服务端快照：**只认更大的 rev**。
+   * 相等时仍采信服务端（同一个版本里它才是真值，本地可能残留乐观痕迹）；
+   * 更小时整条丢弃 —— 这就是「跳一下又回去了」的根治点。
    */
-  const merge = useCallback((server: Counter[]): Counter[] => {
-    const inf = inflight.current;
-    const now = Date.now();
-    const wcl = lastWriteAt.current;
-    if (inf.size === 0 && wcl.size === 0) return server;
-    const local = lastList.current;
-    return server.map((s) => {
-      const inFlight = inf.has(s.id);
-      const inCooldown = (now - (wcl.get(s.id) || 0)) < WRITE_COOLDOWN_MS;
-      if (!inFlight && !inCooldown) return s;
-      const mine = local.find((c) => c.id === s.id);
-      return mine ? { ...s, value: mine.value } : s;
-    });
-  }, []);
+  const accept = useCallback((server: Counter[]): boolean => {
+    if (!Array.isArray(server) || !server.length) return false;
+    const byId = new Map(base.current.map((c) => [c.id, c]));
+    const next: Counter[] = [];
+    for (const s of server) {
+      const mine = byId.get(s.id);
+      const rev = Number.isFinite(s.rev) ? Number(s.rev) : 0;
+      if (mine && rev < (mine.rev || 0)) {
+        next.push(mine);            // 过期响应：连值带名字一起作废
+        byId.delete(s.id);
+        continue;
+      }
+      next.push({ ...s, rev });
+      byId.delete(s.id);
+    }
+    for (const leftover of byId.values()) next.push(leftover);
+    base.current = next;
+    return applyView();
+  }, [applyView]);
 
   /* 写完让桌面组件跟着变。页面上改了数字，桌面那块不该等下次点击才更新。
      合并一小会儿：连点五下只刷一次组件。 */
@@ -168,120 +163,99 @@ export function useCounters() {
 
   /**
    * 读一次服务端。
-   *
    * @param quiet 静默模式（轮询用）：失败不报错，也不清空已有数据
    */
   const load = useCallback(async (quiet = false) => {
-    if (writes.current > 0) return;   // 写入在飞：别用旧快照盖掉乐观值
-    const mine = ++seq.current;
     try {
       const next = await fetchCounters();
-      if (mine !== seq.current) return;   // 期间又发了更新的请求，这份作废
       everLoaded.current = true;
-      const merged = merge(next);         // 在途/冷却期内的 id 保留本地值
-      if (apply(merged)) {
-        // 数字真的变了才推桌面缓存：不然每 5s 一次轮询都会写一遍
-        void pushCounterCache(merged);
-      }
+      if (accept(next)) void pushCounterCache(base.current);
       setErr('');
     } catch (e) {
-      if (mine !== seq.current) return;
       if (quiet && everLoaded.current) return;
       setErr(e instanceof Error ? e.message : '读不到计数器');
     }
-  }, [apply, merge]);
+  }, [accept]);
 
-  /* 进页面拉一次；之后四路信号对齐：回到窗口、切回标签页、App 回前台、
-     原生侧写完的推送。最后加一路兜底轮询。 */
+  /* 进页面拉一次；之后四路信号对齐：真值总线、回到窗口、切回标签页、
+     App 回前台，最后加一路兜底轮询。 */
   useEffect(() => {
+    /* 入口的全局监听可能已经先收到过原生推送 —— 先看一眼总线，
+       别让页面先闪一下旧数字再等网络。 */
+    const cached = currentCounters();
+    if (cached) accept(cached);
     void load();
 
     const wake = () => { void load(true); };
     const onVisible = () => { if (document.visibilityState === 'visible') wake(); };
-    const onNative = () => { wake(); };
+    /* 原生事件带数据，入口已写进总线；这里只订阅，不直接监听 window，
+       也不回推桌面缓存（桌面刚写完，别用 App 的缓存盖掉它的投影值）。
+       旧 APK 的事件没有数据（空数组），那就当场重读一次。 */
+    const unsubscribe = subscribeCounters((counters) => {
+      if (counters.length) accept(counters);
+      else void load(true);
+    });
 
     window.addEventListener('focus', wake);
     window.addEventListener('pageshow', wake);
-    window.addEventListener(NATIVE_EVENT, onNative);
     document.addEventListener('visibilitychange', onVisible);
 
-    /* App 从后台回来：Capacitor 的 appStateChange 比 visibilitychange 可靠
-       （WebView 在部分机型上不报后者，这正是「切回来还是旧数字」的原因之一） */
+    /* App 从后台回来：Capacitor 的 appStateChange 比 visibilitychange 可靠 */
     let dropAppListener: (() => void) | null = null;
     if (Capacitor.isNativePlatform()) {
       try {
-        const pending = CapApp.addListener('appStateChange', (s) => {
+        const p = CapApp.addListener('appStateChange', (s) => {
           if (s.isActive) wake();
         });
-        dropAppListener = () => { void pending.then((h) => h.remove()).catch(() => {}); };
+        dropAppListener = () => { void p.then((h) => h.remove()).catch(() => {}); };
       } catch (_) { /* 旧 APK 没有这个插件，退化成只看 visibilitychange */ }
     }
 
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      if (writes.current > 0) return;
       void load(true);
     }, POLL_MS);
 
     return () => {
+      unsubscribe();
       window.removeEventListener('focus', wake);
       window.removeEventListener('pageshow', wake);
-      window.removeEventListener(NATIVE_EVENT, onNative);
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(timer);
       if (dropAppListener) dropAppListener();
       if (widgetTimer.current != null) window.clearTimeout(widgetTimer.current);
     };
-  }, [load]);
+  }, [load, accept]);
 
   /**
-   * 先改界面、再发请求。
-   *
-   * ⚠️ **写响应的值不直接 apply。** HTTP 不保证请求按发出顺序被服务端处理，
-   * 最后一个发出的请求可能先到达服务端（值才 5→6），它的响应通过 seq 检查，
-   * 但值是中间值。如果此时其他响应都已回来（inflight=0），merge 会直接用
-   * 这个中间值覆盖本地乐观值 → 界面从 15 跳到 6 → load 读到 15 又跳回来。
-   *
-   * 二修（2026-11-05）：写响应只确认成功 + 推桌面缓存（用本地值），
-   * **不 apply 服务端值**。所有写请求都回来（writes=0）时触发一次 load，
-   * load 读到的一定是服务端最终值（写请求都已处理完），用它来对齐。
-   *
-   * 三修（2026-11-05）：加写冷却期。load 的 GET 在移动网络下可能比 POST
-   * 先到达服务端，读到旧值。merge 在 send 后 2 秒内对该 id 保留本地值。
+   * 先把意图投影到界面，再发请求；响应回来就采信服务端真值并撤回这份意图。
+   * 失败则撤回意图并立刻重读一次（本地不该留着一个永远不会被确认的数）。
    */
-  const send = useCallback((id: string, patch: CounterPatch, optimistic?: (c: Counter) => Counter) => {
-    if (optimistic) {
-      const next = lastList.current.map((c) => (c.id === id ? optimistic(c) : c));
-      lastList.current = next;
-      setList(next);
+  const send = useCallback((id: string, patch: CounterPatch) => {
+    const token = ++writeToken.current;
+    if (typeof patch.value === 'number') {
+      pending.current.push({ token, id, kind: 'set', amount: patch.value });
+    } else if (typeof patch.delta === 'number') {
+      pending.current.push({ token, id, kind: 'delta', amount: patch.delta });
     }
-    const mine = ++seq.current;
-    writes.current++;
-    inflight.current.set(id, (inflight.current.get(id) || 0) + 1);  // 在途 +1
-    lastWriteAt.current.set(id, Date.now());                         // 记写时间戳
+    applyView();
+
     patchCounter(id, patch)
-      .then(() => {
-        writes.current--;
-        decInflight(id);
-        // 所有写请求都回来了 → 触发 load 读服务端最终值对齐
-        // （不看 seq：即使这个响应过期，writes 归 0 也要 load）
-        if (writes.current === 0) void load(true);
-        if (mine !== seq.current) return;   // 后面还有更新的写，这次结果作废
-        everLoaded.current = true;
-        // 不 apply 服务端值——可能是中间值（请求乱序处理）
-        // 只推桌面缓存（用本地乐观值），桌面等 load 对齐后自然更新
-        void pushCounterCache(lastList.current);
+      .then((counters) => {
+        pending.current = pending.current.filter((w) => w.token !== token);
+        if (counters.length) accept(counters);
+        else applyView();
+        void pushCounterCache(base.current);
         setErr('');
-        scheduleWidgetRefresh();            // 桌面那块跟着变
+        scheduleWidgetRefresh();
       })
       .catch((e: unknown) => {
-        writes.current--;
-        decInflight(id);
-        if (writes.current === 0) void load(true);  // 回滚：以服务端为准
-        if (mine !== seq.current) return;   // 过期请求的失败不该盖住更新的结果
+        pending.current = pending.current.filter((w) => w.token !== token);
+        applyView();
         setErr(e instanceof Error ? e.message : '没存上');
+        void load(true);          // 回滚：以服务端为准
       });
-  }, [load, scheduleWidgetRefresh, decInflight]);
+  }, [accept, applyView, load, scheduleWidgetRefresh]);
 
   /** 把正在编辑的那一格提交掉（失焦 / 回车）。Escape 直接 setEdit(null) 不进来。 */
   const commit = useCallback(() => {

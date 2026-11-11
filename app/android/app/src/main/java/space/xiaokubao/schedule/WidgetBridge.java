@@ -17,6 +17,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONArray;
+
 import java.lang.ref.WeakReference;
 
 /**
@@ -43,9 +45,8 @@ public class WidgetBridge extends Plugin {
    */
   private static WeakReference<WidgetBridge> sLive;
 
-  /** 网页侧监听的事件名，与 useCounters.ts 的 NATIVE_EVENT 一致 */
-  private static final String JS_COUNTERS_CHANGED =
-      "window.dispatchEvent(new CustomEvent('schedule:counters-changed'))";
+  /** 网页侧监听的事件名，与 data/widget.ts 的 NATIVE_COUNTERS_EVENT 一致 */
+  private static final String JS_COUNTERS_EVENT = "schedule:counters-changed";
 
   @Override
   public void load() {
@@ -53,18 +54,34 @@ public class WidgetBridge extends Plugin {
   }
 
   /**
-   * 告诉网页「计数器变了」。
+   * 告诉网页「计数器变了」，**并把服务端刚返回的那份快照一起带过去**。
    *
-   * 由 {@link CounterStore} 在写成功之后调用（桌面上点了 + / −、手输数字）。
-   * 网页侧收到后会重新读一次服务端 —— 这是「桌面点完立刻开 App 也是新的」
-   * 的零延迟路径。
+   * 2026-11-11 之前只发一个空事件，网页收到后还得再发一次 GET 才能拿到数；
+   * 而那个监听又长在「+1」页里，App 停在别的页面时事件直接丢掉，只能等
+   * 5 秒轮询。现在入口处全局监听（installCounterPushListener），事件里带
+   * counters（含 rev），任意页面收到就写进真值总线，切过去立刻是新的。
    *
    * 三重保护：没有活着的插件（App 没开）→ 什么都不做；WebView 已销毁 → 不动；
    * 一切异常都吞掉 —— 这只是一条通知，失败最多让网页晚 5 秒（有兜底轮询）。
+   *
+   * @param countersJson 服务端响应的 counters 数组文本；null / 坏数据 → 空数组，
+   *                     网页那边会当作「变了，自己重读一次」的信号
    */
-  static void notifyCountersChanged() {
+  static void notifyCountersChanged(String countersJson) {
     WidgetBridge p = sLive == null ? null : sLive.get();
     if (p == null) return;
+    String payload = "[]";
+    if (countersJson != null && !countersJson.isEmpty()) {
+      try {
+        // 解析再序列化：既保证拼进 JS 的是合法 JSON 数组字面量，
+        // 也把服务端可能带进来的特殊字符统一转义掉
+        payload = new JSONArray(countersJson).toString();
+      } catch (Exception ignored) {
+        payload = "[]";
+      }
+    }
+    final String js = "window.dispatchEvent(new CustomEvent('" + JS_COUNTERS_EVENT
+        + "',{detail:{counters:" + payload + "}}))";
     try {
       Bridge bridge = p.getBridge();
       if (bridge == null) return;
@@ -75,7 +92,7 @@ public class WidgetBridge extends Plugin {
         @Override
         public void run() {
           try {
-            web.evaluateJavascript(JS_COUNTERS_CHANGED, null);
+            web.evaluateJavascript(js, null);
           } catch (Exception ignored) {
             // WebView 正在销毁 / 页面还没就绪，兜底轮询会补上
           }
@@ -84,6 +101,11 @@ public class WidgetBridge extends Plugin {
     } catch (Exception ignored) {
       // 同上
     }
+  }
+
+  /** 兼容不带数据的调用方：只发信号，网页会自己重读一次 */
+  static void notifyCountersChanged() {
+    notifyCountersChanged(null);
   }
 
   /**

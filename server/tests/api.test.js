@@ -1745,3 +1745,40 @@ test('计数器：不带 opId 的并发自增不会互相覆盖（协议层的�
   const after = db.getCounter(dad.userId, id);
   assert.strictEqual(after.value, before.value + 5);
 });
+
+/* 2026-11-11：三份客户端副本（App 内存 / SharedPreferences / 桌面缓存）
+   靠 rev 判新旧，不再靠「写后 2 秒别信服务端」的时间窗。所以每个读入口
+   都必须带 rev，且只有真正的写才推进它 —— 重复 opId 不能凭空造出新版本。 */
+test('计数器：rev 随每次写递增，四个读入口都带 rev，重放不推进', async () => {
+  const id = 'naonao';
+  const first = db.getCounter(dad.userId, id);
+  assert.ok(Number.isInteger(first.rev), '存储层要返回 rev');
+
+  const a = await api('POST', '/api/widget/counter', { token: dad.token, body: { id, delta: 1 } });
+  assert.strictEqual(a.status, 200);
+  assert.strictEqual(a.body.counter.rev, first.rev + 1, '写响应里的 counter 带新 rev');
+  assert.ok(a.body.counters.every((c) => Number.isInteger(c.rev)), '写响应的全量快照每项都带 rev');
+
+  const b = await api('POST', '/api/widget/counter', { token: dad.token, body: { id, delta: 1 } });
+  assert.strictEqual(b.body.counter.rev, first.rev + 2, '每次真写都推进');
+
+  const opId = 'op-rev-' + Date.now();
+  const c = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1, opId },
+  });
+  const d = await api('POST', '/api/widget/counter', {
+    token: dad.token, body: { id, delta: 1, opId },
+  });
+  assert.strictEqual(d.body.duplicate, true);
+  assert.strictEqual(d.body.counter.rev, c.body.counter.rev, '重复点击不该推进版本');
+
+  const boot = await api('GET', '/api/widget/bootstrap', { token: dad.token });
+  assert.ok(boot.body.counters.every((x) => Number.isInteger(x.rev)), 'bootstrap 的快照也带 rev');
+  const pulled = await api('GET', '/api/widget/counters', { token: dad.token });
+  assert.ok(pulled.body.counters.every((x) => Number.isInteger(x.rev)), 'counters 接口也带 rev');
+  assert.strictEqual(
+    pulled.body.counters.find((x) => x.id === id).rev,
+    c.body.counter.rev,
+    '读回来的版本要与最后一次真写一致',
+  );
+});

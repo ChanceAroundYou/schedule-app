@@ -88,7 +88,7 @@ function Pad({ c, editing, setEdit, send, commit }: {
           type="button"
           className="ctr-zero"
           title="归零（第二天照样自动加）"
-          onClick={() => send(c.id, { value: 0 }, (x) => ({ ...x, value: 0 }))}
+          onClick={() => send(c.id, { value: 0 })}
         >
           归零
         </button>
@@ -99,7 +99,7 @@ function Pad({ c, editing, setEdit, send, commit }: {
           type="button"
           className="ctr-btn ctr-minus"
           aria-label={c.name + ' 减一'}
-          onClick={() => send(c.id, { delta: -1 }, (x) => ({ ...x, value: Math.max(0, x.value - 1) }))}
+          onClick={() => send(c.id, { delta: -1 })}
         >
           <Minus size={24} />
         </button>
@@ -131,7 +131,7 @@ function Pad({ c, editing, setEdit, send, commit }: {
           type="button"
           className="ctr-btn ctr-plus"
           aria-label={c.name + ' 加一'}
-          onClick={() => send(c.id, { delta: 1 }, (x) => ({ ...x, value: x.value + 1 }))}
+          onClick={() => send(c.id, { delta: 1 })}
         >
           <Plus size={24} />
         </button>

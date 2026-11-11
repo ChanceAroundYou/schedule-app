@@ -18,6 +18,7 @@ import { serializeWidgetSnapshot } from '../domain/widgetSnapshot.ts';
 import { API_BASE } from './api/request.ts';
 import type { LocalState } from '../domain/types.ts';
 import type { Counter } from './api/counters.ts';
+import { publishCounters } from './api/counters.ts';
 
 /** 原生侧读同一个 key。**两边必须一致**，改这里要同步改 Kotlin */
 export const WIDGET_SNAPSHOT_KEY = 'schedule_widget_snapshot';
@@ -136,6 +137,27 @@ const COUNTER_PROVIDERS = [
   'space.xiaokubao.schedule.CounterWidgetWideProvider',
 ];
 
+/** 原生侧派发的事件名，与 WidgetBridge.java 的 JS_COUNTERS_CHANGED 一致 */
+const NATIVE_COUNTERS_EVENT = 'schedule:counters-changed';
+let counterPushInstalled = false;
+
+/**
+ * 在**应用入口**装一次全局监听：原生侧写完计数器时事件里带着服务端快照，
+ * 直接广播进真值总线。以前这个监听长在 `useCounters` 里，只有停在「+1」页
+ * 时有人接 —— 在别的页面事件就丢了，得等下一次 focus 或 5 秒轮询。
+ *
+ * 只装一次：StrictMode 会把入口副作用跑两遍，重复监听没有意义。
+ */
+export function installCounterPushListener(): void {
+  if (counterPushInstalled || typeof window === 'undefined') return;
+  counterPushInstalled = true;
+  window.addEventListener(NATIVE_COUNTERS_EVENT, (e: Event) => {
+    const detail = (e as CustomEvent<{ counters?: Counter[] }>).detail;
+    // 旧 APK 的事件不带 detail —— 也要广播一次（空数组 = 让页面自己重读）
+    publishCounters(Array.isArray(detail?.counters) ? detail.counters : []);
+  });
+}
+
 /**
  * 把最新的计数器值推进原生缓存，并让桌面重画。
  *
@@ -144,13 +166,18 @@ const COUNTER_PROVIDERS = [
  * 手里刚拿到服务端返回的真值，直接写进去 + 重画是最短的路径；
  * 随后组件自己的那次 pull 会再确认一遍，不会跑偏。
  *
+ * 写的是**服务端快照**（带 rev），不是屏幕上的乐观投影值 —— 原生侧同样按
+ * rev 判新旧，绝不能把「本地刚点、服务端还没确认」的值当成真值推过去。
+ *
  * **静默失败**：推不成只是桌面晚一点更新，不影响用户正在做的事。
  */
 export async function pushCounterCache(list: Counter[]): Promise<void> {
   if (!Capacitor.isNativePlatform() || !list.length) return;
   try {
-    // 形状必须与 CounterStore.Item 的解析一致：id / name / value
-    const value = JSON.stringify(list.map((c) => ({ id: c.id, name: c.name, value: c.value })));
+    // 形状必须与 CounterStore.Item 的解析一致：id / name / value / rev
+    const value = JSON.stringify(list.map((c) => ({
+      id: c.id, name: c.name, value: c.value, rev: Number(c.rev || 0),
+    })));
     await Preferences.set({ key: WIDGET_COUNTERS_KEY, value });
   } catch (_) {
     return;

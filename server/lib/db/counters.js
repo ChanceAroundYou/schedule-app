@@ -90,7 +90,8 @@ function creditDaily(userId, now) {
               value + daily_increment *
                       (CAST(julianday(?) AS INTEGER) - CAST(julianday(last_credit_date) AS INTEGER)))),
             last_credit_date = ?,
-            updated_at = ?
+            updated_at = ?,
+            rev = rev + 1
       WHERE user_id = ?
         AND last_credit_date IS NOT NULL
         AND last_credit_date < ?
@@ -106,7 +107,7 @@ function listCounters(userId) {
   ensureDefaults(userId);
   creditDaily(userId);
   const rows = all(
-    'SELECT id, name, value, daily_increment, last_credit_date FROM counters WHERE user_id = ?',
+    'SELECT id, name, value, daily_increment, last_credit_date, rev FROM counters WHERE user_id = ?',
     String(userId),
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -116,6 +117,9 @@ function listCounters(userId) {
     value: Number(r.value),
     dailyIncrement: Number(r.daily_increment),
     lastCreditDate: r.last_credit_date || null,
+    // 单调值版本：客户端（App 内存 / SharedPreferences / 桌面缓存）只认更大的号。
+    // 旧库升上来时这一列默认 0，不会让任何一端误判成「过期」。
+    rev: Number(r.rev || 0),
   });
   const out = [];
   // 先按默认顺序，再补上以后可能新增的自定义计数器（按名字排）
@@ -134,7 +138,7 @@ function getCounter(userId, id) {
   ensureDefaults(userId);
   creditDaily(userId);
   const r = get(
-    'SELECT id, name, value, daily_increment, last_credit_date FROM counters WHERE user_id = ? AND id = ?',
+    'SELECT id, name, value, daily_increment, last_credit_date, rev FROM counters WHERE user_id = ? AND id = ?',
     String(userId), String(id),
   );
   return r
@@ -144,6 +148,7 @@ function getCounter(userId, id) {
       value: Number(r.value),
       dailyIncrement: Number(r.daily_increment),
       lastCreditDate: r.last_credit_date || null,
+      rev: Number(r.rev || 0),
     }
     : null;
 }
@@ -164,6 +169,7 @@ function addCounter(userId, id, delta) {
   run(
     `UPDATE counters
         SET value = MAX(?, MIN(?, value + ?)),
+            rev = rev + 1,
             updated_at = ?
       WHERE user_id = ? AND id = ?`,
     MIN_VALUE, MAX_VALUE, n, Date.now(), String(userId), String(id),
@@ -183,7 +189,7 @@ function setCounter(userId, id, value) {
   if (!Number.isFinite(n)) return cur;
 
   run(
-    'UPDATE counters SET value = MAX(?, MIN(?, ?)), updated_at = ? WHERE user_id = ? AND id = ?',
+    'UPDATE counters SET value = MAX(?, MIN(?, ?)), rev = rev + 1, updated_at = ? WHERE user_id = ? AND id = ?',
     MIN_VALUE, MAX_VALUE, n, Date.now(), String(userId), String(id),
   );
   return getCounter(userId, id);
@@ -195,7 +201,7 @@ function renameCounter(userId, id, name) {
   const clean = String(name == null ? '' : name).trim().slice(0, 24);
   if (!clean) return null;
   run(
-    'UPDATE counters SET name = ?, updated_at = ? WHERE user_id = ? AND id = ?',
+    'UPDATE counters SET name = ?, rev = rev + 1, updated_at = ? WHERE user_id = ? AND id = ?',
     clean, Date.now(), String(userId), String(id),
   );
   return getCounter(userId, id);
@@ -212,7 +218,7 @@ function setDailyIncrement(userId, id, n) {
   const v = Math.round(Number(n));
   if (!Number.isFinite(v)) return cur;
   run(
-    'UPDATE counters SET daily_increment = MAX(?, MIN(?, ?)), updated_at = ? WHERE user_id = ? AND id = ?',
+    'UPDATE counters SET daily_increment = MAX(?, MIN(?, ?)), rev = rev + 1, updated_at = ? WHERE user_id = ? AND id = ?',
     MIN_DAILY, MAX_DAILY, v, Date.now(), String(userId), String(id),
   );
   return getCounter(userId, id);
@@ -267,6 +273,7 @@ function applyCounterOp(userId, id, op, opId) {
         run(
           `UPDATE counters
               SET value = MAX(?, MIN(?, value + ?)),
+                  rev = rev + 1,
                   updated_at = ?
             WHERE user_id = ? AND id = ?`,
           MIN_VALUE, MAX_VALUE, Math.max(-10000, Math.min(10000, n)), Date.now(), uid, cid,
