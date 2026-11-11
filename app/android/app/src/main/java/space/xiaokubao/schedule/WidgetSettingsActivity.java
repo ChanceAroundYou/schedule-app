@@ -242,7 +242,13 @@ public class WidgetSettingsActivity extends Activity {
         WidgetApi.bootstrap(this, new WidgetApi.Callback() {
             @Override
             public void onOk(JSONObject body) {
+                if (isFinishing() || isDestroyed()) return;
                 WidgetPrefs.replaceSnapshot(WidgetSettingsActivity.this, body);
+                /* 服务端刚下发的成员目录要**立刻**反映到下拉里。
+                   以前只 replaceSnapshot + refreshAll，用户点「立即刷新」后
+                   下拉还是上次打开时那份（旧服务端没有 users 时只有「全部成员」），
+                   看上去就像修了没生效，必须退出重进才更新。 */
+                bindCreatorOptions();
                 refreshAll();
                 if (!isFinishing()) status.setText("已更新 " + hhmm());
             }
