@@ -214,6 +214,11 @@ class CounterStore {
 
     /* ------------------------------------------------------------ 离线队列 */
 
+    /** Clamp a signed pending increment independently of the counter's value range. */
+    static int clampDelta(long delta) {
+        return (int) Math.max(-10000L, Math.min(10000L, delta));
+    }
+
     /**
      * 入队一次加减。
      * 同 id 已经有「设置成 X」时，把 X 也加上 —— 用户先输 300 再点 +1，
@@ -228,7 +233,7 @@ class CounterStore {
                 if (o.has("value")) {
                     o.put("value", clamp(o.optInt("value", 0) + (long) delta));
                 } else {
-                    o.put("delta", clamp(o.optInt("delta", 0) + (long) delta));
+                    o.put("delta", clampDelta((long) o.optInt("delta", 0) + delta));
                 }
                 writeQueue(c, q);
             } catch (Exception ignored) {

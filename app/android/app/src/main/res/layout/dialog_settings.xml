@@ -97,6 +97,23 @@
         android:textColor="#8AA294"
         android:textSize="10sp" />
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="日程成员"
+        android:textColor="#6B8574"
+        android:textSize="11sp" />
+
+    <Spinner
+        android:id="@+id/s_creator"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/dialog_field"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp" />
+
     <!-- ============ 底板透明度 ============
          拖到最右 = 完全不透明，最左 = 最透。连续可调（40%–100%）。
          ⚠️ 实现上是预烤了 31 张 drawable（每 2% 一张），按最近偶数档动态切，

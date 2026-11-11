@@ -6,6 +6,8 @@ import android.os.Bundle;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.SeekBar;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -56,6 +58,8 @@ public class WidgetSettingsActivity extends Activity {
     private TextView alphaLabel;
     private SeekBar fontBar;
     private TextView fontLabel;
+    private Spinner creatorSpinner;
+    private java.util.List<String> creatorValues = new java.util.ArrayList<>();
     private boolean habitMode;
 
     private static final int[] FONT_STEPS = {85, 100, 115, 130};
@@ -77,6 +81,11 @@ public class WidgetSettingsActivity extends Activity {
         alphaLabel = findViewById(R.id.s_alpha_label);
         fontBar = findViewById(R.id.s_font);
         fontLabel = findViewById(R.id.s_font_label);
+        creatorSpinner = habitMode ? null : findViewById(R.id.s_creator);
+        if (creatorSpinner != null) {
+            bindCreatorOptions();
+            creatorSpinner.post(this::refreshCreatorOptions);
+        }
 
         refreshLabels();
 
@@ -123,6 +132,66 @@ public class WidgetSettingsActivity extends Activity {
             public void onStartTrackingTouch(SeekBar bar) {}
             @Override
             public void onStopTrackingTouch(SeekBar bar) {}
+        });
+    }
+
+    private void refreshCreatorOptions() {
+        if (isFinishing() || isDestroyed()) return;
+        WidgetApi.bootstrap(this, new WidgetApi.Callback() {
+            @Override
+            public void onOk(JSONObject body) {
+                if (isFinishing() || isDestroyed()) return;
+                WidgetPrefs.replaceSnapshot(WidgetSettingsActivity.this, body);
+                bindCreatorOptions();
+                refreshAll();
+                refreshLabels();
+            }
+
+            @Override
+            public void onFail(String why) {
+                if (isFinishing() || isDestroyed()) return;
+                if (status != null) status.setText("成员列表未更新，继续使用缓存");
+            }
+        });
+    }
+
+    private void bindCreatorOptions() {
+        WidgetSnapshot snap = WidgetPrefs.snapshot(this);
+        java.util.List<String> values = new java.util.ArrayList<>();
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        if (snap.meId != null && !snap.meId.isEmpty()) {
+            values.add("me");
+            String meName = "我";
+            for (WUser user : snap.users) if (snap.meId.equals(user.id)) meName = user.name;
+            labels.add(meName);
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (WUser user : snap.users) {
+            if (user.id.isEmpty() || user.id.equals(snap.meId) || !seen.add(user.id)) continue;
+            values.add(user.id);
+            labels.add(user.name);
+        }
+        values.add(0, "all");
+        labels.add(0, "全部成员");
+        creatorValues = values;
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        creatorSpinner.setAdapter(adapter);
+        String selected = WidgetPrefs.selectedCreator(this);
+        int index = values.indexOf(selected);
+        creatorSpinner.setSelection(Math.max(0, index), false);
+        creatorSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent,
+                    android.view.View view, int position, long id) {
+                if (position < 0 || position >= creatorValues.size()) return;
+                String next = creatorValues.get(position);
+                if (!next.equals(WidgetPrefs.selectedCreator(WidgetSettingsActivity.this))) {
+                    WidgetPrefs.setSelectedCreator(WidgetSettingsActivity.this, next);
+                    ScheduleWidgetProvider.refresh(WidgetSettingsActivity.this);
+                }
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
     }
 

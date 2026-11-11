@@ -214,12 +214,32 @@ test('打卡按 order 排序，剔掉已删除的', () => {
   );
 });
 
+test('creator filter metadata serializes safely for native widgets', () => {
+  const mine = { ...makeTask({ title: 'mine', date: T }), createdBy: 'u1' } as Task;
+  const other = { ...makeTask({ title: 'other', date: T }), createdBy: 'u2' } as Task;
+  const s = state([mine, other]);
+  s.meId = 'u1';
+  s.users = {
+    u1: { name: 'alex', nickname: '小星' },
+    u2: { name: 'bao', nickname: '阿包' },
+  };
+  const snap = buildWidgetSnapshot(s, T);
+  assert.deepEqual(snap.tasks.map((t) => t.createdBy), ['u1', 'u2']);
+  assert.deepEqual(snap.users, [
+    { id: 'u1', name: '小星' },
+    { id: 'u2', name: '阿包' },
+  ]);
+  assert.equal(snap.meId, 'u1');
+});
+
 test('快照带版本号与生成时刻', () => {
   const snap = buildWidgetSnapshot(state(), T);
   assert.equal(snap.v, 1);
   assert.equal(typeof snap.at, 'number');
   assert.equal(snap.from, '2026-09-07');
   assert.equal(snap.to, '2026-11-08');
+  assert.deepEqual(snap.users, []);
+  assert.equal(snap.meId, undefined);
 });
 
 test('详细内容随任务一起发给小组件 —— 桌面靠它在标题下多出一行', (ctx) => {

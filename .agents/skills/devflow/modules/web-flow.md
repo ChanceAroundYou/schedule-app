@@ -17,7 +17,7 @@
 | 2 | `tsc --noEmit` | 修类型 |
 | 3 | 单测：app（`src/**/*.test.ts`）+ server（`server/tests/*.test.js`） | 修逻辑/补断言 |
 | 4 | **本地深测**：`browser-smoke.mjs`（临时库 + 临时后端 + 真实 Chrome，全流程，436 条断言） | 修交互 |
-| 5 | **发布 + 线上实测**：`publish-server.sh --approve` + `publish-web.sh --approve`（内容没变自动跳过）→ `live-check.mjs`（Playwright 打生产 URL） | 见下 |
+| 5 | 构建 Web 同源 dist 并发布；线上 `live-check.mjs` 可按任务需要另行运行，不作为发布通过条件 | 发布器的授权、来源与回读校验失败时停止 |
 
 任何一段失败 → 自动返工（修 → 重新 commit → 重跑），最多 3 轮；
 3 轮还不过就停下，用大白话告诉用户卡在哪、具体报什么。
@@ -32,8 +32,7 @@
 ## 没人会踩的坑（记下来省时间）
 
 - 登录后默认落在「今天」**列表页**；时间轴和日/周/月切换要先点 `[data-nav="calendar"]`。
-- `npm run build` / `vite build` 出的 dist 不带 API 基址，只有 APK 打包才注入 ——
-  所以**先发网页端，再打 APK**。
+- `npm run build` / `vite build` 出的 dist 不带 API 基址；APK 阶段会串行重建带基址资源。正式项目版本统一通过 `./deploy/release-both.sh --approve "说明"`，由它先完成 Web 构建/发布，再构建 APK；不可并行覆盖共享 dist。
 - 发布脚本默认 dry-run（不带 `--approve` 只打印摘要、退出码 1）；
   `web-loop.sh` 是替用户判断过的自动放行，它自己做了可追溯性检查。
 - `--allow-dirty` 只在「脏文件全在发布路径之外」时用（例如 `deploy/` 下的草稿脚本）。

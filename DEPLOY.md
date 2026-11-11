@@ -9,8 +9,7 @@
 | 脚本 | 用途 |
 |---|---|
 | `deploy/env.sh` | **构建环境统一入口**：读 `.env` + 按平台探测 JDK / SDK / Gradle / aapt（被下面几个脚本 source） |
-| `deploy/web-loop.sh` | 网页端一键闭环：可追溯 → tsc → 单测 → 本地深测 → 发布 → 线上实测 |
-| `deploy/mobile-loop.sh` | 手机端：+版本号自检 → 打包 → 发布 → 装机 → 真机冒烟 |
+| `deploy/release-both.sh --approve "说明"` | 正式版本统一发布：串行构建并发布 Web，再构建并发布 APK；不连接设备、不要求功能实测 |
 | `deploy/publish-web.sh` | 前端发布（构建 → 上传 → 备份 → 切换 → 回读） |
 | `deploy/publish-server.sh` | 后端发布（拷代码 → 备份 → restart → 探活） |
 | `deploy/gradle.sh [任务]` | **Android 编译唯一入口**：自动摆正 gradle / SDK / JDK，默认 `:app:assembleDebug` |
@@ -52,10 +51,20 @@ Windows 笔记本继续用它自己的 `C:/Users/小哭包/...` 路径（写进�
 存在（Linux 侧 `storeFile` 写 `/home/xiaokubao/.android/schedule-release.jks`，
 Windows 侧写 `C:/Users/小哭包/.android/schedule-release.jks`）。
 
-## 发布流程
+## 正式双端发布
+
+正式项目版本统一通过一次入口完成 Web 与 APK 发布，构建串行执行以避免两个 API 配置互相覆盖共享 `dist/`：
 
 ```bash
-# 1. 提交 + 推送
+./deploy/release-both.sh                         # 显示版本建议与发布摘要，不写生产
+./deploy/release-both.sh --approve "修复说明"   # 先构建/发布 Web，再构建/发布 APK
+```
+
+入口只显示下一 patch `versionName` 和 `versionCode` 建议，并校验 root/app package、两份 lock 的根版本及 Android `versionName` 一致。建议值须由版本改动更新并提交；入口不擅自写改文件。线上 `versionName` 不得回退，`versionCode` 必须严格高于线上；低于或线上版本无法读取时停止。
+
+线上 `live-check.mjs`、真机安装/冒烟和 `android-live-check.mjs` 可按改动需要单独执行，但不作为发布硬门槛。APK 包名、签名、版本、API 基址、文件完整性和上传回读属于发布校验，仍须通过。此入口不会连接设备或安装 APK。
+
+```bash
 git add <本任务文件> && git commit && git push
 
 # 2. 体检（必须为空）
@@ -73,7 +82,7 @@ git log @{u}.. --oneline
 ./deploy/publish-server.sh --approve
 ```
 
-日常直接用 `./deploy/web-loop.sh` / `./deploy/mobile-loop.sh`。
+日常单渠道调试仍可使用 `./deploy/web-loop.sh` / `./deploy/mobile-loop.sh`；正式版本发布使用上面的 `release-both.sh`。
 
 ## Android 编译工具链（别手动敲 gradle）
 

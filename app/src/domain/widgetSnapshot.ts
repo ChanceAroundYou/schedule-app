@@ -36,6 +36,8 @@ export interface SnapshotTask {
   time: string | null;
   dur: number | null;
   title: string;
+  /** Creator user id; absent in legacy/local-only tasks. */
+  createdBy?: string | null;
   /**
    * 任务的**详细内容**（与 App 抽屉里那一格是同一个字段）。
    *
@@ -114,6 +116,12 @@ export interface SnapshotGroup {
   order: number;
 }
 
+/** User display names used by the native creator filter. */
+export interface SnapshotUser {
+  id: string;
+  name: string;
+}
+
 export interface WidgetSnapshot {
   /** 快照格式版本。**形状变了要升它** —— 原生侧按这个字段判断要不要丢旧数据 */
   v: 1;
@@ -134,6 +142,9 @@ export interface WidgetSnapshot {
   habits: SnapshotHabit[];
   /** 打卡分类（2026-11-03 加）。老快照没有它 → 原生侧按平铺渲染，向后兼容 */
   groups: SnapshotGroup[];
+  /** Members available for native filtering. Legacy snapshots omit this list. */
+  users?: SnapshotUser[];
+  meId?: string | null;
 }
 
 /** 快照覆盖的日期范围：本周往前 4 周、往后 4 周 */
@@ -161,6 +172,7 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
       time: t.time,
       dur: t.duration,
       title: t.title,
+      createdBy: t.createdBy ?? null,
       /* **必须是纯文本**：小组件是原生 TextView，喂 `<p>开会</p>` 进去
          桌面上就原样显示标签（详细内容 2026-10-26 起是富文本） */
       note: plain(t.note || ''),
@@ -219,8 +231,12 @@ export function buildWidgetSnapshot(s: LocalState, todayIso: string = D.today())
     name: g.name,
     order: g.order || 0,
   }));
+  const users: SnapshotUser[] = Object.entries(s.users || {}).map(([id, user]) => ({
+    id,
+    name: user.nickname || user.name || '成员',
+  }));
 
-  return { v: 1, at: Date.now(), today: todayIso, from, to, tasks, habits, groups };
+  return { v: 1, at: Date.now(), today: todayIso, from, to, tasks, habits, groups, users, meId: s.meId };
 }
 
 /** 序列化。**给原生读的那一份**，键名短、无缩进 */

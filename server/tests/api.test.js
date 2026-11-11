@@ -1123,6 +1123,10 @@ test('小组件 bootstrap：未登录进不来，登录后返回快照形状', a
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.today, todayIso);
   assert.strictEqual(r.body.defaultCalId, CAL);
+  assert.strictEqual(r.body.meId, dad.userId, 'bootstrap 应返回当前用户 id');
+  assert.ok(Array.isArray(r.body.users), 'bootstrap 应返回当前用户可见的成员目录');
+  assert.ok(r.body.users.some((u) => u.id === dad.userId && u.name === '爸爸'),
+    '成员目录应包含本人及展示名');
   const titles = r.body.tasks.map((t) => t.title);
   assert.ok(titles.includes('窗口内的事'), '窗口内的任务应该在');
   assert.ok(!titles.includes('窗口外的事'), '窗口外的任务不该出现');

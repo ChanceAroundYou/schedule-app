@@ -370,7 +370,7 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
            所以这套计算必须放在最前面，不能等画完头部再算。 */
         int lo = WidgetPrefs.startHour(c);
         int hi = WidgetPrefs.endHour(c);
-        List<WTask> dayTasks = snap.tasksOf(day);
+        List<WTask> dayTasks = filteredTasks(snap, day, WidgetPrefs.selectedCreator(c));
         List<WTask> timed = new ArrayList<>();
         List<WTask> untimed = new ArrayList<>();
         for (WTask t : dayTasks) {
@@ -513,30 +513,39 @@ public class ScheduleWidgetProvider extends AppWidgetProvider {
         mgr.updateAppWidget(widgetId, v);
     }
 
-    /* ============ 「这天还有没做完的」（与 App 端 domain/model/undone.ts 同一判据）============ */
+    static List<WTask> filteredTasks(WidgetSnapshot snap, String day, String creator) {
+        List<WTask> out = new ArrayList<>();
+        String selected = creator == null || creator.isEmpty() ? "all" : creator;
+        if (!"all".equals(selected) && !"me".equals(selected)) {
+            boolean found = false;
+            for (WUser user : snap.users) {
+                if (user.id.equals(selected)) { found = true; break; }
+            }
+            if (!found) selected = "all";
+        }
+        for (WTask task : snap.tasks) {
+            if (!day.equals(task.date)) continue;
+            if ("all".equals(selected)) {
+                out.add(task);
+            } else if (task.createdBy == null || task.createdBy.isEmpty()) {
+                // Match App semantics: missing attribution is treated as the current user.
+                if ("me".equals(selected) || selected.equals(snap.meId)) out.add(task);
+            } else if ("me".equals(selected)) {
+                if (task.createdBy.equals(snap.meId) || "ai".equals(task.createdBy)) out.add(task);
+            } else if (selected.equals(task.createdBy)) {
+                out.add(task);
+            }
+        }
+        out.sort((a, b) -> Integer.compare(a.sortKey(), b.sortKey()));
+        return out;
+    }
 
-    /**
-     * 某一天有没有还没做完的事。三端（电脑 / 手机 / 桌面小组件）必须是同一个答案，
-     * 所以判据只在这里写一份，和 App 那边逐条对齐：
-     *   · 那天的普通任务没打勾 → 有（含过去某天没做完的，也就是 App 里的「逾期」）
-     *   · 打卡：只点亮**今天** —— App 端同理。打卡记录是「打过才有键」的稀疏表，
-     *     没有任何地方记录「那天本来该打」，按它回溯等于把建号以来每一天都点亮。
-     *
-     * 快照窗口 = App 推送的 9 周 / 服务端兜底的 ±45 天，窗口外的日期算不出来，
-     * 而日期条本来也只画这一周，够用。
-     */
+    /* ============ 「这天还有没做完的」仅检查日程任务 ============ */
+
+    /** Calendar markers must not depend on the independent habit/check-in feature. */
     static boolean dayHasUndone(WidgetSnapshot snap, String iso, String today) {
         for (WTask t : snap.tasks) {
             if (iso.equals(t.date) && !t.done) return true;
-        }
-        if (iso.equals(today)) {
-            for (WHabit h : snap.habits) {
-                // 和 habitChip 完全同一句完成态判定（没有 log 表的老快照只能拿 done 兜底）
-                boolean done = h.log != null
-                        ? h.log.optBoolean(iso, false)
-                        : (h.done && iso.equals(today));
-                if (!done) return true;
-            }
         }
         return false;
     }

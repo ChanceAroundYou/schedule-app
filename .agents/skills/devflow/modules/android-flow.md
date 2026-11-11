@@ -5,7 +5,7 @@
 > 前置阅读：`mobile/device-setup.md`（连设备）、`mobile/adb.md`（安装与校验）、
 > `mobile/mobile-test.md`（真机断言）、`mobile/troubleshooting.md`（出问题怎么查）。
 
-## 一条命令跑完七段（对标网页端 web-loop.sh）
+## 单独构建与设备回归（非统一正式发布入口）
 
 ```bash
 ./deploy/mobile-loop.sh                                  # 全套七段
@@ -27,10 +27,9 @@
 | 6 发布 + 装机 + 版本校验 | `publish-apk.sh` → 下载 → `adb install -r` → `dumpsys` 回读 `versionCode`/`pkgFlags` | 见下 |
 | 7 真机冒烟 | 冷启动 → 崩溃栈检查 → 截屏（可选 `--probe` 跑 kbtiming 时序回归） | 见下 |
 
-任一段失败 → 退出码非 0，由 devflow 自动返工（修 → 重新 commit → 重跑），最多 3 轮；
-3 轮还不过就停下，用大白话告诉用户卡在哪、具体报什么。
+任一检查失败会报告并停止相应的本地测试/设备流程；线上或真机功能实测不作为正式发布硬门槛。
 
-## 真机实测（android-live-check.mjs）检查什么
+真机实测（`android-live-check.mjs`）按改动需要单独执行，不是 APK 发布的前置条件。
 
 网页端用 `live-check.mjs` 打生产 URL；安卓端用 **`android-live-check.mjs`** 通过 CDP
 驱动真机 WebView（自建极简 WebSocket 客户端，复用 `deploy/cdp.mjs` 同款协议），断言同一套
@@ -55,7 +54,7 @@ node app/tests/android-live-check.mjs --device 192.168.1.172:38237
 > 这一个脚本一次跑完（脚本内部多步操作是稳的）。不要在中间重启 App。
 > 键盘/输入法相关（输入法弹起、收起后布局）只能真手指验收，脚本测不了，见下「自动化边界」。
 
-## 版本号（5 文件 8 行，改一个必须改另一个）  [B1]
+## 版本号（5 文件 8 行，保持同源）  [B1]
 
 | 文件 | 改什么 |
 |---|---|
@@ -67,8 +66,7 @@ node app/tests/android-live-check.mjs --device 192.168.1.172:38237
 
 改完 lock：`cd app && npm install --package-lock-only && cd .. && npm install --package-lock-only`
 
-⚠️ **`versionCode` 忘了加，客户端永远收不到更新提示**（服务端 version.json 里的
-versionCode 不大于本机就不会提示）。
+正式版本由 `release-both.sh` 读取当前版本并打印下一 patch 与 `versionCode` 建议；版本文件按建议更新并提交后再发布。脚本不自动改写版本文件。Android `versionCode` 发布时仍须严格递增。
 
 ## 打包（build-apk.sh）  [B2]
 
@@ -84,12 +82,13 @@ versionCode 不大于本机就不会提示）。
 - 上传 `schedule-<versionCode>.apk` + `version.json`，回读校验 200
 - 自动写 `~/.local/schedule/state/app.version`；服务器留最近三份可回滚
 
-⚠️ **顺序铁律：先网页端再 APK**。`publish-web.sh` 重建的是无基址 dist，
-`build-apk.sh` 重建的是有基址 dist，两边交替覆盖。
-正确顺序：`publish-web` → `build-apk` → `publish-apk`。
-若已经发过网页端才想起来打 APK，重跑一次 `build-apk.sh` 再发。
+## 构建顺序与统一发布
 
-## 装机（真机）  [B4]
+正式项目版本使用统一入口：`./deploy/release-both.sh --approve "说明"`。同一调用内先构建并发布 Web 同源版，再重建带 API 基址的 APK 资源并发布 APK。两种构建会覆盖共享 `dist/`，所以构建不可并行；不要求线上 Web 实测通过后才开始 APK。
+
+发布器仍会检查来源、授权、APK 包名/签名、versionCode 递增、内置资源基址与线上上传回读。线上功能测试、真机安装/冒烟和 `android-live-check.mjs` 按任务需要执行，未执行不阻断发布；统一入口本身不连接设备、不安装 APK。
+
+## 单独发布后的设备验证（非发布前置门槛）
 
 ```bash
 # 装线上正式包（推荐给用户的版本）
@@ -102,7 +101,7 @@ MSYS_NO_PATHCONV=1 "$ADB" install -r "C:/Users/小哭包/coding/schedule-wt/app/
 
 必校验：`versionCode` / `versionName` 与发布一致；`pkgFlags` 无 `DEBUGGABLE`（正式包）。
 
-## 真机验证清单  [B5]
+## 真机验证清单（按需）
 
 按 `mobile-test.md` 的「断言清单模板」逐项过；自动化边界内的项目（键盘/输入法）
 明确转给用户真手指验收，并说清要观察什么。
@@ -133,9 +132,8 @@ MSYS_NO_PATHCONV=1 "$ADB" install -r "C:/Users/小哭包/coding/schedule-wt/app/
 - **App 没有 `[data-nav="calendar"]`**：网页端登录后落在「今天」列表页，要先点这个
   导航才进视图；App 直接进某个视图（默认日/周由 `ui.view` 决定），切换视图用
   `button[data-view="day|week|month"]`。别拿网页端的选择器硬套。
-- **顺序铁律：先网页端再 APK**（见 B3）。
-- 发布脚本默认 dry-run（不带 `--approve` 只打印摘要、退出码 1）；`mobile-loop.sh`
-  是替用户判断过的自动放行，它自己做了可追溯性检查。
+- 统一入口内先构建/发布 Web，再构建/发布 APK；不能并行重建共享的 `dist/`。
+- 统一入口仅在显式 `--approve` 后调用发布器；单独调用各发布器仍遵守各自 dry-run 与生产授权闸门。
 - `--allow-dirty` 只在「脏文件全在发布路径之外」时用（例如 `deploy/` 下的草稿脚本）。
 - 键盘相关：别用 `visualViewport` 差值判键盘高度（App 是 adjustResize，相减恒为 0）；
   用 `@capacitor/keyboard` 原生事件。**坐标与 rect 必须同一时刻取**（pointerdown 快照），

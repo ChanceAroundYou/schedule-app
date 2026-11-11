@@ -88,6 +88,7 @@ function widgetView(userId) {
       time: t.time == null ? null : t.time,
       dur: typeof t.duration === 'number' ? t.duration : 0,
       title: typeof t.title === 'string' ? t.title : '',
+      createdBy: t.createdBy == null ? null : t.createdBy,
       done: t.done === true,
       // ⚠️ **repeat / reminder 必须带**（2026-10-14 补）。
       // 小组件的编辑弹窗要显示「重复：每周三」「提醒：08:30」，而它的数据
@@ -184,6 +185,11 @@ module.exports = {
       body: {
         ...view,
         user: { id: me.user.id, name: me.user.name },
+        meId: me.user.id,
+        users: Object.entries(calendars.directory(me.user.id)).map(([id, user]) => ({
+          id,
+          name: user.nickname || user.name || '成员',
+        })),
         defaultCalId: fallback ? fallback.id : null,
         cals: mine.map((c) => ({ id: c.id, name: c.name, role: c.role })),
         // 桌面计数器（v5）。**不属于日程集**，所以不在 widgetView 里 ——

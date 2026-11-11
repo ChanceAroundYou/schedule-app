@@ -25,6 +25,7 @@ class WidgetPrefs {
     static final String PREFS_FILE = "CapacitorStorage";
     static final String KEY_SNAPSHOT = "schedule_widget_snapshot";
     static final String KEY_DAY = "schedule_widget_day";
+    static final String KEY_CREATOR = "schedule_widget_creator";
     /** 离线时攒下的改动，等 App 启动时读走并推送 */
     static final String KEY_PENDING = "schedule_widget_pending";
 
@@ -76,7 +77,18 @@ class WidgetPrefs {
         }
     }
 
-    /**
+    static String selectedCreator(Context c) {
+        String value = sp(c).getString(KEY_CREATOR, "all");
+        if ("all".equals(value) || "me".equals(value)) return value;
+        WidgetSnapshot snap = snapshot(c);
+        for (WUser user : snap.users) if (user.id.equals(value)) return value;
+        return "all";
+    }
+
+    static void setSelectedCreator(Context c, String value) {
+        sp(c).edit().putString(KEY_CREATOR, value == null || value.isEmpty() ? "all" : value).apply();
+    }
+
     /** 用户选中的那天；没选过就是今天 */
     static String selectedDay(Context c) {
         String d = sp(c).getString(KEY_DAY, null);

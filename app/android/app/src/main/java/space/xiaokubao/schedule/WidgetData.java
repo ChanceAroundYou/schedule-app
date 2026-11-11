@@ -23,6 +23,8 @@ class WTask {
     /** 分钟。0 = 未设 */
     final int dur;
     final String title;
+    /** Creator user id; null for legacy tasks without attribution. */
+    final String createdBy;
     /**
      * 任务的**详细内容**（App 抽屉里那一格的同一个字段）。
      *
@@ -66,8 +68,8 @@ class WTask {
      */
     final String repeatUntil;
 
-    WTask(String id, String calId, String date, String time, int dur, String title, String note,
-          boolean done, String reminder, org.json.JSONObject repeat, String seriesId,
+    WTask(String id, String calId, String date, String time, int dur, String title,
+          String createdBy, String note, boolean done, String reminder, org.json.JSONObject repeat, String seriesId,
           boolean deleted, String repeatUntil) {
         this.id = id;
         this.calId = calId;
@@ -75,6 +77,7 @@ class WTask {
         this.time = time;
         this.dur = dur;
         this.title = title;
+        this.createdBy = createdBy;
         this.note = note;
         this.done = done;
         this.reminder = reminder;
@@ -149,6 +152,16 @@ class WGroup {
     }
 }
 
+class WUser {
+    final String id;
+    final String name;
+
+    WUser(String id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+}
+
 class WidgetSnapshot {
     final long at;
     final String from;
@@ -159,6 +172,9 @@ class WidgetSnapshot {
     final List<WHabit> habits = new ArrayList<>();
     /** 打卡分类，已按 order 升序排好。老快照没有 groups 键 → 空 = 平铺渲染 */
     final List<WGroup> groups = new ArrayList<>();
+    /** Member names for creator filtering; absent on legacy snapshots. */
+    final List<WUser> users = new ArrayList<>();
+    String meId;
 
     private WidgetSnapshot(long at, String from, String to, String today) {
         this.at = at;
@@ -171,6 +187,7 @@ class WidgetSnapshot {
         JSONObject o = new JSONObject(json);
         WidgetSnapshot s = new WidgetSnapshot(
                 o.optLong("at"), o.optString("from"), o.optString("to"), o.optString("today"));
+        s.meId = o.isNull("meId") ? null : o.optString("meId", null);
         JSONArray ts = o.optJSONArray("tasks");
         if (ts != null) {
             for (int i = 0; i < ts.length(); i++) {
@@ -187,6 +204,7 @@ class WidgetSnapshot {
                         t.isNull("time") ? null : t.optString("time", null),
                         t.optInt("dur"),
                         t.optString("title"),
+                        t.isNull("createdBy") ? null : t.optString("createdBy", null),
                         // note：老快照没有这个键 → ""（= 只有标题）
                         t.isNull("note") ? "" : t.optString("note", ""),
                         t.optBoolean("done"),
@@ -228,6 +246,15 @@ class WidgetSnapshot {
             // order 升序 + id 兜底（Java 没有 JS 那种「int 当 boolean」的写法）
             s.groups.sort((a, b) -> a.order != b.order
                     ? Integer.compare(a.order, b.order) : a.id.compareTo(b.id));
+        }
+        JSONArray us = o.optJSONArray("users");
+        if (us != null) {
+            for (int i = 0; i < us.length(); i++) {
+                JSONObject u = us.optJSONObject(i);
+                if (u == null) continue;
+                String id = u.optString("id", "");
+                if (!id.isEmpty()) s.users.add(new WUser(id, u.optString("name", "成员")));
+            }
         }
         return s;
     }
