@@ -21,6 +21,11 @@ import { useCallback, useEffect, useRef } from 'react';
  * 停下来 800ms 淡出 —— 与 touchDamp.ts 的 THUMB_IDLE 同一口径。
  * 以前 paint() 里写 `opacity = can ? 1 : 0`：只要内容溢出就常显，而且
  * ResizeObserver / MutationObserver 每次重画都把它重新点亮，永远不淡出。
+ *
+ * ⚠️ **只挂在能上下滚的容器上**。这根轨道是竖向的（右侧 4px，滑块按
+ * scrollTop 定位）；给纯横向容器挂上，滑块会永远钉在顶端、还会跟着内容
+ * 横移 —— 2026-11-11 用户报的「周视图周四与周五之间的灰色短条」就是这个。
+ * 横向容器保留 `.osb` class 隐藏原生条即可，不要调用本钩子。
  */
 const OSB_IDLE = 800;
 
@@ -45,44 +50,41 @@ export function useOverlayScrollbar<T extends HTMLElement>(outer?: { current: T 
     let idle = 0;
     let dragging = false;
 
-    /** 只更新几何，**绝不**碰显隐 —— 内容长高 / 容器缩放不该把浮条点亮 */
+    /** 只更新几何。没有纵向滚动空间的容器连滑块都不留 —— 见 reveal() 的回归注释 */
     const paint = () => {
       raf = 0;
       const view = el.clientHeight;
       const full = el.scrollHeight;
-      const canY = full > view + 1;
-      /* 2026-11-11：`.week-view` 是**横向**滚动容器，以前只判纵向，
-         横向溢出时这里会把刚淡入的浮条又按成 0。两个方向都要认。 */
-      const canX = el.scrollWidth > el.clientWidth + 1;
-      const can = canY || canX;
+      const can = full > view + 1;
       if (!can) {
         track.style.opacity = '0';
         thumb.style.height = '0px';
         return;
       }
-      /* 最短 26px —— 再短就没法点了。横向容器没有纵向比例可算，给最短一截 */
-      const h = canY ? Math.max(26, Math.round((view * view) / full)) : 26;
+      /* 最短 26px —— 再短就没法点了 */
+      const h = Math.max(26, Math.round((view * view) / full));
       thumb.style.height = h + 'px';
       /* ⚠️ **要加 el.scrollTop**：轨道是滚动容器里的绝对定位子元素，跟着内容
          一起滚；不补偿的话一滚浮条就跑到可视区上面（同一个病根，见
-         app/touchDamp.ts 的 ::after 浮条，2026-10-23 一并修）。 */
-      thumb.style.transform = can && full > view
-        ? `translateY(${Math.round(el.scrollTop + (el.scrollTop / (full - view)) * (view - h))}px)`
-        : 'none';
+         app/src/app/touchDamp.ts 的 ::after 浮条，2026-10-23 一并修）。 */
+      thumb.style.transform = `translateY(${Math.round(el.scrollTop + (el.scrollTop / (full - view)) * (view - h))}px)`;
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(paint); };
 
-    /** 只有真实滚动 / 拖动才调用：淡入，停手后计时淡出。拖着不放时不计时。 */
+    /**
+     * 只有真实滚动 / 拖动才调用：淡入，停手后计时淡出。拖着不放时不计时。
+     *
+     * **2026-11-11 回归教训**：昨天为修「切视图闪一下」把判据放宽成
+     * `canY || canX`，结果每次**横向**滑动都会点亮这根**竖向**浮条：
+     * 周视图没有纵向滚动空间 → 滑块永远钉在表头顶端；轨道是 absolute 定位、
+     * 跟着内容一起横移 → 落在「周四与周五之间」。
+     * 放宽判据 ≠ 支持横向滚动：横向容器要的是底部横条，是另一套东西。
+     * 现在只认纵向，且周 / 三日视图已不再挂本钩子（见 WeekView）。
+     */
     const reveal = () => {
-      const canY = el.scrollHeight > el.clientHeight + 1;
-      const canX = el.scrollWidth > el.clientWidth + 1;
-      if (!canY && !canX) return;
-      /* 切换日 / 3 日 / 周视图时，useLayoutEffect 会把 scrollLeft 归零，
-         浏览器照样派发一次 scroll 事件 —— 那不是用户滚的，不该让浮条淡入
-         800ms（用户报「切视图闪一下深色条」）。入口会短暂打上这个标记。 */
-      if (el.dataset.switching === '1') return;
-      /* 停在原点 = 归零事件，或只是内容变高了还没真滚 */
-      if (!(canY && el.scrollTop > 0) && !(canX && el.scrollLeft > 0)) return;
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      /* 停在原点 = 只是内容变高 / 位置被归零，不是用户真的滚了 */
+      if (el.scrollTop <= 0) return;
       track.style.opacity = '1';
       window.clearTimeout(idle);
       if (!dragging) idle = window.setTimeout(() => { track.style.opacity = '0'; }, OSB_IDLE);

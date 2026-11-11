@@ -31,7 +31,6 @@ import { colorOf, creatorOf } from '../../domain/people.ts';
 import { UntimedCard, TimedCard, draftBox } from './TaskCard.tsx';
 import { TimeGutter, DragRangePreview, BlankRow, NowBall, NowLine, HourLines } from './timeline.tsx';
 import { useDroppableZone } from '../../ui/dndkit.tsx';
-import { useOverlayScrollbar } from '../../ui/scroll.ts';
 import type { LayoutEvent } from './shared.ts';
 import { draftOn, NewCellSlot } from './NewCell.tsx';
 import { useDragCreate, type DragRange } from './dragCreate.ts';
@@ -141,24 +140,20 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   /* 三日视图（dayCount=3，2026-10-25 用户加）：从 iso 起连画 3 天 ——
      不对齐到周起点，‹ › 每次翻 3 天。周视图照旧从周一开始铺 7 天。 */
   const start = dayCount === 3 ? iso : D.weekStart(iso);
-  const osbWeek = useOverlayScrollbar<HTMLDivElement>();
   const weekRootRef = useRef<HTMLDivElement | null>(null);
   /* 三日 / 周视图切换时，旧 7 列布局的横向 scrollLeft 会残留一帧：
      `.week-view` 仍是 overflow-x:auto，列宽重排那一瞬间会闪出横向滚动条、
      落点也不对。切换即归零（2026-11-09 用户报的「三日视图切换后滚动条异常」）。
-     2026-11-11：归零本身会派发一次 scroll 事件，把浮条点亮约 800ms ——
-     短暂打上 data-switching，让 useOverlayScrollbar 的 reveal() 跳过这一下。 */
+
+     2026-11-11：**这里不再挂 `useOverlayScrollbar`**。那个钩子画的是**竖向**
+     浮条（右侧 4px 轨道 + 按 scrollTop 定位的滑块），而周 / 三日视图从
+     2026-10-17 起就是 `overflow-y:hidden` 的纯横向容器 —— 挂了只会让滑块
+     永远钉在表头顶端，还随横滑平移到日期列之间（用户报的「周四和周五之间
+     的灰色短条」）。`osb` 这个 class 仍在：它只负责把**原生**滚动条藏掉
+     （见 tokens.css），不依赖那个钩子。横向指示若要做，是另一套底部横条。 */
   useLayoutEffect(() => {
     const el = weekRootRef.current;
-    if (!el) return;
-    el.dataset.switching = '1';
-    /* 切换前若刚好有滚动留下的浮条（800ms 淡出还没走完），它会把新视图
-       第一帧也点亮。这里主动灭掉：data-switching 只挡新事件，管不到旧状态。 */
-    const track = el.querySelector<HTMLElement>('.osb-track');
-    if (track) track.style.opacity = '0';
-    el.scrollLeft = 0;
-    const t = window.setTimeout(() => { delete el.dataset.switching; }, 160);
-    return () => window.clearTimeout(t);
+    if (el) el.scrollLeft = 0;
   }, [dayCount, start]);
   const gutterRef = useRef<HTMLDivElement | null>(null);
   const weekWidth = useElementWidth(weekRootRef);
@@ -209,7 +204,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   });
 
   return (
-    <div className={'week-view osb' + (dayCount === 3 ? ' three-day' : '')} id="weekView" ref={(n) => { osbWeek(n); weekRootRef.current = n; }}
+    <div className={'week-view osb' + (dayCount === 3 ? ' three-day' : '')} id="weekView" ref={weekRootRef}
       style={narrowColW > 0 ? ({ '--week-col-w': narrowColW + 'px' } as CSSProperties) : undefined}>
       <div className="week-head" id="weekHead">
         <div className="week-head-gutter" />
