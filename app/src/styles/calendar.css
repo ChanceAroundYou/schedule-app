@@ -174,7 +174,10 @@
 .timeline {
   position: relative; height: 640px;
   display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  /* 行高 = 时间坐标总高（metrics.ts 的 axisH = pxPerHour × 小时数）。
+     两列（刻度列 / 轴体）共用这一行，绿球、绿线、竖线、卡片因此同高。
+     没量到时回退 stretch，首帧不塌成 0。 */
+  grid-template-rows: var(--tl-axis-h, minmax(0, 1fr));
 }
 /* 日视图里：时间轴填满 .tl-wrap（flex:1），高度由 flex 算出来 ——
    这样 .allday-zone 长高时时间轴同步缩，不会出现「未定时区把时间轴压成 0」
@@ -195,11 +198,10 @@
    刻度列收窄时标签跟着轴一起走，右沿到轴的间距始终是 12px（桌面）。
    ⚠️ `.tl-hour` 只由 `TimeGutter` 渲染，而 `TimeGutter` 只出现在刻度列里。 */
 .tl-hour { position: absolute; left: 100%; width: 0; height: 0; }
+/* **所有**刻度数字只有这一条规则：相对自己的定位壳上移半个字身，
+   于是数字中心正好骑在对应的小时线上。最底下那个也一样 —— 它探出轴体的
+   下半截由父容器底部 padding + 轴体下方的统一留白接住（见 .week-grid）。 */
 .tl-label { position: absolute; left: var(--tl-label-left); top: calc(var(--fs-meta) * -0.6); width: var(--tl-label-width); text-align: center; font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* 末端整点线钉在轴体底（见 timeline.tsx），数字跟着挪到**线的上方**：
-   否则它的一半会伸出轴体、被 .week-view 的 overflow-y:hidden + 圆角裁掉，
-   真机上就是「21:00 只看见上半截」以及横线看着穿过数字。 */
-.tl-hour--last .tl-label { top: auto; bottom: 0; }
 
 /* 轴体（日 `.tl-axis` / 周·3日 `.week-cols`）：**同一条小时线规则**。
    一格 = 一小时，`--wk-hours` 是这一屏实际覆盖的小时数（两视图都由渲染时内联设）。
@@ -234,10 +236,10 @@
   position: absolute; left: 0; right: 0; height: 0;
   border-top: 1px solid var(--border);
 }
-/* `.tl-hline--end` 于 2026-11-09 移除：末端整点线已由 `hours` 最后一项画出，
-   再钉一条底线只会重复（用户报「20:00 那里有两条横线」）。
-   2026-11-11 起不再「另补一条」，而是把最后一项**本身**改用 bottom:0 钉底
-   （`.tl-hline--last`，见 timeline.tsx）—— 一条线、和日列竖线同一个底边。 */
+/* 末端整点线就是 `hours` 最后一项，按 `时间 × hourPx` 算出来正好在轴体底边。
+   2026-11-09 曾另补一条 `.tl-hline--end`（双线），2026-11-11 曾把最后一项
+   本身改成 `bottom:0`（间距变大、末尾数字被挪到线上方）—— 两次特例都已废除，
+   现在线与数字全程共用同一套坐标，不再有「最后一项」这个分支。 */
 
 /* 占用底纹 */
 .tl-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -822,11 +824,16 @@
 .week-grid {
   flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: var(--tl-gutter-w) minmax(0, 1fr);
-  /* 上下各留一段呼吸空隙，与日视图 .tl-wrap 的 padding 同款：
-     · 顶部 8px —— 第一根小时线不顶着未定时行的分割线（贴在一起就是
-       用户看到的「两条线重叠」），数字也才有地方骑到线上；
-     · 底部 16px（2026-11-11 从 10 加宽）—— 末端整点线钉在轴体底边后，
-       那行数字落在 padding 区里，圆角和 overflow-y:hidden 再也裁不到它。 */
+  /* 与日视图 .timeline 同一条规则：行高 = 时间坐标总高，两列共用。
+     `--tl-axis-h` 未给（首帧还没量到）时回退 stretch。 */
+  grid-template-rows: var(--tl-axis-h, minmax(0, 1fr));
+  /* 上下留白都是给**每一个**刻度壳探出半个字身用的容器规则，
+     不参与任何刻度定位 —— 线、数字、卡片始终共用 `时间 × hourPx` 一条公式。
+     · 顶部 8px —— 第一根小时线不顶着未定时行的分割线，数字有地方骑到线上；
+     · 底部 16px —— 下边界紧挨 `.week-view` 的 `overflow-y:hidden` 和圆角，
+       比顶部多留一截才不会把最底下那个数字的下半截切掉。
+     上方还有表头 / 未定时行挡着，不需要这份额外余量，所以两个数不同。
+     取整剩下的 `可用高度 − axisH` 也留在轴体下方，一起接住末端数字。 */
   padding: 8px 0 16px;
 }
 /* 左侧刻度列：**就是日视图那个 `.tl-gutter`**（类名两个都挂，

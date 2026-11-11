@@ -18,10 +18,12 @@ import { spanOf, type DayWindow } from '../../domain/layout.ts';
 import { hours24 } from './shared.ts';
 
 export interface TimelineMetrics {
-  /** 时间轴实测高度（px）。量不到时是 0 —— 调用方自己兜底 */
+  /** 时间轴可用高度（px，已扣掉父容器 padding）。量不到时是 0 */
   boxH: number;
   /** 每小时多少像素（**整数**）。0 意味着还没挂上，别拿它做除法 */
   pxPerHour: number;
+  /** 时间坐标总高 = pxPerHour × 小时数。0 = 还没量到，此时不设容器行高 */
+  axisH: number;
   /** 刻度抽稀档位：1 每小时一条，2 隔小时一条，3 三小时一条 */
   step: number;
   /** 该画出来的那些整点（含 24:00 —— 一天最后一条线） */
@@ -33,10 +35,24 @@ export function useTimelineMetrics(win: DayWindow, ref: RefObject<HTMLElement | 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => setBoxH(el.clientHeight);
+    /* ⚠️ 量**父容器**（.week-grid / .timeline）而不是轴体自己。
+       轴体的行高现在由 `axisH = pxPerHour × spanH` 显式给定（见下），
+       再观察轴体就会形成「设高度 → 量到新高度 → 重算 → 再设」的反馈环，
+       而且窗口缩放时轴体被固定住、不再跟着变。父容器由 flex 决定高度，
+       不受子项行高影响，是唯一稳定的测量基准。
+       父容器的 padding 是给最顶/最底那两个数字探出半个身位用的，
+       不属于时间坐标，得先扣掉。 */
+    const box = el.parentElement || el;
+    const measure = () => {
+      const cs = getComputedStyle(box);
+      const avail = box.clientHeight
+        - (parseFloat(cs.paddingTop) || 0)
+        - (parseFloat(cs.paddingBottom) || 0);
+      setBoxH(Math.max(0, avail));
+    };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    ro.observe(box);
     return () => ro.disconnect();
   }, [ref]);
 
@@ -48,14 +64,19 @@ export function useTimelineMetrics(win: DayWindow, ref: RefObject<HTMLElement | 
      17:00 那个数字也在抖」，而全屏后高度正好凑整就消失了。
      取整之后线距恒定、落点全在整数像素上，抖动从源头消失。
 
-     ⚠️ 2026-11-11 改成**向下**取整：以前用 Math.round，实测 477.56px 的容器
-     算出 30px/h × 16h = 480px，末端整点线被推到容器外 2.44px —— 底部横线
-     和日列竖线接不上，最后一个刻度数字也被圆角裁掉半截（真机截图实证）。
-     floor 保证 `hourPx × spanH <= boxH`，所有中间线都落在容器内；
-     末端那一根由 HourLines / TimeGutter 单独钉到容器底，两者用同一个底边。 */
+     **余数的归宿（2026-11-12）**：向下取整后 `hourPx × spanH` 会比可用高度
+     矮几像素。以前的做法是把最后一根线 / 最后一个数字单独钉到容器底
+     （`--last` 特例），于是它的间距、标签与线的相对位置都和别人不一样 ——
+     用户报「最底下那个数字完全在线的上方、间距过大」。
+     现在反过来：**让时间轴的高度就等于 hourPx × spanH**（`axisH`），
+     余数留在轴体下方作为统一留白。线、标签、竖线、卡片、现在线全用
+     同一个坐标系，最后一根线按同一个公式算出来正好落在轴体底边，
+     不需要任何特例。 */
   const hourPx = boxH > 0 ? Math.max(1, Math.floor(boxH / spanH)) : 40;
+  /* 还没量到时不设行高（回退到 CSS 的 stretch），首帧不塌成 0 */
+  const axisH = boxH > 0 ? Math.round(hourPx * spanH) : 0;
   const step = hourPx < 14 ? 3 : hourPx < 20 ? 2 : 1;
   /* `<=` 而非 `<`：把 dayTo 设成 22:00 时底部那条结束线得在 */
   const hours = hours24().filter((h) => h * 60 >= win.from && h * 60 <= win.to && h % step === 0);
-  return { boxH, pxPerHour: hourPx, step, hours };
+  return { boxH, pxPerHour: hourPx, axisH, step, hours };
 }

@@ -82,7 +82,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
      `tlRef` 一份两用：既给 metrics 量高度，又挂 dnd 的落点区（timelineZone）。 */
   const tlRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const { hours, pxPerHour: hourPx } = useTimelineMetrics(win, tlRef);
+  const { hours, pxPerHour: hourPx, axisH } = useTimelineMetrics(win, tlRef);
   const panelH = useElementHeight(panelRef) || 752;
   /* 未定时行高 = 这一屏上 1 小时定时卡的高；zone 高度按 visibleRows 自适应，
      迭代收敛（panelH 稳定，不随 zone 反馈）—— 避免把时间轴压成 0。 */
@@ -158,7 +158,7 @@ export function DayView({ state, iso }: { state: LocalState; iso: string }) {
           <div
             className="timeline"
             data-from={win.from} data-to={win.to}
-            style={{ '--wk-hours': spanOf(win) / 60 } as CSSProperties}
+            style={{ '--wk-hours': spanOf(win) / 60, ...(axisH > 0 ? { '--tl-axis-h': axisH + 'px' } : {}) } as CSSProperties}
           >
             <div className="tl-gutter">
               <TimeGutter hours={hours} win={win} hourPx={hourPx} />

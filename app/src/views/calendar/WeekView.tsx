@@ -185,7 +185,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
   const nowPct = days.includes(today) ? minToPct(nowMin, win) : null;
 
   const colsRef = useRef<HTMLDivElement | null>(null);
-  const { hours, pxPerHour: hourPx } = useTimelineMetrics(win, colsRef);
+  const { hours, pxPerHour: hourPx, axisH } = useTimelineMetrics(win, colsRef);
   /* 容器实测高度给卡片算圆角 + 未定时行高用（半径 = 卡高 × 30%，见 calendar.css 的
      .task-el--timed）。卡的高度是百分比，乘上这个 px 才是真正的像素高。
      未定时那一行与日视图同源：行高 = 这一屏上的「一小时」（untimedRowPx）。 */
@@ -242,7 +242,7 @@ export function WeekView({ state, iso, dayCount = 7 }: { state: LocalState; iso:
         </div>
       </div>
 
-      <div className="week-grid">
+      <div className="week-grid" style={axisH > 0 ? ({ '--tl-axis-h': axisH + 'px' } as CSSProperties) : undefined}>
         {/* 左侧刻度列：**就是日视图那个 `.tl-gutter`**（骨架同一套，见 calendar.css），
             `.week-gutter` 这个老类名留着 —— 探针和调试按它找。 */}
         <div className="tl-gutter week-gutter" ref={gutterRef}>
