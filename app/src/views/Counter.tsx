@@ -109,7 +109,7 @@ function Pad({ c, editing, setEdit, send, commit }: {
             className="ctr-value-input"
             aria-label={c.name + ' 改为'}
             type="text"
-            inputMode="numeric"
+            inputMode="text"
             value={editing.draft}
             autoFocus
             onChange={(e) => setEdit({ ...editing, draft: e.target.value })}

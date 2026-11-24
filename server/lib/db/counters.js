@@ -27,8 +27,8 @@ const DEFAULTS = [
   { id: 'kutai', name: 'Kutai' },
 ];
 
-/** 数值上下限。上限是为了别让桌面那块小地方显示成天文数字，不是业务规则。 */
-const MIN_VALUE = 0;
+/** 数值上下限；当前值支持负数，仍避免桌面显示超出合理范围。 */
+const MIN_VALUE = -999999;
 const MAX_VALUE = 999999;
 
 /** 每日增量的合理区间。0 = 关掉自动增加；上限只为挡住手滑传个一万。 */
@@ -86,8 +86,7 @@ function creditDaily(userId, now) {
 
   run(
     `UPDATE counters
-        SET value = MAX(?, MIN(?,
-              value + daily_increment *
+        SET value = MAX(?, MIN(?, value + daily_increment *
                       (CAST(julianday(?) AS INTEGER) - CAST(julianday(last_credit_date) AS INTEGER)))),
             last_credit_date = ?,
             updated_at = ?,
@@ -179,7 +178,7 @@ function addCounter(userId, id, delta) {
 
 /**
  * 直接设成某个值（用户点数字手输 300）。
- * 同样夹在 [MIN_VALUE, MAX_VALUE] 里 —— 负数和七位数都不该出现在桌面上。
+ * 同样夹在 [MIN_VALUE, MAX_VALUE] 里，避免桌面显示超出合理范围。
  */
 function setCounter(userId, id, value) {
   ensureDefaults(userId);

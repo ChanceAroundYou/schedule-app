@@ -1363,7 +1363,7 @@ test('标记落在旁支成员上（根不在发起端本机）：按真根级�
  * 这是它没走 applyOps（整值替换）的唯一理由，所以必须有测试钉住，
  * 否则哪天有人「顺手统一到 sync 通道」，症状是用户点了很多下、数字只长一两格。
  */
-test('计数器：默认两个、原子自增、手输改值、夹在 0..上限', async () => {
+test('计数器：默认两个、原子自增、手输改值、夹在负值下限..上限', async () => {
   const relogin = await api('POST', '/api/auth/login', {
     body: { name: '爸爸', password: 'dad-new-2026' },
   });
@@ -1403,9 +1403,11 @@ test('计数器：默认两个、原子自增、手输改值、夹在 0..上限'
   const set = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', value: 7 } });
   assert.strictEqual(set.body.counter.value, 7);
 
-  // 减到负数要夹回 0
+  // 允许计数减到负数，并且上限规则仍然生效。
   const neg = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', delta: -100 } });
-  assert.strictEqual(neg.body.counter.value, 0, '计数不能是负数');
+  assert.strictEqual(neg.body.counter.value, -93, '计数允许负数');
+  const setNeg = await api('POST', '/api/widget/counter', { token, body: { id: 'kutai', value: -999999 } });
+  assert.strictEqual(setNeg.body.counter.value, -999999, '手动设值允许负数');
 
   // 不认识的 id 不悄悄建一条
   assert.strictEqual(

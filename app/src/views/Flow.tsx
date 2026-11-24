@@ -20,8 +20,8 @@
  * 不参与任务那套 data-act 分派。
  */
 
-import { useState } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Clock, Plus, Trash2 } from 'lucide-react';
 import type { LocalState } from '../domain/types.ts';
 import * as D from '../domain/date.ts';
 import { FLOW_MAX_ITEMS } from '../domain/flow.ts';
@@ -31,6 +31,50 @@ export function FlowView({ state }: { state: LocalState }) {
   const f = useFlow(state.meId);
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
   const [draft, setDraft] = useState('');
+  const keepAddVisibleRef = useRef<() => void>(() => {});
+  const addRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const scrollToAdd = () => {
+      const input = addInputRef.current;
+      if (!input) return;
+      const content = input.closest('.content');
+      if (!content) return;
+      const inputRect = input.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+      const style = getComputedStyle(document.documentElement);
+      const kb = parseFloat(style.getPropertyValue('--kb')) || 0;
+      const shrinkFix = parseFloat(style.getPropertyValue('--kb-fix')) || 0;
+      const bottom = Math.min(contentRect.bottom, visibleBottom, window.innerHeight - Math.max(0, kb - shrinkFix));
+      if (inputRect.bottom > bottom - 12) {
+        content.scrollTop += inputRect.bottom - bottom + 20;
+      }
+    };
+    const keepAddVisible = () => {
+      window.setTimeout(scrollToAdd, 120);
+      window.setTimeout(scrollToAdd, 450);
+    };
+    keepAddVisibleRef.current = keepAddVisible;
+    window.addEventListener('kb:show', keepAddVisible);
+    window.visualViewport?.addEventListener('resize', keepAddVisible);
+    return () => {
+      keepAddVisibleRef.current = () => {};
+      window.removeEventListener('kb:show', keepAddVisible);
+      window.visualViewport?.removeEventListener('resize', keepAddVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draft) return;
+    const id = window.requestAnimationFrame(() => {
+      addRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (document.documentElement.dataset.kb === '1') keepAddVisibleRef.current();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [draft]);
 
   const isDay = f.mode === 'day';
   const total = f.progress.total;
@@ -121,40 +165,47 @@ export function FlowView({ state }: { state: LocalState }) {
                 <i>{item.done && <Check size={11} strokeWidth={3} />}</i>
               </button>
             )}
-            <span className="flow-idx">{i + 1}</span>
-
             <div className="flow-main">
-              {editing && editing.id === item.id ? (
-                <input
-                  className="flow-title-input"
-                  value={editing.draft}
-                  autoFocus
-                  maxLength={120}
-                  aria-label="这一项的名称"
-                  onChange={(e) => setEditing({ id: item.id, draft: e.target.value })}
-                  onBlur={commitEdit}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitEdit();
-                    if (e.key === 'Escape') setEditing(null);
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="flow-title"
-                  title="点一下改名"
-                  onClick={() => setEditing({ id: item.id, draft: item.title })}
-                >{item.title}</button>
-              )}
+              <div className="flow-title-line">
+                {!isDay && <span className="flow-idx">{i + 1}</span>}
+                {editing && editing.id === item.id ? (
+                  <input
+                    className="flow-title-input"
+                    value={editing.draft}
+                    autoFocus
+                    maxLength={120}
+                    aria-label="这一项的名称"
+                    onChange={(e) => setEditing({ id: item.id, draft: e.target.value })}
+                    onBlur={commitEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitEdit();
+                      if (e.key === 'Escape') setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="flow-title"
+                    title="点一下改名"
+                    onClick={() => setEditing({ id: item.id, draft: item.title })}
+                  >{item.title}</button>
+                )}
+              </div>
 
-              <input
-                className="flow-at"
-                type="time"
-                aria-label="参考时间（可不填）"
-                title="参考时间，可不填"
-                value={item.at ?? ''}
-                onChange={(e) => f.patch(item.id, { at: e.target.value || null })}
-              />
+              <div className="flow-meta">
+                <label className="flow-at-wrap" title="参考时间，可不填">
+                  <Clock size={14} aria-hidden="true" />
+                  <span className="flow-at-label">{item.at || '设定时间'}</span>
+                  <input
+                    className="flow-at"
+                    type="time"
+                    aria-label="参考时间（可不填）"
+                    value={item.at ?? ''}
+                    onChange={(e) => f.patch(item.id, { at: e.target.value || null })}
+                  />
+                </label>
+                {isDay && <span className="flow-idx">第 {i + 1} 项</span>}
+              </div>
             </div>
 
             <div className="flow-acts">
@@ -181,9 +232,10 @@ export function FlowView({ state }: { state: LocalState }) {
         ))}
       </ol>
 
-      <div className="flow-add">
+      <div className="flow-add" ref={addRef}>
         <Plus size={15} className="opacity-50" />
         <input
+          ref={addInputRef}
           value={draft}
           maxLength={120}
           placeholder={isDay ? '加一项今天要做的事，回车确认' : '加一项每天都在的流程，回车确认'}

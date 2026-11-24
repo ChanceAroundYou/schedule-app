@@ -52,8 +52,8 @@ const POLL_MS = 5000;
 /** 写完通知桌面的合并窗口：连点五下只刷一次组件 */
 const WIDGET_REFRESH_MS = 250;
 
-/** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 一致 */
-const MIN_VALUE = 0;
+/** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 一致；当前值允许负数 */
+const MIN_VALUE = -999999;
 const MAX_VALUE = 999999;
 const clamp = (v: number) => Math.max(MIN_VALUE, Math.min(MAX_VALUE, Math.round(v)));
 
@@ -270,8 +270,8 @@ export function useCounters() {
     }
     const n = Math.round(Number(draft));
     if (!Number.isFinite(n)) return;
-    // 每日增量允许 0（关掉自动加）；值不允许负数（服务端也会夹）
-    send(id, field === 'value' ? { value: Math.max(0, n) } : { dailyIncrement: Math.max(0, n) });
+    // 每日增量仍允许 0 且不允许负数；当前计数值允许负数。
+    send(id, field === 'value' ? { value: n } : { dailyIncrement: Math.max(0, n) });
   }, [send, setEdit]);
 
   return { list, edit: editState, setEdit, err, send, commit, reload: load };

@@ -47,8 +47,8 @@ class CounterStore {
      */
     private static final String KEY_QUEUE = "schedule_widget_counter_queue";
 
-    /** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 保持一致 */
-    static final int MIN = 0;
+    /** 与服务端 db/counters.js 的 MIN_VALUE / MAX_VALUE 保持一致；计数可为负。 */
+    static final int MIN = -999999;
     static final int MAX = 999999;
 
     /** 服务端没回过数据时的兜底，名字和后端 DEFAULTS 一致 */
